@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.3 (Draft) |
+| Version | 0.4 (Draft) |
 | Date | 2026-10-08 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
@@ -168,12 +168,27 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | AI-002 | Every AI answer shows the query used and allows drill-down to source records. | P1 |
 | AI-003 | AI database access is read-only, limited to the semantic layer, with row limits and timeouts. | P1 |
 | AI-004 | Respects the user's access rights (ACC-002) and masking rules (ACC-003). | P1 |
-| AI-005 | Pluggable model provider configured per client. Default: model accessed through the client's own cloud account (e.g. Claude via AWS Bedrock or Google Vertex AI). Option: open-weight model hosted on client hardware. No client data is sent to provider infrastructure. | P1 |
-| AI-006 | Sensitive fields can be masked before any data is sent to the model. | P2 |
+| AI-005 | **Withdrawn (2026-10-09), replaced by AI-011 to AI-014.** ~~Pluggable model provider configured per client. Default: model accessed through the client's own cloud account (e.g. Claude via AWS Bedrock or Google Vertex AI). Option: open-weight model hosted on client hardware. No client data is sent to provider infrastructure.~~ | — |
+| AI-006 | **Withdrawn (2026-10-09), replaced by AI-015.** ~~Sensitive fields can be masked before any data is sent to the model.~~ | — |
 | AI-007 | Automated insights and alerts (anomalies, threshold breaches, trend changes). | P2 |
 | AI-008 | AI-generated reports and commentary on MIS. | P2 |
 | AI-009 | Predictive modelling (cash flow, revenue, expense forecasts). | P3+ |
-| AI-010 | Retrieval (RAG) over schema documentation, business definitions and uploaded documents to improve answers. | P2 |
+| AI-010 | Retrieval (RAG) over schema documentation, business definitions and uploaded documents to improve answers. Embeddings are always computed locally (AI-016). | P2 |
+
+#### 4.9.1 AI data protection
+
+No AI feature may send client data anywhere the client hasn't approved. These requirements apply to every AI feature, current and future (AI-001 to AI-010).
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| AI-011 | **AI privacy mode, set per client:** `private` (**default**), `schema-only` or `full`. Only a Client Admin can change it, and every change is recorded in the audit log (AUD-001). A deployment uses exactly one model provider per mode (AI-014, SEC-010). | P1 |
+| AI-012 | **`private` mode:** every model call (SQL generation, explanation, formatting, embeddings) uses a model running inside the client deployment or on client hardware. Nothing related to AI leaves the client environment. | P1 |
+| AI-013 | **`schema-only` mode:** the external model receives **only** the user's question (masked under AI-015) and semantic-layer descriptions (view and column names, their descriptions, business definitions). It never receives query results, data rows, sample values, ledger or party names, or any figures from the books. The generated SQL is validated and run locally (AI-003). Results are **never** sent to the external model; they're formatted locally, by deterministic templates or a local model. | P1 |
+| AI-014 | **`full` mode:** an external model reached **only through the client's own cloud account** under the client's agreement (e.g. Claude via AWS Bedrock or Google Vertex AI). Everything sent, including any result data, is masked first (AI-015). A provider's public API reached outside the client's own account is not allowed for client data. | P1 |
+| AI-015 | **Masking and pseudonymization:** before anything is sent to an external model (`schema-only` and `full`), party names, GSTINs, PANs, bank account numbers and salary amounts are replaced with consistent placeholder tokens (e.g. `PARTY_017`). The mapping between tokens and real values stays in the client deployment and is never sent. Responses are converted back locally before the user sees them. Masking also applies the role rules of ACC-003. | P1 |
+| AI-016 | **Local embedding model for RAG:** embeddings of the semantic catalog, business definitions, ledger names and documents are computed by a model running locally, in every privacy mode, and stored only in the client's vector store. | P1 |
+| AI-017 | **No outbound tools for the AI:** models get no tools or functions that can send, store or publish data (no web access, HTTP calls, email, messaging, file writes or uploads). The only action a model can trigger is a validated, read-only query against the semantic layer, run by application code (AI-003). | P1 |
+| AI-018 | **Audit of every model call:** for every call to any model, local or external, the client's audit log records user, time, privacy mode, provider, endpoint, model, the exact payload as sent (after masking), the response as received, token counts and outcome. Stored only in the client deployment, append-only (AUD-002), visible to Client Admins. Token mappings (AI-015) are never written to it. | P1 |
 
 ### 4.10 Future modules
 
@@ -203,6 +218,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 - **SEC-007** No telemetry, usage analytics or crash reports containing client data are sent to the provider.
 - **SEC-008** Principle of least privilege for all service accounts and database users.
 - **SEC-009** Dependency and container vulnerability scanning in the build pipeline.
+- **SEC-010** **Outbound network allowlist for the data plane:** the data plane may connect out only to its configured sources (e.g. Tally, Zoho, banks) and to the **one** AI endpoint approved for the client's privacy mode (none in `private` mode, AI-011). Everything else is blocked. The allowlist is enforced at the network level (container egress rules) and checked again in application code. Changes to it are audited.
 
 ### 5.2 Performance (initial targets, to validate)
 
@@ -246,7 +262,7 @@ Open items are deferred. Development proceeds on the current requirements and as
 | OPEN-004 | Confirm overlap rule for backup vs live data (IMP-005). | Deferred: ask when feature is built |
 | OPEN-005 | Which specific upstream systems must be supported, and in which order? | Deferred: ask when feature is built |
 | OPEN-006 | 10 to 20 real example questions users will ask the AI (needed to design and test the semantic layer). | Deferred: ask when feature is built |
-| OPEN-007 | Confirm acceptance of AI via the client's own cloud account as the default (client answered "ideally no" to external AI). | Deferred: ask when feature is built |
+| OPEN-007 | ~~Confirm acceptance of AI via the client's own cloud account as the default~~. **Partly resolved 2026-10-09:** the default is now `private` (local model, AI-011), matching the client's "ideally no" to external AI. Still open: whether the client wants `schema-only` or `full` at all, and the local model's minimum hardware. | Open: ask when M8 is built |
 
 ## 8. Assumptions
 
@@ -262,6 +278,8 @@ Open items are deferred. Development proceeds on the current requirements and as
 - **Connector agent:** small service installed near an on-premise source (e.g. Tally) that pushes data to the client deployment.
 - **Canonical model:** the standardized, source-independent accounting data model.
 - **Semantic layer:** curated database views with business definitions, used by reports and the AI.
+- **AI privacy mode:** a per-client setting (`private`, `schema-only`, `full`) that fixes which model may be used and what it may receive (AI-011).
+- **Pseudonymization:** replacing sensitive values with consistent placeholder tokens before sending, with the token-to-value mapping kept locally so answers can be converted back (AI-015).
 
 ## 10. Change management
 
@@ -279,3 +297,4 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.1 | Initial draft from client answers and architecture decisions. |
 | 2026-10-08 | 0.2 | Open items deferred until related features are built. |
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
+| 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
