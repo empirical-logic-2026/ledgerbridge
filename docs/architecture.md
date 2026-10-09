@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.1 (Draft) |
+| Version | 0.3 (Draft) |
 | Date | 2026-10-08 |
 | Related | `docs/requirements.md`, `CLAUDE.md` |
 
@@ -182,7 +182,8 @@ A single internal interface with configurable providers per client:
 | --- | --- | --- |
 | Claude via AWS Bedrock (client account) | Client's cloud agreement | Default for cloud deployments on AWS. |
 | Claude via Google Vertex AI (client account) | Client's cloud agreement | Default for cloud deployments on GCP. |
-| Open-weight model on client hardware | Fully local | For strictest clients; requires GPU server; lower quality on complex questions. |
+| Open-weight model on client hardware (e.g. via Ollama) | Fully local | For strictest clients and for the local pilot on client data; lower quality on complex questions. |
+| Anthropic API (direct) | Anthropic | **Development and test data only.** Never used with client data unless the client approves. |
 
 No provider path sends data to provider (our) infrastructure.
 
@@ -221,6 +222,7 @@ No provider path sends data to provider (our) infrastructure.
 | Concern | Choice |
 | --- | --- |
 | Backend language | Python 3.12+ |
+| Python packaging | uv (`pyproject.toml`, `uv.lock`) |
 | API framework | FastAPI |
 | ORM / migrations | SQLAlchemy 2 + Alembic |
 | Database | MySQL 8 |
@@ -260,6 +262,11 @@ No provider path sends data to provider (our) infrastructure.
 | ADR-006 | Connector agent with outbound-only connections for on-prem sources. | Works when Tally is not on the deployment's network; no inbound firewall rules. |
 | ADR-007 | Roles and permissions stored in the client deployment, not the control plane. | Keeps organizational data out of provider infrastructure. |
 | ADR-008 | Signed frontend bundle with strict CSP; self-host option. | Prevents a compromised control plane from silently exfiltrating data. |
+| ADR-009 | Pilot first on the client's backup data, running the data plane locally. | Proves extraction, model and dashboard on real data before building product infrastructure. |
+| ADR-010 | `AUTH_MODE=local` during the pilot; token verification sits behind an interface. | Lets the control plane replace local login later without changing authorization code. |
+| ADR-011 | Separate `test` and `pilot` environments with separate databases. | Keeps client data away from AI development tools and external AI APIs. |
+| ADR-012 | Each environment runs as its own Docker Compose project (`ledgerbridge-test`, `ledgerbridge-pilot`) with its own volumes, host ports and env file. | Keeps the schema names `raw`, `core`, `rpt`, `app` identical in every environment while keeping data physically separate. |
+| ADR-013 | uv manages Python versions and dependencies for the data plane (`pyproject.toml` + `uv.lock`). | Reproducible locked installs and a pinned Python 3.12 independent of the host Python. |
 
 New decisions are appended here with the next ADR number.
 
@@ -269,3 +276,21 @@ New decisions are appended here with the next ADR number.
 - Whether larger clients need Kubernetes packaging in phase 1.
 - Local model choice and minimum GPU specification for the fully local AI option.
 - Key management approach per cloud (cloud KMS vs client-managed key file for office servers).
+
+## 13. Local pilot mode
+
+The pilot runs the data plane on the developer's Windows machine.
+
+- **Services:** Docker Compose runs MySQL, Redis, Qdrant, the API and workers; the frontend runs with the Vite dev server.
+- **Reaching Tally:** TallyPrime runs on the Windows host with its XML server on port 9000. Containers reach it at `http://host.docker.internal:9000`, configured by `TALLY_URL`.
+- **Companies:** the companies to extract must be loaded (open) in TallyPrime during extraction. The connector targets each company by name in its XML requests, so one run can process several companies.
+- **Environments:** two separate configurations, each with its own database:
+
+| Environment | Data | AI provider | Used by Claude Code? |
+| --- | --- | --- | --- |
+| `test` | LedgerBridge Test Co (developer-created) | Anthropic API | Yes |
+| `pilot` | Client backup companies | Local model (Ollama) | **No** — run by the developer only |
+
+- **Environment separation (ADR-012):** each environment is a separate Compose project started from the same `deploy/compose.yaml`: `ledgerbridge-test` with `.env.test`, `ledgerbridge-pilot` with `.env.pilot`. Volumes are scoped per project and host ports differ per environment, so the two never share a database, cache or vector store. `.env.*.example` files are committed; real `.env.*` files are git-ignored. The data plane refuses `AI_PROVIDER=anthropic` when `APP_ENV=pilot` (PIL-005).
+
+- **Auth:** `AUTH_MODE=local` stores users with Argon2id password hashes in `app.users` and issues tokens locally. In product mode the data plane instead verifies control-plane tokens via JWKS; authorization code is identical in both modes.

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.2 (Draft) |
+| Version | 0.3 (Draft) |
 | Date | 2026-10-08 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
@@ -37,6 +37,14 @@ The long-term vision (from client requirements) is for the platform to:
 - **PM-004** All client data is stored and processed in a **client deployment** running in an environment the client owns: by default the client's own cloud account, or alternatively a client office server.
 - **PM-005** Client data must never transit through provider servers. After login, the user's browser communicates directly with the client deployment.
 - **PM-006** Each client's data is physically isolated from every other client's data.
+
+### 2.1 Delivery approach: pilot first, built for all books
+
+- **PIL-001** The first deliverable is a **local pilot** on the developer machine using the client's Tally backup data (two companies) restored into TallyPrime.
+- **PIL-002** The pilot implements the data plane only. Control plane, licensing, connector agent and deployment packaging are deferred; a simple local login replaces control-plane login during the pilot.
+- **PIL-003** Everything built for the pilot must be **generic**: no code specific to these companies, to backup data, or to Tally outside the Tally connector. The same code must later work for live Tally, other accounting books (Zoho, CSV/TXT and others) and other clients.
+- **PIL-004** Backup data is loaded through the standard connector path (Tally XML interface), tagged `origin = backup`.
+- **PIL-005** Client data is never read by AI development tools (Claude Code). Development and AI testing use a test company. AI querying on client data uses a local model unless the client approves another provider.
 
 ## 3. Users and roles
 
@@ -220,7 +228,8 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 
 | Phase | Scope |
 | --- | --- |
-| **Phase 1: Foundation** | Control plane (login, MFA, licences); client deployment package; connector framework; Tally connector and agent; CSV/TXT connector; historical import; canonical data model; validation; MIS dashboard, health indicators, core statements, receivables/payables, entity and consolidated views, drill-down; role-based access; natural-language querying; audit log. |
+| **Phase 1a: Local pilot** | Repo scaffold; Tally connector (multi-company, incremental); import of the client's backup data; canonical data model; validation against Tally; local login and role-based access; reporting views; MIS dashboard, health indicators, core statements, receivables/payables, entity and consolidated views, drill-down; natural-language querying (text-to-SQL + RAG); audit log. See `docs/roadmap.md`. |
+| **Phase 1b: Product foundation** | Control plane (login, MFA, licences); client deployment package; connector framework; Tally connector and agent; CSV/TXT connector; historical import; canonical data model; validation; MIS dashboard, health indicators, core statements, receivables/payables, entity and consolidated views, drill-down; role-based access; natural-language querying; audit log. |
 | **Phase 2: Expansion** | Zoho Books, banking and database connectors; account mapping with AI suggestions; GST, stock, sales and expense reports; exports and scheduled reports; field masking; AI insights, alerts and commentary; RAG over documents; SSO; multi-currency. |
 | **Phase 3: Intelligence** | Predictive modelling; upstream/downstream reconciliation; additional platform connectors. |
 | **Phase 4: Automation** | OCR document scanning; chart-of-accounts designer; implementation fast-track toolkit. |
@@ -269,3 +278,4 @@ Requirements can be added or changed in any phase. For each change:
 | --- | --- | --- |
 | 2026-10-08 | 0.1 | Initial draft from client answers and architecture decisions. |
 | 2026-10-08 | 0.2 | Open items deferred until related features are built. |
+| 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |

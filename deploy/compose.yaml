@@ -1,0 +1,93 @@
+# LedgerBridge data plane: local stack.
+# Run through deploy/stack.ps1 so each environment gets its own project name,
+# env file and volumes (ADR-012), e.g.:
+#   docker compose -p ledgerbridge-test --env-file ../.env.test -f compose.yaml up -d
+
+services:
+  mysql:
+    image: mysql:8.4
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+      # Full schemas (raw, core, rpt, app), users and grants are created in M2.
+      MYSQL_DATABASE: app
+      MYSQL_USER: ${MYSQL_APP_USER:?set MYSQL_APP_USER}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:?set MYSQL_APP_PASSWORD}
+    ports:
+      - "127.0.0.1:${MYSQL_HOST_PORT:?set MYSQL_HOST_PORT}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:?set REDIS_HOST_PORT}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    ports:
+      - "127.0.0.1:${QDRANT_HOST_PORT:?set QDRANT_HOST_PORT}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      # The qdrant image has no curl/wget; probe the HTTP port with bash.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf \"GET /readyz HTTP/1.0\\r\\n\\r\\n\" >&3 && grep -q \"200 OK\" <&3'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ../data-plane
+    env_file: ${LEDGERBRIDGE_ENV_FILE:?run via deploy/stack.ps1}
+    environment: &container-overrides
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:?set API_HOST_PORT}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+
+  worker:
+    profiles: [workers]
+    build:
+      context: ../data-plane
+    command: ["celery", "-A", "workers.celery_app", "worker", "--loglevel=INFO"]
+    env_file: ${LEDGERBRIDGE_ENV_FILE:?run via deploy/stack.ps1}
+    environment: *container-overrides
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
+  redis-data:
+  qdrant-data:
