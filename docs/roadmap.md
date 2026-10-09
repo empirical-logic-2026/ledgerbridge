@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.1 |
-| Date | 2026-10-08 |
+| Version | 0.2 |
+| Date | 2026-10-09 |
 | Current milestone | **M0** |
 
 Goal: load the client's Tally backup data (two companies) into MySQL and deliver dashboards and AI querying, with every part built generically so it later works for live Tally, other accounting books and other clients (PIL-001 to PIL-005).
@@ -72,9 +72,45 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 ## M8 — AI querying (text-to-SQL + RAG)
 
-**Done when:** users ask questions in plain language and get correct answers with the SQL shown; guardrails from architecture.md Section 5.2 are enforced; the provider is switchable between Anthropic (test) and Ollama (pilot).
+**Done when:**
+- users ask questions in plain language and get correct answers with the SQL shown
+- the guardrails from architecture.md Section 5.2 are enforced
+- all three privacy modes work, and `private` is the default:
+  - `private` sends nothing outside the deployment
+  - `schema-only` sends only the masked question and semantic-layer descriptions, with results formatted locally
+  - `full` masks everything it sends
+- masking and pseudonymization are reversed locally before the user sees the answer
+- embeddings are computed locally
+- the model has no outbound tools
+- the outbound allowlist blocks everything except configured sources and the one approved AI endpoint
+- every model call is logged with its exact payload
+- the pilot runs in `private` mode with Ollama
 
-> Plan milestone M8 per architecture.md Section 5 and requirements AI-001 to AI-005 and AI-010. Build the provider abstraction (Anthropic and Ollama), embedding of rpt.semantic_catalog and ledger names into Qdrant for retrieval, SQL generation restricted to rpt views, SQL validation, execution as the ai_ro user with entity filters injected in code, timeouts and row limits, answers that show the SQL and link to source records, and logging to app.ai_query_log. Add a chat panel to the dashboard. Create an evaluation set of 20 questions with expected answers from the test company. Show me the plan first.
+> Plan milestone M8 per architecture.md Section 5 (including 5.4 to 5.7) and ADR-015, and requirements AI-001 to AI-004, AI-010 to AI-018 and SEC-010 (AI-005 and AI-006 are withdrawn). Build:
+> - **AI privacy mode** as a per-client setting in the data plane (`private` default, `schema-only`, `full`), changeable only by a Client Admin and audited.
+> - **Provider abstraction**: Ollama as the local model; Anthropic API for the test environment only, on synthetic data; Bedrock and Vertex interfaces for client cloud accounts, where configured. Each provider is allowed only in its permitted modes.
+> - **Local embedding model**: embed rpt.semantic_catalog, business definitions and ledger names into Qdrant.
+> - **One data protection gate** that every model payload goes through:
+>   - mode checks; in `schema-only` the external request type cannot carry result rows or sample values
+>   - pseudonymization of party names (matched against the party master), GSTIN, PAN, bank account numbers and salary amounts, with a token map kept only in memory, never sent or logged
+>   - local reversal of tokens in responses
+> - **The text-to-SQL pipeline**:
+>   - SQL generation restricted to rpt views
+>   - SQL validation
+>   - execution as the ai_ro user with entity filters injected in code, plus timeouts and row limits
+>   - result formatting by local templates or the local model in `private` and `schema-only`
+>   - answers that show the SQL and link to source records
+> - **No outbound tools for the model**: the only capability is proposing SQL; model output is treated as untrusted text.
+> - **Outbound network allowlist**, derived from configuration: Docker egress restricted to configured sources plus the one approved AI endpoint, and an application-level check in a single HTTP client factory. Refusals are logged.
+> - **Model call log**: one append-only row per model call with the exact payload sent (after masking), the response, provider, endpoint, model, mode, user and token counts, plus app.ai_query_log per question. Design the table and update docs/schema.md in the same change.
+> - **Dashboard**: a chat panel, and an admin view of the model call log.
+>
+> **Tests:**
+> - an evaluation set of 20 questions with expected answers from the test company, run in every mode
+> - leak tests asserting that no result rows, figures or unmasked names, GSTINs, PANs, bank account numbers or salaries reach an external request in `schema-only` and `full`
+> - a test that egress outside the allowlist is blocked
+>
+> Show me the plan first.
 
 ## M9 — Pilot run on client data (developer only)
 
@@ -93,3 +129,4 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | Date | Version | Change |
 | --- | --- | --- |
 | 2026-10-08 | 0.1 | Initial pilot roadmap. |
+| 2026-10-09 | 0.2 | M8 "Done when" and prompt updated for AI data protection: privacy modes, masking, local embeddings, no outbound tools, egress allowlist, model call log (AI-011 to AI-018, SEC-010, ADR-015). |
