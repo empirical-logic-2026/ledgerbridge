@@ -13,9 +13,6 @@ from decimal import Decimal, InvalidOperation
 
 _NUMBER = re.compile(r"^\s*(-?\d+(?:\.\d+)?)")
 
-# Where ledger postings appear in a voucher. Invoice-mode vouchers post item ledgers
-# through ACCOUNTINGALLOCATIONS inside inventory entries.
-_LEDGER_ENTRY_LISTS = ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST")
 _INVENTORY_LISTS = ("ALLINVENTORYENTRIES.LIST", "INVENTORYENTRIES.LIST")
 
 
@@ -40,11 +37,21 @@ def _first_present(voucher: ET.Element, tags: Iterable[str]) -> list[ET.Element]
 
 
 def postings(voucher: ET.Element) -> list[ET.Element]:
-    """Ledger postings of a voucher (accounting entries plus inventory accounting allocations)."""
-    entries = _first_present(voucher, _LEDGER_ENTRY_LISTS)
-    for inventory in _first_present(voucher, _INVENTORY_LISTS):
-        entries.extend(inventory.findall("ACCOUNTINGALLOCATIONS.LIST"))
-    return entries
+    """The complete set of ledger postings of a voucher (schema.md Section 7).
+
+    - ALLLEDGERENTRIES.LIST, when present, is complete. In TallyPrime item invoices it
+      already includes the sales/purchase ledger posted through inventory, so inventory
+      ACCOUNTINGALLOCATIONS must not be added again.
+    - Otherwise LEDGERENTRIES.LIST holds only the non-inventory lines, and the inventory
+      ACCOUNTINGALLOCATIONS supply the rest.
+    - Entries without a ledger are skipped (cancelled vouchers keep an empty placeholder).
+    """
+    entries = voucher.findall("ALLLEDGERENTRIES.LIST")
+    if not entries:
+        entries = voucher.findall("LEDGERENTRIES.LIST")
+        for inventory in _first_present(voucher, _INVENTORY_LISTS):
+            entries.extend(inventory.findall("ACCOUNTINGALLOCATIONS.LIST"))
+    return [e for e in entries if (e.findtext("LEDGERNAME") or "").strip()]
 
 
 @dataclass
@@ -115,8 +122,10 @@ def check_vouchers(
     for voucher in vouchers:
         report.vouchers += 1
         total = Decimal(0)
+        # The anchor is identified by its voucher number or by text in its narration.
         is_anchor = anchor_voucher is not None and (
             (voucher.findtext("VOUCHERNUMBER") or "").strip() == anchor_voucher
+            or anchor_voucher in (voucher.findtext("NARRATION") or "")
         )
         for entry in postings(voucher):
             amount = tally_amount(entry.findtext("AMOUNT"))
@@ -179,4 +188,62 @@ def check_opening_balances(
     report.sums_to_zero = total == 0
     if anchor_ledger is not None and report.anchor is None:
         report.anchor = "not found (check ledger name)"
+    return report
+
+
+@dataclass
+class SideReport:
+    """Tally's own Dr/Cr judgement ($$IsDr) compared with the sign of the XML amount."""
+
+    agree: int = 0
+    disagree: int = 0
+    zero: int = 0
+    anchors: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def debits_negative(self) -> bool:
+        return self.agree > 0 and self.disagree == 0
+
+    def lines(self) -> list[str]:
+        out = [
+            f"non-zero opening/closing balances where Tally's $$IsDr agrees that "
+            f"debit = negative: {self.agree}, disagrees: {self.disagree} (zero: {self.zero})"
+        ]
+        out += [f"anchor {name}: {text}" for name, text in self.anchors.items()]
+        out.append(
+            "CONFIRMED by Tally's own $$IsDr: debit balances are negative in XML"
+            if self.debits_negative
+            else "NOT CONFIRMED: see counts above"
+        )
+        return out
+
+
+def check_balance_sides(ledgers: Iterable[ET.Element], anchors: Iterable[str] = ()) -> SideReport:
+    """For each ledger balance, does Tally's $$IsDr (Yes = debit) match a negative amount?
+
+    Anchor ledgers are reported with their closing balance and side as Tally's Trial
+    Balance shows it, for comparison with TallyPrime. Use only on the test company.
+    """
+    report = SideReport()
+    wanted = set(anchors)
+    for ledger in ledgers:
+        name = (ledger.findtext("NAME") or ledger.get("NAME") or "").strip()
+        for field_name, flag in (
+            ("OPENINGBALANCE", "LBOPENINGISDR"),
+            ("CLOSINGBALANCE", "LBCLOSINGISDR"),
+        ):
+            amount = tally_amount(ledger.findtext(field_name)) or Decimal(0)
+            is_dr = (ledger.findtext(flag) or "").strip().lower() == "yes"
+            if amount == 0:
+                report.zero += 1
+            elif (amount < 0) == is_dr:
+                report.agree += 1
+            else:
+                report.disagree += 1
+            if name in wanted and field_name == "CLOSINGBALANCE":
+                side = "Dr" if is_dr else "Cr"
+                sign = "negative" if amount < 0 else "positive" if amount > 0 else "zero"
+                report.anchors[name] = f"closing {abs(amount):,.2f} {side} (XML amount {sign})"
+    for name in wanted - report.anchors.keys():
+        report.anchors[name] = "not found"
     return report

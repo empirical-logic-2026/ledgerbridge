@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.3 (Draft) |
+| Version | 0.4 (Draft) |
 | Date | 2026-10-09 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -384,13 +384,37 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | Ledger | `ledgers` (+ `parties` for Sundry Debtors/Creditors) | GUID → `source_key`; opening balance sign flipped (see below). |
 | Voucher Type | `voucher_types` | Parent type → `base_type`. |
 | Voucher | `vouchers` | GUID → `source_key`; AlterID → `source_alter_id`; cancelled/optional flags. |
-| Ledger entries | `voucher_lines` | **Sign:** Tally XML reports debits as negative amounts; canonical amount = −(Tally amount). Verify with sample data. |
+| Ledger entries | `voucher_lines` | **Sign (confirmed, see 7.1):** Tally XML reports debits as negative amounts; canonical amount = −(Tally amount). Use the posting rules in 7.2. |
 | Bill allocations | `bill_allocations` | |
 | Cost centre allocations | `line_cost_allocations` | |
 | Inventory entries | `inventory_lines` | |
 | Stock Item / Stock Group / Unit / Godown | `items` / `item_groups` / `units` / `godowns` | |
 | Cost Centre | `cost_centres` | |
 | GST details | `tax_lines`, `items.hsn_code`, `ledgers.gstin` | Fields vary by Tally version; handled in the adapter. |
+
+### 7.1 Sign convention: confirmed 2026-10-09
+
+**Result:** in Tally's XML, a **debit is negative** and a **credit is positive**, for voucher ledger entries (`AMOUNT`, with `ISDEEMEDPOSITIVE=Yes` meaning debit) and for ledger `OPENINGBALANCE` and `CLOSINGBALANCE`. Canonical amount = −(Tally amount), giving debit positive and credit negative (Section 1).
+
+**How it was confirmed**, on LedgerBridge Test Co (TallyPrime, Educational mode), seeded by `./dev.ps1 seed-test-data` (ADR-014). Check: `python -m connectors.tally.tools sign-check`.
+
+| Check | Result |
+| --- | --- |
+| Postings in 16 vouchers (payment, receipt, contra, journal, GST sales and purchases, item invoice, cancelled, altered) | 21 of 21 debits negative, 23 of 23 credits positive, all 16 vouchers sum to zero |
+| Anchor voucher: Payment, Rent Dr 1,000 / Cash Cr 1,000 | Rent line is a debit with a negative `AMOUNT` |
+| Anchor opening balances: Cash 50,000 Dr, Capital 50,000 Cr | Cash `OPENINGBALANCE` negative, Capital positive |
+| **Independent:** Tally's own `$$IsDr` on every non-zero opening and closing balance | Agrees with "negative = debit" for 21 of 21. Rent 1,000.00 Dr, Cash 27,500.00 Dr, Capital 50,000.00 Cr, matching the seeder's expected Trial Balance |
+
+The `$$IsDr` check matters because the seeder itself writes amounts using this convention. `$$IsDr` is Tally's own judgement of the side, so it would expose a wrong assumption.
+
+### 7.2 Reading postings from a voucher (rules for M3)
+
+Found while confirming the sign convention on TallyPrime exports:
+
+- **`ALLLEDGERENTRIES.LIST`, when present, is the complete set of postings.** In item invoices it already includes the sales or purchase ledger posted through inventory. Do **not** also add the inventory `ACCOUNTINGALLOCATIONS.LIST`, or that amount is counted twice.
+- When `ALLLEDGERENTRIES.LIST` is absent, `LEDGERENTRIES.LIST` holds only the non-inventory lines. Add the inventory `ACCOUNTINGALLOCATIONS.LIST` to complete the voucher.
+- **Cancelled vouchers** (`ISCANCELLED=Yes`) keep an empty `ALLLEDGERENTRIES.LIST` placeholder with no ledger or amount. Skip entries without a ledger name.
+- **Educational mode:** TallyPrime silently returns nothing for report periods whose dates aren't the 1st, 2nd or 31st. The connector therefore always sends an exclusive end date on the 1st of the following month and filters with `$Date < end` (`connectors/tally/envelopes.py`).
 
 ## 8. Processing rules
 
@@ -415,3 +439,4 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | 2026-10-08 | 0.1 | Initial draft. |
 | 2026-10-08 | 0.2 | `app.users.password_hash` for local auth mode (pilot). |
 | 2026-10-09 | 0.3 | M1: first migration (`raw.raw_records`, `app.sources`, `app.connections`, `app.sync_runs`); raw payload and de-duplication rules. |
+| 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |

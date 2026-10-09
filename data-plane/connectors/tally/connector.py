@@ -13,6 +13,10 @@ from connectors.tally.client import TallyClient, TallyError
 from core.config import get_settings
 
 
+def month_end(value: date) -> date:
+    return (value.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+
 def month_periods(start: date, end: date) -> Iterator[Period]:
     """Calendar-month chunks covering [start, end]."""
     current = start
@@ -72,9 +76,10 @@ class TallyConnector:
         if entity.books_from is None:
             raise TallyError(f"Company '{entity.name}' has no books-from date; pass a period")
         # Tally's ENDINGAT is not a reliable "books to" date (TallyPrime can report the
-        # books-from date), so never stop before today.
+        # books-from date), so never stop before today. Always end on a month end, so every
+        # request's exclusive end date is the 1st of a month (see envelopes.collection_request).
         end = max(entity.books_to or date.today(), date.today())
-        return list(month_periods(entity.books_from, end))
+        return list(month_periods(entity.books_from, month_end(end)))
 
     def voucher_bodies(self, entity: SourceEntity, period: Period | None = None) -> Iterator[bytes]:
         """Raw voucher export responses, one per calendar month."""
@@ -89,6 +94,13 @@ class TallyConnector:
     ) -> Iterator[ET.Element]:
         for body in self.voucher_bodies(entity, period):
             yield from parser.objects(parser.parse_response(body), envelopes.VOUCHERS.object_tag)
+
+    def ledger_balance_elements(self, entity: SourceEntity) -> list[ET.Element]:
+        """Ledgers with opening/closing balances and Tally's own $$IsDr judgement, for
+        Tally's current period (no explicit dates, so Educational mode cannot reject them)."""
+        request = envelopes.collection_request(envelopes.LEDGER_BALANCES, company=entity.name)
+        body = self._post(request)
+        return parser.objects(parser.parse_response(body), envelopes.LEDGER_BALANCES.object_tag)
 
     def ledger_elements(self, entity: SourceEntity) -> list[ET.Element]:
         body = self._post(envelopes.collection_request(envelopes.LEDGERS, company=entity.name))

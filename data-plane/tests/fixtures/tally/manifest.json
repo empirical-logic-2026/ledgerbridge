@@ -1,0 +1,42 @@
+{
+  "company": "LedgerBridge Test Co",
+  "files": {
+    "LBCompanies": "companies.xml",
+    "LBGroups": "groups.xml",
+    "LBLedgers": "ledgers.xml",
+    "LBVoucherTypes": "voucher_types.xml",
+    "LBLedgerBalances": "ledger_balances.xml"
+  },
+  "vouchers": [
+    {
+      "from": "2026-04-01",
+      "to": "2026-04-30",
+      "file": "vouchers_2026-04.xml"
+    },
+    {
+      "from": "2026-05-01",
+      "to": "2026-05-31",
+      "file": "vouchers_2026-05.xml"
+    },
+    {
+      "from": "2026-06-01",
+      "to": "2026-06-30",
+      "file": "vouchers_2026-06.xml"
+    },
+    {
+      "from": "2026-07-01",
+      "to": "2026-07-31",
+      "file": "vouchers_2026-07.xml"
+    },
+    {
+      "from": "2026-08-01",
+      "to": "2026-08-31",
+      "file": "vouchers_2026-08.xml"
+    },
+    {
+      "from": "2026-09-01",
+      "to": "2026-09-30",
+      "file": "vouchers_2026-09.xml"
+    }
+  ]
+}

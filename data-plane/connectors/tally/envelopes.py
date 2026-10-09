@@ -5,7 +5,7 @@ Inline TDL collections with explicit fetch lists work in both TallyPrime and Tal
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from xml.sax.saxutils import escape
 
 
@@ -16,6 +16,8 @@ class CollectionSpec:
     object_tag: str  # element tag of each object in the response
     object_type: str  # our object_type in raw.raw_records
     fetch: tuple[str, ...]
+    # TDL formulas computed by Tally itself, as "NAME : formula"
+    compute: tuple[str, ...] = ()
 
 
 _KEYS = ("GUID", "ALTERID", "MASTERID")
@@ -46,6 +48,20 @@ VOUCHERS = CollectionSpec(
     ),
 )
 
+# Ledger balances with Tally's own Dr/Cr judgement ($$IsDr), independent of how amounts are
+# signed in XML. Used to confirm the sign convention (schema.md Section 7).
+LEDGER_BALANCES = CollectionSpec(
+    "LBLedgerBalances",
+    "Ledger",
+    "LEDGER",
+    "ledger_balance",
+    ("NAME", "OPENINGBALANCE", "CLOSINGBALANCE"),
+    compute=(
+        "LBOPENINGISDR : $$IsDr:$OpeningBalance",
+        "LBCLOSINGISDR : $$IsDr:$ClosingBalance",
+    ),
+)
+
 MASTER_SPECS = (GROUPS, LEDGERS, VOUCHER_TYPES)
 ALL_SPECS = (COMPANIES, *MASTER_SPECS, VOUCHERS)
 
@@ -61,18 +77,26 @@ def collection_request(
     company: str | None = None,
     period: tuple[date, date] | None = None,
 ) -> str:
+    """Builds a collection export. `period` (inclusive) limits objects by $Date.
+
+    Tally is given an *exclusive* end date (the day after the period) and the filter uses
+    `<`. For calendar months that end date is always the 1st of a month. This matters
+    because TallyPrime in Educational mode silently returns nothing for report dates
+    other than the 1st, 2nd or 31st, so a month ending on the 30th would come back empty.
+    """
     static = ["<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"]
     if company is not None:
         static.append(f"<SVCURRENTCOMPANY>{escape(company)}</SVCURRENTCOMPANY>")
-    collection_extra = ""
+    collection_extra = "".join(f"<COMPUTE>{formula}</COMPUTE>" for formula in spec.compute)
     formulae = ""
     if period is not None:
+        end_exclusive = period[1] + timedelta(days=1)
         static.append(f'<SVFROMDATE TYPE="Date">{tally_date(period[0])}</SVFROMDATE>')
-        static.append(f'<SVTODATE TYPE="Date">{tally_date(period[1])}</SVTODATE>')
-        collection_extra = f"<FILTER>{_PERIOD_FILTER}</FILTER>"
+        static.append(f'<SVTODATE TYPE="Date">{tally_date(end_exclusive)}</SVTODATE>')
+        collection_extra += f"<FILTER>{_PERIOD_FILTER}</FILTER>"
         formulae = (
             f'<SYSTEM TYPE="Formulae" NAME="{_PERIOD_FILTER}">'
-            "$Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate</SYSTEM>"
+            "$Date &gt;= ##SVFromDate AND $Date &lt; ##SVToDate</SYSTEM>"
         )
     return (
         "<ENVELOPE>"

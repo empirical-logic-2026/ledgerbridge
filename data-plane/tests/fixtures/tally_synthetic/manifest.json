@@ -5,7 +5,8 @@
     "LBCompanies": "companies.xml",
     "LBGroups": "groups.xml",
     "LBLedgers": "ledgers.xml",
-    "LBVoucherTypes": "voucher_types.xml"
+    "LBVoucherTypes": "voucher_types.xml",
+    "LBLedgerBalances": "ledger_balances.xml"
   },
   "vouchers": [
     {"from": "2024-04-01", "to": "2024-04-30", "file": "vouchers_2024-04.xml"}

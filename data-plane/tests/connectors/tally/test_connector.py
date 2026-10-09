@@ -1,8 +1,8 @@
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 
 from connectors.base import Period, SourceEntity
-from connectors.tally.connector import TallyConnector, month_periods
+from connectors.tally.connector import TallyConnector, month_end, month_periods
 from connectors.tally.fixtures import FixtureTransport
 from tests.conftest import FIXTURES
 
@@ -24,13 +24,21 @@ def test_month_periods_cover_range_exactly() -> None:
     ]
 
 
-def test_voucher_periods_run_to_today_when_ending_date_is_not_later() -> None:
+def test_voucher_periods_run_to_end_of_current_month() -> None:
     connector, _ = _connector()
     today = date.today()
     entity = SourceEntity(key="k", name="n", books_from=today.replace(day=1), books_to=None)
     stale = SourceEntity(key="k", name="n", books_from=date(2024, 4, 1), books_to=date(2024, 4, 1))
-    assert connector.voucher_periods(entity)[-1].end == today
-    assert connector.voucher_periods(stale)[-1].end == today
+    assert connector.voucher_periods(entity)[-1].end == month_end(today)
+    assert connector.voucher_periods(stale)[-1].end == month_end(today)
+    # Every chunk is a whole month, so every exclusive end date sent to Tally is a 1st.
+    assert all((p.end + timedelta(days=1)).day == 1 for p in connector.voucher_periods(stale))
+
+
+def test_month_end() -> None:
+    assert month_end(date(2026, 4, 15)) == date(2026, 4, 30)
+    assert month_end(date(2028, 2, 1)) == date(2028, 2, 29)
+    assert month_end(date(2026, 12, 31)) == date(2026, 12, 31)
 
 
 def test_list_entities_and_test_connection() -> None:

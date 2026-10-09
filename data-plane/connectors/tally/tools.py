@@ -3,8 +3,12 @@
     python -m connectors.tally.tools capture-fixtures --company "LedgerBridge Test Co"
     python -m connectors.tally.tools sign-check --company "LedgerBridge Test Co"
     python -m connectors.tally.tools sign-check --fixtures
+    python -m connectors.tally.tools sign-check --company "LedgerBridge Test Co" \
+        --anchor-voucher "[lb-seed:PMT-ANCHOR]" --anchor-ledger Rent \
+        --anchor-opening-ledger Cash --anchor-balances Rent,Cash,Capital
 
-Output is counts, file names and sizes only, never amounts or names from the books.
+Output is counts, file names and sizes, plus the closing balances of explicitly named
+anchor ledgers (test company only); no other amounts or names from the books.
 """
 
 import argparse
@@ -18,7 +22,7 @@ import httpx
 from connectors.tally import envelopes, parser
 from connectors.tally.connector import TallyConnector
 from connectors.tally.fixtures import DEFAULT_DIR, FixtureTransport, load_manifest
-from connectors.tally.signs import check_opening_balances, check_vouchers
+from connectors.tally.signs import check_balance_sides, check_opening_balances, check_vouchers
 from core.config import get_settings
 
 
@@ -59,6 +63,10 @@ def capture_fixtures(company: str, directory: Path) -> int:
         save(name, connector.client.post(envelopes.collection_request(spec, company=company)))
         files[spec.collection_id] = name
 
+    balances_request = envelopes.collection_request(envelopes.LEDGER_BALANCES, company=company)
+    save("ledger_balances.xml", connector.client.post(balances_request))
+    files[envelopes.LEDGER_BALANCES.collection_id] = "ledger_balances.xml"
+
     vouchers = []
     for month in connector.voucher_periods(entity):
         request = envelopes.collection_request(
@@ -87,6 +95,7 @@ def sign_check(
     anchor_voucher: str | None,
     anchor_ledger: str | None,
     anchor_opening_ledger: str | None,
+    anchor_balances: Sequence[str] = (),
 ) -> int:
     if fixtures is not None:
         transport = FixtureTransport(fixtures)
@@ -107,6 +116,10 @@ def sign_check(
     ledgers = connector.ledger_elements(entity)
     for line in check_opening_balances(ledgers, anchor_opening_ledger).lines():
         print(f"  {line}")
+    print("Tally's own Dr/Cr judgement ($$IsDr), independent of XML signs")
+    sides = check_balance_sides(connector.ledger_balance_elements(entity), anchor_balances)
+    for line in sides.lines():
+        print(f"  {line}")
     return 0
 
 
@@ -124,9 +137,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     source.add_argument(
         "--fixtures", nargs="?", const=DEFAULT_DIR, type=Path, help="use recorded fixtures"
     )
-    signs.add_argument("--anchor-voucher", help="number of a voucher with a known debit line")
+    signs.add_argument(
+        "--anchor-voucher",
+        help="number of, or narration text in, a voucher with a known debit line",
+    )
     signs.add_argument("--anchor-ledger", help="ledger debited in the anchor voucher")
     signs.add_argument("--anchor-opening-ledger", help="ledger with a known debit opening balance")
+    signs.add_argument(
+        "--anchor-balances",
+        default="",
+        help="comma-separated ledgers whose closing balance to show",
+    )
 
     args = root.parse_args(argv)
     if args.command == "capture-fixtures":
@@ -137,6 +158,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.anchor_voucher,
         args.anchor_ledger,
         args.anchor_opening_ledger,
+        [name.strip() for name in args.anchor_balances.split(",") if name.strip()],
     )
 
 
