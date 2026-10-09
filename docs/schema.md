@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.2 (Draft) |
-| Date | 2026-10-08 |
+| Version | 0.3 (Draft) |
+| Date | 2026-10-09 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
 This document describes the database inside each **client deployment**. The control plane has its own small database (users, clients, licences), described in `docs/architecture.md` Section 3.
@@ -83,6 +83,10 @@ Four MySQL schemas (databases) separate concerns and permissions:
 | process_error | TEXT NULL | |
 
 Indexes: `(connection_id, object_type, source_key)`, `(process_status, received_at)`. Partition by month of `received_at` once volumes grow.
+
+For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` element) re-serialized from the response without changing its content. A record is skipped when the latest stored record for the same `(connection_id, object_type, source_key)` has the same `payload_hash`.
+
+**Implementation status:** migration `0001` (M1) creates `raw.raw_records`, `app.sources`, `app.connections` and `app.sync_runs` as documented here and in Section 5.1, each with `created_at` and `updated_at`. `app.connections.agent_id` has no foreign key until `app.agents` exists. The remaining tables follow in M2.
 
 ## 4. `core` schema (canonical model)
 
@@ -410,3 +414,4 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | --- | --- | --- |
 | 2026-10-08 | 0.1 | Initial draft. |
 | 2026-10-08 | 0.2 | `app.users.password_hash` for local auth mode (pilot). |
+| 2026-10-09 | 0.3 | M1: first migration (`raw.raw_records`, `app.sources`, `app.connections`, `app.sync_runs`); raw payload and de-duplication rules. |
