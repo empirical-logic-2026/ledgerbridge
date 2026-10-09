@@ -45,7 +45,7 @@ Note that the API is `8001` on your PC but `8000` inside its container. The host
 
 | Command | Docker work it does |
 | --- | --- |
-| `./dev.ps1 up` | Checks the host ports in `.env.test` are free. Then runs `stack.ps1 up -d --build --wait`: **build** the API image, start all containers **d**etached (in the background), and **wait** until every healthcheck passes. Then `stack.ps1 exec -T api python -m alembic upgrade head` runs the database migrations *inside* the running API container. Finally it prints the dashboard, API health and API docs URLs. |
+| `./dev.ps1 up` | Checks the host ports in `.env.test` are free. Then runs `stack.ps1 up -d --build --wait`: **build** the API image, start all containers **d**etached (in the background), and **wait** until every healthcheck passes. Then `stack.ps1 run --rm migrate` starts the one-off **`migrate`** container, which applies the database migrations as the `migrator` user and is removed afterwards (`--rm`), see section 6.6. Finally it prints the dashboard, API health and API docs URLs. |
 | `./dev.ps1 status` | `stack.ps1 ps` (containers, health, ports), plus a call to `/health/ready`. |
 | `./dev.ps1 logs api` | `stack.ps1 logs -f --tail 200 api`: the last 200 lines, then **f**ollows new ones. |
 | `./dev.ps1 tally-companies` | `stack.ps1 exec -T api python -m workers.cli entities ...`: runs our CLI inside the API container, which reaches TallyPrime on your PC through `host.docker.internal:9000`. |
@@ -91,6 +91,7 @@ Host-side values such as `MYSQL_HOST=127.0.0.1` and `MYSQL_PORT=3307` suit tools
 | Variable | Used for |
 | --- | --- |
 | `MYSQL_ROOT_PASSWORD`, `MYSQL_APP_USER`, `MYSQL_APP_PASSWORD` | MySQL admin and application logins |
+| `MYSQL_MIGRATOR_*`, `MYSQL_REPORT_*`, `MYSQL_AI_*` | The other three MySQL users (schema.md 2.1): `migrator` changes the schema, `report_ro` reads for reports, `ai_ro` reads `ledgerbridge_reporting` only. Created by the init script on a fresh volume (section 8). |
 | `MYSQL_HOST_PORT`, `REDIS_HOST_PORT`, `QDRANT_HOST_PORT`, `API_HOST_PORT` | Which ports on your PC map into the containers. Test uses 3307, 6380, 6333 and 8001; pilot uses 3317, 6390, 6343 and 8010. |
 | `MYSQL_HOST`/`MYSQL_PORT`, `REDIS_URL`, `QDRANT_URL`, `TALLY_URL` | Where host-side tools connect |
 | `FRONTEND_ORIGIN` | The only browser address the API accepts calls from (CORS): `http://localhost:5175` for test. The dashboard dev server is pinned to the same port in `frontend/vite.config.ts`. |
@@ -101,7 +102,7 @@ Host-side values such as `MYSQL_HOST=127.0.0.1` and `MYSQL_PORT=3307` suit tools
 
 ### 6.1 `services:` lists the containers
 
-There are five: `mysql`, `redis`, `qdrant`, `api` and `worker`. The `worker` only starts when you ask for its profile (section 6.7).
+There are six: `mysql`, `redis`, `qdrant`, `api`, `worker` and `migrate`. The `worker` and `migrate` only start when asked for: they have *profiles* (section 6.8).
 
 ### 6.2 `mysql`
 
@@ -122,8 +123,9 @@ environment:
   MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?...}
   MYSQL_USER: ${MYSQL_APP_USER:?...}
   MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:?...}
+  MYSQL_MIGRATOR_USER: ...   # and _PASSWORD, plus MYSQL_REPORT_* and MYSQL_AI_*
 ```
-The MySQL image reads these **on first start only** to set the root password and create our application user (`app_rw`).
+All of these are read **on first start only**, when the volume is empty. The MySQL image itself uses the first three to set the root password and create our application user (`app_rw`). The `MYSQL_MIGRATOR_*`, `MYSQL_REPORT_*` and `MYSQL_AI_*` ones mean nothing to MySQL. Our init script (section 8) reads them to create the other three users. After that, the passwords live inside the database files, which is why changing a password in `.env.test` needs a fresh volume (`down -v`).
 
 ```yaml
 ports:
@@ -164,8 +166,9 @@ The vector database for AI retrieval, used from M8. The version is pinned so eve
 ```yaml
 build:
   context: ../data-plane
+image: ledgerbridge-data-plane:dev
 ```
-There's no `image:` line. Instead, Compose **builds** an image from `data-plane/Dockerfile` (section 7). The *context* is the folder whose files the build may use.
+Compose **builds** an image from `data-plane/Dockerfile` (section 7). The *context* is the folder whose files the build may use. `image:` gives the built image a name. `api`, `worker` and `migrate` all use the same name, so it's one image for all three, built once.
 
 ```yaml
 env_file: ${LEDGERBRIDGE_ENV_FILE:?run via deploy/stack.ps1}
@@ -179,8 +182,11 @@ environment: &container-overrides
   REDIS_URL: redis://redis:6379/0
   QDRANT_URL: http://qdrant:6333
   TALLY_URL: http://host.docker.internal:9000
+  MYSQL_ROOT_PASSWORD: ""
+  MYSQL_MIGRATOR_PASSWORD: ""
 ```
 - `environment:` wins over `env_file:`. These lines replace the host-side addresses with container-side ones, as described in section 2.
+- The two empty passwords are a **least-privilege** measure (SEC-008). `.env.test` contains every password, so `env_file:` would hand the running API the root and migrator passwords too. Overriding them with `""` means the API can only ever act as `app_rw`: it can read and write data, but never change or drop tables. Check it with `docker exec ledgerbridge-test-api-1 env`: both are empty.
 - `&container-overrides` is a YAML **anchor**, a label on this block. The `worker` reuses the same block with `*container-overrides`, so the two can't drift apart.
 
 ```yaml
@@ -202,19 +208,40 @@ depends_on:
 ```
 Don't start the API until MySQL, Redis and Qdrant pass their healthchecks.
 
-### 6.6 `worker`
+### 6.6 `migrate`: a one-off container
+
+```yaml
+migrate:
+  profiles: [tools]
+  image: ledgerbridge-data-plane:dev
+  command: ["alembic", "upgrade", "head"]
+  environment:
+    MYSQL_ROOT_PASSWORD: ""
+    MYSQL_APP_PASSWORD: ""   # ...and the report/AI passwords
+```
+Same image as the API, but a different `command:`. Instead of starting the web server, it applies the database migrations and **exits**. It runs as the `migrator` user, the only one allowed to create and change tables, and it gets *only* the migrator password; the others are blanked.
+
+You start it with `run` rather than `up`:
+
+```powershell
+./deploy/stack.ps1 -Env test run --rm migrate
+```
+
+`run` starts a fresh container for one job and shows its output; `--rm` deletes the container when it's done. `./dev.ps1 up` does this for you after the stack is healthy. Splitting migrations out like this means the long-running API never holds schema-change rights.
+
+### 6.7 `worker`
 
 Built from the same Dockerfile as the API, but `command:` replaces the image's default and starts Celery (`celery -A workers.celery_app worker`) instead of the web server. It has no ports, because nothing connects *to* a worker; it pulls jobs from Redis.
 
-### 6.7 `profiles: [workers]`
+### 6.8 Profiles: `workers` and `tools`
 
-Services with a profile are skipped unless you ask for them. Nothing needs the worker yet, so it stays off by default:
+Services with a profile are skipped by `up` unless you ask for them. `worker` (profile `workers`) isn't needed yet. `migrate` (profile `tools`) is a one-off job, run with `run` (section 6.6). To start the worker:
 
 ```powershell
 ./deploy/stack.ps1 -Env test --profile workers up -d
 ```
 
-### 6.8 Top-level `volumes:`
+### 6.9 Top-level `volumes:`
 
 ```yaml
 volumes:
@@ -261,15 +288,31 @@ devtools/                                                   ← developer-only t
 ## 8. `deploy/mysql/init/01-schemas.sh`
 
 Runs **once**, when MySQL starts with an **empty** `mysql-data` volume:
-- creates the four databases `raw`, `core`, `rpt` and `app` with the right character set (schema.md Section 2)
-- gives `app_rw` full rights on them
+- creates the four databases, one per layer, with the right character set (schema.md Section 2, ADR-016):
 
-In M2, proper per-role users (`migrator`, `report_ro`, `ai_ro`) replace these grants.
+  | Database | Holds |
+  | --- | --- |
+  | `ledgerbridge_source` | data exactly as received from Tally and other sources |
+  | `ledgerbridge_accounting` | the canonical accounting model (ledgers, vouchers, ...) |
+  | `ledgerbridge_reporting` | views for reports and the AI (empty until M6) |
+  | `ledgerbridge_system` | connections, sync runs, users, audit, settings |
+
+- creates three more MySQL users and grants each **only what it needs** (schema.md 2.1):
+
+  | User | May do |
+  | --- | --- |
+  | `migrator` | create and change tables (used only by the `migrate` container) |
+  | `app_rw` | read and write data in all four, but never change tables (API, workers) |
+  | `report_ro` | read `ledgerbridge_accounting` and `ledgerbridge_reporting` |
+  | `ai_ro` | read `ledgerbridge_reporting`, and nothing else |
+
+Note that the script only creates the databases and users. The *tables* come from the Alembic migrations, run by the `migrate` container (section 6.6).
 
 Things to know:
 - **It won't run again** on an existing volume. To re-run it on **test only**, delete the volume with `./deploy/stack.ps1 -Env test down -v`. That erases the test database.
 - The first line must be exactly `#!/bin/bash`.
 - It must keep Linux line endings (LF). `.gitattributes` forces LF for `*.sh` so a Windows checkout can't break it.
+- It reads the user names and passwords from the `MYSQL_MIGRATOR_*`, `MYSQL_REPORT_*` and `MYSQL_AI_*` variables (section 6.2), and stops with an error if one is missing.
 - It uses the ordinary `mysql` client, logging in as root through the local socket, with the password passed in the `MYSQL_PWD` variable so it never appears on a command line. It doesn't use the image's `docker_process_sql` helper. That helper only exists when the image *sources* a script, and files bind-mounted from Windows look executable, so the image *runs* ours as a separate program instead. Our first version used the helper, and MySQL died with exit code 127 ("command not found").
 - If it fails, MySQL stops and the container exits. `./deploy/stack.ps1 -Env test logs mysql` shows why.
 
@@ -298,7 +341,13 @@ docker exec ledgerbridge-test-redis-1 redis-cli ping
 # SQL goes in through stdin: Windows PowerShell 5.1 mangles nested quotes in arguments.
 # $MYSQL_USER and $MYSQL_PASSWORD are expanded inside the container, never on your screen.
 "SHOW DATABASES;" | docker exec -i ledgerbridge-test-mysql-1 sh -c 'MYSQL_PWD=$MYSQL_PASSWORD mysql -u$MYSQL_USER -N'
-"SELECT object_type, COUNT(*) FROM raw.raw_records GROUP BY object_type;" | docker exec -i ledgerbridge-test-mysql-1 sh -c 'MYSQL_PWD=$MYSQL_PASSWORD mysql -u$MYSQL_USER'
+# See what a user may do: the AI user can only read ledgerbridge_reporting
+"SHOW GRANTS FOR 'ai_ro'@'%';" | docker exec -i ledgerbridge-test-mysql-1 sh -c 'MYSQL_PWD=$MYSQL_ROOT_PASSWORD mysql -uroot -N'
+# The running API has no root or migrator password (both print as empty)
+docker exec ledgerbridge-test-api-1 sh -c 'echo "root=[$MYSQL_ROOT_PASSWORD] migrator=[$MYSQL_MIGRATOR_PASSWORD]"'
+# Apply migrations by hand in the one-off container
+./deploy/stack.ps1 -Env test run --rm migrate
+"SELECT object_type, COUNT(*) FROM ledgerbridge_source.raw_records GROUP BY object_type;" | docker exec -i ledgerbridge-test-mysql-1 sh -c 'MYSQL_PWD=$MYSQL_PASSWORD mysql -u$MYSQL_USER'
 docker exec -it ledgerbridge-test-api-1 sh        # a shell inside the API container; `exit` to leave
 docker exec ledgerbridge-test-api-1 whoami        # prints "app": not root
 
@@ -328,6 +377,7 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | Dashboard can't reach the API, and the browser console shows a CORS error | The dashboard runs on a port that isn't `FRONTEND_ORIGIN` | Keep both at 5175. Vite's `strictPort` stops it from silently switching ports. |
 | `bind: Only one usage of each socket address` on port 8000 | Another app (a Django dev server) already uses 8000 | We moved the test API to 8001 (`API_HOST_PORT`). `./dev.ps1 up` now checks ports first and names the program in the way. |
 | New init script or grants not applied | Init scripts run only on an empty volume | `stack.ps1 -Env test down -v`, then `up` (test only) |
+| A changed MySQL password in `.env.test` doesn't work | Passwords are stored in the database files when the volume is first created | Recreate the test volume: `stack.ps1 -Env test down -v`, then `./dev.ps1 up` |
 | MySQL exits with code 127, log says `docker_process_sql: command not found` | The init script was *run*, not *sourced*, so the image's helper wasn't available (section 8) | The script now uses the plain `mysql` client |
 | `up -d` runs in the foreground and asks debug questions | `stack.ps1` was an advanced script, so PowerShell read `-d` as `-Debug` | `stack.ps1` is now a simple script (section 4) |
 | Red `NativeCommandError` lines around normal Docker output | Windows PowerShell 5.1 shows anything written to stderr as an error when output is redirected | Harmless when the exit code is 0; `stack.ps1` checks the exit code |
@@ -341,3 +391,4 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Added `dev.ps1` (section 3). `stack.ps1` is now a simple script and checks exit codes. The init script uses the `mysql` client. Test API moved to host port 8001. Fixed the MySQL example commands for PowerShell 5.1. |
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
+| 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |

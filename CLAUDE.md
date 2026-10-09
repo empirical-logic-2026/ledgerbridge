@@ -62,7 +62,7 @@ npm test -- --run
 npm run build
 
 # Developer commands (PowerShell, repo root; default -Env test; needs .env.test)
-./dev.ps1 up                     # build, start, wait healthy, migrate, print URLs (API on 8001)
+./dev.ps1 up                     # build, start, wait healthy, migrate (as migrator), print URLs (API on 8001)
 ./dev.ps1 status | down | test | logs <service> | tally-companies
 ./dev.ps1 seed-test-data         # idempotent seed of LedgerBridge Test Co in TallyPrime (ADR-014)
 ./dev.ps1 extract -Company "LedgerBridge Test Co"
@@ -71,8 +71,10 @@ npm run build
 ./deploy/stack.ps1 -Env test up -d --build
 ./deploy/stack.ps1 -Env test down
 
-# Database migrations (run in data-plane/, test stack running)
-uv run python -m alembic upgrade head
+# Database migrations: always as the `migrator` user (schema.md 2.1)
+./deploy/stack.ps1 -Env test run --rm migrate          # in the one-off container (dev.ps1 up does this)
+uv run python -m alembic upgrade head                   # from data-plane/ on the host; uses MYSQL_MIGRATOR_* from .env.test
+uv run python -m alembic check                          # models and migrations must match
 
 # Extraction (run in data-plane/; source-independent CLI)
 uv run python -m workers.cli entities --connection tally-test --source tally
@@ -107,7 +109,8 @@ Whenever a change touches anything Docker-related (Dockerfiles, `.dockerignore`,
 - TypeScript: strict mode, no `any` without justification, shared API types generated from the backend OpenAPI schema.
 - Money: `DECIMAL(20,4)` in MySQL and `Decimal` in Python. Never use floats for amounts.
 - Every canonical table row carries `entity_id`, source origin and timestamps.
-- Database schema changes only via Alembic migrations, and `docs/schema.md` is updated in the same change.
+- Database schema changes only via Alembic migrations, and `docs/schema.md` is updated in the same change. Never edit an applied migration (ADR-016).
+- MySQL databases are `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016). Refer to them through `core/models/schemas.py` in code; migrations use literal names.
 - Connectors implement the standard connector interface (architecture Section 4.4) and live in their own package.
 
 ## Security rules

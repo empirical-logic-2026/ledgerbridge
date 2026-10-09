@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.4 (Draft) |
+| Version | 0.5 (Draft) |
 | Date | 2026-10-08 |
 | Related | `docs/requirements.md`, `CLAUDE.md` |
 
@@ -101,11 +101,12 @@ flowchart LR
 
 ### 4.2 Data layers
 
-| Layer | Purpose | Examples |
-| --- | --- | --- |
-| **Raw** | Data exactly as received, with source metadata. Enables reprocessing (DAT-008). | `raw_records` (source, connection, batch, entity type, payload JSON, received_at) |
-| **Canonical** | Standard, source-independent accounting model. | ledgers, vouchers, voucher lines, parties |
-| **Reporting** | Views and aggregates used by dashboards and AI (the semantic layer). | `v_trial_balance`, `v_pnl_monthly`, `v_receivables_ageing` |
+| Layer | MySQL database (ADR-016) | Purpose | Examples |
+| --- | --- | --- | --- |
+| **Raw** | `ledgerbridge_source` | Data exactly as received, with source metadata. Enables reprocessing (DAT-008). | `raw_records` (source, connection, batch, entity type, payload, received_at) |
+| **Canonical** | `ledgerbridge_accounting` | Standard, source-independent accounting model. | ledgers, vouchers, voucher lines, parties |
+| **Reporting** | `ledgerbridge_reporting` | Views and aggregates used by dashboards and AI (the semantic layer). The only database the AI user can read. | `v_trial_balance`, `v_pnl_monthly`, `v_receivables_ageing` |
+| **System** | `ledgerbridge_system` | Connections, sync runs, validation, users and roles, audit, settings. | `connections`, `sync_runs`, `audit_log` |
 
 ### 4.3 Canonical model (initial outline)
 
@@ -174,7 +175,7 @@ Every model call in steps 2, 4 and 7 goes through the data protection gate and i
 
 ### 5.2 Guardrails
 
-- Dedicated read-only MySQL user with access only to reporting views.
+- Dedicated read-only MySQL user (`ai_ro`) with `SELECT` on `ledgerbridge_reporting` only.
 - Entity/branch filters from the user's permissions are enforced in SQL, not left to the model.
 - **The model has no outbound tools (AI-017).** The model interface offers one capability: proposing a SQL query, which application code validates and runs. There are no tools for HTTP, web search, email, messaging, file writes or uploads, and no plug-in mechanism that could add one. Model output is treated as untrusted text: it's never executed except as validated SQL, and never used as a URL, file path or command.
 - **What may be sent is decided by the privacy mode in code**, not by prompt instructions (5.4, 5.5).
@@ -197,7 +198,7 @@ No provider path sends data to provider (our) infrastructure.
 
 ### 5.4 Privacy modes (AI-011 to AI-014)
 
-The mode is a per-client setting held in the data plane (`app.settings`). Only a Client Admin can change it, and the change is audited. The default for every new deployment is `private`.
+The mode is a per-client setting held in the data plane (`ledgerbridge_system.settings`). Only a Client Admin can change it, and the change is audited. The default for every new deployment is `private`.
 
 | Step | `private` (default) | `schema-only` | `full` |
 | --- | --- | --- | --- |
@@ -215,7 +216,7 @@ Every payload bound for a model passes through one component (the "gate") before
 
 1. **Mode check:** the gate refuses the payload if its content type isn't allowed in the client's mode (e.g. result rows in `schema-only`).
 2. **Detection:** finds sensitive values:
-   - **party names**: matched against the known party and ledger master (`core.parties`, party ledgers), not guessed
+   - **party names**: matched against the known party and ledger master (`ledgerbridge_accounting.parties`, party ledgers), not guessed
    - **GSTIN and PAN**: by format and checksum
    - **bank account numbers**: from bank ledgers' details and by pattern
    - **salary amounts**: values from ledgers and views tagged as salary, using the masking rules of ACC-003
@@ -235,7 +236,7 @@ The data plane can reach only its configured sources and the one approved AI end
 
 ### 5.7 Model call log (AI-018)
 
-Every call to any model, local or external, writes one append-only record in the client's database: user, time, mode, provider, endpoint, model, the payload **as sent after masking**, the response **as received**, token counts, duration and outcome. It extends `app.ai_query_log` (one row per question) with one row per model call. The exact table is designed in M8, and `docs/schema.md` is updated then. Client Admins can view it. Retention follows AUD-002.
+Every call to any model, local or external, writes one append-only record in the client's database: user, time, mode, provider, endpoint, model, the payload **as sent after masking**, the response **as received**, token counts, duration and outcome. It extends `ledgerbridge_system.ai_query_log` (one row per question) with one row per model call. The exact table is designed in M8, and `docs/schema.md` is updated then. Client Admins can view it. Retention follows AUD-002.
 
 ## 6. Frontend
 
@@ -316,10 +317,11 @@ Every call to any model, local or external, writes one append-only record in the
 | ADR-009 | Pilot first on the client's backup data, running the data plane locally. | Proves extraction, model and dashboard on real data before building product infrastructure. |
 | ADR-010 | `AUTH_MODE=local` during the pilot; token verification sits behind an interface. | Lets the control plane replace local login later without changing authorization code. |
 | ADR-011 | Separate `test` and `pilot` environments with separate databases. | Keeps client data away from AI development tools and external AI APIs. |
-| ADR-012 | Each environment runs as its own Docker Compose project (`ledgerbridge-test`, `ledgerbridge-pilot`) with its own volumes, host ports and env file. | Keeps the schema names `raw`, `core`, `rpt`, `app` identical in every environment while keeping data physically separate. |
+| ADR-012 | Each environment runs as its own Docker Compose project (`ledgerbridge-test`, `ledgerbridge-pilot`) with its own volumes, host ports and env file. | Keeps the database names (ADR-016) identical in every environment while keeping data physically separate. |
 | ADR-013 | uv manages Python versions and dependencies for the data plane (`pyproject.toml` + `uv.lock`). | Reproducible locked installs and a pinned Python 3.12 independent of the host Python. |
 | ADR-014 | One narrow exception to "read-only towards sources" (CON-008): the developer-only seeding tool in `data-plane/devtools/tally_seed` may send Tally **Import** requests, and only to the test company. It refuses to run unless `APP_ENV=test`, exactly one company is loaded and its name matches the target exactly. It is never imported by product code, is excluded from the Docker image (`.dockerignore`), and connectors keep their Export-only client. | The test company needs realistic, repeatable data (bills, GST, cancelled and altered vouchers) to prove extraction and the sign convention; hand entry is slow and not repeatable. |
 | ADR-015 | AI data protection by design, replacing ADR-004. Per-client privacy mode: `private` (default, local model only), `schema-only` (external model sees only the masked question and semantic-layer descriptions; SQL and result formatting stay local) or `full` (external model only via the client's own cloud account, everything masked). One data protection gate pseudonymizes party names, GSTIN, PAN, bank accounts and salaries and reverses them locally. Embeddings are always local. Models have no outbound tools. A network allowlist limits egress to configured sources plus one approved AI endpoint. Every model call is logged with its exact payload. | The client answered "ideally no" to external AI (OPEN-007), and accounting data is highly sensitive. Making `private` the default, enforcing what can be sent in code and at the network level rather than in prompts, and logging every payload means a bug or prompt injection can't quietly leak data, while clients who choose an external model still get better SQL from it. |
+| ADR-016 | The four MySQL databases are named `ledgerbridge_source` (raw layer), `ledgerbridge_accounting` (canonical), `ledgerbridge_reporting` (semantic layer) and `ledgerbridge_system` (system), replacing `raw`, `core`, `rpt` and `app`. "Raw", "canonical", "reporting" and "system" remain the names of the layers. Code refers to them through constants in `core/models/schemas.py`; migrations use the literal names. **One-time exception:** the rename was made by editing migration 0001 and recreating the test database, which was acceptable only because no pilot or client database existed yet. **After the first release, any rename must be done with a proper migration**, never by editing an applied one. | The short names didn't say what they hold, and generic names like `app` and `core` can clash with other applications' databases when a client hosts us on a shared MySQL server. The prefix groups our databases together in any MySQL tool, and the names read clearly in grants (`ai_ro` can read `ledgerbridge_reporting` only). |
 
 New decisions are appended here with the next ADR number.
 
@@ -346,7 +348,7 @@ The pilot runs the data plane on the developer's Windows machine.
 
 - **Environment separation (ADR-012):** each environment is a separate Compose project started from the same `deploy/compose.yaml`: `ledgerbridge-test` with `.env.test`, `ledgerbridge-pilot` with `.env.pilot`. Volumes are scoped per project and host ports differ per environment, so the two never share a database, cache or vector store. `.env.*.example` files are committed; real `.env.*` files are git-ignored. The data plane refuses `AI_PROVIDER=anthropic` when `APP_ENV=pilot` (PIL-005).
 
-- **Auth:** `AUTH_MODE=local` stores users with Argon2id password hashes in `app.users` and issues tokens locally. In product mode the data plane instead verifies control-plane tokens via JWKS; authorization code is identical in both modes.
+- **Auth:** `AUTH_MODE=local` stores users with Argon2id password hashes in `ledgerbridge_system.users` and issues tokens locally. In product mode the data plane instead verifies control-plane tokens via JWKS; authorization code is identical in both modes.
 
 ## Change log
 
@@ -355,3 +357,4 @@ The pilot runs the data plane on the developer's Windows machine.
 | 2026-10-08 | 0.2 | Pilot mode (Section 13), ADR-009 to ADR-011. |
 | 2026-10-09 | 0.3 | Environment separation (ADR-012), uv (ADR-013), connector framework details (Section 4.4), dev-only Tally seeding (ADR-014). |
 | 2026-10-09 | 0.4 | AI data protection: Section 5 rewritten around privacy modes (5.4), the data protection gate with masking (5.5), outbound network allowlist (5.6) and model call log (5.7). ADR-015 supersedes ADR-004. Security summary and pilot table updated. Requirements AI-011 to AI-018 and SEC-010. |
+| 2026-10-09 | 0.5 | Databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); data-layers table (4.2) shows each layer's database; AI guardrail names `ai_ro` and its single database. |

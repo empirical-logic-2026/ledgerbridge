@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.4 (Draft) |
+| Version | 0.6 (Draft) |
 | Date | 2026-10-09 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -43,27 +43,29 @@ Unique key on `(connection_id, source_key)` makes every sync an idempotent upser
 
 ## 2. Database layout
 
-Four MySQL schemas (databases) separate concerns and permissions:
+Four MySQL databases separate concerns and permissions. Each holds one **layer** of the design (architecture.md 4.2). The database names are readable and prefixed (ADR-016):
 
-| Schema | Contents | Who can access |
-| --- | --- | --- |
-| `raw` | Data exactly as received from sources. | Application only. |
-| `core` | Canonical accounting model. | Application (read/write); reporting user (read). |
-| `rpt` | Views and aggregate tables (semantic layer). | Application; reporting user; **AI user (read-only, this schema only)**. |
-| `app` | Connections, sync, validation, security, audit. | Application only. |
+| Database | Layer | Contents | Who can access |
+| --- | --- | --- | --- |
+| `ledgerbridge_source` | Raw | Data exactly as received from sources. | Application only. |
+| `ledgerbridge_accounting` | Canonical | Canonical accounting model. | Application (read/write); reporting user (read). |
+| `ledgerbridge_reporting` | Reporting (semantic layer) | Views and aggregate tables. | Application; reporting user; **AI user (read-only, this database only)**. |
+| `ledgerbridge_system` | System | Connections, sync, validation, security, audit, settings; Alembic's version table. | Application only. |
 
 ### 2.1 Database users
 
 | User | Rights | Used by |
 | --- | --- | --- |
-| `app_rw` | Read/write on all four schemas. | API and workers. |
-| `report_ro` | `SELECT` on `core` and `rpt`. | Reporting endpoints. |
-| `ai_ro` | `SELECT` on `rpt` only; statement timeout enforced. | AI text-to-SQL execution (AI-003). |
-| `migrator` | DDL rights. | Alembic migrations only. |
+| `app_rw` | `SELECT`, `INSERT`, `UPDATE`, `DELETE` on all four databases. No DDL. | API and workers. |
+| `report_ro` | `SELECT` on `ledgerbridge_accounting` and `ledgerbridge_reporting`. | Reporting endpoints. |
+| `ai_ro` | `SELECT` on **`ledgerbridge_reporting` only**; statement timeout set per session by the AI service (M8). | AI text-to-SQL execution (AI-003). |
+| `migrator` | All privileges on the four databases, including DDL and `REFERENCES`. | Alembic migrations only, run in the one-off `migrate` container. Never available to the API or workers. |
 
-## 3. `raw` schema
+The users and the four databases are created when MySQL first initialises its volume (`deploy/mysql/init/01-schemas.sh`), because Alembic can't create the user it runs as. Passwords come from the environment's env file.
 
-### `raw.raw_records`
+## 3. `ledgerbridge_source` (raw layer)
+
+### `ledgerbridge_source.raw_records`
 
 | Column | Type | Notes |
 | --- | --- | --- |
@@ -86,9 +88,17 @@ Indexes: `(connection_id, object_type, source_key)`, `(process_status, received_
 
 For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` element) re-serialized from the response without changing its content. A record is skipped when the latest stored record for the same `(connection_id, object_type, source_key)` has the same `payload_hash`.
 
-**Implementation status:** migration `0001` (M1) creates `raw.raw_records`, `app.sources`, `app.connections` and `app.sync_runs` as documented here and in Section 5.1, each with `created_at` and `updated_at`. `app.connections.agent_id` has no foreign key until `app.agents` exists. The remaining tables follow in M2.
+**Implementation status:**
 
-## 4. `core` schema (canonical model)
+| Migration | Milestone | Creates |
+| --- | --- | --- |
+| `0001` | M1 | `ledgerbridge_source.raw_records`, `ledgerbridge_system.sources`, `ledgerbridge_system.connections`, `ledgerbridge_system.sync_runs` |
+| `0002` | M2 | Every other table in Sections 4 and 5, except `ledgerbridge_accounting.bank_statement_lines` (phase 2). Adds the `connections.agent_id` foreign key. |
+| `0003` | M2 | Reference data: the `INR` currency and the default standard chart of accounts, 75 accounts (Section 4.2) |
+
+`ledgerbridge_reporting` exists from M2 but stays empty until M6 (Section 6). The per-call AI model log (AI-018) is designed in M8. Type and key choices for tables documented here only as column lists are in Section 9.
+
+## 4. `ledgerbridge_accounting` (canonical model)
 
 ```mermaid
 erDiagram
@@ -112,7 +122,7 @@ erDiagram
 
 ### 4.1 Organization
 
-#### `core.entities`
+#### `ledgerbridge_accounting.entities`
 
 | Column | Type | Notes |
 | --- | --- | --- |
@@ -129,7 +139,7 @@ erDiagram
 | books_from | DATE NULL | Company inception / books start (IMP-001). |
 | is_active | BOOLEAN | |
 
-#### `core.entity_sources`
+#### `ledgerbridge_accounting.entity_sources`
 
 Links a source company (e.g. a Tally company) to an entity. One entity can have several sources (Tally for books, a bank feed, a CSV upstream system).
 
@@ -145,22 +155,22 @@ Links a source company (e.g. a Tally company) to an entity. One entity can have 
 
 Unique: `(connection_id, source_entity_key)`.
 
-#### `core.branches`
+#### `ledgerbridge_accounting.branches`
 
 `id, entity_id, code, name, state_code, gstin, is_active`. Unique `(entity_id, code)`.
 
-#### `core.financial_years`
+#### `ledgerbridge_accounting.financial_years`
 
 `id, entity_id, label, start_date, end_date, is_closed`. Unique `(entity_id, start_date)`.
 
-#### `core.currencies` and `core.exchange_rates`
+#### `ledgerbridge_accounting.currencies` and `ledgerbridge_accounting.exchange_rates`
 
 - `currencies`: `code CHAR(3) PK, name, decimal_places`.
 - `exchange_rates`: `id, from_code, to_code, rate_date, rate DECIMAL(20,8), source`. Unique `(from_code, to_code, rate_date)`.
 
 ### 4.2 Chart of accounts
 
-#### `core.standard_accounts`
+#### `ledgerbridge_accounting.standard_accounts`
 
 The standard chart of accounts used for consolidation across entities and sources (RPT-006, CON-011). Seeded with a default structure; editable per client.
 
@@ -176,7 +186,15 @@ The standard chart of accounts used for consolidation across entities and source
 | cash_flow_class | ENUM('operating','investing','financing','cash','none') | For cash flow statement. |
 | sort_order | INT | |
 
-#### `core.account_groups` [SRC]
+**Default chart:** 75 accounts seeded by migration `0003`, following the Schedule III layout and editable per client. Notes on specific accounts:
+
+| Code | Account | Note |
+| --- | --- | --- |
+| 1275 / 3275 | Inter-company and branch receivables / payables | **Eliminated in consolidated reporting** (M6). Tally's *Branch / Divisions* group maps here: debit balances to 1275, credit balances to 3275. |
+| 3290 | Suspense / unclassified | Balance can be **debit or credit**. Tally's built-in *Suspense A/c* group maps here. Cash flow: operating. |
+| 5120 | Changes in inventories | **Not mapped from ledgers.** Derived in the reporting layer (M6) from opening and closing stock valuation. |
+
+#### `ledgerbridge_accounting.account_groups` [SRC]
 
 Source group hierarchy (Tally groups), kept as-is per entity.
 
@@ -191,7 +209,7 @@ Source group hierarchy (Tally groups), kept as-is per entity.
 | affects_gross_profit | BOOLEAN | Tally flag for P&L layout. |
 | standard_account_id | BIGINT UNSIGNED NULL | Default mapping for ledgers under this group. |
 
-#### `core.ledgers` [SRC]
+#### `ledgerbridge_accounting.ledgers` [SRC]
 
 | Column | Type | Notes |
 | --- | --- | --- |
@@ -215,7 +233,7 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 
 ### 4.3 Parties, items and other masters
 
-#### `core.parties` [SRC]
+#### `ledgerbridge_accounting.parties` [SRC]
 
 | Column | Type | Notes |
 | --- | --- | --- |
@@ -235,12 +253,12 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 
 | Table | Key columns |
 | --- | --- |
-| `core.voucher_types` | `entity_id, name, base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory` |
-| `core.item_groups` | `entity_id, parent_id, name` |
-| `core.items` | `entity_id, item_group_id, name, code, unit_id, hsn_code, gst_rate, opening_qty, opening_value` |
-| `core.units` | `entity_id, symbol, name, decimal_places` |
-| `core.godowns` | `entity_id, parent_id, name` |
-| `core.cost_centres` | `entity_id, parent_id, category, name` |
+| `ledgerbridge_accounting.voucher_types` | `entity_id, name, base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory` |
+| `ledgerbridge_accounting.item_groups` | `entity_id, parent_id, name` |
+| `ledgerbridge_accounting.items` | `entity_id, item_group_id, name, code, unit_id, hsn_code, gst_rate, opening_qty, opening_value` |
+| `ledgerbridge_accounting.units` | `entity_id, symbol, name, decimal_places` |
+| `ledgerbridge_accounting.godowns` | `entity_id, parent_id, name` |
+| `ledgerbridge_accounting.cost_centres` | `entity_id, parent_id, category, name` |
 
 ### 4.4 Dimensions (DAT-005)
 
@@ -248,13 +266,13 @@ User-defined reporting dimensions beyond the built-in ones (entity, branch, cost
 
 | Table | Columns |
 | --- | --- |
-| `core.dimensions` | `id, code, name, applies_to ENUM('voucher','line'), is_active` |
-| `core.dimension_values` | `id, dimension_id, entity_id NULL, parent_id NULL, code, name` |
-| `core.line_dimensions` | `voucher_line_id, dimension_value_id` (PK both) |
+| `ledgerbridge_accounting.dimensions` | `id, code, name, applies_to ENUM('voucher','line'), is_active` |
+| `ledgerbridge_accounting.dimension_values` | `id, dimension_id, entity_id NULL, parent_id NULL, code, name` |
+| `ledgerbridge_accounting.line_dimensions` | `voucher_line_id, dimension_value_id` (PK both) |
 
 ### 4.5 Transactions
 
-#### `core.vouchers` [SRC]
+#### `ledgerbridge_accounting.vouchers` [SRC]
 
 | Column | Type | Notes |
 | --- | --- | --- |
@@ -276,7 +294,7 @@ User-defined reporting dimensions beyond the built-in ones (entity, branch, cost
 
 Indexes: `(entity_id, voucher_date)`, `(entity_id, voucher_type_id, voucher_date)`, `(party_id, voucher_date)`.
 
-#### `core.voucher_lines`
+#### `ledgerbridge_accounting.voucher_lines`
 
 The double-entry lines. For every voucher, `SUM(amount) = 0` (VAL-001).
 
@@ -299,88 +317,88 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 
 | Table | Columns | Source in Tally |
 | --- | --- | --- |
-| `core.line_cost_allocations` | `id, voucher_line_id, cost_centre_id, amount` | Cost category / cost centre allocations |
-| `core.bill_allocations` | `id, voucher_line_id, party_id, bill_type ENUM('new_ref','against_ref','advance','on_account'), bill_name, bill_date, due_date, amount` | Bill allocations (receivables/payables ageing) |
-| `core.inventory_lines` | `id, voucher_id, entity_id, voucher_date, line_no, item_id, godown_id, quantity (signed: in +, out −), unit_id, rate, amount, discount_pct, batch_name` | Inventory entries |
-| `core.tax_lines` | `id, voucher_id, voucher_line_id NULL, tax_type ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other'), rate, taxable_amount, tax_amount, hsn_code` | GST / TDS details |
+| `ledgerbridge_accounting.line_cost_allocations` | `id, voucher_line_id, cost_centre_id, amount` | Cost category / cost centre allocations |
+| `ledgerbridge_accounting.bill_allocations` | `id, voucher_line_id, party_id, bill_type ENUM('new_ref','against_ref','advance','on_account'), bill_name, bill_date, due_date, amount` | Bill allocations (receivables/payables ageing) |
+| `ledgerbridge_accounting.inventory_lines` | `id, voucher_id, entity_id, voucher_date, line_no, item_id, godown_id, quantity (signed: in +, out −), unit_id, rate, amount, discount_pct, batch_name` | Inventory entries |
+| `ledgerbridge_accounting.tax_lines` | `id, voucher_id, voucher_line_id NULL, tax_type ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other'), rate, taxable_amount, tax_amount, hsn_code` | GST / TDS details |
 
 ### 4.6 Bank data (phase 2, CON-005)
 
-`core.bank_statement_lines`: `id, entity_id, ledger_id (bank ledger), txn_date, value_date, description, reference, amount (signed), running_balance, import_batch_id, matched_voucher_line_id NULL, match_status`. Used for bank reconciliation (VAL-004).
+`ledgerbridge_accounting.bank_statement_lines`: `id, entity_id, ledger_id (bank ledger), txn_date, value_date, description, reference, amount (signed), running_balance, import_batch_id, matched_voucher_line_id NULL, match_status`. Used for bank reconciliation (VAL-004).
 
-## 5. `app` schema
+## 5. `ledgerbridge_system`
 
 ### 5.1 Integration
 
 | Table | Key columns | Notes |
 | --- | --- | --- |
-| `app.sources` | `id, code ('tally','file','zoho',...), name, connector_version` | Registered connector types. |
-| `app.connections` | `id, source_id, name, config JSON, credentials_enc VARBINARY, agent_id NULL, sync_interval_sec, status ENUM('active','paused','error'), created_by` | Credentials encrypted at application level (CON-009). |
-| `app.agents` | `id, name, cert_fingerprint, version, last_seen_at, status` | Connector agents (SYN-004). |
-| `app.sync_markers` | PK `(connection_id, source_entity_key, object_type)`, `marker_value` | Last AlterID / timestamp per object type. |
-| `app.sync_runs` | `id, connection_id, run_type ENUM('incremental','full','import'), status, started_at, finished_at, records_received, records_failed, error_summary` | SYN-005. |
-| `app.import_batches` | `id, connection_id, kind ENUM('backup','file'), file_name, file_sha256, period_from, period_to, status, created_by` | IMP-003, IMP-004. |
-| `app.file_layouts` | `id, connection_id, name, column_mapping JSON` | Saved CSV/TXT mappings (CON-003). |
+| `ledgerbridge_system.sources` | `id, code ('tally','file','zoho',...), name, connector_version` | Registered connector types. |
+| `ledgerbridge_system.connections` | `id, source_id, name, config JSON, credentials_enc VARBINARY, agent_id NULL, sync_interval_sec, status ENUM('active','paused','error'), created_by` | Credentials encrypted at application level (CON-009). |
+| `ledgerbridge_system.agents` | `id, name, cert_fingerprint, version, last_seen_at, status` | Connector agents (SYN-004). |
+| `ledgerbridge_system.sync_markers` | PK `(connection_id, source_entity_key, object_type)`, `marker_value` | Last AlterID / timestamp per object type. |
+| `ledgerbridge_system.sync_runs` | `id, connection_id, run_type ENUM('incremental','full','import'), status, started_at, finished_at, records_received, records_failed, error_summary` | SYN-005. |
+| `ledgerbridge_system.import_batches` | `id, connection_id, kind ENUM('backup','file'), file_name, file_sha256, period_from, period_to, status, created_by` | IMP-003, IMP-004. |
+| `ledgerbridge_system.file_layouts` | `id, connection_id, name, column_mapping JSON` | Saved CSV/TXT mappings (CON-003). |
 
 ### 5.2 Validation
 
 | Table | Key columns |
 | --- | --- |
-| `app.validation_runs` | `id, sync_run_id NULL, import_batch_id NULL, entity_id, started_at, status, checks_passed, checks_failed` |
-| `app.validation_issues` | `id, validation_run_id, check_code ('voucher_unbalanced','tb_unbalanced','closing_mismatch',...), severity, object_type, object_id, expected_value, actual_value, message, resolved_at` |
+| `ledgerbridge_system.validation_runs` | `id, sync_run_id NULL, import_batch_id NULL, entity_id, started_at, status, checks_passed, checks_failed` |
+| `ledgerbridge_system.validation_issues` | `id, validation_run_id, check_code ('voucher_unbalanced','tb_unbalanced','closing_mismatch',...), severity, object_type, object_id, expected_value, actual_value, message, resolved_at` |
 
 ### 5.3 Security (ACC-*)
 
 | Table | Key columns |
 | --- | --- |
-| `app.users` | `id CHAR(36) PK` (same ID as the control plane), `email, display_name, status, password_hash NULL` (`password_hash` used only when `AUTH_MODE=local`) |
-| `app.roles` | `id, code, name, is_system` |
-| `app.permissions` | `id, code` (e.g. `report.pnl.view`, `ai.query`, `connections.manage`) |
-| `app.role_permissions` | `role_id, permission_id` |
-| `app.user_roles` | `user_id, role_id` |
-| `app.user_entity_access` | `user_id, entity_id, branch_id NULL` (NULL branch = all branches) |
-| `app.masking_rules` | `id, role_id, target ('party.name','party.pan','ledger.salary',...), mask_type ENUM('hide','partial','hash')` |
+| `ledgerbridge_system.users` | `id CHAR(36) PK` (same ID as the control plane), `email, display_name, status, password_hash NULL` (`password_hash` used only when `AUTH_MODE=local`) |
+| `ledgerbridge_system.roles` | `id, code, name, is_system` |
+| `ledgerbridge_system.permissions` | `id, code` (e.g. `report.pnl.view`, `ai.query`, `connections.manage`) |
+| `ledgerbridge_system.role_permissions` | `role_id, permission_id` |
+| `ledgerbridge_system.user_roles` | `user_id, role_id` |
+| `ledgerbridge_system.user_entity_access` | `user_id, entity_id, branch_id NULL` (NULL branch = all branches) |
+| `ledgerbridge_system.masking_rules` | `id, role_id, target ('party.name','party.pan','ledger.salary',...), mask_type ENUM('hide','partial','hash')` |
 
 ### 5.4 Audit and AI log (AUD-*)
 
 | Table | Key columns |
 | --- | --- |
-| `app.audit_log` | `id, occurred_at, user_id, action, object_type, object_id, entity_id NULL, details JSON, ip_address` — append-only |
-| `app.ai_query_log` | `id, user_id, question TEXT, generated_sql TEXT, status, row_count, duration_ms, provider, model, created_at` |
+| `ledgerbridge_system.audit_log` | `id, occurred_at, user_id, action, object_type, object_id, entity_id NULL, details JSON, ip_address` — append-only |
+| `ledgerbridge_system.ai_query_log` | `id, user_id, question TEXT, generated_sql TEXT, status, row_count, duration_ms, provider, model, created_at` |
 
 ### 5.5 Configuration
 
 | Table | Key columns |
 | --- | --- |
-| `app.kpi_definitions` | `id, code, name, formula_view, good_threshold, bad_threshold, direction ENUM('higher_better','lower_better')` (RPT-002) |
-| `app.settings` | `key PK, value JSON` |
+| `ledgerbridge_system.kpi_definitions` | `id, code, name, formula_view, good_threshold, bad_threshold, direction ENUM('higher_better','lower_better')` (RPT-002) |
+| `ledgerbridge_system.settings` | `key PK, value JSON` |
 
-## 6. `rpt` schema (semantic layer)
+## 6. `ledgerbridge_reporting` (semantic layer)
 
-Aggregate tables are refreshed by workers after each sync; views sit on top. Only this schema is visible to the AI.
+Aggregate tables are refreshed by workers after each sync; views sit on top. Only this database is visible to the AI (`ai_ro`).
 
 | Object | Type | Purpose |
 | --- | --- | --- |
-| `rpt.agg_ledger_daily` | Table | `entity_id, ledger_id, date, debit, credit, net`, refreshed incrementally. |
-| `rpt.v_ledger_balances` | View | Opening + movements → closing per ledger per period. |
-| `rpt.v_trial_balance` | View | Trial balance per entity and period. |
-| `rpt.v_pnl_monthly` | View | P&L by month, by standard account and source group. |
-| `rpt.v_balance_sheet` | View | Balance sheet as at a date. |
-| `rpt.v_cash_flow` | View | Cash flow (indirect method) using `cash_flow_class`. |
-| `rpt.v_receivables_ageing` | View | Outstanding customer bills by ageing bucket. |
-| `rpt.v_payables_ageing` | View | Outstanding vendor bills by ageing bucket. |
-| `rpt.v_sales_monthly` | View | Sales by month, party, item, branch. |
-| `rpt.v_expenses_monthly` | View | Expenses by month, ledger, cost centre. |
-| `rpt.v_consolidated_tb` | View | Trial balance across entities via `standard_accounts` (inter-company eliminations later). |
-| `rpt.v_kpis` | View | Values for `app.kpi_definitions` (health indicators). |
-| `rpt.semantic_catalog` | Table | Plain-language description of every view and column, used to build AI prompts (embedded in the vector store). |
+| `ledgerbridge_reporting.agg_ledger_daily` | Table | `entity_id, ledger_id, date, debit, credit, net`, refreshed incrementally. |
+| `ledgerbridge_reporting.v_ledger_balances` | View | Opening + movements → closing per ledger per period. |
+| `ledgerbridge_reporting.v_trial_balance` | View | Trial balance per entity and period. |
+| `ledgerbridge_reporting.v_pnl_monthly` | View | P&L by month, by standard account and source group. |
+| `ledgerbridge_reporting.v_balance_sheet` | View | Balance sheet as at a date. |
+| `ledgerbridge_reporting.v_cash_flow` | View | Cash flow (indirect method) using `cash_flow_class`. |
+| `ledgerbridge_reporting.v_receivables_ageing` | View | Outstanding customer bills by ageing bucket. |
+| `ledgerbridge_reporting.v_payables_ageing` | View | Outstanding vendor bills by ageing bucket. |
+| `ledgerbridge_reporting.v_sales_monthly` | View | Sales by month, party, item, branch. |
+| `ledgerbridge_reporting.v_expenses_monthly` | View | Expenses by month, ledger, cost centre. |
+| `ledgerbridge_reporting.v_consolidated_tb` | View | Trial balance across entities via `standard_accounts` (inter-company eliminations later). |
+| `ledgerbridge_reporting.v_kpis` | View | Values for `ledgerbridge_system.kpi_definitions` (health indicators). |
+| `ledgerbridge_reporting.semantic_catalog` | Table | Plain-language description of every view and column, used to build AI prompts (embedded in the vector store). |
 
 ## 7. Tally to canonical mapping
 
 | Tally object | Canonical table | Notes |
 | --- | --- | --- |
 | Company | `entities`, `entity_sources` | Company GUID → `source_entity_key`. |
-| Group | `account_groups` | Keep hierarchy; primary group gives `nature`. |
+| Group | `account_groups` | Keep hierarchy; primary group gives `nature`. Default standard-account mapping: *Suspense A/c* → 3290; *Branch / Divisions* → 1275 (debit balance) or 3275 (credit balance). See 4.2. |
 | Ledger | `ledgers` (+ `parties` for Sundry Debtors/Creditors) | GUID → `source_key`; opening balance sign flipped (see below). |
 | Voucher Type | `voucher_types` | Parent type → `base_type`. |
 | Voucher | `vouchers` | GUID → `source_key`; AlterID → `source_alter_id`; cancelled/optional flags. |
@@ -418,18 +436,36 @@ Found while confirming the sign convention on TallyPrime exports:
 
 ## 8. Processing rules
 
-1. Connectors write source data to `raw.raw_records` only.
+1. Connectors write source data to `ledgerbridge_source.raw_records` only.
 2. A transform step converts pending raw records to canonical rows with upserts on `(connection_id, source_key)`.
 3. A record deleted in the source is soft-deleted; its voucher lines get `is_effective = FALSE`.
 4. Overlapping data from several sources for the same entity and period is resolved using `entity_sources.precedence` and `active_from/active_to` (IMP-005).
 5. Validation runs after each transform (Section 5.2).
-6. Aggregates in `rpt` are refreshed for affected entities and dates only.
+6. Aggregates in `ledgerbridge_reporting` are refreshed for affected entities and dates only.
+7. **A voucher's child rows are replaced as a whole.** Whenever a voucher is created or changed in the source, all its child rows are deleted and re-inserted from the new version, together with the voucher header update, **in one transaction**. The child rows are `voucher_lines`, `bill_allocations`, `line_cost_allocations`, `line_dimensions`, `inventory_lines` and `tax_lines`. Edits therefore never leave stale lines behind, and a reader never sees half a voucher. The child tables carry no [SRC] columns; their origin is their voucher's. Their foreign keys to the voucher, or to its lines, use `ON DELETE CASCADE` so the replacement is a single delete. The voucher row itself is never physically deleted: a voucher deleted in the source is soft-deleted (rule 3). The sync implementation is M3.
 
-## 9. Open schema questions
+## 9. Implementation rules (M2)
+
+Where Sections 4 and 5 give only column lists, migration `0002` applies these rules. The SQLAlchemy models in `data-plane/core/models/` are kept identical, and a test asserts it.
+
+| Topic | Rule |
+| --- | --- |
+| Names, codes | `name`, `display_name`, `bill_name`, `file_name`: `VARCHAR(255)`. `code`, `symbol`, `label`, `category`: `VARCHAR(64)`. `email`: `VARCHAR(255)`, `phone`: `VARCHAR(32)`. `hsn_code`: `VARCHAR(16)`. |
+| Amounts, rates, quantities | Money `DECIMAL(20,4)` (`amount`, `*_value`, `credit_limit`, `expected_value`, `actual_value`, thresholds). Rates, percentages and quantities `DECIMAL(20,6)` (`rate`, `gst_rate`, `discount_pct`, `quantity`, `opening_qty`). Exchange rates `DECIMAL(20,8)`. |
+| Flags | `BOOLEAN NOT NULL DEFAULT FALSE`, except `is_active` (`DEFAULT TRUE`). |
+| Statuses | `ENUM`s: `import_batches.status` (`pending`, `running`, `succeeded`, `failed`); `validation_runs.status` (`running`, `passed`, `failed`); `validation_issues.severity` (`error`, `warning`, `info`); `agents.status` (`active`, `disabled`); `users.status` (`active`, `disabled`, `locked`); `ai_query_log.status` (`succeeded`, `failed`, `refused`). |
+| Free text | `narration`, `message`, `question`, `generated_sql`, `error_summary`: `TEXT`. JSON columns: `JSON`. |
+| [SRC] tables | `connection_id` and `source_key` are `NOT NULL`, with a unique `(connection_id, source_key)`. `origin` is `NOT NULL`. `raw_record_id` is indexed but has **no foreign key**, because `ledgerbridge_source.raw_records` will be partitioned (Section 3), and MySQL doesn't allow foreign keys to partitioned tables. |
+| Foreign keys | Every `*_id` column has a foreign key, including across databases, except `raw_record_id` (above) and `user_id` in `audit_log` and `ai_query_log`, which must outlive the users they mention. Voucher child tables cascade on delete (Section 8, rule 7). |
+| Added unique keys | `roles.code`, `permissions.code`, `users.email`, `agents.name`, `dimensions.code`, `kpi_definitions.code`, `(dimension_values.dimension_id, code)`, `(file_layouts.connection_id, name)`, `(user_entity_access.user_id, entity_id, branch_id)`. Link tables (`role_permissions`, `user_roles`, `line_dimensions`) use their two columns as primary key. |
+| Added indexes | `(validation_issues.validation_run_id)`, `(audit_log.occurred_at)`, `(audit_log.user_id)`, `(ai_query_log.user_id, created_at)`, `(raw_record_id)` on [SRC] tables. MySQL indexes every foreign key automatically. |
+| Timestamps | `created_at`, `updated_at` `DATETIME(6)` UTC on every table, set by the application. |
+
+## 10. Open schema questions
 
 - Inter-company elimination rules for consolidation (when consolidated reporting is built).
 - Exact GST fields needed for GST reports (phase 2).
-- Whether budgets from Tally are in scope (would add `core.budgets`).
+- Whether budgets from Tally are in scope (would add `ledgerbridge_accounting.budgets`).
 - Partitioning thresholds once real data volumes are known.
 
 ## Change log
@@ -437,6 +473,8 @@ Found while confirming the sign convention on TallyPrime exports:
 | Date | Version | Change |
 | --- | --- | --- |
 | 2026-10-08 | 0.1 | Initial draft. |
-| 2026-10-08 | 0.2 | `app.users.password_hash` for local auth mode (pilot). |
-| 2026-10-09 | 0.3 | M1: first migration (`raw.raw_records`, `app.sources`, `app.connections`, `app.sync_runs`); raw payload and de-duplication rules. |
+| 2026-10-08 | 0.2 | `ledgerbridge_system.users.password_hash` for local auth mode (pilot). |
+| 2026-10-09 | 0.3 | M1: first migration (`ledgerbridge_source.raw_records`, `ledgerbridge_system.sources`, `ledgerbridge_system.connections`, `ledgerbridge_system.sync_runs`); raw payload and de-duplication rules. |
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
+| 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
+| 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |

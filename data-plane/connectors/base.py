@@ -24,7 +24,7 @@ class SourceEntity:
 
 @dataclass(frozen=True)
 class SourceRecord:
-    """One source object, exactly as received, ready for raw.raw_records."""
+    """One source object, exactly as received, ready for ledgerbridge_source.raw_records."""
 
     source_entity_key: str
     object_type: str

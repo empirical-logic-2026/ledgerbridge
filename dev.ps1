@@ -112,8 +112,10 @@ switch ($Command) {
         Assert-EnvFile
         Assert-PortsFree
         Invoke-Stack up -d --build --wait
-        Write-Host "Applying database migrations..."
-        Invoke-Stack exec -T api python -m alembic upgrade head
+        # Migrations run as the migrator user in a one-off container; the running api never
+        # holds schema-change rights (schema.md 2.1).
+        Write-Host "Applying database migrations (one-off migrate container)..."
+        Invoke-Stack run --rm migrate
         $base = Get-ApiBase
         Write-Host ""
         Write-Host "LedgerBridge ($Env) is up." -ForegroundColor Green

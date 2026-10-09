@@ -16,7 +16,7 @@ def _tally(config: Mapping[str, Any]) -> Connector:
 
 _FACTORIES: dict[str, ConnectorFactory] = {"tally": _tally}
 
-# Human-readable names and versions for app.sources rows.
+# Human-readable names and versions for ledgerbridge_system.sources rows.
 SOURCE_INFO: dict[str, tuple[str, str]] = {"tally": ("Tally (XML over HTTP)", "0.1.0")}
 
 

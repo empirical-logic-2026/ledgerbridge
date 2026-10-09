@@ -14,7 +14,7 @@ class CollectionSpec:
     collection_id: str  # also the request ID, used to recognise fixture files
     tally_type: str  # Tally object type, e.g. Ledger
     object_tag: str  # element tag of each object in the response
-    object_type: str  # our object_type in raw.raw_records
+    object_type: str  # our object_type in ledgerbridge_source.raw_records
     fetch: tuple[str, ...]
     # TDL formulas computed by Tally itself, as "NAME : formula"
     compute: tuple[str, ...] = ()

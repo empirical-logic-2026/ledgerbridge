@@ -1,4 +1,4 @@
-"""`raw` schema: source data exactly as received (schema.md Section 3)."""
+"""`ledgerbridge_source` (raw layer): source data exactly as received (schema.md Section 3)."""
 
 from datetime import datetime
 
@@ -6,6 +6,7 @@ from sqlalchemy import CHAR, BigInteger, Enum, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.models.base import Base, Id, LongText, Timestamp, TimestampMixin
+from core.models.schemas import SOURCE, SYSTEM
 
 PAYLOAD_FORMATS = ("xml", "json", "csv", "txt")
 PROCESS_STATUSES = ("pending", "processed", "failed", "skipped")
@@ -16,16 +17,20 @@ class RawRecord(TimestampMixin, Base):
     __table_args__ = (
         Index("ix_raw_records_conn_type_key", "connection_id", "object_type", "source_key"),
         Index("ix_raw_records_status_received", "process_status", "received_at"),
-        {"schema": "raw"},
+        {"schema": SOURCE},
     )
 
     id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
-    connection_id: Mapped[int] = mapped_column(Id, ForeignKey("app.connections.id"))
+    connection_id: Mapped[int] = mapped_column(Id, ForeignKey(f"{SYSTEM}.connections.id"))
     sync_run_id: Mapped[int | None] = mapped_column(
-        Id, ForeignKey("app.sync_runs.id"), nullable=True
+        Id, ForeignKey(f"{SYSTEM}.sync_runs.id"), nullable=True
     )
-    # References app.import_batches once that table exists.
-    import_batch_id: Mapped[int | None] = mapped_column(Id, nullable=True)
+    # Foreign key added in migration 0002 (M2), once import_batches exists.
+    import_batch_id: Mapped[int | None] = mapped_column(
+        Id,
+        ForeignKey(f"{SYSTEM}.import_batches.id", name="fk_raw_records_import_batch"),
+        nullable=True,
+    )
     source_entity_key: Mapped[str] = mapped_column(String(191))
     object_type: Mapped[str] = mapped_column(String(64))
     source_key: Mapped[str] = mapped_column(String(191))

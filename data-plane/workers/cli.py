@@ -34,7 +34,9 @@ def _parser() -> argparse.ArgumentParser:
     entities = sub.add_parser("entities", help="list entities (companies) in the source")
     connection_args(entities)
 
-    extract = sub.add_parser("extract", help="full extraction of one entity into raw.raw_records")
+    extract = sub.add_parser(
+        "extract", help="full extraction of one entity into ledgerbridge_source.raw_records"
+    )
     connection_args(extract)
     extract.add_argument("--entity", required=True, help="entity (company) name in the source")
     extract.add_argument("--from", dest="date_from", type=date.fromisoformat)

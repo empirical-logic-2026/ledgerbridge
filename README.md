@@ -25,11 +25,11 @@ Create an env file by copying the matching example (`.env.test.example` → `.en
 
 | Command | What it does |
 | --- | --- |
-| `./dev.ps1 up` | Builds and starts MySQL, Redis, Qdrant and the API, waits until they're healthy, applies database migrations, then prints the dashboard, API health and API docs URLs. It first checks that the ports in `.env.test` are free. |
+| `./dev.ps1 up` | Builds and starts MySQL, Redis, Qdrant and the API, waits until they're healthy, applies database migrations (one-off `migrate` container, as the `migrator` user), then prints the dashboard, API health and API docs URLs. It first checks that the ports in `.env.test` are free. |
 | `./dev.ps1 status` | Shows the containers and the API's readiness (MySQL, Redis, Qdrant). |
 | `./dev.ps1 logs api` | Follows one service's logs (`mysql`, `redis`, `qdrant`, `api`, `worker`); leave out the name for all. Ctrl+C stops. |
 | `./dev.ps1 tally-companies` | Lists the companies loaded in TallyPrime. Runs inside the API container. |
-| `./dev.ps1 extract -Company "LedgerBridge Test Co"` | Full extraction of one company into `raw.raw_records`, logged in `app.sync_runs`. |
+| `./dev.ps1 extract -Company "LedgerBridge Test Co"` | Full extraction of one company into `ledgerbridge_source.raw_records`, logged in `ledgerbridge_system.sync_runs`. |
 | `./dev.ps1 seed-test-data` | Fills **LedgerBridge Test Co** in TallyPrime with repeatable test data: ledgers, GST sales and purchases, bills, a cancelled and an altered voucher, and more. Safe to re-run: only missing items are created. Test environment only; it refuses unless that company is the only one loaded (ADR-014). Prints the Trial Balance you should then see in TallyPrime. |
 | `./dev.ps1 test` | Backend lint, unit tests and, if the stack is up, integration tests; then frontend lint and tests. **Test environment only.** The migration test resets the test database tables. |
 | `./dev.ps1 down` | Stops and removes the containers. Data volumes are kept. |
@@ -38,7 +38,7 @@ Create an env file by copying the matching example (`.env.test.example` → `.en
 First time:
 
 ```powershell
-Copy-Item .env.test.example .env.test   # then set the two MySQL passwords
+Copy-Item .env.test.example .env.test   # then set the five MySQL passwords
 ./dev.ps1 up
 cd frontend; npm install; npm run dev    # dashboard on http://localhost:5175
 ```
@@ -46,6 +46,10 @@ cd frontend; npm install; npm run dev    # dashboard on http://localhost:5175
 The dashboard dev server always uses port 5175, and fails rather than switching ports, because the API only accepts browser calls from `FRONTEND_ORIGIN`. For pilot, run `npm run dev -- --port 5174`.
 
 The test API listens on **http://127.0.0.1:8001** (`/health/ready`, `/docs`). For lower-level Docker commands, use `./deploy/stack.ps1 -Env test <docker compose args>`. See [docs/learning/docker.md](docs/learning/docker.md) for how the Docker setup works.
+
+## Databases
+
+MySQL holds four databases, one per layer (ADR-016): `ledgerbridge_source` (data as received), `ledgerbridge_accounting` (canonical model), `ledgerbridge_reporting` (semantic layer, the only one the AI can read) and `ledgerbridge_system` (connections, sync, users, audit). Each MySQL user has only the rights it needs: see `docs/schema.md` Section 2.1.
 
 ## Repository layout
 
