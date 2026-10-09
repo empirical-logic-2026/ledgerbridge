@@ -11,10 +11,17 @@ services:
       - --collation-server=utf8mb4_0900_ai_ci
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
-      # mysql/init/01-schemas.sh creates raw, core, rpt and app and grants this user on them.
-      # The proper per-role users and grants arrive in M2.
+      # Created by the MySQL image itself: the application user (app_rw).
       MYSQL_USER: ${MYSQL_APP_USER:?set MYSQL_APP_USER}
       MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD:?set MYSQL_APP_PASSWORD}
+      # Read by mysql/init/01-schemas.sh, which creates the four databases (ADR-016) and
+      # these users with their grants (schema.md 2.1). Only used on a fresh volume.
+      MYSQL_MIGRATOR_USER: ${MYSQL_MIGRATOR_USER:?set MYSQL_MIGRATOR_USER}
+      MYSQL_MIGRATOR_PASSWORD: ${MYSQL_MIGRATOR_PASSWORD:?set MYSQL_MIGRATOR_PASSWORD}
+      MYSQL_REPORT_USER: ${MYSQL_REPORT_USER:?set MYSQL_REPORT_USER}
+      MYSQL_REPORT_PASSWORD: ${MYSQL_REPORT_PASSWORD:?set MYSQL_REPORT_PASSWORD}
+      MYSQL_AI_USER: ${MYSQL_AI_USER:?set MYSQL_AI_USER}
+      MYSQL_AI_PASSWORD: ${MYSQL_AI_PASSWORD:?set MYSQL_AI_PASSWORD}
     ports:
       - "127.0.0.1:${MYSQL_HOST_PORT:?set MYSQL_HOST_PORT}:3306"
     volumes:
@@ -55,6 +62,7 @@ services:
   api:
     build:
       context: ../data-plane
+    image: ledgerbridge-data-plane:dev
     env_file: ${LEDGERBRIDGE_ENV_FILE:?run via deploy/stack.ps1}
     environment: &container-overrides
       MYSQL_HOST: mysql
@@ -62,6 +70,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       QDRANT_URL: http://qdrant:6333
       TALLY_URL: http://host.docker.internal:9000
+      # Least privilege (SEC-008): running services never hold the root or migrator
+      # passwords, even though the env file contains them.
+      MYSQL_ROOT_PASSWORD: ""
+      MYSQL_MIGRATOR_PASSWORD: ""
     ports:
       - "127.0.0.1:${API_HOST_PORT:?set API_HOST_PORT}:8000"
     extra_hosts:
@@ -78,6 +90,7 @@ services:
     profiles: [workers]
     build:
       context: ../data-plane
+    image: ledgerbridge-data-plane:dev
     command: ["celery", "-A", "workers.celery_app", "worker", "--loglevel=INFO"]
     env_file: ${LEDGERBRIDGE_ENV_FILE:?run via deploy/stack.ps1}
     environment: *container-overrides
@@ -87,6 +100,27 @@ services:
       mysql:
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  # One-off: applies database migrations as the migrator user, then exits.
+  # Run with: ./deploy/stack.ps1 -Env test run --rm migrate  (./dev.ps1 up does this)
+  migrate:
+    profiles: [tools]
+    build:
+      context: ../data-plane
+    image: ledgerbridge-data-plane:dev
+    command: ["alembic", "upgrade", "head"]
+    env_file: ${LEDGERBRIDGE_ENV_FILE:?run via deploy/stack.ps1}
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_ROOT_PASSWORD: ""
+      # Only the migrator needs schema rights; everything else is irrelevant here.
+      MYSQL_APP_PASSWORD: ""
+      MYSQL_REPORT_PASSWORD: ""
+      MYSQL_AI_PASSWORD: ""
+    depends_on:
+      mysql:
         condition: service_healthy
 
 volumes:
