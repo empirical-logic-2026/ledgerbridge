@@ -30,6 +30,7 @@ Create an env file by copying the matching example (`.env.test.example` → `.en
 | `./dev.ps1 logs api` | Follows one service's logs (`mysql`, `redis`, `qdrant`, `api`, `worker`); leave out the name for all. Ctrl+C stops. |
 | `./dev.ps1 tally-companies` | Lists the companies loaded in TallyPrime. Runs inside the API container. |
 | `./dev.ps1 extract -Company "LedgerBridge Test Co"` | Full extraction of one company into `raw.raw_records`, logged in `app.sync_runs`. |
+| `./dev.ps1 seed-test-data` | Fills **LedgerBridge Test Co** in TallyPrime with repeatable test data: ledgers, GST sales and purchases, bills, a cancelled and an altered voucher, and more. Safe to re-run: only missing items are created. Test environment only; it refuses unless that company is the only one loaded (ADR-014). Prints the Trial Balance you should then see in TallyPrime. |
 | `./dev.ps1 test` | Backend lint, unit tests and, if the stack is up, integration tests; then frontend lint and tests. **Test environment only.** The migration test resets the test database tables. |
 | `./dev.ps1 down` | Stops and removes the containers. Data volumes are kept. |
 | `./dev.ps1 up -Env pilot` | The same commands against `.env.pilot` (developer only; `test` refuses pilot). |

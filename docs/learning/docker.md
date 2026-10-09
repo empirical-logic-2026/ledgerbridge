@@ -50,6 +50,7 @@ Note that the API is `8001` on your PC but `8000` inside its container. The host
 | `./dev.ps1 logs api` | `stack.ps1 logs -f --tail 200 api`: the last 200 lines, then **f**ollows new ones. |
 | `./dev.ps1 tally-companies` | `stack.ps1 exec -T api python -m workers.cli entities ...`: runs our CLI inside the API container, which reaches TallyPrime on your PC through `host.docker.internal:9000`. |
 | `./dev.ps1 extract -Company "..."` | The same pattern with `workers.cli extract`. |
+| `./dev.ps1 seed-test-data` | No Docker at all: it runs on your PC with `.env.test`, because `devtools/` is deliberately not in the image (section 7). |
 | `./dev.ps1 test` | Runs tests on your PC, not in Docker. It connects to the test containers through the host ports. Refuses `-Env pilot`. |
 | `./dev.ps1 down` | `stack.ps1 down`: removes containers and the network, **keeps volumes**. |
 
@@ -251,8 +252,11 @@ These files are kept **out** of the build context, so they never get into the im
 ```text
 .venv/  __pycache__/  *.pyc  .pytest_cache/  .ruff_cache/   ← local junk, and Windows-built packages
 tests/                                                      ← not needed at runtime
+devtools/                                                   ← developer-only tools (ADR-014)
 .env  .env.*                                                ← secrets never get baked into an image
 ```
+
+`devtools/` holds the Tally seeding tool, the one piece of code allowed to *write* into Tally, and only into the test company. Leaving it out of the build context means it physically can't exist inside an image that might one day run at a client. Try `docker exec ledgerbridge-test-api-1 ls /app`: there's no `devtools` folder. `./dev.ps1 seed-test-data` therefore runs on your PC, not in a container.
 
 ## 8. `deploy/mysql/init/01-schemas.sh`
 
@@ -336,3 +340,4 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | First version: M0 stack, plus the M1 MySQL init script and `TALLY_URL` override. |
 | 2026-10-09 | Added `dev.ps1` (section 3). `stack.ps1` is now a simple script and checks exit codes. The init script uses the `mysql` client. Test API moved to host port 8001. Fixed the MySQL example commands for PowerShell 5.1. |
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
+| 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |

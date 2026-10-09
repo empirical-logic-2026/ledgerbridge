@@ -64,6 +64,7 @@ npm run build
 # Developer commands (PowerShell, repo root; default -Env test; needs .env.test)
 ./dev.ps1 up                     # build, start, wait healthy, migrate, print URLs (API on 8001)
 ./dev.ps1 status | down | test | logs <service> | tally-companies
+./dev.ps1 seed-test-data         # idempotent seed of LedgerBridge Test Co in TallyPrime (ADR-014)
 ./dev.ps1 extract -Company "LedgerBridge Test Co"
 
 # Lower level: any docker compose command for one environment
@@ -112,6 +113,7 @@ Whenever a change touches anything Docker-related (Dockerfiles, `.dockerignore`,
 ## Security rules
 
 - Connectors are read-only towards source systems. Never write back to Tally or any source.
+  - Only exception (ADR-014): `data-plane/devtools/tally_seed`, run via `./dev.ps1 seed-test-data`, may import into **LedgerBridge Test Co only**, with its guards (`APP_ENV=test`, only that company loaded, exact name match). Product code must never import from `devtools/`.
 - Never log secrets, credentials, tokens or accounting data values.
 - Connection credentials are stored encrypted; never in code, config committed to git, or logs.
 - AI-generated SQL must pass validation (single read-only SELECT on allowed semantic-layer views) and run under the read-only database user, with the user's entity filters enforced in code.

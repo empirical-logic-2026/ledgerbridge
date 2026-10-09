@@ -14,12 +14,13 @@
     ./dev.ps1 tally-companies
     ./dev.ps1 extract -Company "LedgerBridge Test Co"
     ./dev.ps1 test
+    ./dev.ps1 seed-test-data
     ./dev.ps1 down
     ./dev.ps1 up -Env pilot
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('up', 'down', 'status', 'test', 'logs', 'tally-companies', 'extract', 'help')]
+    [ValidateSet('up', 'down', 'status', 'test', 'logs', 'tally-companies', 'extract', 'seed-test-data', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -29,7 +30,7 @@ param(
     [ValidateSet('test', 'pilot')]
     [string]$Env = 'test',
 
-    # Company (entity) name in the source, for `extract`.
+    # Company (entity) name in the source, for `extract` and `seed-test-data`.
     [string]$Company = ''
 )
 
@@ -145,6 +146,16 @@ switch ($Command) {
         Assert-EnvFile
         Assert-ApiRunning
         Invoke-Stack exec -T api python -m workers.cli extract --connection $connection --source tally --entity $Company
+    }
+    'seed-test-data' {
+        # Writes into Tally (ADR-014): test environment and test company only. The tool itself
+        # re-checks APP_ENV, that only one company is loaded and that its name matches exactly.
+        if ($Env -ne 'test') { throw 'seed-test-data runs only against the test environment.' }
+        Assert-EnvFile
+        if (-not $Company) { $Company = 'LedgerBridge Test Co' }
+        Push-Location (Join-Path $root 'data-plane')
+        try { Invoke-Uv run python -m devtools.tally_seed --company $Company }
+        finally { Pop-Location }
     }
     'test' {
         if ($Env -ne 'test') {

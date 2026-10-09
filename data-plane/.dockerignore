@@ -4,5 +4,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 tests/
+# Developer-only tools (ADR-014): never shipped in the image.
+devtools/
 .env
 .env.*
