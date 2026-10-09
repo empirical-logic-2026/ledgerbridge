@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.1 (Draft) |
+| Version | 0.2 (Draft) |
 | Date | 2026-10-08 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -329,7 +329,7 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 
 | Table | Key columns |
 | --- | --- |
-| `app.users` | `id CHAR(36) PK` (same ID as the control plane), `email, display_name, status` |
+| `app.users` | `id CHAR(36) PK` (same ID as the control plane), `email, display_name, status, password_hash NULL` (`password_hash` used only when `AUTH_MODE=local`) |
 | `app.roles` | `id, code, name, is_system` |
 | `app.permissions` | `id, code` (e.g. `report.pnl.view`, `ai.query`, `connections.manage`) |
 | `app.role_permissions` | `role_id, permission_id` |
@@ -409,3 +409,4 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | Date | Version | Change |
 | --- | --- | --- |
 | 2026-10-08 | 0.1 | Initial draft. |
+| 2026-10-08 | 0.2 | `app.users.password_hash` for local auth mode (pilot). |
