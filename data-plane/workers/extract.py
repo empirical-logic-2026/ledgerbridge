@@ -1,4 +1,5 @@
-"""Source-independent extraction: connector → raw.raw_records, logged in app.sync_runs."""
+"""Source-independent extraction: connector → ledgerbridge_source.raw_records, logged in
+ledgerbridge_system.sync_runs."""
 
 import logging
 from collections import Counter

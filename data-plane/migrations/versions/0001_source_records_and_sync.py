@@ -1,7 +1,10 @@
-"""M1: raw.raw_records and the app tables it depends on.
+"""M1: ledgerbridge_source.raw_records and the system tables it depends on.
 
-Creates app.sources, app.connections, app.sync_runs and raw.raw_records as described in
-docs/schema.md Sections 3 and 5.1.
+Creates ledgerbridge_system.sources, .connections, .sync_runs and
+ledgerbridge_source.raw_records as described in docs/schema.md Sections 3 and 5.1.
+
+Edited in place for the database rename (ADR-016) before any pilot or client database
+existed. After the first release, never edit an applied migration: add a new one.
 
 Revision ID: 0001
 Revises:
@@ -35,12 +38,12 @@ def upgrade() -> None:
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("connector_version", sa.String(32), nullable=False),
         *_timestamps(),
-        schema="app",
+        schema="ledgerbridge_system",
     )
     op.create_table(
         "connections",
         sa.Column("id", ID, primary_key=True, autoincrement=True),
-        sa.Column("source_id", ID, sa.ForeignKey("app.sources.id"), nullable=False),
+        sa.Column("source_id", ID, sa.ForeignKey("ledgerbridge_system.sources.id"), nullable=False),
         sa.Column("name", sa.String(255), nullable=False, unique=True),
         sa.Column("config", sa.JSON, nullable=False),
         sa.Column(
@@ -57,12 +60,12 @@ def upgrade() -> None:
         ),
         sa.Column("created_by", sa.String(36), nullable=True),
         *_timestamps(),
-        schema="app",
+        schema="ledgerbridge_system",
     )
     op.create_table(
         "sync_runs",
         sa.Column("id", ID, primary_key=True, autoincrement=True),
-        sa.Column("connection_id", ID, sa.ForeignKey("app.connections.id"), nullable=False),
+        sa.Column("connection_id", ID, sa.ForeignKey("ledgerbridge_system.connections.id"), nullable=False),
         sa.Column(
             "run_type",
             sa.Enum("incremental", "full", "import", name="sync_run_type"),
@@ -79,13 +82,13 @@ def upgrade() -> None:
         sa.Column("records_failed", sa.Integer, nullable=False),
         sa.Column("error_summary", sa.Text, nullable=True),
         *_timestamps(),
-        schema="app",
+        schema="ledgerbridge_system",
     )
     op.create_table(
         "raw_records",
         sa.Column("id", ID, primary_key=True, autoincrement=True),
-        sa.Column("connection_id", ID, sa.ForeignKey("app.connections.id"), nullable=False),
-        sa.Column("sync_run_id", ID, sa.ForeignKey("app.sync_runs.id"), nullable=True),
+        sa.Column("connection_id", ID, sa.ForeignKey("ledgerbridge_system.connections.id"), nullable=False),
+        sa.Column("sync_run_id", ID, sa.ForeignKey("ledgerbridge_system.sync_runs.id"), nullable=True),
         sa.Column("import_batch_id", ID, nullable=True),
         sa.Column("source_entity_key", sa.String(191), nullable=False),
         sa.Column("object_type", sa.String(64), nullable=False),
@@ -106,24 +109,24 @@ def upgrade() -> None:
         ),
         sa.Column("process_error", sa.Text, nullable=True),
         *_timestamps(),
-        schema="raw",
+        schema="ledgerbridge_source",
     )
     op.create_index(
         "ix_raw_records_conn_type_key",
         "raw_records",
         ["connection_id", "object_type", "source_key"],
-        schema="raw",
+        schema="ledgerbridge_source",
     )
     op.create_index(
         "ix_raw_records_status_received",
         "raw_records",
         ["process_status", "received_at"],
-        schema="raw",
+        schema="ledgerbridge_source",
     )
 
 
 def downgrade() -> None:
-    op.drop_table("raw_records", schema="raw")
-    op.drop_table("sync_runs", schema="app")
-    op.drop_table("connections", schema="app")
-    op.drop_table("sources", schema="app")
+    op.drop_table("raw_records", schema="ledgerbridge_source")
+    op.drop_table("sync_runs", schema="ledgerbridge_system")
+    op.drop_table("connections", schema="ledgerbridge_system")
+    op.drop_table("sources", schema="ledgerbridge_system")

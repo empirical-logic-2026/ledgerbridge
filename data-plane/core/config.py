@@ -20,8 +20,16 @@ class Settings(BaseSettings):
 
     mysql_host: str = "127.0.0.1"
     mysql_port: int = 3307
+    # One MySQL user per role (schema.md Section 2.1). Containers get only what they need:
+    # the api/worker containers never receive the migrator or root passwords.
     mysql_app_user: str = "app_rw"
     mysql_app_password: SecretStr = SecretStr("")
+    mysql_migrator_user: str = "migrator"
+    mysql_migrator_password: SecretStr = SecretStr("")
+    mysql_report_user: str = "report_ro"
+    mysql_report_password: SecretStr = SecretStr("")
+    mysql_ai_user: str = "ai_ro"
+    mysql_ai_password: SecretStr = SecretStr("")
 
     redis_url: str = "redis://127.0.0.1:6380/0"
     qdrant_url: str = "http://127.0.0.1:6333"

@@ -1,4 +1,4 @@
-"""Writes source records to raw.raw_records unchanged (schema.md Sections 3 and 8)."""
+"""Writes source records unchanged to ledgerbridge_source.raw_records (schema.md 3 and 8)."""
 
 import hashlib
 from collections.abc import Iterable
