@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.5 (Draft) |
+| Version | 0.6 (Draft) |
 | Date | 2026-10-09 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -94,7 +94,7 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 | --- | --- | --- |
 | `0001` | M1 | `ledgerbridge_source.raw_records`, `ledgerbridge_system.sources`, `ledgerbridge_system.connections`, `ledgerbridge_system.sync_runs` |
 | `0002` | M2 | Every other table in Sections 4 and 5, except `ledgerbridge_accounting.bank_statement_lines` (phase 2). Adds the `connections.agent_id` foreign key. |
-| `0003` | M2 | Reference data: the `INR` currency and the default standard chart of accounts (Section 4.2) |
+| `0003` | M2 | Reference data: the `INR` currency and the default standard chart of accounts, 75 accounts (Section 4.2) |
 
 `ledgerbridge_reporting` exists from M2 but stays empty until M6 (Section 6). The per-call AI model log (AI-018) is designed in M8. Type and key choices for tables documented here only as column lists are in Section 9.
 
@@ -185,6 +185,14 @@ The standard chart of accounts used for consolidation across entities and source
 | statement_line | VARCHAR(64) | e.g. `revenue`, `cogs`, `current_assets`. |
 | cash_flow_class | ENUM('operating','investing','financing','cash','none') | For cash flow statement. |
 | sort_order | INT | |
+
+**Default chart:** 75 accounts seeded by migration `0003`, following the Schedule III layout and editable per client. Notes on specific accounts:
+
+| Code | Account | Note |
+| --- | --- | --- |
+| 1275 / 3275 | Inter-company and branch receivables / payables | **Eliminated in consolidated reporting** (M6). Tally's *Branch / Divisions* group maps here: debit balances to 1275, credit balances to 3275. |
+| 3290 | Suspense / unclassified | Balance can be **debit or credit**. Tally's built-in *Suspense A/c* group maps here. Cash flow: operating. |
+| 5120 | Changes in inventories | **Not mapped from ledgers.** Derived in the reporting layer (M6) from opening and closing stock valuation. |
 
 #### `ledgerbridge_accounting.account_groups` [SRC]
 
@@ -390,7 +398,7 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | Tally object | Canonical table | Notes |
 | --- | --- | --- |
 | Company | `entities`, `entity_sources` | Company GUID → `source_entity_key`. |
-| Group | `account_groups` | Keep hierarchy; primary group gives `nature`. |
+| Group | `account_groups` | Keep hierarchy; primary group gives `nature`. Default standard-account mapping: *Suspense A/c* → 3290; *Branch / Divisions* → 1275 (debit balance) or 3275 (credit balance). See 4.2. |
 | Ledger | `ledgers` (+ `parties` for Sundry Debtors/Creditors) | GUID → `source_key`; opening balance sign flipped (see below). |
 | Voucher Type | `voucher_types` | Parent type → `base_type`. |
 | Voucher | `vouchers` | GUID → `source_key`; AlterID → `source_alter_id`; cancelled/optional flags. |
@@ -469,3 +477,4 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.3 | M1: first migration (`ledgerbridge_source.raw_records`, `ledgerbridge_system.sources`, `ledgerbridge_system.connections`, `ledgerbridge_system.sync_runs`); raw payload and de-duplication rules. |
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
+| 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
