@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6380/0"
     qdrant_url: str = "http://127.0.0.1:6333"
 
-    tally_url: str = "http://host.docker.internal:9000"
+    tally_url: str = "http://localhost:9000"
 
     ai_provider: Literal["anthropic", "ollama"] = "anthropic"
     anthropic_api_key: SecretStr = SecretStr("")
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     token_signing_key: SecretStr = SecretStr("")
     credentials_enc_key: SecretStr = SecretStr("")
 
-    frontend_origin: str = "http://localhost:5173"
+    frontend_origin: str = "http://localhost:5175"
 
     @model_validator(mode="after")
     def _client_data_stays_local(self) -> Self:

@@ -136,7 +136,9 @@ to_canonical(raw_record) -> canonical records
 
 The framework handles scheduling, retries, markers (last AlterID, last modified time), logging to `sync_runs` and validation after each run.
 
-**Tally:** XML requests over Tally's HTTP interface (default port 9000). Incremental sync uses AlterID/MasterID values. Version differences are handled inside the Tally adapter. Historical Tally backups are restored into a Tally instance and extracted through the same adapter.
+In code, the interface is the `Connector` protocol in `data-plane/connectors/base.py`; `fetch_*` return iterators of `RawRecord` so large sources stream. A registry maps a source code (`tally`, later `file`, `zoho`, ...) to its connector. Storing raw records (`core/raw_store.py`) and running an extraction (`workers/extract.py`, `python -m workers.cli`) are source-independent; nothing outside `connectors/<source>/` knows about a particular source.
+
+**Tally:** XML requests over Tally's HTTP interface (default port 9000). The adapter sends only Export requests (TDL collections with explicit fetch lists, targeting a company by name), fetches vouchers month by month, and handles UTF-16 responses and invalid character references emitted by Tally. Incremental sync uses AlterID/MasterID values. Version differences are handled inside the Tally adapter. Historical Tally backups are restored into a Tally instance and extracted through the same adapter.
 
 **Files (CSV/TXT):** upload or watched folder; saved column mappings per file layout.
 
@@ -267,6 +269,7 @@ No provider path sends data to provider (our) infrastructure.
 | ADR-011 | Separate `test` and `pilot` environments with separate databases. | Keeps client data away from AI development tools and external AI APIs. |
 | ADR-012 | Each environment runs as its own Docker Compose project (`ledgerbridge-test`, `ledgerbridge-pilot`) with its own volumes, host ports and env file. | Keeps the schema names `raw`, `core`, `rpt`, `app` identical in every environment while keeping data physically separate. |
 | ADR-013 | uv manages Python versions and dependencies for the data plane (`pyproject.toml` + `uv.lock`). | Reproducible locked installs and a pinned Python 3.12 independent of the host Python. |
+| ADR-014 | One narrow exception to "read-only towards sources" (CON-008): the developer-only seeding tool in `data-plane/devtools/tally_seed` may send Tally **Import** requests, and only to the test company. It refuses to run unless `APP_ENV=test`, exactly one company is loaded and its name matches the target exactly. It is never imported by product code, is excluded from the Docker image (`.dockerignore`), and connectors keep their Export-only client. | The test company needs realistic, repeatable data (bills, GST, cancelled and altered vouchers) to prove extraction and the sign convention; hand entry is slow and not repeatable. |
 
 New decisions are appended here with the next ADR number.
 
@@ -282,7 +285,7 @@ New decisions are appended here with the next ADR number.
 The pilot runs the data plane on the developer's Windows machine.
 
 - **Services:** Docker Compose runs MySQL, Redis, Qdrant, the API and workers; the frontend runs with the Vite dev server.
-- **Reaching Tally:** TallyPrime runs on the Windows host with its XML server on port 9000. Containers reach it at `http://host.docker.internal:9000`, configured by `TALLY_URL`.
+- **Reaching Tally:** TallyPrime runs on the Windows host with its XML server on port 9000. `TALLY_URL` is `http://localhost:9000` for tools run on the host; Compose overrides it to `http://host.docker.internal:9000` inside containers.
 - **Companies:** the companies to extract must be loaded (open) in TallyPrime during extraction. The connector targets each company by name in its XML requests, so one run can process several companies.
 - **Environments:** two separate configurations, each with its own database:
 

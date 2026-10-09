@@ -61,12 +61,30 @@ npm run lint
 npm test -- --run
 npm run build
 
-# Local stack (PowerShell, from repo root; needs .env.test copied from .env.test.example)
+# Developer commands (PowerShell, repo root; default -Env test; needs .env.test)
+./dev.ps1 up                     # build, start, wait healthy, migrate, print URLs (API on 8001)
+./dev.ps1 status | down | test | logs <service> | tally-companies
+./dev.ps1 seed-test-data         # idempotent seed of LedgerBridge Test Co in TallyPrime (ADR-014)
+./dev.ps1 extract -Company "LedgerBridge Test Co"
+
+# Lower level: any docker compose command for one environment
 ./deploy/stack.ps1 -Env test up -d --build
 ./deploy/stack.ps1 -Env test down
+
+# Database migrations (run in data-plane/, test stack running)
+uv run python -m alembic upgrade head
+
+# Extraction (run in data-plane/; source-independent CLI)
+uv run python -m workers.cli entities --connection tally-test --source tally
+uv run python -m workers.cli extract --connection tally-test --entity "LedgerBridge Test Co"
+
+# Tally developer tools (test company only)
+uv run python -m connectors.tally.tools capture-fixtures --company "LedgerBridge Test Co"
+uv run python -m connectors.tally.tools sign-check --company "LedgerBridge Test Co"
+uv run python -m connectors.tally.tools sign-check --fixtures
 ```
 
-Claude Code only ever uses `-Env test`. Never create `.env.pilot` or run `-Env pilot`.
+Claude Code only ever uses `-Env test` (with both `dev.ps1` and `deploy/stack.ps1`). Never create `.env.pilot` or run `-Env pilot`.
 
 ## Working process
 
@@ -75,6 +93,13 @@ Claude Code only ever uses `-Env test`. Never create `.env.pilot` or run `-Env p
 3. When a requirement or design changes, update `docs/requirements.md` / `docs/architecture.md` first (including the change log or ADR list), then the code.
 4. Reference requirement IDs in commit messages and PR descriptions, e.g. `CON-002: Tally ledger sync`.
 5. Write or update tests with every change.
+
+## Docker changes (developer is learning Docker)
+
+Whenever a change touches anything Docker-related (Dockerfiles, `.dockerignore`, `deploy/compose.yaml`, volumes, ports, env files, MySQL init scripts, Docker commands in `deploy/stack.ps1` or other scripts):
+
+- Update `docs/learning/docker.md` in the same change, so it keeps explaining the actual setup file by file, with commands to see it working. Add a change log entry.
+- End the summary to the developer with a short **"Docker explained"** section: what changed and why, in plain language.
 
 ## Coding conventions
 
@@ -88,6 +113,7 @@ Claude Code only ever uses `-Env test`. Never create `.env.pilot` or run `-Env p
 ## Security rules
 
 - Connectors are read-only towards source systems. Never write back to Tally or any source.
+  - Only exception (ADR-014): `data-plane/devtools/tally_seed`, run via `./dev.ps1 seed-test-data`, may import into **LedgerBridge Test Co only**, with its guards (`APP_ENV=test`, only that company loaded, exact name match). Product code must never import from `devtools/`.
 - Never log secrets, credentials, tokens or accounting data values.
 - Connection credentials are stored encrypted; never in code, config committed to git, or logs.
 - AI-generated SQL must pass validation (single read-only SELECT on allowed semantic-layer views) and run under the read-only database user, with the user's entity filters enforced in code.

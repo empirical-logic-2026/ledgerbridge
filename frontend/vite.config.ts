@@ -6,6 +6,12 @@ import { defineConfig } from 'vite'
 // production; the API's CORS setting allows the dev server origin.
 export default defineConfig({
   plugins: [react()],
+  server: {
+    // Must match FRONTEND_ORIGIN in .env.test (CORS). strictPort: fail instead of silently
+    // moving to another port that the API would reject. Pilot: npm run dev -- --port 5174
+    port: 5175,
+    strictPort: true,
+  },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
