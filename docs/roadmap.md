@@ -2,9 +2,9 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.2 |
+| Version | 0.3 |
 | Date | 2026-10-09 |
-| Current milestone | **M0** |
+| Current milestone | **M2** |
 
 Goal: load the client's Tally backup data (two companies) into MySQL and deliver dashboards and AI querying, with every part built generically so it later works for live Tally, other accounting books and other clients (PIL-001 to PIL-005).
 
@@ -26,29 +26,29 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 ## M1 — Tally proof of concept
 
-**Done when:** a script lists the companies loaded in TallyPrime and pulls groups, ledgers and vouchers for a chosen company from the test company into `raw.raw_records`; the debit/credit sign convention is confirmed and documented.
+**Done when:** a script lists the companies loaded in TallyPrime and pulls groups, ledgers and vouchers for a chosen company from the test company into `ledgerbridge_source.raw_records`; the debit/credit sign convention is confirmed and documented.
 
-> Plan milestone M1 (Tally proof of concept) per architecture.md Sections 4.4 and 13 and schema.md Sections 3 and 7. Build the start of `data-plane/connectors/tally`: an HTTP client for Tally's XML interface at TALLY_URL, a request to list loaded companies, and requests to fetch groups, ledgers, voucher types and vouchers for a named company, storing results unchanged in raw.raw_records. Create only the tables this milestone needs via Alembic. Add a CLI command to run it. Write tests using recorded XML fixtures from the test company (I will provide them; never use client data). Include a check that confirms how Tally signs debit and credit amounts. Show me the plan first.
+> Plan milestone M1 (Tally proof of concept) per architecture.md Sections 4.4 and 13 and schema.md Sections 3 and 7. Build the start of `data-plane/connectors/tally`: an HTTP client for Tally's XML interface at TALLY_URL, a request to list loaded companies, and requests to fetch groups, ledgers, voucher types and vouchers for a named company, storing results unchanged in ledgerbridge_source.raw_records. Create only the tables this milestone needs via Alembic. Add a CLI command to run it. Write tests using recorded XML fixtures from the test company (I will provide them; never use client data). Include a check that confirms how Tally signs debit and credit amounts. Show me the plan first.
 
 **Your part:** load LedgerBridge Test Co in TallyPrime with the XML server enabled, and save sample XML responses as fixtures when Claude Code asks.
 
 ## M2 — Database foundation
 
-**Done when:** Alembic migrations create the `raw`, `core`, `rpt` and `app` schemas and all phase 1a tables from schema.md; database users from schema.md Section 2.1 are created; standard accounts are seeded.
+**Done when:** Alembic migrations create every phase 1a table from schema.md in the four databases `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting` (empty until M6) and `ledgerbridge_system` (ADR-016); the database users from schema.md Section 2.1 exist with their grants (`ai_ro` reads `ledgerbridge_reporting` only); migrations run as `migrator` in a one-off container; standard accounts are seeded.
 
-> Plan milestone M2: implement the full schema from docs/schema.md as SQLAlchemy models and Alembic migrations, including the four schemas, source-tracking columns, indexes, unique keys, database users and grants from Section 2.1, and a seed for a default standard chart of accounts. Follow every convention in schema.md Section 1. Add tests that run migrations on an empty database. Show me the plan first.
+> Plan milestone M2: implement the full schema from docs/schema.md as SQLAlchemy models and Alembic migrations, including the four databases named in ADR-016, source-tracking columns, indexes, unique keys, database users and grants from Section 2.1, and a seed for a default standard chart of accounts. Follow every convention in schema.md Section 1. Add tests that run migrations on an empty database. Show me the plan first.
 
 ## M3 — Tally connector: full and incremental sync
 
-**Done when:** the test company is fully transformed from raw to canonical tables; re-running only fetches changes (AlterID); altered, cancelled and deleted vouchers are handled; several companies can be synced in one run; each run is logged in `app.sync_runs`.
+**Done when:** the test company is fully transformed from raw to canonical tables; re-running only fetches changes (AlterID); altered, cancelled and deleted vouchers are handled; several companies can be synced in one run; each run is logged in `ledgerbridge_system.sync_runs`.
 
-> Plan milestone M3: complete the Tally connector per the connector interface in architecture.md Section 4.4 and the mapping in schema.md Section 7. Implement transformation from raw.raw_records into the core tables, idempotent upserts on (connection_id, source_key), incremental sync with AlterID markers in app.sync_markers, soft deletes, multi-company runs, origin tagging (live or backup, configurable per connection), and sync logging. Keep all Tally-specific logic inside connectors/tally; the transform framework must be source-independent. Test with test-company fixtures. Show me the plan first.
+> Plan milestone M3: complete the Tally connector per the connector interface in architecture.md Section 4.4 and the mapping in schema.md Section 7. Implement transformation from ledgerbridge_source.raw_records into the ledgerbridge_accounting tables (replacing a voucher's child rows as a whole in one transaction, schema.md Section 8 rule 7), idempotent upserts on (connection_id, source_key), incremental sync with AlterID markers in ledgerbridge_system.sync_markers, soft deletes, multi-company runs, origin tagging (live or backup, configurable per connection), and sync logging. Keep all Tally-specific logic inside connectors/tally; the transform framework must be source-independent. Test with test-company fixtures. Show me the plan first.
 
 ## M4 — Validation
 
 **Done when:** after every sync, voucher balance, trial balance and ledger closing-balance checks run; results are stored and viewable via an API endpoint.
 
-> Plan milestone M4: implement validation per requirements VAL-001 to VAL-003 and schema.md Section 5.2. Checks: every voucher's lines sum to zero, trial balance balances per entity and period, and ledger closing balances match the closing balances reported by the source (fetch Tally's closing balances through the connector). Store results in app.validation_runs and app.validation_issues and expose them via the API. Show me the plan first.
+> Plan milestone M4: implement validation per requirements VAL-001 to VAL-003 and schema.md Section 5.2. Checks: every voucher's lines sum to zero, trial balance balances per entity and period, and ledger closing balances match the closing balances reported by the source (fetch Tally's closing balances through the connector). Store results in ledgerbridge_system.validation_runs and ledgerbridge_system.validation_issues and expose them via the API. Show me the plan first.
 
 **Your part (outside Claude Code):** run M3 and M4 against the `pilot` environment with the client's two companies. Share only pass/fail results and error messages, never figures or names.
 
@@ -60,9 +60,9 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 ## M6 — Reporting layer
 
-**Done when:** the `rpt` views and aggregate tables from schema.md Section 6 exist and refresh after sync; API endpoints serve trial balance, P&L, balance sheet, cash flow, receivables and payables ageing, KPIs, per entity and consolidated, with drill-down to vouchers.
+**Done when:** the `ledgerbridge_reporting` views and aggregate tables from schema.md Section 6 exist and refresh after sync; API endpoints serve trial balance, P&L, balance sheet, cash flow, receivables and payables ageing, KPIs, per entity and consolidated, with drill-down to vouchers.
 
-> Plan milestone M6: implement the rpt schema from docs/schema.md Section 6, incremental refresh of aggregate tables after each sync, the semantic_catalog with descriptions of every view and column, and API endpoints for requirements RPT-001 to RPT-004 and RPT-006 to RPT-008, all respecting the user's entity access. Show me the plan first.
+> Plan milestone M6: implement the ledgerbridge_reporting database objects from docs/schema.md Section 6, incremental refresh of aggregate tables after each sync, the semantic_catalog with descriptions of every view and column, and API endpoints for requirements RPT-001 to RPT-004 and RPT-006 to RPT-008, all respecting the user's entity access. Show me the plan first.
 
 ## M7 — Dashboard
 
@@ -89,20 +89,20 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 > Plan milestone M8 per architecture.md Section 5 (including 5.4 to 5.7) and ADR-015, and requirements AI-001 to AI-004, AI-010 to AI-018 and SEC-010 (AI-005 and AI-006 are withdrawn). Build:
 > - **AI privacy mode** as a per-client setting in the data plane (`private` default, `schema-only`, `full`), changeable only by a Client Admin and audited.
 > - **Provider abstraction**: Ollama as the local model; Anthropic API for the test environment only, on synthetic data; Bedrock and Vertex interfaces for client cloud accounts, where configured. Each provider is allowed only in its permitted modes.
-> - **Local embedding model**: embed rpt.semantic_catalog, business definitions and ledger names into Qdrant.
+> - **Local embedding model**: embed ledgerbridge_reporting.semantic_catalog, business definitions and ledger names into Qdrant.
 > - **One data protection gate** that every model payload goes through:
 >   - mode checks; in `schema-only` the external request type cannot carry result rows or sample values
 >   - pseudonymization of party names (matched against the party master), GSTIN, PAN, bank account numbers and salary amounts, with a token map kept only in memory, never sent or logged
 >   - local reversal of tokens in responses
 > - **The text-to-SQL pipeline**:
->   - SQL generation restricted to rpt views
+>   - SQL generation restricted to ledgerbridge_reporting views
 >   - SQL validation
 >   - execution as the ai_ro user with entity filters injected in code, plus timeouts and row limits
 >   - result formatting by local templates or the local model in `private` and `schema-only`
 >   - answers that show the SQL and link to source records
 > - **No outbound tools for the model**: the only capability is proposing SQL; model output is treated as untrusted text.
 > - **Outbound network allowlist**, derived from configuration: Docker egress restricted to configured sources plus the one approved AI endpoint, and an application-level check in a single HTTP client factory. Refusals are logged.
-> - **Model call log**: one append-only row per model call with the exact payload sent (after masking), the response, provider, endpoint, model, mode, user and token counts, plus app.ai_query_log per question. Design the table and update docs/schema.md in the same change.
+> - **Model call log**: one append-only row per model call with the exact payload sent (after masking), the response, provider, endpoint, model, mode, user and token counts, plus ledgerbridge_system.ai_query_log per question. Design the table and update docs/schema.md in the same change.
 > - **Dashboard**: a chat panel, and an admin view of the model call log.
 >
 > **Tests:**
@@ -130,3 +130,4 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | --- | --- | --- |
 | 2026-10-08 | 0.1 | Initial pilot roadmap. |
 | 2026-10-09 | 0.2 | M8 "Done when" and prompt updated for AI data protection: privacy modes, masking, local embeddings, no outbound tools, egress allowlist, model call log (AI-011 to AI-018, SEC-010, ADR-015). |
+| 2026-10-09 | 0.3 | Current milestone M2. Database names `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016) in M2 to M8; M2 "Done when" adds users, grants and the `migrate` container; M3 prompt references the child-row replacement rule. |
