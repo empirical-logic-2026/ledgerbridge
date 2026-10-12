@@ -250,6 +250,7 @@ Since M3 it starts with `./dev.ps1 up` (it has no profile any more). It reaches 
                            # and "Sync run N (deletion_check): succeeded ..." every hour
 ./dev.ps1 status           # per connection: last sync and deletion check, and when each is next due
 ./dev.ps1 sync deletions   # run a deletion check now, inside the api container (docker compose exec)
+./dev.ps1 validate         # validate now, inside the api container; the worker validates after every run
 ```
 
 ### 6.8 Profiles: `tools`
@@ -409,5 +410,6 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
 | 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |
+| 2026-10-12 | M4: the worker validates after every sync and deletion check and raises alerts; `./dev.ps1 validate` runs `workers.cli validate` through `docker compose exec`. For `sync` and `validate`, exit code 1 now means "ran, but checks failed" and is reported as such instead of as a Docker failure. |
 | 2026-10-12 | M3 review: the worker also runs the hourly deletion check (section 6.7); `./dev.ps1 sync deletions` runs one through `docker compose exec`; `status` shows both schedules. |
 | 2026-10-12 | M3: the `worker` starts with `up` and runs Celery Beat (`-B`) for the scheduled sync; `./dev.ps1 sync`; `status` shows each connection's last and next sync; `PYTHONPATH=/app` in the Dockerfile. |

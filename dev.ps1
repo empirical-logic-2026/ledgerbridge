@@ -16,6 +16,7 @@
     ./dev.ps1 sync -Company "LedgerBridge Test Co"
     ./dev.ps1 sync full -Company "LedgerBridge Test Co"
     ./dev.ps1 sync deletions
+    ./dev.ps1 validate
     ./dev.ps1 test
     ./dev.ps1 seed-test-data
     ./dev.ps1 seed-test-data create-only
@@ -24,7 +25,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('up', 'down', 'status', 'test', 'logs', 'tally-companies', 'extract', 'sync', 'seed-test-data', 'help')]
+    [ValidateSet('up', 'down', 'status', 'test', 'logs', 'tally-companies', 'extract', 'sync', 'validate', 'seed-test-data', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -48,6 +49,14 @@ function Invoke-Stack {
     # All Docker calls go through deploy/stack.ps1 (project name, env file, env_file path).
     & $stack -Env $Env @args
     if ($LASTEXITCODE -ne 0) { throw "docker compose failed (exit $LASTEXITCODE)" }
+}
+
+function Invoke-Checked {
+    # For commands whose exit code 1 means "ran, but found problems" (failed sync or
+    # validation checks): report it plainly instead of as a Docker failure.
+    & $stack -Env $Env @args
+    if ($LASTEXITCODE -eq 1) { Write-Host 'Finished with problems: see FAILED / error lines above.' -ForegroundColor Yellow }
+    elseif ($LASTEXITCODE -ne 0) { throw "docker compose failed (exit $LASTEXITCODE)" }
 }
 
 function Get-EnvValue([string]$Name, [string]$Default = '') {
@@ -158,7 +167,17 @@ switch ($Command) {
         $syncArgs = @('python', '-m', 'workers.cli', $mode, '--connection', $connection, '--source', 'tally')
         if ($Company) { $syncArgs += @('--entity', $Company) }
         if ($Service -eq 'full') { $syncArgs += @('--full', '--check-deletions') }
-        Invoke-Stack exec -T api @syncArgs
+        Invoke-Checked exec -T api @syncArgs
+    }
+    'validate' {
+        # Validation as of today (M4): voucher balance, trial balance and closing balances
+        # against the source. Prints counts, check codes and pass/fail only. Syncs validate
+        # on their own; this runs it on demand.
+        Assert-EnvFile
+        Assert-ApiRunning
+        $validateArgs = @('python', '-m', 'workers.cli', 'validate', '--connection', $connection, '--source', 'tally')
+        if ($Company) { $validateArgs += @('--entity', $Company) }
+        Invoke-Checked exec -T api @validateArgs
     }
     'logs' {
         Assert-EnvFile
