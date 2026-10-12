@@ -218,13 +218,16 @@ def test_failed_sync_raises_one_alert_until_a_run_succeeds(
     db: Session, synced: S.Connection, connector: TallyConnector
 ) -> None:
     failed = SyncResult(sync_run_id=1, status="failed", run_type="incremental")
-    assert after_run(db, synced, connector, failed) == []
+    assert after_run(db, synced, connector, failed).reports == []
     after_run(db, synced, connector, failed)
     (alert,) = _open_alerts(db, "sync_failed")
     assert "1000" not in alert.message
 
-    ok = SyncResult(sync_run_id=1, status="succeeded", run_type="incremental", entities=[COMPANY])
-    (report,) = after_run(db, synced, connector, ok)
+    key = connector.list_entities()[0].key
+    ok = SyncResult(sync_run_id=1, status="succeeded", run_type="incremental", entity_keys=[key])
+    after = after_run(db, synced, connector, ok)
+    assert after.validation_status == "passed"
+    (report,) = after.reports
     assert report.status == "passed"
     assert _open_alerts(db, "sync_failed") == []
     assert db.get(S.Alert, alert.id).resolved_at is not None

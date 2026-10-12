@@ -89,7 +89,7 @@ def test_failed_run_records_error_and_keeps_only_completed_batches(
 
 def test_find_entity_by_name() -> None:
     assert find_entity(FakeConnector(), "Fake Co") == ENTITY
-    with pytest.raises(LookupError, match="1 listed"):
+    with pytest.raises(LookupError, match="1 of 1 configured entities are not available"):
         find_entity(FakeConnector(), "Other Co")
 
 

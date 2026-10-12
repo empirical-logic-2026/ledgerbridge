@@ -427,6 +427,7 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
 | 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |
+| 2026-10-12 | `./dev.ps1 entity-check` runs `workers.cli entity-check` through `docker compose exec`. The CLI flushes every output line, so progress shows while a long sync runs inside the container (through `exec -T` stdout is a pipe, which Python otherwise buffers). |
 | 2026-10-12 | `./dev.ps1 reset` deletes one environment's volumes after a typed confirmation (section 6.7b). |
 | 2026-10-12 | Pilot preparation: `deploy/new-env.ps1` and `./dev.ps1 init-env` create an env file with random passwords (section 6.7a); `connect` and `summary` run `workers.cli` through `docker compose exec`. |
 | 2026-10-12 | M4: the worker validates after every sync and deletion check and raises alerts; `./dev.ps1 validate` runs `workers.cli validate` through `docker compose exec`. For `sync` and `validate`, exit code 1 now means "ran, but checks failed" and is reported as such instead of as a Docker failure. |

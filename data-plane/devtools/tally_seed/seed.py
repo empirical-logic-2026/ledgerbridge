@@ -64,7 +64,7 @@ class ImportResult:
 
 
 def parse_import_response(body: bytes) -> ImportResult:
-    root = ET.fromstring(parser.sanitize(decode_response(body)).lstrip("﻿"))  # noqa: S314
+    root = ET.fromstring(parser.sanitize(decode_response(body)).lstrip("\ufeff"))  # noqa: S314
 
     def count(tag: str) -> int:
         value = root.findtext(f".//{tag}")

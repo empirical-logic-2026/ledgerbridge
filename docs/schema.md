@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.10 (Draft) |
+| Version | 0.11 (Draft) |
 | Date | 2026-10-09 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -339,7 +339,7 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 | Table | Key columns | Notes |
 | --- | --- | --- |
 | `ledgerbridge_system.sources` | `id, code ('tally','file','zoho',...), name, connector_version` | Registered connector types. |
-| `ledgerbridge_system.connections` | `id, source_id, name, config JSON, credentials_enc VARBINARY, agent_id NULL, sync_interval_sec, status ENUM('active','paused','error'), created_by` | Credentials encrypted at application level (CON-009). |
+| `ledgerbridge_system.connections` | `id, source_id, name, config JSON, credentials_enc VARBINARY, agent_id NULL, sync_interval_sec, status ENUM('active','paused','error'), created_by` | Credentials encrypted at application level (CON-009). `config` holds `url`, `origin` (`live`/`backup`), `entities` as `[{"key": <source key, e.g. Tally company GUID>, "name": <name as the source reported it>}]` (found by key; plain names from before 0.11 are still found by exact name), and optional `deletion_check_interval_sec`, `validation_tolerance`. New connections are `paused` until activated (ADR-020). |
 | `ledgerbridge_system.agents` | `id, name, cert_fingerprint, version, last_seen_at, status` | Connector agents (SYN-004). |
 | `ledgerbridge_system.sync_markers` | PK `(connection_id, source_entity_key, object_type)`, `marker_value` | Last AlterID / timestamp per object type. |
 | `ledgerbridge_system.sync_runs` | `id, connection_id, run_type ENUM('incremental','full','import','deletion_check'), status, started_at, finished_at, records_received, records_failed, error_summary` | SYN-005. `deletion_check` runs only look for objects deleted in the source (7.4, migration `0005`). |
@@ -569,6 +569,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-12 | 0.11 | `connections.config.entities` stores each entity's key with its name (ADR-021). |
 | 2026-10-12 | 0.10 | Section 8 rule 8: short transactions while syncing; error summaries without SQL (ADR-020). |
 | 2026-10-12 | 0.9 | M4: validation check codes, severities and the as-of-date rule (5.2); `validation_runs.as_of` and `alerts` (migration `0006`). |
 | 2026-10-12 | 0.8 | M3 review: *Deposits (Asset)* → 1160; *Duties & Taxes* mapped by tax type (GST 1250/3230, TDS/TCS 1260/3240, by balance side at the reporting date, applied in M6); reports place unmapped ledgers under the nearest standard parent of their Tally primary group (M6); the empty-GST-duty-head rule is an assumption to verify, applied to GST ledgers only and reported as a warning; deletion check as its own run on its own schedule (migration `0005`). |

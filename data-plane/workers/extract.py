@@ -64,11 +64,13 @@ def connector_for(session: Session, connection: Connection) -> Connector:
 
 
 def find_entity(connector: Connector, name: str) -> SourceEntity:
-    entities = connector.list_entities()
-    for entity in entities:
-        if entity.name == name:
-            return entity
-    raise LookupError(f"Entity '{name}' is not available in the source ({len(entities)} listed)")
+    """One entity by its exact name (the shared lookup in workers/entities.py)."""
+    from workers.entities import EntityLookupError, by_names
+
+    found, _ = by_names(connector.list_entities(), [name])
+    if not found:
+        raise EntityLookupError(1, 1)
+    return found[0]
 
 
 def _counted(records: Iterator[SourceRecord], counts: Counter[str]) -> Iterator[SourceRecord]:

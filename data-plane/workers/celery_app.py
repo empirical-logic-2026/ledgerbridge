@@ -137,9 +137,9 @@ def _run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict[str, o
             sum(result.deleted.values()),
             len(result.warnings),
         )
-        reports = after_run(session, connection, connector, result)
+        after = after_run(session, connection, connector, result)
         return {
             "sync_run_id": result.sync_run_id,
             "status": result.status,
-            "validation": [r.status for r in reports],
+            "validation": after.validation_status,
         }

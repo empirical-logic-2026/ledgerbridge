@@ -7,6 +7,8 @@
     python -m workers.cli validate --connection tally-test [--as-of 2026-09-30]
     python -m workers.cli connect --connection tally-pilot --source tally --origin backup \
         --entity "Company A" --entity "Company B" [--activate | --pause]
+    python -m workers.cli connect --connection tally-pilot --source tally --origin backup --all
+    python -m workers.cli entity-check --connection tally-pilot
     python -m workers.cli status
     python -m workers.cli summary
     python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
@@ -41,6 +43,7 @@ from sqlalchemy.orm import Session
 
 from connectors import registry
 from connectors.base import Period
+from core import naming
 from core.config import get_settings
 from core.db import get_engine
 from core.errors import redact_quoted, short_error
@@ -52,7 +55,8 @@ from core.models.source import RawRecord
 from core.models.system import Alert, ValidationIssue, ValidationRun
 from core.transform import trial_balance
 from core.validation import ValidationReport
-from workers.extract import connector_for, find_entity, get_or_create_connection, run_extract
+from workers.entities import by_names, configured, to_config
+from workers.extract import connector_for, get_or_create_connection, run_extract
 from workers.sync import (
     DELETION_CHECK,
     SyncBusyError,
@@ -64,7 +68,7 @@ from workers.sync import (
     run_sync,
     running_run,
 )
-from workers.validate import after_run, run_validation
+from workers.validate import AfterRun, alert_for_run, run_validation, validate_after
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -129,8 +133,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     connection_args(connect)
     connect.add_argument("--origin", choices=("live", "backup"), required=True)
-    connect.add_argument(
-        "--entity", action="append", required=True, help="entity name (repeatable)"
+    which = connect.add_mutually_exclusive_group(required=True)
+    which.add_argument(
+        "--entity",
+        action="append",
+        help="entity name exactly as the source shows it (repeatable)",
+    )
+    which.add_argument(
+        "--all", action="store_true", help="every entity currently loaded in the source"
     )
     schedule = connect.add_mutually_exclusive_group()
     schedule.add_argument(
@@ -140,6 +150,17 @@ def _parser() -> argparse.ArgumentParser:
         "--pause",
         action="store_true",
         help="no scheduled syncs (e.g. backup data that doesn't change); manual syncs work",
+    )
+
+    check = sub.add_parser(
+        "entity-check",
+        help="are the configured entities in the source? (kinds of difference, never names)",
+    )
+    connection_args(check)
+    check.add_argument(
+        "--no-probe",
+        action="store_true",
+        help="skip selecting each entity in the source (read-only requests)",
     )
 
     sub.add_parser("status", help="each connection's last sync and when the next is due")
@@ -163,6 +184,11 @@ CONNECT_LOCK_WAIT_SEC = 10
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    # Through `docker compose exec -T` stdout is a pipe; flush every line so progress
+    # shows while a long sync runs.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(line_buffering=True)
     args = _parser().parse_args(argv)
     with Session(get_engine()) as session:
         try:
@@ -188,45 +214,47 @@ def _run(session: Session, args: argparse.Namespace) -> int:
 
     if args.command == "entities":
         return _list_entities(session, args)
+    if args.command == "entity-check":
+        return _entity_check(session, args)
     if args.command == "connect":
         return _connect(session, args)
 
     connection = get_or_create_connection(session, args.connection, args.source)
     if getattr(args, "origin", None):
         connection.config = {**connection.config, "origin": args.origin}
-    if args.command in ("sync", "check-deletions") and args.entity:
-        # Remember which entities this connection syncs (used by the scheduler).
-        known = list(dict.fromkeys([*connection.config.get("entities", []), *args.entity]))
-        connection.config = {**connection.config, "entities": known}
     session.commit()
     connector = connector_for(session, connection)
+    if args.command in ("sync", "check-deletions") and args.entity:
+        # Remember which entities this connection syncs (by key; used by the scheduler).
+        found, missing = by_names(connector.list_entities(), args.entity)
+        if missing:
+            print(
+                f"{len(missing)} of {len(args.entity)} named entities are not in the source "
+                "(names must match exactly; see entity-check).",
+                file=sys.stderr,
+            )
+            return 2
+        kept = [e for e in configured(connection) if e.key not in {f.key for f in found}]
+        connection.config = {
+            **connection.config,
+            "entities": [{"key": e.key, "name": e.name} for e in kept] + to_config(found),
+        }
+        session.commit()
 
     if args.command == "validate":
-        reports = run_validation(session, connection, connector, args.entity, args.as_of)
+        reports = run_validation(
+            session, connection, connector, args.entity, args.as_of, progress=_progress
+        )
         return _print_validation(reports)
 
     if args.command in ("sync", "check-deletions"):
-        validate = not getattr(args, "no_validate", False)
-        try:
-            if args.command == "sync":
-                result = run_sync(
-                    session, connection, connector, args.entity, args.full, _period(args)
-                )
-                code = _print_sync(result)
-                if validate and not (args.check_deletions and not code):
-                    code |= _print_validation(after_run(session, connection, connector, result))
-                if code or not args.check_deletions:
-                    return code
-            result = run_deletion_check(session, connection, connector, args.entity)
-        except SyncBusyError as exc:
-            print(str(exc), file=sys.stderr)
-            return 3
-        code = _print_sync(result)
-        if validate:
-            code |= _print_validation(after_run(session, connection, connector, result))
-        return code
+        return _sync(session, connection, connector, args)
 
-    entity = find_entity(connector, args.entity)
+    found, _ = by_names(connector.list_entities(), [args.entity])
+    if not found:
+        print("The named entity is not in the source (see entity-check).", file=sys.stderr)
+        return 2
+    entity = found[0]
     extracted = run_extract(session, connection, connector, entity, _period(args))
 
     print(f"Sync run {extracted.sync_run_id}: {extracted.status}")
@@ -239,6 +267,76 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         print(f"  error: {_error(extracted.error)}", file=sys.stderr)
         return 1
     return 0
+
+
+def _progress(message: str) -> None:
+    print(f"[{datetime.now():%H:%M:%S}] {message}", flush=True)
+
+
+def _sync(
+    session: Session, connection: Connection, connector: object, args: argparse.Namespace
+) -> int:
+    """sync [--check-deletions] or check-deletions, then validation. The runs' statuses and
+    the validation's are reported separately: a failed validation never fails the sync."""
+    validate = not getattr(args, "no_validate", False)
+    runs: list[SyncResult] = []
+    try:
+        if args.command == "sync":
+            runs.append(
+                run_sync(
+                    session,
+                    connection,
+                    connector,  # type: ignore[arg-type]
+                    args.entity,
+                    args.full,
+                    _period(args),
+                    progress=_progress,
+                )
+            )
+            if args.check_deletions and runs[0].status == "succeeded":
+                runs.append(
+                    run_deletion_check(
+                        session,
+                        connection,
+                        connector,  # type: ignore[arg-type]
+                        progress=_progress,
+                        entity_keys=runs[0].entity_keys,
+                    )
+                )
+        else:
+            runs.append(
+                run_deletion_check(
+                    session,
+                    connection,
+                    connector,  # type: ignore[arg-type]
+                    args.entity,
+                    progress=_progress,
+                )
+            )
+    except SyncBusyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 3
+    code = 0
+    for run in runs:
+        code |= _print_sync(run)
+        alert_for_run(session, connection, run)
+    after = AfterRun()
+    if validate and runs[0].status == "succeeded":
+        after = validate_after(
+            session,
+            connection,
+            connector,
+            runs[0],
+            progress=_progress,  # type: ignore[arg-type]
+        )
+        code |= _print_validation(after.reports)
+        if after.validation_error:
+            print(f"Validation couldn't run: {_error(after.validation_error)}", file=sys.stderr)
+            code |= 1
+    parts = [f"{run.run_type} {run.status}" for run in runs]
+    validation = after.validation_status if validate else "skipped"
+    print(f"Result: {'; '.join(parts)}; validation {validation}")
+    return code
 
 
 def _show_names() -> bool:
@@ -290,11 +388,19 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
             )
             return 3
     connection = existing or get_or_create_connection(session, args.connection, args.source)
-    wanted = list(dict.fromkeys(args.entity))
+    session.commit()
+    available = connector_for(session, connection).list_entities()
+    if args.all:
+        found, missing = list(available), []
+        wanted = [e.name for e in found]
+    else:
+        wanted = list(dict.fromkeys(args.entity))
+        found, missing = by_names(available, wanted)
     if session.get_bind().dialect.name == "mysql":
         # Fail fast instead of hanging if the row is locked after all.
         session.execute(text(f"SET SESSION innodb_lock_wait_timeout = {CONNECT_LOCK_WAIT_SEC}"))
-    connection.config = {**connection.config, "origin": args.origin, "entities": wanted}
+    # Store the entities found by key (and their names); names not found are not stored.
+    connection.config = {**connection.config, "origin": args.origin, "entities": to_config(found)}
     if args.activate:
         connection.status = "active"
     elif args.pause:
@@ -309,22 +415,96 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 3
-    connector = connector_for(session, connection)
-    available = {e.name for e in connector.list_entities()}
-    missing = [name for name in wanted if name not in available]
     print(
         f"Connection '{connection.name}': origin {args.origin}, {connection.status}, "
-        f"{len(wanted)} entities configured, {len(wanted) - len(missing)} found in the source"
+        f"{len(wanted)} entities configured, {len(found)} found in the source "
+        f"({len(available)} loaded there)"
     )
     if missing:
         detail = f": {', '.join(missing)}" if _show_names() else ""
         print(
-            f"  {len(missing)} not found{detail}. Check the exact names (and that the "
-            "companies are loaded) in the source.",
+            f"  {len(missing)} not found{detail}. Names must match exactly, spaces included; "
+            "run entity-check to see how they differ, or use --all (-All in dev.ps1) to take "
+            "every loaded company. Only the found ones were stored.",
             file=sys.stderr,
         )
         return 2
     return 0
+
+
+def _entity_check(session: Session, args: argparse.Namespace) -> int:
+    """Read-only diagnostic: which configured entities the source has, and for those it
+    doesn't, how the names differ. Kinds and counts only, never names (any environment)."""
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is not None:
+        connector = connector_for(session, connection)
+    elif args.source:
+        connector = registry.create_connector(args.source, registry.default_config(args.source))
+    else:
+        print(f"No connection '{args.connection}'; pass --source.", file=sys.stderr)
+        return 2
+    session.rollback()  # read-only from here
+    available = connector.list_entities()
+    number = {e.key: i for i, e in enumerate(available, start=1)}
+    print(f"Source: {len(available)} entities loaded")
+    for i, entity in enumerate(available, start=1):
+        unusual = "; ".join(naming.features(entity.name)) or "nothing unusual"
+        print(f"  source entity {i}: name of {len(entity.name)} characters; {unusual}")
+    wanted = configured(connection) if connection is not None else []
+    print(f"Connection '{args.connection}': {len(wanted)} entities configured")
+    problems = 0
+    for j, entry in enumerate(wanted, start=1):
+        how = "by key" if entry.key else "by name only (stored before keys were)"
+        match = next((e for e in available if entry.key and e.key == entry.key), None)
+        if match is not None:
+            kinds = naming.differences(entry.name, match.name)
+            note = "name unchanged" if not kinds else "name now differs by: " + ", ".join(kinds)
+            print(f"  entity {j} ({how}): FOUND as source entity {number[match.key]}; {note}")
+            continue
+        exact = next((e for e in available if e.name == entry.name), None)
+        if exact is not None and not entry.key:
+            print(f"  entity {j} ({how}): FOUND by exact name as source entity {number[exact.key]}")
+            continue
+        problems += 1
+        closest = [
+            (number[e.key], kinds)
+            for e in available
+            if (kinds := naming.differences(entry.name, e.name)) is not None
+        ]
+        if entry.key and exact is not None:
+            detail = f"source entity {number[exact.key]} has the same name but another key"
+        elif closest:
+            detail = "; ".join(
+                f"source entity {i} differs only by: {', '.join(k)}" for i, k in closest
+            )
+        else:
+            detail = "no source entity has a similar name"
+        print(f"  entity {j} ({how}): NOT FOUND; {detail}")
+    if not args.no_probe and hasattr(connector, "probe_entity"):
+        print("Selection check (select each entity by its listed name, then list again):")
+        for i, entity in enumerate(available, start=1):
+            try:
+                groups = connector.probe_entity(entity)
+                outcome = f"selected, {groups} groups"
+            except Exception as exc:  # noqa: BLE001 - reported, not raised
+                problems += 1
+                outcome = f"selecting it FAILED ({short_error(exc, redact=True)})"
+            after = {e.key: e.name for e in connector.list_entities()}
+            changes = [
+                f"source entity {number[e.key]} differs by: "
+                + ", ".join(naming.differences(e.name, after[e.key]) or ["other"])
+                for e in available
+                if e.key in after and after[e.key] != e.name
+            ]
+            gone = sum(1 for e in available if e.key not in after)
+            listing = "; ".join(changes) if changes else "names unchanged"
+            if gone:
+                listing += f"; {gone} no longer listed"
+            if changes or gone:
+                problems += 1
+            print(f"  source entity {i}: {outcome}; afterwards {listing}")
+    print(f"Result: {'no problems found' if not problems else f'{problems} problem(s) found'}")
+    return 0 if not problems else 1
 
 
 def _print_sync(r: SyncResult) -> int:
@@ -451,7 +631,8 @@ def _print_schedule(
 ) -> None:
     head = f"  {label} (every {interval}s):"
     if run is None:
-        print(f"{head} never ran; next: due now")
+        due = "due now" if connection.status == "active" else f"none ({connection.status})"
+        print(f"{head} never ran; next: {due}")
         return
     finished = f"{run.finished_at:%Y-%m-%d %H:%M:%S}" if run.finished_at else "-"
     counts = f"{run.records_received} {received}"
@@ -461,7 +642,9 @@ def _print_schedule(
         f"{head} last run {run.id} ({run.run_type}) {run.status}, started "
         f"{run.started_at:%Y-%m-%d %H:%M:%S} UTC, finished {finished}, {counts}"
     )
-    if run.status == "running":
+    if connection.status != "active":
+        print(f"    next: none, the connection is {connection.status} (no scheduled runs)")
+    elif run.status == "running":
         print("    next: after the current run")
     elif is_due(connection, run.started_at, now, interval):
         print("    next: due now (picked up within a minute by the worker)")
