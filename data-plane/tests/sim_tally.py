@@ -12,7 +12,11 @@ and numbers. Behaviour can be made difficult:
 - `empty_partial`: requests not aligned to whole months return nothing;
 - `widen_partial`: requests not aligned to whole months return everything from the start of
   the books, like TallyPrime in Educational mode (seen 2026-10-12);
-- `companies`: how many companies are listed (vouchers are generated per company).
+- `companies`: how many companies are listed (vouchers are generated per company);
+- `needs_timeout`: month -> seconds; a request for that month times out unless the client
+  allows at least that long (read timeout);
+- `slow_listing`: months whose keys-only listing always times out;
+- `missing_months`: months whose voucher request returns nothing (their listing doesn't).
 
 Keys-only listings never time out (they're small). Every voucher request is logged.
 """
@@ -53,6 +57,9 @@ class SimTally(FixtureTransport):
         dead_after: int | None = None,
         empty_partial: bool = False,
         widen_partial: bool = False,
+        needs_timeout: dict[date, float] | None = None,
+        slow_listing: tuple[date, ...] = (),
+        missing_months: tuple[date, ...] = (),
     ) -> None:
         super().__init__(DEFAULT_DIR)
         self.per_day = per_day
@@ -63,6 +70,10 @@ class SimTally(FixtureTransport):
         self.dead_after = dead_after
         self.empty_partial = empty_partial
         self.widen_partial = widen_partial
+        self.needs_timeout = needs_timeout or {}
+        self.slow_listing = set(slow_listing)
+        self.missing_months = set(missing_months)
+        self.timeouts_seen: list[float | None] = []
         self.dead = False
         self.voucher_requests = 0
         self.log: list[tuple[str, date | None, date | None]] = []  # (kind, from, to incl.)
@@ -120,28 +131,37 @@ class SimTally(FixtureTransport):
         end = _day(m.group(1)) - timedelta(days=1) if (m := _TO.search(body)) else BOOKS_END
         since = int(m.group(1)) if (m := _SINCE.search(body)) else None
         company = self.names.index(current.group(1)) if current else 0
+        month = start.replace(day=1)
+        whole = start.day == 1 and (end + timedelta(days=1)).day == 1
         if not keys:
             self.voucher_requests += 1
             self.log.append(("vouchers", start, end))
+            read = (request.extensions.get("timeout") or {}).get("read")
+            self.timeouts_seen.append(read)
             if self.dead_after is not None and self.voucher_requests > self.dead_after:
                 self.dead = True
                 raise httpx.ReadTimeout("simulated: Tally stopped answering", request=request)
             days = (end - start).days + 1
-            limit = self.slow_max_days if start.replace(day=1) in self.slow_months else None
+            limit = self.slow_max_days if month in self.slow_months else None
             limit = (
                 min(x for x in (limit, self.max_days) if x) if (limit or self.max_days) else None
             )
             if limit is not None and days > limit:
                 raise httpx.ReadTimeout("simulated: too large", request=request)
+            if month in self.needs_timeout and (read is None or read < self.needs_timeout[month]):
+                raise httpx.ReadTimeout("simulated: needs a longer timeout", request=request)
             if any(start <= d <= end for d in self.fail_days):
                 raise httpx.ReadTimeout("simulated: this day never answers", request=request)
-            whole = start.day == 1 and (end + timedelta(days=1)).day == 1
-            if self.empty_partial and not whole:
+            if whole and month in self.missing_months:
                 return self._xml("")
-            if self.widen_partial and not whole:
-                start = BOOKS_START
         else:
             self.log.append(("keys", start, end))
+            if month in self.slow_listing:
+                raise httpx.ReadTimeout("simulated: listing too slow", request=request)
+        if self.empty_partial and not whole:
+            return self._xml("")
+        if self.widen_partial and not whole:
+            start = BOOKS_START
         out = []
         day = max(start, BOOKS_START)
         while day <= min(end, BOOKS_END):

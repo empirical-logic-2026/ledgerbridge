@@ -52,7 +52,13 @@ from core.models import accounting as A  # noqa: N812
 from core.models.accounting import Entity
 from core.models.base import utcnow
 from core.models.source import RawRecord
-from core.models.system import Alert, SyncCheckpoint, ValidationIssue, ValidationRun
+from core.models.system import (
+    Alert,
+    SyncCheckpoint,
+    SyncUnverifiedRange,
+    ValidationIssue,
+    ValidationRun,
+)
 from core.transform import trial_balance
 from core.validation import ValidationReport
 from workers.entities import by_names, configured, to_config
@@ -64,6 +70,7 @@ from workers.sync import (
     SyncResult,
     deletion_check_interval,
     entity_ids_for,
+    fetch_settings,
     is_due,
     last_run,
     run_deletion_check,
@@ -111,6 +118,12 @@ def _parser() -> argparse.ArgumentParser:
         help="with --full: ignore an interrupted full sync's progress and fetch everything again",
     )
     sync.add_argument(
+        "--refetch-from",
+        type=date.fromisoformat,
+        help="with --full: fetch again every chunk of an interrupted full sync from this date "
+        "(YYYY-MM-DD), e.g. a damaged range; earlier completed chunks are kept",
+    )
+    sync.add_argument(
         "--check-deletions",
         action="store_true",
         help="afterwards, run a deletion check (normally on its own, hourly schedule)",
@@ -152,7 +165,19 @@ def _parser() -> argparse.ArgumentParser:
     connect.add_argument(
         "--timeout-sec",
         type=float,
-        help="how long one request to the source may take before the sync splits it",
+        help="how long one request to the source may take (this connection; else the "
+        "TALLY_TIMEOUT_SEC default)",
+    )
+    connect.add_argument(
+        "--pause-sec",
+        type=float,
+        help="pause between requests during a sync, to ease the load on the source (0 = none)",
+    )
+    connect.add_argument(
+        "--part-month",
+        choices=("auto", "supported", "unsupported"),
+        help="whether the source answers requests for part of a month (auto: checked once "
+        "when first needed)",
     )
     schedule = connect.add_mutually_exclusive_group()
     schedule.add_argument(
@@ -260,6 +285,9 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _print_validation(reports)
 
     if args.command in ("sync", "check-deletions"):
+        if getattr(args, "refetch_from", None) and not args.full:
+            print("--refetch-from applies to a full sync: add --full.", file=sys.stderr)
+            return 2
         return _sync(session, connection, connector, args)
 
     found, _ = by_names(connector.list_entities(), [args.entity])
@@ -319,6 +347,7 @@ def _sync(
                 progress=_progress,
                 restart=getattr(args, "restart", False),
                 after_entity=hook(),
+                refetch_from=getattr(args, "refetch_from", None),
             )
             runs.append(sync)
             if args.check_deletions and sync.entity_keys:
@@ -426,6 +455,10 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
     connection.config = {**connection.config, "origin": args.origin, "entities": to_config(found)}
     if args.timeout_sec:
         connection.config = {**connection.config, "timeout_sec": args.timeout_sec}
+    if args.pause_sec is not None:
+        connection.config = {**connection.config, "pause_sec": args.pause_sec}
+    if args.part_month:
+        connection.config = {**connection.config, "part_month_requests": args.part_month}
     if args.activate:
         connection.status = "active"
     elif args.pause:
@@ -443,9 +476,9 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
     print(
         f"Connection '{connection.name}': origin {args.origin}, {connection.status}, "
         f"{len(wanted)} entities configured, {len(found)} found in the source "
-        f"({len(available)} loaded there); request timeout "
-        f"{connection.config.get('timeout_sec', '-')} s"
+        f"({len(available)} loaded there)"
     )
+    print(f"  {_fetch_settings_line(connection)}")
     if missing:
         detail = f": {', '.join(missing)}" if _show_names() else ""
         print(
@@ -456,6 +489,24 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
         )
         return 2
     return 0
+
+
+def _fetch_settings_line(connection: Connection) -> str:
+    """The connection's effective request timeout, pause and part-month support (ADR-023)."""
+    effective = fetch_settings(connection)
+    default = get_settings().tally_timeout_sec
+    own = connection.config.get("timeout_sec")
+    if own:
+        source = "set on the connection"
+        if float(own) != float(default):
+            source += f"; TALLY_TIMEOUT_SEC={default:g} applies only to connections without one"
+    else:
+        source = "TALLY_TIMEOUT_SEC default"
+    return (
+        f"request timeout {effective.timeout_sec:g} s ({source}); pause between requests "
+        f"{effective.pause_sec:g} s; part-month requests: {effective.part_month}"
+        " (change with connect --timeout-sec / --pause-sec / --part-month)"
+    )
 
 
 def _entity_check(session: Session, args: argparse.Namespace) -> int:
@@ -573,6 +624,8 @@ def _entity_line(e: EntityOutcome) -> str:
             extras.append(f"{e.chunks_skipped} done by an earlier attempt")
         if e.splits:
             extras.append(f"{e.splits} split")
+        if e.retries:
+            extras.append(f"{e.retries} retried whole with a longer timeout")
         if e.unverified:
             extras.append(f"{e.unverified} UNVERIFIED")
         if extras:
@@ -618,6 +671,7 @@ def _status(session: Session) -> int:
             f"{connection.name}: {connection.status}, origin "
             f"{connection.config.get('origin', 'live')}, entities: {entities}"
         )
+        print(f"  {_fetch_settings_line(connection)}")
         sync = last_run(session, connection.id)
         _print_schedule(
             "sync", connection, sync, connection.sync_interval_sec, now, "fetched", "failed"
@@ -758,6 +812,30 @@ def _summary(session: Session) -> int:
             print(
                 f"  unfinished full sync of {who}: {chunks} chunks done since "
                 f"{since:%Y-%m-%d %H:%M} UTC (sync full continues it; add restart to start over)"
+            )
+        print(f"  {_fetch_settings_line(connection)}")
+        open_ranges = session.execute(
+            select(
+                SyncUnverifiedRange.source_entity_key,
+                SyncUnverifiedRange.object_type,
+                SyncUnverifiedRange.period_from,
+                SyncUnverifiedRange.period_to,
+                SyncUnverifiedRange.reason,
+            )
+            .where(
+                SyncUnverifiedRange.connection_id == connection.id,
+                SyncUnverifiedRange.resolved_at.is_(None),
+            )
+            .order_by(SyncUnverifiedRange.period_from)
+        ).all()
+        range_ids = entity_ids_for(session, connection.id, [r[0] for r in open_ranges])
+        for key, kind, start, end, reason in open_ranges:
+            who = (
+                f"entity {range_ids[key]}" if key in range_ids else "an entity not yet transformed"
+            )
+            print(
+                f"  UNVERIFIED {kind} {start}..{end} of {who}: {reason} "
+                "(fetched again by the next sync full)"
             )
         entity_ids = session.scalars(
             select(A.EntitySource.entity_id)

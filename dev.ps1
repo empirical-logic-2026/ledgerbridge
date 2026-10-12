@@ -29,6 +29,7 @@
     ./dev.ps1 entity-check -Env pilot
     ./dev.ps1 sync full -Env pilot              (re-run it to continue after an interruption)
     ./dev.ps1 sync full -Env pilot -Restart     (start over)
+    ./dev.ps1 sync full -Env pilot -From 2024-03-01   (fetch again from a date)
     ./dev.ps1 summary -Env pilot
     ./dev.ps1 reset -Env pilot
 #>
@@ -60,8 +61,20 @@ param(
     # For `connect`: every company currently loaded in Tally, instead of -Company names.
     [switch]$All,
 
-    # For `connect`: seconds one Tally request may take before the sync splits it (default 120).
+    # For `connect`: seconds one Tally request may take, stored on the connection. Without it
+    # a connection uses TALLY_TIMEOUT_SEC from the env file.
     [int]$TimeoutSec = 0,
+
+    # For `connect`: pause in seconds between Tally requests during a sync (eases the load).
+    [int]$PauseSec = -1,
+
+    # For `connect`: whether Tally answers requests for part of a month (auto = check once).
+    [ValidateSet('', 'auto', 'supported', 'unsupported')]
+    [string]$PartMonth = '',
+
+    # For `sync full`: fetch again every chunk of an interrupted full sync from this date
+    # (YYYY-MM-DD), e.g. a damaged range; earlier completed chunks are kept.
+    [string]$From = '',
 
     # For `sync full`: ignore an interrupted full sync's progress and fetch everything again.
     [switch]$Restart,
@@ -181,6 +194,8 @@ switch ($Command) {
         foreach ($name in $Company) { $connectArgs += @('--entity', $name) }
         if ($All) { $connectArgs += '--all' }
         if ($TimeoutSec -gt 0) { $connectArgs += @('--timeout-sec', "$TimeoutSec") }
+        if ($PauseSec -ge 0) { $connectArgs += @('--pause-sec', "$PauseSec") }
+        if ($PartMonth) { $connectArgs += @('--part-month', $PartMonth) }
         if ($Activate -and $Paused) { throw 'Use -Activate or -Paused, not both.' }
         if ($Activate) { $connectArgs += '--activate' }
         if ($Paused) { $connectArgs += '--pause' }
@@ -268,6 +283,10 @@ switch ($Command) {
         if ($Restart) {
             if ($Service -ne 'full') { throw '-Restart only applies to: sync full -Restart' }
             $syncArgs += '--restart'
+        }
+        if ($From) {
+            if ($Service -ne 'full') { throw '-From only applies to: sync full -From YYYY-MM-DD' }
+            $syncArgs += @('--refetch-from', $From)
         }
         Invoke-Checked exec -T api @syncArgs
     }

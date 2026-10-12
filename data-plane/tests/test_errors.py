@@ -32,3 +32,8 @@ def test_other_errors_first_line_and_optional_redaction() -> None:
     assert short_error(error, redact=True) == "LookupError: Company '…' not loaded"
     assert short_error(RuntimeError()) == "RuntimeError"
     assert redact_quoted("a \"b\" 'c'") == "a '…' '…'"
+
+
+def test_apostrophes_in_words_are_not_quotes() -> None:
+    text = "the listing didn't arrive in time; it isn't counted for 'Secret Co'"
+    assert redact_quoted(text) == "the listing didn't arrive in time; it isn't counted for '…'"
