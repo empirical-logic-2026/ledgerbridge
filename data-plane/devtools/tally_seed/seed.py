@@ -1,8 +1,12 @@
 """Idempotent seeding of the test company (ADR-014).
 
 Reads Tally's current state with the connector's Export-only client, works out what is
-missing, imports only that, then applies the cancellation and the alteration and checks
-that both took effect.
+missing, imports only that, then applies the cancellation, the alterations and the deletion
+and checks that they took effect. With create_only=True the post-creation changes are
+skipped, so a sync can see the vouchers before they change.
+
+A deleted voucher leaves a tombstone stock group (Voucher.tombstone) so that re-runs don't create
+it again; the seeder stays idempotent.
 """
 
 import re
@@ -22,6 +26,9 @@ from devtools.tally_seed import requests as rq
 from devtools.tally_seed.data import SeedData, Voucher
 
 UNITS = CollectionSpec("LBSeedUnits", "Unit", "UNIT", "unit", ("NAME",))
+STOCK_GROUPS = CollectionSpec(
+    "LBSeedStockGroups", "StockGroup", "STOCKGROUP", "stock_group", ("NAME",)
+)
 STOCK_ITEMS = CollectionSpec("LBSeedItems", "StockItem", "STOCKITEM", "stock_item", ("NAME",))
 COST_CENTRES = CollectionSpec(
     "LBSeedCostCentres", "CostCentre", "COSTCENTRE", "cost_centre", ("NAME",)
@@ -46,6 +53,7 @@ class ImportResult:
     created: int = 0
     altered: int = 0
     cancelled: int = 0
+    deleted: int = 0
     errors: int = 0
     exceptions: int = 0
     messages: list[str] = field(default_factory=list)
@@ -67,6 +75,7 @@ def parse_import_response(body: bytes) -> ImportResult:
         created=count("CREATED"),
         altered=count("ALTERED"),
         cancelled=count("CANCELLED"),
+        deleted=count("DELETED"),
         errors=count("ERRORS"),
         exceptions=count("EXCEPTIONS"),
         messages=messages,
@@ -104,6 +113,7 @@ class TallyState:
     ledgers: dict[str, Decimal]  # name -> signed opening balance
     units: set[str]
     stock_items: set[str]
+    stock_groups: set[str]
     cost_centres: set[str]
     cost_centres_enabled: bool
     vouchers: dict[str, VoucherState]  # marker -> state
@@ -114,6 +124,7 @@ class SeedReport:
     created: dict[str, int] = field(default_factory=dict)
     altered: list[str] = field(default_factory=list)
     cancelled: list[str] = field(default_factory=list)
+    deleted: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
 
     def add(self, kind: str) -> None:
@@ -180,6 +191,7 @@ def read_state(client: TallyClient, company: str) -> TallyState:
         ledgers=ledgers,
         units=_names(export(UNITS), "UNIT"),
         stock_items=_names(export(STOCK_ITEMS), "STOCKITEM"),
+        stock_groups=_names(export(STOCK_GROUPS), "STOCKGROUP"),
         cost_centres=_names(export(COST_CENTRES), "COSTCENTRE"),
         cost_centres_enabled=cc_enabled,
         vouchers=vouchers,
@@ -200,6 +212,7 @@ def seed(
     reader: Callable[[], TallyState],
     importer: TallyImporter,
     log: Callable[[str], None] = print,
+    create_only: bool = False,
 ) -> SeedReport:
     report = SeedReport()
 
@@ -244,11 +257,17 @@ def seed(
     for voucher in seed_data.vouchers:
         if voucher.marker in state.vouchers:
             continue
+        if voucher.delete and voucher.tombstone in state.stock_groups:
+            continue  # created and deleted by an earlier run
         if voucher.needs_cost_centres and not state.cost_centres_enabled:
             report.skipped.append(f"voucher {voucher.marker} (needs cost centres)")
             continue
         run(voucher.marker, "voucher", "Vouchers", rq.voucher_create(voucher))
         report.add("vouchers")
+
+    if create_only:
+        report.skipped.append("alterations, cancellations and deletions (create-only)")
+        return report
 
     # Post-creation changes need the MasterIDs Tally assigned.
     state = reader()
@@ -267,11 +286,24 @@ def seed(
                 rq.voucher_cancel(voucher, current.master_id),
             )
             report.cancelled.append(voucher.marker)
+        if voucher.delete:
+            # Tombstone first: if the deletion then fails, a re-run still deletes the voucher
+            # (it exists) and never creates it again.
+            if voucher.tombstone not in state.stock_groups:
+                tombstone = rq.stock_group_create(voucher.tombstone)
+                run(voucher.tombstone, "stock group", "All Masters", tombstone)
+                report.add("stock groups")
+            run(
+                voucher.marker, "deleted", "Vouchers", rq.voucher_delete(voucher, current.master_id)
+            )
+            report.deleted.append(voucher.marker)
 
     # Prove the post-creation changes landed, rather than trusting the import counts.
     final = reader()
     for voucher in seed_data.vouchers:
         current = final.vouchers.get(voucher.marker)
+        if voucher.delete and current is not None:
+            raise ImportFailedError(voucher.marker, ["deletion did not take effect"])
         if current is None:
             continue
         if voucher.alter_to is not None and not _is_altered(voucher, current):

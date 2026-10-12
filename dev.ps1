@@ -15,8 +15,10 @@
     ./dev.ps1 extract -Company "LedgerBridge Test Co"
     ./dev.ps1 sync -Company "LedgerBridge Test Co"
     ./dev.ps1 sync full -Company "LedgerBridge Test Co"
+    ./dev.ps1 sync deletions
     ./dev.ps1 test
     ./dev.ps1 seed-test-data
+    ./dev.ps1 seed-test-data create-only
     ./dev.ps1 down
     ./dev.ps1 up -Env pilot
 #>
@@ -150,9 +152,12 @@ switch ($Command) {
         # company; without it the connection's remembered companies (or all loaded) sync.
         Assert-EnvFile
         Assert-ApiRunning
-        $syncArgs = @('python', '-m', 'workers.cli', 'sync', '--connection', $connection, '--source', 'tally')
+        # `sync full` also runs a deletion check; `sync deletions` runs only the deletion check
+        # (the worker runs it on its own schedule, hourly by default).
+        $mode = if ($Service -eq 'deletions') { 'check-deletions' } else { 'sync' }
+        $syncArgs = @('python', '-m', 'workers.cli', $mode, '--connection', $connection, '--source', 'tally')
         if ($Company) { $syncArgs += @('--entity', $Company) }
-        if ($Service -eq 'full') { $syncArgs += '--full' }
+        if ($Service -eq 'full') { $syncArgs += @('--full', '--check-deletions') }
         Invoke-Stack exec -T api @syncArgs
     }
     'logs' {
@@ -177,7 +182,11 @@ switch ($Command) {
         Assert-EnvFile
         if (-not $Company) { $Company = 'LedgerBridge Test Co' }
         Push-Location (Join-Path $root 'data-plane')
-        try { Invoke-Uv run python -m devtools.tally_seed --company $Company }
+        # `seed-test-data create-only` creates missing items but skips alterations,
+        # cancellations and deletions, so a sync can see vouchers before they change.
+        $seedArgs = @('--company', $Company)
+        if ($Service -eq 'create-only') { $seedArgs += '--create-only' }
+        try { Invoke-Uv run python -m devtools.tally_seed @seedArgs }
         finally { Pop-Location }
     }
     'test' {
