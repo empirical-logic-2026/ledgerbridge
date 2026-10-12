@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
 from connectors.base import SourceRecord
@@ -46,3 +46,43 @@ def test_skips_unchanged_and_stores_changed_payloads(session: Session) -> None:
         select(func.count()).select_from(RawRecord).where(RawRecord.source_key == "a")
     )
     assert count == 2
+
+
+def test_never_waits_on_the_source_with_uncommitted_writes(session: Session) -> None:
+    """Every write is committed before the next record is requested from the source, so a
+    slow source can't keep the connection row locked (MySQL error 1205, pilot run)."""
+    connection = _connection(session)
+    session.commit()
+    events: list[str] = []
+    engine = session.get_bind()
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _sql(conn, cursor, statement, *args) -> None:  # noqa: ANN001
+        verb = statement.lstrip().split()[0].upper()
+        if verb in ("INSERT", "UPDATE"):
+            events.append("write")
+
+    @event.listens_for(engine, "commit")
+    def _commit(conn) -> None:  # noqa: ANN001
+        events.append("commit")
+
+    def slow_source():  # noqa: ANN202
+        for number in range(7):
+            events.append("wait for source")
+            yield _record(f"k{number}", f"<L>{number}</L>")
+
+    try:
+        result = RawStore(session, batch_size=3).add(slow_source(), connection.id)
+    finally:
+        event.remove(engine, "before_cursor_execute", _sql)
+        event.remove(engine, "commit", _commit)
+    assert result.stored == 7
+    uncommitted = False
+    for name in events:
+        if name == "write":
+            uncommitted = True
+        elif name == "commit":
+            uncommitted = False
+        else:
+            assert not uncommitted, events
+    assert events.count("write") == 3  # batches of 3, 3 and 1
