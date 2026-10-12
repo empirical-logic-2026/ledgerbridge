@@ -87,11 +87,20 @@ services:
         condition: service_healthy
 
   worker:
-    profiles: [workers]
+    # Runs jobs and, with -B, the Celery Beat scheduler that triggers scheduled syncs
+    # (SYN-001, ADR-017). Beat keeps its small state file in /tmp inside the container.
     build:
       context: ../data-plane
     image: ledgerbridge-data-plane:dev
-    command: ["celery", "-A", "workers.celery_app", "worker", "--loglevel=INFO"]
+    command:
+      - celery
+      - -A
+      - workers.celery_app
+      - worker
+      - -B
+      - --schedule=/tmp/celerybeat-schedule
+      - --concurrency=2
+      - --loglevel=INFO
     env_file: ${LEDGERBRIDGE_ENV_FILE:?run via deploy/stack.ps1}
     environment: *container-overrides
     extra_hosts:

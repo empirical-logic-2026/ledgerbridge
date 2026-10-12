@@ -49,7 +49,8 @@ Note that the API is `8001` on your PC but `8000` inside its container. The host
 | `./dev.ps1 status` | `stack.ps1 ps` (containers, health, ports), plus a call to `/health/ready`. |
 | `./dev.ps1 logs api` | `stack.ps1 logs -f --tail 200 api`: the last 200 lines, then **f**ollows new ones. |
 | `./dev.ps1 tally-companies` | `stack.ps1 exec -T api python -m workers.cli entities ...`: runs our CLI inside the API container, which reaches TallyPrime on your PC through `host.docker.internal:9000`. |
-| `./dev.ps1 extract -Company "..."` | The same pattern with `workers.cli extract`. |
+| `./dev.ps1 extract -Company "..."` | The same pattern with `workers.cli extract` (raw records only). |
+| `./dev.ps1 sync -Company "..."` | The same pattern with `workers.cli sync`: fetch changes and transform them into the accounting tables. The worker container also runs it on a schedule (section 6.7). |
 | `./dev.ps1 seed-test-data` | No Docker at all: it runs on your PC with `.env.test`, because `devtools/` is deliberately not in the image (section 7). |
 | `./dev.ps1 test` | Runs tests on your PC, not in Docker. It connects to the test containers through the host ports. Refuses `-Env pilot`. |
 | `./dev.ps1 down` | `stack.ps1 down`: removes containers and the network, **keeps volumes**. |
@@ -102,7 +103,7 @@ Host-side values such as `MYSQL_HOST=127.0.0.1` and `MYSQL_PORT=3307` suit tools
 
 ### 6.1 `services:` lists the containers
 
-There are six: `mysql`, `redis`, `qdrant`, `api`, `worker` and `migrate`. The `worker` and `migrate` only start when asked for: they have *profiles* (section 6.8).
+There are six: `mysql`, `redis`, `qdrant`, `api`, `worker` and `migrate`. `migrate` only runs when asked for: it has a *profile* (section 6.8).
 
 ### 6.2 `mysql`
 
@@ -229,17 +230,29 @@ You start it with `run` rather than `up`:
 
 `run` starts a fresh container for one job and shows its output; `--rm` deletes the container when it's done. `./dev.ps1 up` does this for you after the stack is healthy. Splitting migrations out like this means the long-running API never holds schema-change rights.
 
-### 6.7 `worker`
+### 6.7 `worker`: background jobs and the scheduled sync
 
-Built from the same Dockerfile as the API, but `command:` replaces the image's default and starts Celery (`celery -A workers.celery_app worker`) instead of the web server. It has no ports, because nothing connects *to* a worker; it pulls jobs from Redis.
+```yaml
+command: [celery, -A, workers.celery_app, worker, -B, --schedule=/tmp/celerybeat-schedule, --concurrency=2, --loglevel=INFO]
+```
 
-### 6.8 Profiles: `workers` and `tools`
+Built from the same image as the API, but `command:` starts Celery instead of the web server. It has no ports, because nothing connects *to* a worker; it pulls jobs from Redis.
 
-Services with a profile are skipped by `up` unless you ask for them. `worker` (profile `workers`) isn't needed yet. `migrate` (profile `tools`) is a one-off job, run with `run` (section 6.6). To start the worker:
+- **`worker`** runs the jobs.
+- **`-B`** also starts **Celery Beat**, a clock inside the same container. Every 60 seconds it queues a `sync_tick` job, which starts a sync for each connection whose interval (default 5 minutes) has passed (SYN-001, ADR-017).
+- **`--schedule=/tmp/...`**: Beat keeps a tiny state file; `/tmp` is writable for the container's non-root user.
+- **`--concurrency=2`**: at most two jobs at a time.
+
+Since M3 it starts with `./dev.ps1 up` (it has no profile any more). It reaches TallyPrime on your PC through `host.docker.internal`, like the API. Watch it:
 
 ```powershell
-./deploy/stack.ps1 -Env test --profile workers up -d
+./dev.ps1 logs worker      # "beat: Starting...", then "Sync run N: succeeded" every 5 minutes
+./dev.ps1 status           # last sync per connection and when the next one is due
 ```
+
+### 6.8 Profiles: `tools`
+
+Services with a profile are skipped by `up` unless you ask for them. `migrate` (profile `tools`) is a one-off job, run with `run` (section 6.6).
 
 ### 6.9 Top-level `volumes:`
 
@@ -263,6 +276,7 @@ A Dockerfile is a recipe. Each instruction adds a **layer**, and Docker caches l
 | `ENV UV_LINK_MODE=copy` | Copy packages instead of hard-linking, which avoids warnings inside Docker. |
 | `ENV UV_PYTHON_DOWNLOADS=never` | Use the image's Python and never download another. |
 | `ENV PATH="/app/.venv/bin:$PATH"` | Put the project's virtual environment first, so `uvicorn` and `celery` resolve to the installed versions. |
+| `ENV PYTHONPATH="/app"` | Lets Python find our own packages (`core`, `connectors`, `workers`, ...) from any command. Celery adds the working folder to the import path only while it loads the app, so a task importing `connectors` later failed with `ModuleNotFoundError` until this was set. |
 | `WORKDIR /app` | All later commands run in `/app`, which is created if needed. |
 | `COPY pyproject.toml uv.lock .python-version ./` | Copy **only** the dependency files first… |
 | `RUN uv sync --frozen --no-dev` | …and install dependencies. `--frozen` uses exactly what `uv.lock` says; `--no-dev` skips pytest and ruff. Because these two steps come before the code is copied, editing a `.py` file doesn't trigger a slow reinstall; Docker reuses the cached layer. |
@@ -381,6 +395,7 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | MySQL exits with code 127, log says `docker_process_sql: command not found` | The init script was *run*, not *sourced*, so the image's helper wasn't available (section 8) | The script now uses the plain `mysql` client |
 | `up -d` runs in the foreground and asks debug questions | `stack.ps1` was an advanced script, so PowerShell read `-d` as `-Debug` | `stack.ps1` is now a simple script (section 4) |
 | Red `NativeCommandError` lines around normal Docker output | Windows PowerShell 5.1 shows anything written to stderr as an error when output is redirected | Harmless when the exit code is 0; `stack.ps1` checks the exit code |
+| Worker log: `ModuleNotFoundError: No module named 'connectors'` inside a task | Celery removes the working folder from the import path after loading the app | `PYTHONPATH=/app` in the Dockerfile (section 7) |
 | `docker` not found in an old terminal | PATH was updated after the terminal opened | Open a new terminal |
 
 ## Change log
@@ -392,3 +407,4 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
 | 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |
+| 2026-10-12 | M3: the `worker` starts with `up` and runs Celery Beat (`-B`) for the scheduled sync; `./dev.ps1 sync`; `status` shows each connection's last and next sync; `PYTHONPATH=/app` in the Dockerfile. |

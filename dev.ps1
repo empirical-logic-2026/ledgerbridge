@@ -13,6 +13,8 @@
     ./dev.ps1 logs api
     ./dev.ps1 tally-companies
     ./dev.ps1 extract -Company "LedgerBridge Test Co"
+    ./dev.ps1 sync -Company "LedgerBridge Test Co"
+    ./dev.ps1 sync full -Company "LedgerBridge Test Co"
     ./dev.ps1 test
     ./dev.ps1 seed-test-data
     ./dev.ps1 down
@@ -20,7 +22,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('up', 'down', 'status', 'test', 'logs', 'tally-companies', 'extract', 'seed-test-data', 'help')]
+    [ValidateSet('up', 'down', 'status', 'test', 'logs', 'tally-companies', 'extract', 'sync', 'seed-test-data', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -102,8 +104,12 @@ function Show-Health {
 }
 
 function Invoke-Uv {
-    # uv may only be installed as a Python module on this machine.
-    if (Get-Command uv -ErrorAction SilentlyContinue) { & uv @args } else { & python -m uv @args }
+    # uv may only be installed as a Python module. `python` on PATH can be the Windows Store
+    # alias, so prefer the Python install manager's copy when it exists.
+    $localPython = Join-Path $env:LOCALAPPDATA 'Python\bin\python.exe'
+    if (Get-Command uv -ErrorAction SilentlyContinue) { & uv @args }
+    elseif (Test-Path $localPython) { & $localPython -m uv @args }
+    else { & python -m uv @args }
     if ($LASTEXITCODE -ne 0) { throw "uv $($args -join ' ') failed (exit $LASTEXITCODE)" }
 }
 
@@ -133,6 +139,21 @@ switch ($Command) {
         Assert-EnvFile
         Invoke-Stack ps
         Show-Health
+        if ((Get-RunningServices) -contains 'api') {
+            Write-Host ""
+            Write-Host "Syncs (the worker runs due syncs automatically):"
+            Invoke-Stack exec -T api python -m workers.cli status
+        }
+    }
+    'sync' {
+        # Fetch changes from the source and transform them (M3). -Company limits it to one
+        # company; without it the connection's remembered companies (or all loaded) sync.
+        Assert-EnvFile
+        Assert-ApiRunning
+        $syncArgs = @('python', '-m', 'workers.cli', 'sync', '--connection', $connection, '--source', 'tally')
+        if ($Company) { $syncArgs += @('--entity', $Company) }
+        if ($Service -eq 'full') { $syncArgs += '--full' }
+        Invoke-Stack exec -T api @syncArgs
     }
     'logs' {
         Assert-EnvFile
