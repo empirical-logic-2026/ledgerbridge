@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.6 |
+| Version | 0.7 |
 | Date | 2026-10-09 |
 | Current milestone | **M4** |
 
@@ -120,7 +120,7 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 **Done when:** both client companies are loaded in the `pilot` environment, validation passes against Tally, dashboards show both companies and the consolidated view, and AI querying works with the local model.
 
-This milestone is run by the developer, not Claude Code. Fix any problems by describing errors to Claude Code without sharing client data.
+This milestone is run by the developer, not Claude Code, following [pilot-runbook.md](pilot-runbook.md). Fix any problems by describing errors to Claude Code without sharing client data: the runbook's `summary` output (counts and pass/fail) is safe to share.
 
 ---
 
@@ -138,3 +138,4 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | 2026-10-12 | 0.4 | Current milestone M3. |
 | 2026-10-12 | 0.5 | Approved dashboard home page design (docs/design/dashboard.md, dashboard-mockup.png). M6 adds the home page data: business health score formula, cash cover in months, rule-based alerts, recent-events feed. M7 "Done when" and prompt require matching the design; forecast question chip deferred until forecasting (AI-009, phase 3). |
 | 2026-10-12 | 0.6 | Current milestone M4. M5 "Done when" protects the M4 validation and alert endpoints with `validation.view`. M6 reports calculate as of a date, like validation. |
+| 2026-10-12 | 0.7 | M9 points to docs/pilot-runbook.md. |

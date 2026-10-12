@@ -253,6 +253,12 @@ Since M3 it starts with `./dev.ps1 up` (it has no profile any more). It reaches 
 ./dev.ps1 validate         # validate now, inside the api container; the worker validates after every run
 ```
 
+### 6.7a Creating an env file: `deploy/new-env.ps1`
+
+`./dev.ps1 init-env -Env pilot` runs `deploy/new-env.ps1`. It copies `.env.pilot.example` to `.env.pilot` and puts 32 random letters and digits in each MySQL password line. The passwords come from Windows' cryptographic random generator, and the script never prints them. The file is written as UTF-8 without a byte-order mark, which Docker Compose and the Python settings both read cleanly.
+
+Why it refuses when the file already exists: MySQL sets its users' passwords **only when its data volume is first created** (the init scripts in `deploy/mysql/init` run on an empty volume). If you replaced the passwords later, the containers would log in with new passwords that the existing database doesn't know. To really start over, delete the volume (`./deploy/stack.ps1 -Env pilot down -v`, which deletes that environment's data) and then the file.
+
 ### 6.8 Profiles: `tools`
 
 Services with a profile are skipped by `up` unless you ask for them. `migrate` (profile `tools`) is a one-off job, run with `run` (section 6.6).
@@ -410,6 +416,7 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
 | 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |
+| 2026-10-12 | Pilot preparation: `deploy/new-env.ps1` and `./dev.ps1 init-env` create an env file with random passwords (section 6.7a); `connect` and `summary` run `workers.cli` through `docker compose exec`. |
 | 2026-10-12 | M4: the worker validates after every sync and deletion check and raises alerts; `./dev.ps1 validate` runs `workers.cli validate` through `docker compose exec`. For `sync` and `validate`, exit code 1 now means "ran, but checks failed" and is reported as such instead of as a Docker failure. |
 | 2026-10-12 | M3 review: the worker also runs the hourly deletion check (section 6.7); `./dev.ps1 sync deletions` runs one through `docker compose exec`; `status` shows both schedules. |
 | 2026-10-12 | M3: the `worker` starts with `up` and runs Celery Beat (`-B`) for the scheduled sync; `./dev.ps1 sync`; `status` shows each connection's last and next sync; `PYTHONPATH=/app` in the Dockerfile. |
