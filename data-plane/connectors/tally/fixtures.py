@@ -51,7 +51,9 @@ class FixtureTransport(httpx.BaseTransport):
         if collection_id in self.manifest["files"]:
             return [self.manifest["files"][collection_id]]
         known = {spec.collection_id for spec in envelopes.ALL_SPECS}
-        known.add(envelopes.LEDGER_BALANCES.collection_id)
+        known.update(
+            (envelopes.LEDGER_BALANCES.collection_id, envelopes.STOCK_VALUES.collection_id)
+        )
         # A type this fixture set didn't record answers like Tally with no such objects.
         return [] if collection_id in known else None
 

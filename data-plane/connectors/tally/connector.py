@@ -3,13 +3,22 @@
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections.abc import Iterator, Mapping
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any, Self
 
 import httpx
 
-from connectors.base import ConnectionStatus, Markers, Period, SourceEntity, SourceRecord
+from connectors.base import (
+    ConnectionStatus,
+    Markers,
+    Period,
+    SourceBalances,
+    SourceEntity,
+    SourceRecord,
+)
 from connectors.tally import envelopes, mapping, parser
 from connectors.tally.client import TallyClient, TallyError
+from connectors.tally.signs import tally_amount
 from core.canonical import CanonicalRecord
 from core.config import get_settings
 
@@ -120,6 +129,41 @@ class TallyConnector:
         body = self._post(request)
         return parser.objects(parser.parse_response(body), envelopes.LEDGER_BALANCES.object_tag)
 
+    def closing_balances(self, entity: SourceEntity, as_of: date) -> SourceBalances:
+        """Tally's own closing balances for the period books-from .. as_of (inclusive).
+
+        *Profit & Loss A/c* (directly under Primary) carries the period's computed profit;
+        Tally computes that profit with the stock items' opening and closing values.
+        """
+        if entity.books_from is None:
+            raise TallyError(f"Company '{entity.name}' has no books-from date")
+        period = (entity.books_from, as_of)
+        ledgers: dict[str, Decimal] = {}
+        carriers: set[str] = set()
+        body = self._post(
+            envelopes.collection_request(
+                envelopes.LEDGER_BALANCES, company=entity.name, balances_period=period
+            )
+        )
+        for element in parser.objects(parser.parse_response(body), "LEDGER"):
+            key = parser.source_key(element)
+            ledgers[key] = _canonical(element.findtext("CLOSINGBALANCE"))
+            if (element.findtext("PARENT") or "").strip() in ("", mapping.PRIMARY):
+                carriers.add(key)
+        body = self._post(
+            envelopes.collection_request(
+                envelopes.STOCK_VALUES, company=entity.name, balances_period=period
+            )
+        )
+        items = parser.objects(parser.parse_response(body), "STOCKITEM")
+        return SourceBalances(
+            as_of=as_of,
+            ledgers=ledgers,
+            profit_carriers=frozenset(carriers),
+            opening_stock=sum((_canonical(i.findtext("OPENINGVALUE")) for i in items), Decimal(0)),
+            closing_stock=sum((_canonical(i.findtext("CLOSINGVALUE")) for i in items), Decimal(0)),
+        )
+
     def ledger_elements(self, entity: SourceEntity) -> list[ET.Element]:
         body = self._post(envelopes.collection_request(envelopes.LEDGERS, company=entity.name))
         return parser.objects(parser.parse_response(body), envelopes.LEDGERS.object_tag)
@@ -157,6 +201,12 @@ class TallyConnector:
 
     def to_canonical(self, record: SourceRecord) -> list[CanonicalRecord]:
         return mapping.to_canonical(record)
+
+
+def _canonical(text: str | None) -> Decimal:
+    """Tally amount → canonical sign (schema.md 7.1); empty means zero."""
+    value = tally_amount(text)
+    return -value if value else Decimal(0)
 
 
 def _marker(markers: Markers, object_type: str) -> int | None:
