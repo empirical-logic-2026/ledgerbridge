@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.11 (Draft) |
+| Version | 0.12 (Draft) |
 | Date | 2026-10-09 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -98,6 +98,7 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 | `0004` | M3 | `ledgerbridge_accounting.ledgers.tax_type` (Section 4.2) |
 | `0005` | M3 | `ledgerbridge_system.sync_runs.run_type` adds `deletion_check` (Sections 5.1 and 7.4) |
 | `0006` | M4 | `ledgerbridge_system.validation_runs.as_of`; `ledgerbridge_system.alerts` (Section 5.2) |
+| `0007` | Pilot | `ledgerbridge_system.sync_checkpoints`, `ledgerbridge_system.sync_slow_periods` (Section 5.1, ADR-022) |
 
 `ledgerbridge_reporting` exists from M2 but stays empty until M6 (Section 6). The per-call AI model log (AI-018) is designed in M8. Type and key choices for tables documented here only as column lists are in Section 9.
 
@@ -339,9 +340,11 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 | Table | Key columns | Notes |
 | --- | --- | --- |
 | `ledgerbridge_system.sources` | `id, code ('tally','file','zoho',...), name, connector_version` | Registered connector types. |
-| `ledgerbridge_system.connections` | `id, source_id, name, config JSON, credentials_enc VARBINARY, agent_id NULL, sync_interval_sec, status ENUM('active','paused','error'), created_by` | Credentials encrypted at application level (CON-009). `config` holds `url`, `origin` (`live`/`backup`), `entities` as `[{"key": <source key, e.g. Tally company GUID>, "name": <name as the source reported it>}]` (found by key; plain names from before 0.11 are still found by exact name), and optional `deletion_check_interval_sec`, `validation_tolerance`. New connections are `paused` until activated (ADR-020). |
+| `ledgerbridge_system.connections` | `id, source_id, name, config JSON, credentials_enc VARBINARY, agent_id NULL, sync_interval_sec, status ENUM('active','paused','error'), created_by` | Credentials encrypted at application level (CON-009). `config` holds `url`, `origin` (`live`/`backup`), `entities` as `[{"key": <source key, e.g. Tally company GUID>, "name": <name as the source reported it>}]` (found by key; plain names from before 0.11 are still found by exact name), and optional `timeout_sec` (seconds one source request may take; default `TALLY_TIMEOUT_SEC`), `deletion_check_interval_sec`, `validation_tolerance`. New connections are `paused` until activated (ADR-020). |
 | `ledgerbridge_system.agents` | `id, name, cert_fingerprint, version, last_seen_at, status` | Connector agents (SYN-004). |
-| `ledgerbridge_system.sync_markers` | PK `(connection_id, source_entity_key, object_type)`, `marker_value` | Last AlterID / timestamp per object type. |
+| `ledgerbridge_system.sync_markers` | PK `(connection_id, source_entity_key, object_type)`, `marker_value` | Last AlterID / timestamp per object type. Saved per entity once its fetch and transform completed: the highest marker stored in `raw_records` (also for chunks fetched by an earlier, resumed attempt). |
+| `ledgerbridge_system.sync_checkpoints` | `id, connection_id, source_entity_key, object_type, chunk_key VARCHAR(128), records, sync_run_id NULL`; unique `(connection_id, source_entity_key, chunk_key)` | A chunk of a full sync that was fetched, stored and committed (e.g. `chunk_key` `voucher:2023-04-01..2023-04-30`, or `ledger` for a master type). An interrupted full sync skips these when run again; the entity's checkpoints are deleted when its full sync completes, and ignored after 7 days (ADR-022, migration `0007`). |
+| `ledgerbridge_system.sync_slow_periods` | PK `(connection_id, source_entity_key, object_type, month)`, `piece_days` | A month the source couldn't deliver in one request: later runs request it directly in pieces of `piece_days` days (ADR-022). |
 | `ledgerbridge_system.sync_runs` | `id, connection_id, run_type ENUM('incremental','full','import','deletion_check'), status, started_at, finished_at, records_received, records_failed, error_summary` | SYN-005. `deletion_check` runs only look for objects deleted in the source (7.4, migration `0005`). |
 | `ledgerbridge_system.import_batches` | `id, connection_id, kind ENUM('backup','file'), file_name, file_sha256, period_from, period_to, status, created_by` | IMP-003, IMP-004. |
 | `ledgerbridge_system.file_layouts` | `id, connection_id, name, column_mapping JSON` | Saved CSV/TXT mappings (CON-003). |
@@ -569,6 +572,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-12 | 0.12 | `sync_checkpoints`, `sync_slow_periods` (migration `0007`); markers saved per entity from what is stored; `connections.config.timeout_sec` (ADR-022). |
 | 2026-10-12 | 0.11 | `connections.config.entities` stores each entity's key with its name (ADR-021). |
 | 2026-10-12 | 0.10 | Section 8 rule 8: short transactions while syncing; error summaries without SQL (ADR-020). |
 | 2026-10-12 | 0.9 | M4: validation check codes, severities and the as-of-date rule (5.2); `validation_runs.as_of` and `alerts` (migration `0006`). |
