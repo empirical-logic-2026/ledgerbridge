@@ -611,8 +611,8 @@ def _status(session: Session) -> int:
     if not connections:
         print("No connections yet.")
     for connection in connections:
-        configured = connection.config.get("entities", [])
-        entities = _entities(configured) if configured else "all loaded"
+        names = [entry.name for entry in configured(connection)]
+        entities = _entities(names) if names else "all loaded"
         check_every = deletion_check_interval(connection)
         print(
             f"{connection.name}: {connection.status}, origin "
