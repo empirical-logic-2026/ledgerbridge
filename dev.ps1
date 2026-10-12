@@ -25,14 +25,15 @@
     Pilot (developer only; see docs/pilot-runbook.md):
     ./dev.ps1 init-env -Env pilot
     ./dev.ps1 up -Env pilot
-    ./dev.ps1 connect -Env pilot -Origin backup -Company "Company A","Company B"
+    ./dev.ps1 connect -Env pilot -Origin backup -All
+    ./dev.ps1 entity-check -Env pilot
     ./dev.ps1 sync full -Env pilot
     ./dev.ps1 summary -Env pilot
     ./dev.ps1 reset -Env pilot
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'down', 'reset', 'status', 'summary', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'seed-test-data', 'help')]
+    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'seed-test-data', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -54,6 +55,9 @@ param(
     # -Activate lets the worker sync it on its schedule; -Paused stops that again.
     [switch]$Activate,
     [switch]$Paused,
+
+    # For `connect`: every company currently loaded in Tally, instead of -Company names.
+    [switch]$All,
 
     # For `reset`: required to reset the test environment; pilot always asks.
     [switch]$Force,
@@ -163,11 +167,13 @@ ew-env.ps1') -Env $Env
     'connect' {
         # Creates or updates this environment's connection: origin and the exact companies.
         # Prints counts only outside the test environment.
-        if (-not $Company) { throw 'connect needs -Company "<name>","<name>" (exact names as in the source).' }
+        if (-not $Company -and -not $All) { throw 'connect needs -All, or -Company "<name>","<name>" (exact names as in the source).' }
+        if ($Company -and $All) { throw 'Use -All or -Company, not both.' }
         Assert-EnvFile
         Assert-ApiRunning
         $connectArgs = @('python', '-m', 'workers.cli', 'connect', '--connection', $connection, '--source', 'tally', '--origin', $Origin)
         foreach ($name in $Company) { $connectArgs += @('--entity', $name) }
+        if ($All) { $connectArgs += '--all' }
         if ($Activate -and $Paused) { throw 'Use -Activate or -Paused, not both.' }
         if ($Activate) { $connectArgs += '--activate' }
         if ($Paused) { $connectArgs += '--pause' }
@@ -195,6 +201,14 @@ ew-env.ps1') -Env $Env
         $left = @(& docker volume ls --quiet --filter "label=com.docker.compose.project=$project")
         if ($left) { throw "Volumes still present: $($left -join ', ')" }
         Write-Host "Deleted the $Env data. Start again with: ./dev.ps1 up -Env $Env" -ForegroundColor Green
+    }
+    'entity-check' {
+        # Read-only diagnostic: are the connection's companies in Tally, and if not, how do the
+        # names differ (kinds only, never names). Also selects each company once, the way a
+        # sync does, and checks whether Tally then lists the names differently.
+        Assert-EnvFile
+        Assert-ApiRunning
+        Invoke-Checked exec -T api python -m workers.cli entity-check --connection $connection --source tally
     }
     'summary' {
         # Counts and pass/fail per connection and company; no names or amounts (safe to share).
