@@ -93,8 +93,10 @@ def deletion_check_connection(connection_id: int) -> dict[str, object]:
 
 
 def _locked_run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict[str, object]:
+    """Runs one sync or deletion check, then its alerts and validation (ADR-019)."""
     from workers.extract import connector_for
     from workers.sync import SyncBusyError
+    from workers.validate import after_run
 
     lock = Redis.from_url(settings.redis_url).lock(
         f"ledgerbridge:sync:{connection_id}", timeout=LOCK_TIMEOUT_SEC, blocking=False
@@ -104,8 +106,9 @@ def _locked_run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict
     try:
         with Session(get_engine()) as session:
             connection = session.get_one(Connection, connection_id)
+            connector = connector_for(session, connection)
             try:
-                result = runner(session, connection, connector_for(session, connection))
+                result = runner(session, connection, connector)
             except SyncBusyError:
                 return {"status": "skipped", "reason": "running"}
             # Counts only: never names or amounts in task results or logs.
@@ -118,6 +121,11 @@ def _locked_run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict
                 sum(result.deleted.values()),
                 len(result.warnings),
             )
-            return {"sync_run_id": result.sync_run_id, "status": result.status}
+            reports = after_run(session, connection, connector, result)
+            return {
+                "sync_run_id": result.sync_run_id,
+                "status": result.status,
+                "validation": [r.status for r in reports],
+            }
     finally:
         lock.release()

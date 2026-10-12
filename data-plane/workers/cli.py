@@ -4,13 +4,17 @@
     python -m workers.cli extract --connection tally-test --entity "LedgerBridge Test Co"
     python -m workers.cli sync --connection tally-test --entity "LedgerBridge Test Co" [--full]
     python -m workers.cli check-deletions --connection tally-test
+    python -m workers.cli validate --connection tally-test [--as-of 2026-09-30]
     python -m workers.cli status
     python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
 
 `extract` only stores raw records (M1); `sync` also transforms them (M3); `check-deletions`
 soft-deletes what no longer exists in the source (also run by `sync --check-deletions`).
-Output shows names, keys and counts only, except `trial-balance`, which prints balances
-for the developer's own use (never paste them anywhere for client data).
+`sync` and `check-deletions` validate afterwards (VAL-001, VAL-002), like the worker does.
+
+Output shows names, keys, counts, check codes and pass/fail only, except `trial-balance`,
+which prints balances for the developer's own use (never for client data). Validation
+results with amounts are in the database and the API, never in this output.
 """
 
 import argparse
@@ -18,7 +22,7 @@ import sys
 from collections.abc import Sequence
 from datetime import date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from connectors import registry
@@ -27,7 +31,9 @@ from core.db import get_engine
 from core.models import Connection, SyncRun
 from core.models.accounting import Entity
 from core.models.base import utcnow
+from core.models.system import Alert, ValidationIssue, ValidationRun
 from core.transform import trial_balance
+from core.validation import ValidationReport
 from workers.extract import connector_for, find_entity, get_or_create_connection, run_extract
 from workers.sync import (
     DELETION_CHECK,
@@ -39,6 +45,7 @@ from workers.sync import (
     run_deletion_check,
     run_sync,
 )
+from workers.validate import after_run, run_validation
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -82,6 +89,15 @@ def _parser() -> argparse.ArgumentParser:
         "--origin", choices=("live", "backup"), help="origin tag for this connection's data"
     )
     period_args(sync)
+
+    sync.add_argument("--no-validate", action="store_true", help="skip validation after the sync")
+
+    validate = sub.add_parser("validate", help="validate synced entities against the source")
+    connection_args(validate)
+    validate.add_argument("--entity", action="append", help="entity name (repeatable)")
+    validate.add_argument(
+        "--as-of", type=date.fromisoformat, help="balances as of this date (default today)"
+    )
 
     deletions = sub.add_parser(
         "check-deletions", help="soft-delete what no longer exists in the source"
@@ -129,20 +145,30 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"  {entity.name}  [{entity.key}]")
             return 0
 
+        if args.command == "validate":
+            reports = run_validation(session, connection, connector, args.entity, args.as_of)
+            return _print_validation(reports)
+
         if args.command in ("sync", "check-deletions"):
+            validate = not getattr(args, "no_validate", False)
             try:
                 if args.command == "sync":
                     result = run_sync(
                         session, connection, connector, args.entity, args.full, _period(args)
                     )
                     code = _print_sync(result)
+                    if validate and not (args.check_deletions and not code):
+                        code |= _print_validation(after_run(session, connection, connector, result))
                     if code or not args.check_deletions:
                         return code
                 result = run_deletion_check(session, connection, connector, args.entity)
             except SyncBusyError as exc:
                 print(str(exc), file=sys.stderr)
                 return 3
-            return _print_sync(result)
+            code = _print_sync(result)
+            if validate:
+                code |= _print_validation(after_run(session, connection, connector, result))
+            return code
 
         entity = find_entity(connector, args.entity)
         extracted = run_extract(session, connection, connector, entity, _period(args))
@@ -179,6 +205,23 @@ def _print_sync(r: SyncResult) -> int:
     return 0
 
 
+def _print_validation(reports: list[ValidationReport]) -> int:
+    """Counts, codes and pass/fail only (safe for client data)."""
+    for r in reports:
+        print(
+            f"Validation run {r.validation_run_id} of {r.entity_name} as of {r.as_of}: "
+            f"{r.status.upper()}  {r.checks_passed} checks passed, {r.checks_failed} failed"
+        )
+        for code, count in sorted(r.failed_by_code.items()):
+            print(f"  failed: {code} x{count}")
+        if any(f.check_code == "opening_difference" for f in r.findings):
+            print("  WARNING: opening balances don't total zero (difference in opening balances)")
+        for f in r.findings:
+            if f.severity == "info":
+                print(f"  note: {f.check_code}")
+    return 1 if any(r.status == "failed" for r in reports) else 0
+
+
 def _status(session: Session) -> int:
     now = utcnow()
     connections = session.scalars(select(Connection).order_by(Connection.name)).all()
@@ -200,7 +243,51 @@ def _status(session: Session) -> int:
             continue
         check = last_run(session, connection.id, (DELETION_CHECK,))
         _print_schedule("deletion check", connection, check, check_every, now, "keys listed")
+        _print_validation_status(session, connection)
     return 0
+
+
+def _print_validation_status(session: Session, connection: Connection) -> None:
+    """Per entity: the latest validation and the opening difference warning; open alerts."""
+    from core.models.accounting import EntitySource
+
+    for entity in session.scalars(
+        select(Entity)
+        .join(EntitySource, EntitySource.entity_id == Entity.id)
+        .where(EntitySource.connection_id == connection.id)
+        .order_by(Entity.name)
+    ):
+        run = session.scalar(
+            select(ValidationRun)
+            .where(ValidationRun.entity_id == entity.id)
+            .order_by(ValidationRun.id.desc())
+            .limit(1)
+        )
+        if run is None:
+            print(f"  validation of {entity.name}: never ran")
+            continue
+        print(
+            f"  validation of {entity.name}: run {run.id} {run.status.upper()} as of {run.as_of}, "
+            f"{run.checks_passed} passed, {run.checks_failed} failed, "
+            f"at {run.started_at:%Y-%m-%d %H:%M:%S} UTC"
+        )
+        opening = session.scalar(
+            select(func.count())
+            .select_from(ValidationIssue)
+            .where(
+                ValidationIssue.validation_run_id == run.id,
+                ValidationIssue.check_code == "opening_difference",
+            )
+        )
+        if opening:
+            print("    WARNING: opening balances don't total zero (difference in opening balances)")
+    alerts = session.execute(
+        select(Alert.kind, func.count())
+        .where(Alert.connection_id == connection.id, Alert.resolved_at.is_(None))
+        .group_by(Alert.kind)
+    ).all()
+    listed = ", ".join(f"{kind} {n}" for kind, n in sorted(alerts)) or "none"
+    print(f"  open alerts: {listed}")
 
 
 def _print_schedule(
