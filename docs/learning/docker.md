@@ -239,15 +239,17 @@ command: [celery, -A, workers.celery_app, worker, -B, --schedule=/tmp/celerybeat
 Built from the same image as the API, but `command:` starts Celery instead of the web server. It has no ports, because nothing connects *to* a worker; it pulls jobs from Redis.
 
 - **`worker`** runs the jobs.
-- **`-B`** also starts **Celery Beat**, a clock inside the same container. Every 60 seconds it queues a `sync_tick` job, which starts a sync for each connection whose interval (default 5 minutes) has passed (SYN-001, ADR-017).
+- **`-B`** also starts **Celery Beat**, a clock inside the same container. Every 60 seconds it queues a `sync_tick` job, which starts a sync for each connection whose interval (default 5 minutes) has passed (SYN-001, ADR-017). If no sync is due, it starts a **deletion check** when that one's own interval (default 1 hour) has passed (ADR-018).
 - **`--schedule=/tmp/...`**: Beat keeps a tiny state file; `/tmp` is writable for the container's non-root user.
 - **`--concurrency=2`**: at most two jobs at a time.
 
 Since M3 it starts with `./dev.ps1 up` (it has no profile any more). It reaches TallyPrime on your PC through `host.docker.internal`, like the API. Watch it:
 
 ```powershell
-./dev.ps1 logs worker      # "beat: Starting...", then "Sync run N: succeeded" every 5 minutes
-./dev.ps1 status           # last sync per connection and when the next one is due
+./dev.ps1 logs worker      # "beat: Starting...", then "Sync run N (incremental): succeeded ..." every 5 minutes
+                           # and "Sync run N (deletion_check): succeeded ..." every hour
+./dev.ps1 status           # per connection: last sync and deletion check, and when each is next due
+./dev.ps1 sync deletions   # run a deletion check now, inside the api container (docker compose exec)
 ```
 
 ### 6.8 Profiles: `tools`
@@ -407,4 +409,5 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
 | 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |
+| 2026-10-12 | M3 review: the worker also runs the hourly deletion check (section 6.7); `./dev.ps1 sync deletions` runs one through `docker compose exec`; `status` shows both schedules. |
 | 2026-10-12 | M3: the `worker` starts with `up` and runs Celery Beat (`-B`) for the scheduled sync; `./dev.ps1 sync`; `status` shows each connection's last and next sync; `PYTHONPATH=/app` in the Dockerfile. |

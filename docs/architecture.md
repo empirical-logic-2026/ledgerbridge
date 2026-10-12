@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.6 (Draft) |
+| Version | 0.7 (Draft) |
 | Date | 2026-10-08 |
 | Related | `docs/requirements.md`, `CLAUDE.md` |
 
@@ -145,10 +145,10 @@ The pipeline, all source-independent (M3):
 2. **Store raw** (`core/raw_store.py`): payloads are stored unchanged; identical re-deliveries are skipped.
 3. **Map:** the connector's `to_canonical()` turns each raw record into plain canonical records (`core/canonical.py`): amounts with the canonical sign, masters referred to by name.
 4. **Transform** (`core/transform.py`): upserts on `(connection_id, source_key)`, resolves names within the entity, inherits group hints down the group tree (nature, standard account, ledger kind, party type), and replaces each changed voucher's child rows in one transaction (schema.md 8, rule 7).
-5. **Deletions:** keys from `list_keys()` that are gone become soft deletes.
+5. **Deletions:** a separate deletion check run compares the keys from `list_keys()` with the stored rows; keys that are gone become soft deletes. It runs on its own, longer schedule (ADR-018).
 6. **Log:** one `sync_runs` row per run; markers advance only when it succeeds.
 
-Run it with `python -m workers.cli sync` (or `./dev.ps1 sync`). The worker also runs it on a schedule (ADR-017).
+Run it with `python -m workers.cli sync` (or `./dev.ps1 sync`), and the deletion check with `python -m workers.cli check-deletions` (or `./dev.ps1 sync deletions`). The worker runs both on a schedule (ADR-017, ADR-018).
 
 **Tally:** XML requests over Tally's HTTP interface (default port 9000). The adapter sends only Export requests (TDL collections with explicit fetch lists, targeting a company by name), fetches vouchers month by month, and handles UTF-16 responses and invalid character references emitted by Tally. Incremental sync uses AlterID/MasterID values. Version differences are handled inside the Tally adapter. Historical Tally backups are restored into a Tally instance and extracted through the same adapter.
 
@@ -334,6 +334,7 @@ Every call to any model, local or external, writes one append-only record in the
 | ADR-015 | AI data protection by design, replacing ADR-004. Per-client privacy mode: `private` (default, local model only), `schema-only` (external model sees only the masked question and semantic-layer descriptions; SQL and result formatting stay local) or `full` (external model only via the client's own cloud account, everything masked). One data protection gate pseudonymizes party names, GSTIN, PAN, bank accounts and salaries and reverses them locally. Embeddings are always local. Models have no outbound tools. A network allowlist limits egress to configured sources plus one approved AI endpoint. Every model call is logged with its exact payload. | The client answered "ideally no" to external AI (OPEN-007), and accounting data is highly sensitive. Making `private` the default, enforcing what can be sent in code and at the network level rather than in prompts, and logging every payload means a bug or prompt injection can't quietly leak data, while clients who choose an external model still get better SQL from it. |
 | ADR-016 | The four MySQL databases are named `ledgerbridge_source` (raw layer), `ledgerbridge_accounting` (canonical), `ledgerbridge_reporting` (semantic layer) and `ledgerbridge_system` (system), replacing `raw`, `core`, `rpt` and `app`. "Raw", "canonical", "reporting" and "system" remain the names of the layers. Code refers to them through constants in `core/models/schemas.py`; migrations use the literal names. **One-time exception:** the rename was made by editing migration 0001 and recreating the test database, which was acceptable only because no pilot or client database existed yet. **After the first release, any rename must be done with a proper migration**, never by editing an applied one. | The short names didn't say what they hold, and generic names like `app` and `core` can clash with other applications' databases when a client hosts us on a shared MySQL server. The prefix groups our databases together in any MySQL tool, and the names read clearly in grants (`ai_ro` can read `ledgerbridge_reporting` only). |
 | ADR-017 | Scheduled sync (SYN-001) runs in the Celery worker with Celery Beat embedded (`worker -B`). A tick every `SYNC_TICK_SEC` (60 s) queues an incremental sync for each active connection whose own `sync_interval_sec` (default 300) has passed since its last run. A connection never runs twice at once: a Redis lock per connection plus a check for a `running` row in `sync_runs` (stale after 2 hours). | One small always-on process covers near-real-time sync without a separate scheduler service. Per-connection intervals and the double lock keep slow sources and manual runs (`./dev.ps1 sync`) from overlapping. Embedded Beat suits one worker; a separate Beat process can follow if workers scale out. |
+| ADR-018 | Deletions in the source (SYN-003) are found by a **deletion check** that lists every key in the source and soft-deletes stored rows whose key has gone. It runs as its own `sync_runs` row (`run_type = 'deletion_check'`) on its own schedule, every `connections.config.deletion_check_interval_sec` seconds (default `DELETION_CHECK_INTERVAL_SEC` = 3600), queued by the same tick as syncs and under the same per-connection lock. Incremental syncs never list keys. | Listing every key costs about 1.3 KB per Tally voucher on every run, far more than an incremental sync of a few changes, so doing it every 5 minutes doesn't scale to years of books. Deletions are rare and an hour's delay is acceptable for MIS reporting; the interval is configurable per connection and a full sync also checks. |
 
 New decisions are appended here with the next ADR number.
 
@@ -370,4 +371,5 @@ The pilot runs the data plane on the developer's Windows machine.
 | 2026-10-09 | 0.3 | Environment separation (ADR-012), uv (ADR-013), connector framework details (Section 4.4), dev-only Tally seeding (ADR-014). |
 | 2026-10-09 | 0.4 | AI data protection: Section 5 rewritten around privacy modes (5.4), the data protection gate with masking (5.5), outbound network allowlist (5.6) and model call log (5.7). ADR-015 supersedes ADR-004. Security summary and pilot table updated. Requirements AI-011 to AI-018 and SEC-010. |
 | 2026-10-09 | 0.5 | Databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); data-layers table (4.2) shows each layer's database; AI guardrail names `ai_ro` and its single database. |
+| 2026-10-12 | 0.7 | ADR-018: deletion check on its own schedule (default hourly), separate from incremental syncs; Section 4.4 pipeline step 5. |
 | 2026-10-12 | 0.6 | M3: Section 4.4 describes the source-independent sync pipeline (fetch, raw store, map, transform, deletions, log); ADR-017 scheduled sync in the worker. |

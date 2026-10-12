@@ -67,6 +67,8 @@ npm run build
 ./dev.ps1 seed-test-data         # idempotent seed of LedgerBridge Test Co in TallyPrime (ADR-014)
 ./dev.ps1 extract -Company "LedgerBridge Test Co"   # raw records only (M1)
 ./dev.ps1 sync -Company "LedgerBridge Test Co"      # fetch changes and transform (M3); `sync full` forces everything
+./dev.ps1 sync deletions                             # deletion check only (the worker runs it hourly)
+./dev.ps1 seed-test-data create-only                 # create missing seed items, skip alterations and deletions
 ./deploy/stack.ps1 -Env test exec -T api python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
 
 # Lower level: any docker compose command for one environment
