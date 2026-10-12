@@ -65,7 +65,9 @@ npm run build
 ./dev.ps1 up                     # build, start, wait healthy, migrate (as migrator), print URLs (API on 8001)
 ./dev.ps1 status | down | test | logs <service> | tally-companies
 ./dev.ps1 seed-test-data         # idempotent seed of LedgerBridge Test Co in TallyPrime (ADR-014)
-./dev.ps1 extract -Company "LedgerBridge Test Co"
+./dev.ps1 extract -Company "LedgerBridge Test Co"   # raw records only (M1)
+./dev.ps1 sync -Company "LedgerBridge Test Co"      # fetch changes and transform (M3); `sync full` forces everything
+./deploy/stack.ps1 -Env test exec -T api python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
 
 # Lower level: any docker compose command for one environment
 ./deploy/stack.ps1 -Env test up -d --build

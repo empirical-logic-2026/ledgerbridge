@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.6 (Draft) |
+| Version | 0.7 (Draft) |
 | Date | 2026-10-09 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -95,6 +95,7 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 | `0001` | M1 | `ledgerbridge_source.raw_records`, `ledgerbridge_system.sources`, `ledgerbridge_system.connections`, `ledgerbridge_system.sync_runs` |
 | `0002` | M2 | Every other table in Sections 4 and 5, except `ledgerbridge_accounting.bank_statement_lines` (phase 2). Adds the `connections.agent_id` foreign key. |
 | `0003` | M2 | Reference data: the `INR` currency and the default standard chart of accounts, 75 accounts (Section 4.2) |
+| `0004` | M3 | `ledgerbridge_accounting.ledgers.tax_type` (Section 4.2) |
 
 `ledgerbridge_reporting` exists from M2 but stays empty until M6 (Section 6). The per-call AI model log (AI-018) is designed in M8. Type and key choices for tables documented here only as column lists are in Section 9.
 
@@ -228,6 +229,7 @@ Source group hierarchy (Tally groups), kept as-is per entity.
 | is_bill_wise | BOOLEAN | |
 | is_cost_centre_applicable | BOOLEAN | |
 | gstin | VARCHAR(15) NULL | |
+| tax_type | ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other') NULL | Set for tax ledgers. Voucher lines posted to them become `tax_lines` (migration `0004`, M3). |
 
 Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 
@@ -434,6 +436,65 @@ Found while confirming the sign convention on TallyPrime exports:
 - **Cancelled vouchers** (`ISCANCELLED=Yes`) keep an empty `ALLLEDGERENTRIES.LIST` placeholder with no ledger or amount. Skip entries without a ledger name.
 - **Educational mode:** TallyPrime silently returns nothing for report periods whose dates aren't the 1st, 2nd or 31st. The connector therefore always sends an exclusive end date on the 1st of the following month and filters with `$Date < end` (`connectors/tally/envelopes.py`).
 
+### 7.3 Field mapping (M3, `connectors/tally/mapping.py`)
+
+All amounts: canonical = −(Tally amount). Masters are referred to by name within the company, because that's how Tally refers to them.
+
+| Tally object | Fields used → canonical |
+| --- | --- |
+| Company | `NAME` → `entities.name`; `BASICCOMPANYFORMALNAME` → `legal_name`; `BOOKSFROM` → `books_from`; month of `STARTINGFROM` → `fy_start_month`; `STATENAME` → `state_code` (GST state code); `GSTREGISTRATIONNUMBER`, `INCOMETAXNUMBER` → `gstin`, `pan`. The entity (code from the name, e.g. `LEDGERBRIDGE_TEST_CO`) and its `entity_sources` row (company GUID) are created on the first sync. |
+| Group | `NAME`, `PARENT` (empty or *Primary* means a primary group). The nature of a primary group comes from `ISREVENUE` and `ISDEEMEDPOSITIVE` (revenue: expense or income; otherwise asset or liability), except *Capital Account* and *Reserves & Surplus*, which are equity. Sub-groups inherit. `AFFECTSGROSSPROFIT` → `affects_gross_profit`. |
+| Ledger | `NAME`, `PARENT` → `group_id`; `OPENINGBALANCE` → `opening_balance`, as at the entity's `books_from`; `ISBILLWISEON`, `ISCOSTCENTRESON`; GSTIN from `PARTYGSTIN` or `LEDGSTREGDETAILS.GSTIN`; state from `LEDSTATENAME` or `LEDMAILINGDETAILS.STATE`; `INCOMETAXNUMBER` (PAN), `EMAIL`, `LEDGERMOBILE`/`LEDGERPHONE`, `BILLCREDITPERIOD` (credit days) and `CREDITLIMIT` go to the party. `TAXTYPE` and `GSTDUTYHEAD` → `tax_type`: Central → cgst, State or UT → sgst, Integrated → igst, Cess → cess, TDS/TCS/VAT. An **empty duty head on a GST ledger means Central Tax**, because Tally leaves default values out of the export. |
+| Voucher type | `NAME`; `base_type` from the reserved name or `PARENT` (Sales, Purchase, Payment, Receipt, Journal, Contra, Debit/Credit Note, Stock Journal, Delivery/Receipt Note; anything else → other). Order, memo and stock-only types are not accounting types. `AFFECTSSTOCK` → `is_inventory`. |
+| Unit / Stock group / Godown / Stock item / Cost centre | Name, parent (*Primary* → none). Item: `BASEUNITS`, `OPENINGBALANCE` (quantity), `OPENINGVALUE`. Unit: `ORIGINALNAME`, `DECIMALPLACES`. Cost centre: `CATEGORY`. |
+| Voucher | `GUID`, `ALTERID`, `DATE`, `VOUCHERTYPENAME`, `VOUCHERNUMBER`, `REFERENCE`, `REFERENCEDATE`, `PARTYLEDGERNAME` → `party_id`, `NARRATION`, `ISCANCELLED`, `ISOPTIONAL`, `ISPOSTDATED`. |
+| Ledger entries | Postings per 7.2 → `voucher_lines` (`ISPARTYLEDGER` → `is_party_line`). `is_effective` is false for cancelled, optional and deleted vouchers. |
+| Bill allocations | `NAME`, `BILLTYPE` (New Ref → new_ref, Agst Ref → against_ref, Advance, On Account), `AMOUNT` → `bill_allocations`, party from the line's ledger. |
+| Cost centre allocations | `CATEGORYALLOCATIONS.COSTCENTREALLOCATIONS` `NAME`, `AMOUNT` → `line_cost_allocations`. |
+| Inventory entries | `STOCKITEMNAME`, `ACTUALQTY` (number and unit), `RATE`, `AMOUNT`, `DISCOUNT`, first batch allocation's `GODOWNNAME`, `BATCHNAME`. Quantity is positive when `ISDEEMEDPOSITIVE=Yes` (inward) and negative otherwise. |
+| Tax lines | Every voucher line posted to a ledger with a `tax_type` → `tax_lines` (`tax_amount` = the line amount). |
+
+**Standard-account mapping** (approved for M3), by Tally reserved group; user sub-groups and ledgers inherit from the nearest ancestor that has one:
+
+| Tally group | Standard account |
+| --- | --- |
+| Capital Account | 2100 |
+| Reserves & Surplus; the *Primary* group holding *Profit & Loss A/c* | 2200 |
+| Loans (Liability), Secured Loans, Unsecured Loans | 3110 |
+| Bank OD A/c / Bank OCC A/c | 3210 |
+| Sundry Creditors | 3220 |
+| Current Liabilities | 3270 |
+| Provisions | 3280 |
+| Suspense A/c | 3290 |
+| Branch / Divisions | 1275, reclassified to 3275 for credit balances **at the reporting date** (M6) |
+| Fixed Assets | 1110 |
+| Investments | 1150 |
+| Stock-in-Hand | 1210 |
+| Sundry Debtors | 1220 |
+| Cash-in-Hand | 1231 |
+| Bank Accounts | 1232 |
+| Loans & Advances (Asset) | 1240 |
+| Deposits (Asset), Current Assets, Misc. Expenses (ASSET) | 1270 |
+| Sales Accounts | 4110 |
+| Direct Incomes | 4130 |
+| Indirect Incomes | 4220 |
+| Purchase Accounts | 5110 |
+| Direct Expenses | 5130 |
+| **Duties & Taxes, Indirect Expenses** | **unmapped**: each holds ledgers belonging to different standard accounts. Their ledgers stay `unmapped` until mapped by hand (CON-011). |
+
+Mapped ledgers get `mapping_status = 'auto'`; every sync lists the unmapped ones. `ledger_kind` comes from the group: Bank Accounts and Bank OD → bank, Cash-in-Hand → cash, Duties & Taxes → tax, Sundry Debtors and Creditors → party (customer or vendor), Stock-in-Hand → stock; otherwise the nature. Party ledgers also get a `parties` row with the ledger's GUID as its key.
+
+*Profit & Loss A/c* sits directly under Tally's *Primary*, so each company gets a synthetic `Primary` account group (key `primary:<company GUID>`), mapped to 2200. Tally reports this ledger's closing balance as the period's computed profit, which isn't posted through vouchers: closing-balance comparisons (M4) must treat it separately.
+
+### 7.4 Sync rules (M3)
+
+- **Fields:** each collection requests only the fields above (`envelopes.py`). This makes exports about 10× smaller than fetching every field.
+- **Incremental:** `sync_markers` holds the highest AlterID per company and object type. Later runs request only `$AlterID > marker`, across all dates, because an old voucher can be altered today. Tally keeps separate AlterID counters for masters and for vouchers. Markers advance only after a successful run.
+- **Deletions:** each run (except a date-limited one) fetches the GUIDs that exist now, per object type, and soft-deletes rows whose GUID has gone. Lines of deleted vouchers become ineffective. Rows derived under another key, like the synthetic *Primary* group, are never deleted this way.
+- **Overlaps:** an object delivered twice, for example by two overlapping requests, updates one row through the upsert on `(connection_id, source_key)`. Its child rows are written once.
+- **Several companies:** one run can cover several companies; the connection remembers which ones (`connections.config.entities`).
+- **Origin:** `connections.config.origin` (`live` or `backup`) tags every row's `origin` (IMP-004).
+
 ## 8. Processing rules
 
 1. Connectors write source data to `ledgerbridge_source.raw_records` only.
@@ -478,3 +539,4 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-12 | 0.7 | M3: `ledgers.tax_type` (migration `0004`); Section 7.3 field mapping, standard-account mapping by Tally group (*Duties & Taxes* and *Indirect Expenses* unmapped), synthetic *Primary* group, *Branch / Divisions* classified by balance at the reporting date; Section 7.4 sync rules (incremental by AlterID, deletions, overlaps, several companies, origin). |

@@ -2,9 +2,9 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.3 |
+| Version | 0.4 |
 | Date | 2026-10-09 |
-| Current milestone | **M2** |
+| Current milestone | **M3** |
 
 Goal: load the client's Tally backup data (two companies) into MySQL and deliver dashboards and AI querying, with every part built generically so it later works for live Tally, other accounting books and other clients (PIL-001 to PIL-005).
 
@@ -131,3 +131,4 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | 2026-10-08 | 0.1 | Initial pilot roadmap. |
 | 2026-10-09 | 0.2 | M8 "Done when" and prompt updated for AI data protection: privacy modes, masking, local embeddings, no outbound tools, egress allowlist, model call log (AI-011 to AI-018, SEC-010, ADR-015). |
 | 2026-10-09 | 0.3 | Current milestone M2. Database names `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016) in M2 to M8; M2 "Done when" adds users, grants and the `migrate` container; M3 prompt references the child-row replacement rule. |
+| 2026-10-12 | 0.4 | Current milestone M3. |
