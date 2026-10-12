@@ -210,6 +210,11 @@ class Ledger(SourceTrackingMixin, TimestampMixin, Base):
     is_bill_wise: Mapped[bool] = flag()
     is_cost_centre_applicable: Mapped[bool] = flag()
     gstin: Mapped[str | None] = mapped_column(String(15), nullable=True)
+    # Set for tax ledgers (e.g. CGST payable); lines posted to them become tax_lines (M3).
+    tax_type: Mapped[str | None] = mapped_column(
+        Enum("cgst", "sgst", "igst", "cess", "tds", "tcs", "vat", "other", name="tax_type"),
+        nullable=True,
+    )
 
 
 # --- 4.3 Parties, items and other masters ----------------------------------------------

@@ -4,10 +4,12 @@ Nothing in this module is specific to a source. Each source lives in its own pac
 under `connectors/` and implements `Connector`.
 """
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal, Protocol
+
+from core.canonical import CanonicalRecord
 
 PayloadFormat = Literal["xml", "json", "csv", "txt"]
 
@@ -47,24 +49,37 @@ class ConnectionStatus:
     info: dict[str, str] = field(default_factory=dict)
 
 
+Markers = Mapping[str, str]  # object_type -> last change marker seen (e.g. Tally AlterID)
+
+
 class Connector(Protocol):
     source_code: str
+    # Object types in the order they must be transformed (each may refer to earlier ones).
+    object_types: tuple[str, ...]
 
     def test_connection(self) -> ConnectionStatus: ...
 
     def list_entities(self) -> list[SourceEntity]: ...
 
     def fetch_masters(
-        self, entity: SourceEntity, since_marker: str | None = None
-    ) -> Iterator[SourceRecord]: ...
+        self, entity: SourceEntity, markers: Markers | None = None
+    ) -> Iterator[SourceRecord]:
+        """Masters changed after the markers; everything when there is no marker."""
+        ...
 
     def fetch_transactions(
         self,
         entity: SourceEntity,
-        since_marker: str | None = None,
+        markers: Markers | None = None,
         period: Period | None = None,
-    ) -> Iterator[SourceRecord]: ...
+    ) -> Iterator[SourceRecord]:
+        """Transactions changed after the markers, or all in `period` / the whole books."""
+        ...
 
-    def to_canonical(self, record: SourceRecord) -> object:
-        """Map a raw record to canonical rows. Implemented from M3."""
+    def list_keys(self, entity: SourceEntity) -> dict[str, set[str]]:
+        """Every source key that currently exists, per object type (to detect deletions)."""
+        ...
+
+    def to_canonical(self, record: SourceRecord) -> list[CanonicalRecord]:
+        """Map one raw record to canonical records (core/canonical.py)."""
         ...

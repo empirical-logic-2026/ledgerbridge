@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 from core.db import get_engine
 from core.models import Base
@@ -31,9 +31,22 @@ def _model_tables() -> set[str]:
     return {f"{table.schema}.{table.name}" for table in Base.metadata.sorted_tables}
 
 
+def _clear_synced_data() -> None:
+    """Empties every table except the reference data migrations seed, so the downgrade can
+    run on a test database that holds synced data. Test environment only: this resets it."""
+    reference = {"standard_accounts", "currencies"}
+    with get_engine("migrator").begin() as conn:
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name not in reference:
+                conn.execute(table.delete())
+        conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+
+
 def test_upgrade_downgrade_upgrade_creates_every_model_table() -> None:
     command.upgrade(_config(), "head")
     assert _tables() == _model_tables() | {f"{SYSTEM}.alembic_version"}
+    _clear_synced_data()
     command.downgrade(_config(), "base")
     assert _tables() == {f"{SYSTEM}.alembic_version"}
     command.upgrade(_config(), "head")

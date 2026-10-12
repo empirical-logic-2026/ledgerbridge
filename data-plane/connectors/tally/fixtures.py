@@ -8,17 +8,19 @@ A fixture directory holds the raw response bytes for each request plus `manifest
 
 import json
 import re
+import xml.etree.ElementTree as ET  # noqa: N817
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-from connectors.tally import envelopes
+from connectors.tally import envelopes, parser
 
 DEFAULT_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "tally"
 
 _ID = re.compile(r"<ID>([^<]+)</ID>")
 _FROM = re.compile(r'<SVFROMDATE TYPE="Date">(\d{8})</SVFROMDATE>')
+_ALTER = re.compile(r"\$AlterID &gt; (\d+)")
 
 
 def load_manifest(directory: Path) -> dict[str, Any]:
@@ -33,29 +35,43 @@ class FixtureTransport(httpx.BaseTransport):
         self.manifest = load_manifest(directory)
         self.requests: list[str] = []
 
-    def _file_for(self, body: str) -> str | None:
+    def _files_for(self, body: str) -> list[str] | None:
+        """Recorded files that answer this request; None if the request isn't recognised."""
         match = _ID.search(body)
         if not match:
             return None
-        collection_id = match.group(1)
+        collection_id = match.group(1).removesuffix("Keys")  # GUID-only = same objects
         if collection_id == envelopes.VOUCHERS.collection_id:
+            vouchers = self.manifest.get("vouchers", [])
             start = _FROM.search(body)
-            if not start:
-                return None
+            if not start:  # incremental or key listing: every recorded voucher
+                return [str(entry["file"]) for entry in vouchers]
             month = f"{start.group(1)[:4]}-{start.group(1)[4:6]}"
-            for entry in self.manifest.get("vouchers", []):
-                if entry["from"].startswith(month):
-                    return str(entry["file"])
-            return "__empty__"
-        return self.manifest["files"].get(collection_id)
+            return [str(e["file"]) for e in vouchers if e["from"].startswith(month)]
+        if collection_id in self.manifest["files"]:
+            return [self.manifest["files"][collection_id]]
+        known = {spec.collection_id for spec in envelopes.ALL_SPECS}
+        known.add(envelopes.LEDGER_BALANCES.collection_id)
+        # A type this fixture set didn't record answers like Tally with no such objects.
+        return [] if collection_id in known else None
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         body = request.read().decode("utf-8")
         self.requests.append(body)
-        name = self._file_for(body)
-        if name == "__empty__":
-            # A month without recorded vouchers: answer with an empty collection.
-            return httpx.Response(200, content=b"<ENVELOPE><COLLECTION></COLLECTION></ENVELOPE>")
-        if name is None:
+        files = self._files_for(body)
+        if files is None:
             return httpx.Response(200, content=b"<RESPONSE>Unknown Request</RESPONSE>")
-        return httpx.Response(200, content=(self.directory / name).read_bytes())
+        if len(files) == 1 and not _ALTER.search(body):
+            return httpx.Response(200, content=(self.directory / files[0]).read_bytes())
+        since = int(match.group(1)) if (match := _ALTER.search(body)) else None
+        objects = []
+        for name in files:
+            root = parser.parse_response((self.directory / name).read_bytes())
+            for collection in root.iter("COLLECTION"):
+                for child in collection:
+                    alter = parser.alter_id(child)
+                    if since is None or (alter is not None and alter > since):
+                        child.tail = None
+                        objects.append(ET.tostring(child, encoding="unicode"))
+        content = "<ENVELOPE><COLLECTION>" + "".join(objects) + "</COLLECTION></ENVELOPE>"
+        return httpx.Response(200, content=content.encode("utf-8"))

@@ -5,6 +5,11 @@
     "LBGroups": "groups.xml",
     "LBLedgers": "ledgers.xml",
     "LBVoucherTypes": "voucher_types.xml",
+    "LBUnits": "units.xml",
+    "LBStockGroups": "stock_groups.xml",
+    "LBGodowns": "godowns.xml",
+    "LBStockItems": "stock_items.xml",
+    "LBCostCentres": "cost_centres.xml",
     "LBLedgerBalances": "ledger_balances.xml"
   },
   "vouchers": [
