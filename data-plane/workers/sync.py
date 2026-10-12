@@ -18,14 +18,14 @@ runs at once: a run that is still `running` blocks the next one, unless it is st
 
 import logging
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from connectors.base import Connector, Period, SourceEntity
+from connectors.base import Connector, Period
 from core.config import get_settings
 from core.errors import short_error
 from core.models import Connection, SyncRun
@@ -33,11 +33,20 @@ from core.models.base import utcnow
 from core.models.system import SyncMarker
 from core.raw_store import RawStore
 from core.transform import Transformer, mark_deleted
+from workers.entities import select_entities
 
 logger = logging.getLogger(__name__)
 
 STALE_RUN = timedelta(hours=2)
 SYNC_RUN_TYPES = ("incremental", "full")
+PROGRESS_EVERY = 5000  # records between progress lines
+Progress = Callable[[str], None]
+
+
+def _quiet(message: str) -> None:
+    """Default progress sink: nothing."""
+
+
 DELETION_CHECK = "deletion_check"
 
 
@@ -50,7 +59,8 @@ class SyncResult:
     sync_run_id: int
     status: str
     run_type: str
-    entities: list[str] = field(default_factory=list)
+    entities: list[str] = field(default_factory=list)  # names, for display
+    entity_keys: list[str] = field(default_factory=list)  # how later steps find them
     fetched: Counter[str] = field(default_factory=Counter)
     stored: int = 0
     unchanged: int = 0
@@ -107,21 +117,6 @@ def running_run(session: Session, connection_id: int) -> SyncRun | None:
     )
 
 
-def select_entities(
-    connector: Connector, connection: Connection, names: Sequence[str] | None
-) -> list[SourceEntity]:
-    """The requested entities; else those configured on the connection; else all loaded."""
-    available = connector.list_entities()
-    wanted = list(names or connection.config.get("entities") or [])
-    if not wanted:
-        return available
-    by_name = {e.name: e for e in available}
-    missing = [n for n in wanted if n not in by_name]
-    if missing:
-        raise LookupError(f"{len(missing)} requested entities are not available in the source")
-    return [by_name[n] for n in wanted]
-
-
 def run_sync(
     session: Session,
     connection: Connection,
@@ -129,7 +124,10 @@ def run_sync(
     entity_names: Sequence[str] | None = None,
     full: bool = False,
     period: Period | None = None,
+    progress: Progress | None = None,
 ) -> SyncResult:
+    """`progress`, if given, receives short status lines (counts only, no names)."""
+    say = progress or _quiet
     has_markers = session.scalar(
         select(SyncMarker.connection_id).where(SyncMarker.connection_id == connection.id).limit(1)
     )
@@ -139,19 +137,25 @@ def run_sync(
     try:
         entities = select_entities(connector, connection, entity_names)
         result.entities = [e.name for e in entities]
+        result.entity_keys = [e.key for e in entities]
         new_markers: dict[str, dict[str, int]] = {}
         store = RawStore(session)
-        for entity in entities:
+        for number, entity in enumerate(entities, start=1):
+            label = f"entity {number} of {len(entities)}"
+            say(f"{label}: fetching ({run_type})")
             markers = {} if full or period else load_markers(session, connection.id, entity.key)
             highest: dict[str, int] = defaultdict(int)
 
-            def counted(records, highest=highest):  # noqa: ANN001, ANN202
+            def counted(records, highest=highest, label=label):  # noqa: ANN001, ANN202
                 for record in records:
                     result.fetched[record.object_type] += 1
                     if record.source_alter_id is not None:
                         highest[record.object_type] = max(
                             highest[record.object_type], record.source_alter_id
                         )
+                    total = sum(result.fetched.values())
+                    if total % PROGRESS_EVERY == 0:
+                        say(f"{label}: {total:,} records received so far")
                     yield record
 
             for records in (
@@ -165,10 +169,13 @@ def run_sync(
                 result.unchanged += stored.skipped
             session.commit()
             new_markers[entity.key] = dict(highest)
+            say(f"{label}: fetched; {sum(result.fetched.values()):,} records received in total")
 
+        say("transforming into the accounting tables")
         transformed = Transformer(session, connection.id, connector, origin).run(
             [e.key for e in entities]
         )
+        say(f"transformed {transformed.processed:,} records, {transformed.failed} failed")
         result.transformed.update(transformed.by_object_type)
         result.failed = transformed.failed
         result.warnings = transformed.warnings
@@ -192,21 +199,26 @@ def run_deletion_check(
     connection: Connection,
     connector: Connector,
     entity_names: Sequence[str] | None = None,
+    progress: Progress | None = None,
+    entity_keys: Sequence[str] | None = None,
 ) -> SyncResult:
     """Soft-deletes canonical rows whose object no longer exists in the source (SYN-003).
 
     Lists every key in the source per object type (for Tally, GUID-only exports) and compares.
     Entities that were never synced are skipped. `fetched` counts the keys listed.
     """
+    say = progress or _quiet
     run, result = _open_run(session, connection, DELETION_CHECK)
     try:
-        entities = select_entities(connector, connection, entity_names)
+        entities = select_entities(connector, connection, entity_names, entity_keys)
         entity_ids = entity_ids_for(session, connection.id, [e.key for e in entities])
-        for entity in entities:
+        for number, entity in enumerate(entities, start=1):
             entity_id = entity_ids.get(entity.key)
             if entity_id is None:
                 continue
+            say(f"entity {number} of {len(entities)}: checking for deletions")
             result.entities.append(entity.name)
+            result.entity_keys.append(entity.key)
             existing = connector.list_keys(entity)
             for object_type, keys in existing.items():
                 result.fetched[object_type] += len(keys)

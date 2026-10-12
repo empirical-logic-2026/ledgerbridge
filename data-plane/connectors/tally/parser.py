@@ -97,10 +97,22 @@ def payload(element: ET.Element) -> str:
     return ET.tostring(element, encoding="unicode")
 
 
+def exact_name(element: ET.Element) -> str | None:
+    """The NAME exactly as Tally reports it, spaces included (None if blank).
+
+    Company names go back to Tally in SVCURRENTCOMPANY, which must match exactly: a name
+    with a trailing or double space must not be tidied (pilot run, 2026-10-12).
+    """
+    value = element.findtext("NAME")
+    if value is None or not value.strip():
+        value = element.get("NAME")
+    return value if value is not None and value.strip() else None
+
+
 def parse_companies(body: bytes) -> list[SourceEntity]:
     entities = []
     for element in objects(parse_response(body), "COMPANY"):
-        name = object_name(element)
+        name = exact_name(element)
         if not name:
             continue
         entities.append(
