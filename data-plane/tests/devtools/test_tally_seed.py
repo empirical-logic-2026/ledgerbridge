@@ -46,7 +46,9 @@ def test_expected_trial_balance_for_anchors() -> None:
     assert balances["Rent"] == (Decimal("1000"), "Dr")  # cancelled 500 excluded
     assert balances["Cash"] == (Decimal("27500"), "Dr")  # contra, receipts, payments, altered 1,500
     assert balances["Capital"] == (Decimal("50000"), "Cr")
-    assert balances["Test Bank Current A/c"] == (Decimal("19360"), "Dr")
+    # 19,360 before ALTER-2 (receipt altered from 3,000 to 5,900); DEL-1 is deleted.
+    assert balances["Test Bank Current A/c"] == (Decimal("25260"), "Dr")
+    assert balances["Customer Gamma Stores"] == (Decimal("0"), "Dr")  # SI-3 settled in full
     total = sum(a if s == "Dr" else -a for a, s in balances.values())
     assert total == 0
 
@@ -108,6 +110,7 @@ class FakeTally:
             ledgers={"Cash": Decimal(0), "Profit & Loss A/c": Decimal(0)},
             units=set(),
             stock_items=set(),
+            stock_groups=set(),
             cost_centres=set(),
             cost_centres_enabled=cost_centres_enabled,
             vouchers={},
@@ -124,12 +127,18 @@ class FakeTally:
             action = obj.get("ACTION")
             if obj.tag == "UNIT":
                 self.state.units.add(obj.get("NAME"))
+            elif obj.tag == "STOCKGROUP":
+                self.state.stock_groups.add(obj.get("NAME"))
             elif obj.tag == "STOCKITEM":
                 self.state.stock_items.add(obj.get("NAME"))
             elif obj.tag == "COSTCENTRE":
                 self.state.cost_centres.add(obj.get("NAME"))
             elif obj.tag == "LEDGER":
                 self.state.ledgers[obj.get("NAME")] = tally_amount(obj.findtext("OPENINGBALANCE"))
+            elif obj.tag == "VOUCHER" and action == "Delete":
+                master_id = int(obj.get("TAGVALUE"))
+                marker = next(m for m, v in self.state.vouchers.items() if v.master_id == master_id)
+                del self.state.vouchers[marker]
             elif obj.tag == "VOUCHER":
                 marker = re.search(r"\[lb-seed:([A-Z0-9-]+)\]", obj.findtext("NARRATION")).group(1)
                 if action == "Cancel":
@@ -155,13 +164,42 @@ def test_seed_creates_everything_then_second_run_changes_nothing() -> None:
     assert "opening balance of Cash" in first.altered
     assert first.cancelled == ["CANCEL-1"]
     assert "voucher ALTER-1" in first.altered
+    assert "voucher ALTER-2" in first.altered
+    assert first.deleted == ["DEL-1"]
+    assert "DEL-1" not in tally.state.vouchers
+    assert "lb-seed DEL-1 deleted" in tally.state.stock_groups
     assert tally.state.ledgers["Cash"] == Decimal("-50000")
     assert tally.state.ledgers["Capital"] == Decimal("50000")
 
     requests_before = tally.requests
     second = seed(SEED, COMPANY, tally.read, tally, log=lambda _: None)
     assert second.created == {} and second.altered == [] and second.cancelled == []
+    assert second.deleted == []  # the tombstone stops DEL-1 being created again
     assert tally.requests == requests_before
+
+
+def test_create_only_then_full_run_alters_and_deletes() -> None:
+    tally = FakeTally()
+    first = seed(SEED, COMPANY, tally.read, tally, log=lambda _: None, create_only=True)
+    assert first.created["vouchers"] == len(SEED.vouchers)
+    assert first.cancelled == [] and first.deleted == []
+    assert "voucher ALTER-2" not in first.altered
+    assert tally.state.vouchers["ALTER-2"].amounts["Test Bank Current A/c"] == Decimal("-3000")
+    assert "DEL-1" in tally.state.vouchers
+
+    second = seed(SEED, COMPANY, tally.read, tally, log=lambda _: None)
+    assert second.created == {"stock groups": 1}  # the tombstone
+    assert "voucher ALTER-2" in second.altered and second.deleted == ["DEL-1"]
+    assert tally.state.vouchers["ALTER-2"].amounts["Test Bank Current A/c"] == Decimal("-5900")
+    assert "DEL-1" not in tally.state.vouchers
+
+
+def test_delete_request_identifies_the_voucher_by_master_id() -> None:
+    delete = next(v for v in SEED.vouchers if v.delete)
+    root = ET.fromstring(rq.envelope(COMPANY, "Vouchers", rq.voucher_delete(delete, 42)))
+    voucher = root.find(".//VOUCHER")
+    assert voucher.get("ACTION") == "Delete"
+    assert (voucher.get("TAGNAME"), voucher.get("TAGVALUE")) == ("MasterID", "42")
 
 
 def test_seed_skips_cost_centre_voucher_when_feature_is_off() -> None:

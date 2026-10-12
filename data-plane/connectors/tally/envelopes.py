@@ -1,10 +1,15 @@
 """Builds Tally XML export requests (TDL collections).
 
 Only Export requests are ever built: the connector is read-only (CON-008).
-Inline TDL collections with explicit fetch lists work in both TallyPrime and Tally.ERP 9.
+
+Each collection fetches an explicit list of fields: only what the mapping
+(connectors/tally/mapping.py) reads, so exports stay small on years of data. Fetching
+everything (`NATIVEMETHOD *`) made vouchers about 7x and ledgers about 15x larger.
+Tally ignores field names it doesn't know, so fields that differ between TallyPrime and
+Tally.ERP 9 releases (e.g. GSTIN, state) are listed in both forms.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from xml.sax.saxutils import escape
 
@@ -20,19 +25,61 @@ class CollectionSpec:
     compute: tuple[str, ...] = ()
 
 
-_KEYS = ("GUID", "ALTERID", "MASTERID")
+_KEYS = ("GUID", "ALTERID", "MASTERID", "NAME")
 
 COMPANIES = CollectionSpec(
     "LBCompanies",
     "Company",
     "COMPANY",
     "company",
-    ("NAME", "GUID", "BOOKSFROM", "STARTINGFROM", "ENDINGAT"),
+    (
+        "NAME", "GUID", "ALTERID", "BOOKSFROM", "STARTINGFROM", "ENDINGAT", "ISCOSTCENTRESON",
+        "BASICCOMPANYFORMALNAME", "STATENAME", "COUNTRYNAME", "GSTREGISTRATIONNUMBER",
+        "INCOMETAXNUMBER", "CURRENCYNAME",
+    ),
+)  # fmt: skip
+GROUPS = CollectionSpec(
+    "LBGroups",
+    "Group",
+    "GROUP",
+    "group",
+    (*_KEYS, "PARENT", "ISREVENUE", "ISDEEMEDPOSITIVE", "AFFECTSGROSSPROFIT"),
 )
-GROUPS = CollectionSpec("LBGroups", "Group", "GROUP", "group", _KEYS)
-LEDGERS = CollectionSpec("LBLedgers", "Ledger", "LEDGER", "ledger", _KEYS)
+LEDGERS = CollectionSpec(
+    "LBLedgers",
+    "Ledger",
+    "LEDGER",
+    "ledger",
+    (
+        *_KEYS, "PARENT", "OPENINGBALANCE", "ISBILLWISEON", "ISCOSTCENTRESON", "CURRENCYNAME",
+        "TAXTYPE", "GSTDUTYHEAD", "PARTYGSTIN", "LEDGSTREGDETAILS.GSTIN", "INCOMETAXNUMBER",
+        "LEDSTATENAME", "LEDMAILINGDETAILS.STATE", "COUNTRYNAME", "EMAIL", "LEDGERPHONE",
+        "LEDGERMOBILE", "BILLCREDITPERIOD", "CREDITLIMIT",
+    ),
+)  # fmt: skip
 VOUCHER_TYPES = CollectionSpec(
-    "LBVoucherTypes", "VoucherType", "VOUCHERTYPE", "voucher_type", _KEYS
+    "LBVoucherTypes",
+    "VoucherType",
+    "VOUCHERTYPE",
+    "voucher_type",
+    (*_KEYS, "PARENT", "AFFECTSSTOCK"),
+)
+UNITS = CollectionSpec(
+    "LBUnits", "Unit", "UNIT", "unit", (*_KEYS, "ORIGINALNAME", "DECIMALPLACES", "ISSIMPLEUNIT")
+)
+STOCK_GROUPS = CollectionSpec(
+    "LBStockGroups", "StockGroup", "STOCKGROUP", "stock_group", (*_KEYS, "PARENT")
+)
+STOCK_ITEMS = CollectionSpec(
+    "LBStockItems",
+    "StockItem",
+    "STOCKITEM",
+    "stock_item",
+    (*_KEYS, "PARENT", "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE", "OPENINGRATE"),
+)
+GODOWNS = CollectionSpec("LBGodowns", "Godown", "GODOWN", "godown", (*_KEYS, "PARENT"))
+COST_CENTRES = CollectionSpec(
+    "LBCostCentres", "CostCentre", "COSTCENTRE", "cost_centre", (*_KEYS, "PARENT", "CATEGORY")
 )
 VOUCHERS = CollectionSpec(
     "LBVouchers",
@@ -40,13 +87,27 @@ VOUCHERS = CollectionSpec(
     "VOUCHER",
     "voucher",
     (
-        *_KEYS,
-        "ALLLEDGERENTRIES",
-        "LEDGERENTRIES",
-        "ALLINVENTORYENTRIES",
-        "INVENTORYENTRIES",
+        "GUID", "ALTERID", "MASTERID", "DATE", "EFFECTIVEDATE", "VOUCHERTYPENAME",
+        "VOUCHERNUMBER", "REFERENCE", "REFERENCEDATE", "PARTYLEDGERNAME", "NARRATION",
+        "ISCANCELLED", "ISOPTIONAL", "ISPOSTDATED", "ISDELETED", "ISINVOICE",
+        "AllLedgerEntries.LedgerName", "AllLedgerEntries.Amount",
+        "AllLedgerEntries.IsDeemedPositive", "AllLedgerEntries.IsPartyLedger",
+        "AllLedgerEntries.BillAllocations.Name", "AllLedgerEntries.BillAllocations.BillType",
+        "AllLedgerEntries.BillAllocations.Amount",
+        "AllLedgerEntries.CategoryAllocations.Category",
+        "AllLedgerEntries.CategoryAllocations.CostCentreAllocations.Name",
+        "AllLedgerEntries.CategoryAllocations.CostCentreAllocations.Amount",
+        "AllInventoryEntries.StockItemName", "AllInventoryEntries.ActualQty",
+        "AllInventoryEntries.BilledQty", "AllInventoryEntries.Rate",
+        "AllInventoryEntries.Amount", "AllInventoryEntries.IsDeemedPositive",
+        "AllInventoryEntries.Discount",
+        "AllInventoryEntries.BatchAllocations.GodownName",
+        "AllInventoryEntries.BatchAllocations.BatchName",
+        "AllInventoryEntries.AccountingAllocations.LedgerName",
+        "AllInventoryEntries.AccountingAllocations.Amount",
+        "AllInventoryEntries.AccountingAllocations.IsDeemedPositive",
     ),
-)
+)  # fmt: skip
 
 # Ledger balances with Tally's own Dr/Cr judgement ($$IsDr), independent of how amounts are
 # signed in XML. Used to confirm the sign convention (schema.md Section 7).
@@ -62,41 +123,67 @@ LEDGER_BALANCES = CollectionSpec(
     ),
 )
 
-MASTER_SPECS = (GROUPS, LEDGERS, VOUCHER_TYPES)
+# Masters in the order they must be transformed (each may refer to the ones before it).
+MASTER_SPECS = (
+    GROUPS,
+    LEDGERS,
+    VOUCHER_TYPES,
+    UNITS,
+    STOCK_GROUPS,
+    GODOWNS,
+    STOCK_ITEMS,
+    COST_CENTRES,
+)
 ALL_SPECS = (COMPANIES, *MASTER_SPECS, VOUCHERS)
+SPEC_BY_OBJECT_TYPE = {spec.object_type: spec for spec in ALL_SPECS}
 
 _PERIOD_FILTER = "LBInPeriod"
+_CHANGED_FILTER = "LBChanged"
 
 
 def tally_date(value: date) -> str:
     return value.strftime("%Y%m%d")
 
 
+def keys_only(spec: CollectionSpec) -> CollectionSpec:
+    """The same collection fetching only GUID and AlterID (for spotting deletions)."""
+    return replace(spec, collection_id=f"{spec.collection_id}Keys", fetch=("GUID", "ALTERID"))
+
+
 def collection_request(
     spec: CollectionSpec,
     company: str | None = None,
     period: tuple[date, date] | None = None,
+    since_alter_id: int | None = None,
 ) -> str:
-    """Builds a collection export. `period` (inclusive) limits objects by $Date.
+    """Builds a collection export.
 
-    Tally is given an *exclusive* end date (the day after the period) and the filter uses
-    `<`. For calendar months that end date is always the 1st of a month. This matters
-    because TallyPrime in Educational mode silently returns nothing for report dates
-    other than the 1st, 2nd or 31st, so a month ending on the 30th would come back empty.
+    - `period` (inclusive) limits objects by $Date. Tally is given an *exclusive* end date
+      (the day after the period) and the filter uses `<`. For calendar months that end date
+      is always the 1st of a month. This matters because TallyPrime in Educational mode
+      silently returns nothing for report dates other than the 1st, 2nd or 31st.
+    - `since_alter_id` returns only objects created or altered after that AlterID
+      (incremental sync, SYN-002). AlterID is a company-wide change counter.
     """
     static = ["<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"]
     if company is not None:
         static.append(f"<SVCURRENTCOMPANY>{escape(company)}</SVCURRENTCOMPANY>")
-    collection_extra = "".join(f"<COMPUTE>{formula}</COMPUTE>" for formula in spec.compute)
-    formulae = ""
+    extra = "".join(f"<COMPUTE>{formula}</COMPUTE>" for formula in spec.compute)
+    formulae = []
     if period is not None:
         end_exclusive = period[1] + timedelta(days=1)
         static.append(f'<SVFROMDATE TYPE="Date">{tally_date(period[0])}</SVFROMDATE>')
         static.append(f'<SVTODATE TYPE="Date">{tally_date(end_exclusive)}</SVTODATE>')
-        collection_extra += f"<FILTER>{_PERIOD_FILTER}</FILTER>"
-        formulae = (
+        extra += f"<FILTER>{_PERIOD_FILTER}</FILTER>"
+        formulae.append(
             f'<SYSTEM TYPE="Formulae" NAME="{_PERIOD_FILTER}">'
             "$Date &gt;= ##SVFromDate AND $Date &lt; ##SVToDate</SYSTEM>"
+        )
+    if since_alter_id is not None:
+        extra += f"<FILTER>{_CHANGED_FILTER}</FILTER>"
+        formulae.append(
+            f'<SYSTEM TYPE="Formulae" NAME="{_CHANGED_FILTER}">'
+            f"$AlterID &gt; {int(since_alter_id)}</SYSTEM>"
         )
     return (
         "<ENVELOPE>"
@@ -107,11 +194,10 @@ def collection_request(
         "<TDL><TDLMESSAGE>"
         f'<COLLECTION NAME="{spec.collection_id}" ISMODIFY="No">'
         f"<TYPE>{spec.tally_type}</TYPE>"
-        "<NATIVEMETHOD>*</NATIVEMETHOD>"
         f"<FETCH>{', '.join(spec.fetch)}</FETCH>"
-        f"{collection_extra}"
+        f"{extra}"
         "</COLLECTION>"
-        f"{formulae}"
+        f"{''.join(formulae)}"
         "</TDLMESSAGE></TDL>"
         "</DESC></BODY>"
         "</ENVELOPE>"

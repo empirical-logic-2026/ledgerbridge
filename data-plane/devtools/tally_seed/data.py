@@ -66,6 +66,13 @@ class Voucher:
     cancel: bool = False
     alter_to: tuple[Entry, ...] | None = None  # entries after the post-creation alteration
     needs_cost_centres: bool = False
+    delete: bool = False  # deleted after creation (tests deletion detection)
+
+    @property
+    def tombstone(self) -> str:
+        """Empty stock group created when the voucher is deleted, so a re-run doesn't create
+        the voucher again. (Unit symbols can't be used: Tally rejects digits and "-".)"""
+        return f"lb-seed {self.marker} deleted"
 
     @property
     def tagged_narration(self) -> str:
@@ -262,6 +269,29 @@ VOUCHERS: tuple[Voucher, ...] = (
         (Entry("Electricity", "Dr", _d("1200")), Entry("Cash", "Cr", _d("1200"))),
         alter_to=(Entry("Electricity", "Dr", _d("1500")), Entry("Cash", "Cr", _d("1500"))),
     ),
+    # Part payment altered to the full amount: the line amounts and the bill allocation change.
+    Voucher(
+        "ALTER-2",
+        "Receipt",
+        date(2026, 9, 2),
+        "Received against SI-3",
+        (
+            Entry(BANK, "Dr", _d("3000")),
+            Entry(CUSTOMERS[2], "Cr", _d("3000"), (_bill("SI-3", "3000", "Agst Ref"),)),
+        ),
+        alter_to=(
+            Entry(BANK, "Dr", _d("5900")),
+            Entry(CUSTOMERS[2], "Cr", _d("5900"), (_bill("SI-3", "5900", "Agst Ref"),)),
+        ),
+    ),
+    Voucher(
+        "DEL-1",
+        "Payment",
+        date(2026, 9, 2),
+        "Duplicate salary payment, deleted",
+        (Entry("Salary", "Dr", _d("700")), Entry(BANK, "Cr", _d("700"))),
+        delete=True,
+    ),
 )
 
 SEED = SeedData(
@@ -305,14 +335,15 @@ def validate(seed: SeedData) -> list[str]:
 
 
 def expected_balances(seed: SeedData) -> dict[str, tuple[Decimal, Side]]:
-    """Closing balance per ledger after seeding: openings plus all non-cancelled vouchers,
-    using altered amounts. Returned as (amount, side) the way Tally's Trial Balance shows it."""
+    """Closing balance per ledger after seeding: openings plus all vouchers that are neither
+    cancelled nor deleted, using altered amounts. Returned as (amount, side) the way Tally's
+    Trial Balance shows it."""
     net: dict[str, Decimal] = {}  # debit positive
     for ledger in seed.ledgers:
         sign = 1 if ledger.opening_side == "Dr" else -1
         net[ledger.name] = sign * ledger.opening
     for v in seed.vouchers:
-        if v.cancel:
+        if v.cancel or v.delete:
             continue
         for e in v.final_entries():
             net[e.ledger] = net.get(e.ledger, Decimal(0)) + (

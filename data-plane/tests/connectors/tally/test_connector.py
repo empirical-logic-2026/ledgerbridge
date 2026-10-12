@@ -56,7 +56,12 @@ def test_fetch_masters_and_vouchers() -> None:
     period = Period(date(2024, 4, 1), date(2024, 5, 31))
     vouchers = list(connector.fetch_transactions(entity, period=period))
 
-    assert Counter(r.object_type for r in masters) == {"group": 4, "ledger": 3, "voucher_type": 1}
+    assert Counter(r.object_type for r in masters) == {
+        "company": 1,
+        "group": 4,
+        "ledger": 3,
+        "voucher_type": 1,
+    }
     assert len(vouchers) == 2
     assert all(r.source_entity_key == entity.key for r in masters + vouchers)
     # April-May: one voucher request per month, each for the named company.

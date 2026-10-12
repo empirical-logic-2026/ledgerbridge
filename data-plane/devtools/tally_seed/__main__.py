@@ -1,4 +1,7 @@
-"""python -m devtools.tally_seed --company "LedgerBridge Test Co" [--expected-only]"""
+"""python -m devtools.tally_seed --company "LedgerBridge Test Co" [--create-only]
+
+--expected-only prints the expected balances without contacting Tally.
+"""
 
 import argparse
 import sys
@@ -31,6 +34,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = argparse.ArgumentParser(prog="python -m devtools.tally_seed")
     args.add_argument("--company", required=True, help="exact name of the test company")
     args.add_argument("--expected-only", action="store_true", help="only print expected balances")
+    args.add_argument(
+        "--create-only",
+        action="store_true",
+        help="create missing items only; skip alterations, cancellations and deletions",
+    )
     opts = args.parse_args(argv)
 
     problems = validate(SEED)
@@ -56,6 +64,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             opts.company,
             reader=lambda: read_state(connector.client, opts.company),
             importer=TallyImporter(settings.tally_url),
+            create_only=opts.create_only,
         )
     except ImportFailedError as exc:
         print(f"Tally rejected the import: {exc}", file=sys.stderr)
@@ -65,6 +74,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Created: {created}")
     print(f"Altered: {', '.join(report.altered) or 'nothing'}")
     print(f"Cancelled: {', '.join(report.cancelled) or 'nothing'}")
+    print(f"Deleted: {', '.join(report.deleted) or 'nothing'}")
     for item in report.skipped:
         print(f"Skipped: {item}")
     print_expected()

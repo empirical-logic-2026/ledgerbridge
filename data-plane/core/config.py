@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://127.0.0.1:6333"
 
     tally_url: str = "http://localhost:9000"
+    # How often the worker checks which connections are due for a sync (SYN-001); each
+    # connection's own interval is ledgerbridge_system.connections.sync_interval_sec.
+    sync_tick_sec: int = 60
+    # Default interval of the deletion check, which lists every key in the source (SYN-003);
+    # a connection can override it with config.deletion_check_interval_sec.
+    deletion_check_interval_sec: int = 3600
 
     ai_provider: Literal["anthropic", "ollama"] = "anthropic"
     anthropic_api_key: SecretStr = SecretStr("")

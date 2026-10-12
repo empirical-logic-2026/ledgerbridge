@@ -78,6 +78,10 @@ def unit_create(name: str) -> str:
     )
 
 
+def stock_group_create(name: str) -> str:
+    return f'<STOCKGROUP NAME={quoteattr(name)} ACTION="Create">{_names(name)}</STOCKGROUP>'
+
+
 def stock_item_create(name: str, unit: str) -> str:
     return (
         f'<STOCKITEM NAME={quoteattr(name)} ACTION="Create">{_names(name)}'
@@ -179,6 +183,10 @@ def voucher_alter(voucher: Voucher, master_id: int) -> str:
         raise ValueError(f"{voucher.marker} has no alteration")
     body = _voucher_body(voucher, voucher.alter_to)
     return f"{_identify(voucher, master_id, 'Alter')}{body}</VOUCHER>"
+
+
+def voucher_delete(voucher: Voucher, master_id: int) -> str:
+    return f"{_identify(voucher, master_id, 'Delete')}</VOUCHER>"
 
 
 def voucher_cancel(voucher: Voucher, master_id: int) -> str:
