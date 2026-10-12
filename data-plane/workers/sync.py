@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from connectors.base import Connector, Period, SourceEntity
 from core.config import get_settings
+from core.errors import short_error
 from core.models import Connection, SyncRun
 from core.models.base import utcnow
 from core.models.system import SyncMarker
@@ -233,7 +234,7 @@ def _open_run(
 
 def _fail_run(session: Session, run: SyncRun, result: SyncResult, exc: Exception) -> None:
     session.rollback()
-    result.error = run.error_summary = f"{type(exc).__name__}: {exc}"[:2000]
+    result.error = run.error_summary = short_error(exc)
     result.status = run.status = "failed"
     logger.error("Sync run %s failed: %s", run.id, type(exc).__name__)
 
