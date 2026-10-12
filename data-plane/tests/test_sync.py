@@ -19,7 +19,14 @@ from core.raw_store import RawStore
 from core.transform import Transformer, mark_deleted, trial_balance
 from tests.test_standard_accounts import seeded_accounts
 from workers.extract import get_or_create_connection
-from workers.sync import is_due, load_markers, run_sync
+from workers.sync import (
+    deletion_check_interval,
+    is_due,
+    last_run,
+    load_markers,
+    run_deletion_check,
+    run_sync,
+)
 
 pytestmark = pytest.mark.skipif(
     not (DEFAULT_DIR / "manifest.json").exists(), reason="no recorded fixtures"
@@ -73,6 +80,9 @@ def synced(
     result = run_sync(db, connection, connector, [COMPANY])
     assert result.status == "succeeded", result.error
     assert result.failed == 0
+    # Only the two Central Tax ledgers come back with an empty GST duty head.
+    assert sorted(w.split(":")[0] for w in result.warnings) == ["Input CGST", "Output CGST"]
+    assert all("assumed Central Tax" in w for w in result.warnings)
     yield connection
 
 
@@ -172,16 +182,12 @@ def test_standard_accounts_mapped_from_groups(db: Session, synced: S.Connection)
     assert by_name["Vendor Delta Supplies"] == ("3220", "auto", "party")
     assert by_name["Sales - Goods"][:2] == ("4110", "auto")
     assert by_name["Salary Payable"][:2] == ("3270", "auto")
+    # Duties & Taxes by tax type: GST on the debit side (1250) until M6 reclassifies credit
+    # balances to 3230 at the reporting date.
+    for name in ("Input CGST", "Input SGST", "Output CGST", "Output SGST"):
+        assert by_name[name] == ("1250", "auto", "tax")
     unmapped = sorted(name for name, (_, status, _) in by_name.items() if status == "unmapped")
-    assert unmapped == [
-        "Electricity",
-        "Input CGST",
-        "Input SGST",
-        "Output CGST",
-        "Output SGST",
-        "Rent",
-        "Salary",
-    ]
+    assert unmapped == ["Electricity", "Rent", "Salary"]  # Indirect Expenses
     parties = dict(db.execute(select(A.Party.name, A.Party.party_type)).all())
     assert parties["Customer Beta Retail"] == "customer"
     assert parties["Vendor Zeta Services"] == "vendor"
@@ -282,6 +288,53 @@ def test_altered_voucher_replaces_its_lines(
     assert balances["Electricity"] == Decimal("4700")
 
 
+def test_full_sync_reapplies_mapping_to_unchanged_records(
+    db: Session, synced: S.Connection, connector: TallyConnector
+) -> None:
+    """A mapping rule change reaches existing data with a full sync, though Tally is unchanged."""
+    ledger = db.scalars(select(A.Ledger).where(A.Ledger.name == "Input CGST")).one()
+    ledger.standard_account_id, ledger.mapping_status = None, "unmapped"  # as under old rules
+    db.commit()
+    incremental = run_sync(db, synced, connector, [COMPANY])
+    assert sum(incremental.transformed.values()) == 0
+    full = run_sync(db, synced, connector, [COMPANY], full=True)
+    assert full.status == "succeeded" and full.failed == 0
+    assert full.stored == 0 and full.transformed["ledger"] == 21
+    db.refresh(ledger)
+    assert ledger.mapping_status == "auto"
+    assert _count(db, A.Voucher) == 17 and sum(_balances(db).values()) == 0
+
+
+def test_sync_alone_never_soft_deletes(
+    db: Session, synced: S.Connection, connector: TallyConnector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(connector, "list_keys", lambda entity: pytest.fail("listed keys"))
+    result = run_sync(db, synced, connector, [COMPANY], full=True)
+    assert result.status == "succeeded" and result.deleted == {}
+
+
+def test_deletion_check_run_soft_deletes_what_has_gone(
+    db: Session, synced: S.Connection, connector: TallyConnector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = _voucher_raw(db, "PMT-ANCHOR")
+    list_keys = connector.list_keys
+
+    def without_anchor(entity):  # noqa: ANN001, ANN202
+        keys = list_keys(entity)
+        keys["voucher"].discard(row.source_key)
+        return keys
+
+    monkeypatch.setattr(connector, "list_keys", without_anchor)
+    result = run_deletion_check(db, synced, connector, [COMPANY])
+    assert (result.status, result.run_type) == ("succeeded", "deletion_check")
+    assert result.deleted == {"voucher:vouchers": 1}
+    assert result.fetched["voucher"] == 16
+    assert _balances(db)["Rent"] == Decimal("0")
+    # Logged as its own run; the latest *sync* is still the first one.
+    assert last_run(db, synced.id, ("deletion_check",)).id == result.sync_run_id
+    assert last_run(db, synced.id).run_type == "full"
+
+
 def test_voucher_deleted_in_source_is_soft_deleted(
     db: Session, synced: S.Connection, connector: TallyConnector
 ) -> None:
@@ -306,3 +359,14 @@ def test_scheduler_is_due_logic() -> None:
     assert is_due(connection, now - timedelta(seconds=300), now)
     connection.status = "paused"
     assert not is_due(connection, None, now)
+
+
+def test_deletion_check_has_its_own_interval() -> None:
+    connection = S.Connection(status="active", sync_interval_sec=300, config={})
+    now = utcnow()
+    hourly = deletion_check_interval(connection)
+    assert hourly == 3600
+    assert not is_due(connection, now - timedelta(seconds=600), now, hourly)
+    assert is_due(connection, now - timedelta(seconds=3600), now, hourly)
+    connection.config = {"deletion_check_interval_sec": 900}
+    assert deletion_check_interval(connection) == 900

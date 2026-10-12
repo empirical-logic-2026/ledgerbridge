@@ -68,6 +68,7 @@ class TransformResult:
     by_object_type: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     entity_ids: set[int] = field(default_factory=set)
     unmapped_ledgers: dict[int, list[str]] = field(default_factory=dict)  # entity_id -> names
+    warnings: list[str] = field(default_factory=list)  # "<ledger name>: <assumption made>"
 
 
 @dataclass
@@ -436,7 +437,9 @@ class Transformer:
             kind = (info.ledger_kind if info else None) or (
                 "tax" if ledger.tax_type else (info.nature if info and info.nature else "other")
             )
-            standard = self._standard_id(info.standard_code if info else None)
+            code = (info.standard_code if info else None) or ledger.default_standard_account_code
+            standard = self._standard_id(None if code == NO_STANDARD_ACCOUNT else code)
+            result.warnings.extend(f"{ledger.name}: {warning}" for warning in ledger.warnings)
             ledger_rows.append(
                 {
                     **self._src(item, ledger),

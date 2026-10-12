@@ -33,9 +33,9 @@ from core.canonical import (
 # Explicitly "no standard account": stops a sub-group from inheriting its parent's mapping.
 UNMAPPED = NO_STANDARD_ACCOUNT
 
-# Default standard accounts by Tally reserved group (approved for M3; schema.md 7).
-# Duties & Taxes and Indirect Expenses are deliberately unmapped: each holds ledgers that
-# belong in different standard accounts (GST input credit vs payables; rent vs salaries).
+# Default standard accounts by Tally reserved group (approved for M3; schema.md 7.3).
+# Duties & Taxes is mapped per ledger by tax type (STANDARD_ACCOUNT_BY_TAX_TYPE). Indirect
+# Expenses stays unmapped: it holds ledgers for different standard accounts (rent, salaries).
 STANDARD_ACCOUNT_BY_GROUP: dict[str, str] = {
     "Capital Account": "2100",
     "Reserves & Surplus": "2200",
@@ -57,7 +57,7 @@ STANDARD_ACCOUNT_BY_GROUP: dict[str, str] = {
     "Cash-in-Hand": "1231",
     "Bank Accounts": "1232",
     "Loans & Advances (Asset)": "1240",
-    "Deposits (Asset)": "1270",
+    "Deposits (Asset)": "1160",
     "Current Assets": "1270",
     "Misc. Expenses (ASSET)": "1270",
     "Sales Accounts": "4110",
@@ -68,6 +68,9 @@ STANDARD_ACCOUNT_BY_GROUP: dict[str, str] = {
     "Duties & Taxes": UNMAPPED,
     "Indirect Expenses": UNMAPPED,
 }
+# Duties & Taxes ledgers by Tally TAXTYPE. Stored on the debit side; a credit balance at the
+# reporting date is reported as GST payable (3230) or TDS and TCS payable (3240) (M6).
+STANDARD_ACCOUNT_BY_TAX_TYPE = {"GST": "1250", "TDS": "1260", "TCS": "1260"}
 EQUITY_GROUPS = {"Capital Account", "Reserves & Surplus"}
 LEDGER_KIND_BY_GROUP = {
     "Bank Accounts": "bank",
@@ -257,13 +260,22 @@ def _primary_group(entity_key: str) -> CanonicalGroup:
     )
 
 
-def _tax_type(element: ET.Element) -> str | None:
+EMPTY_DUTY_HEAD_WARNING = (
+    "empty GST duty head, assumed Central Tax (cgst); assumption to verify on client data"
+)
+
+
+def _tax_type(element: ET.Element) -> tuple[str | None, tuple[str, ...]]:
+    """(tax_type, warnings). Assumption (schema.md 7.3): Tally leaves fields at their default
+    out of the export, and "Central Tax" is the default duty head, so ledgers created as
+    Central Tax come back with it empty. Applied to GST ledgers only, and always reported."""
     tax = _text(element, "TAXTYPE")
     if tax == "GST":
-        # Tally leaves fields at their default out of the export, and "Central Tax" is the
-        # default duty head: ledgers created as Central Tax come back with it empty.
-        return GST_DUTY_HEADS.get(_text(element, "GSTDUTYHEAD") or "Central Tax", "other")
-    return TAX_TYPES.get(tax or "")
+        head = _text(element, "GSTDUTYHEAD")
+        if head is None:
+            return GST_DUTY_HEADS["Central Tax"], (EMPTY_DUTY_HEAD_WARNING,)
+        return GST_DUTY_HEADS.get(head, "other"), ()
+    return TAX_TYPES.get(tax or ""), ()
 
 
 def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalRecord]:
@@ -272,6 +284,7 @@ def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalReco
     credit_limit = tally_amount(_text(element, "CREDITLIMIT"))
     gstin = _text(element, "PARTYGSTIN") or _text(element, ".//LEDGSTREGDETAILS.LIST/GSTIN")
     state = _text(element, "LEDSTATENAME") or _text(element, ".//LEDMAILINGDETAILS.LIST/STATE")
+    tax_type, warnings = _tax_type(element)
     record = CanonicalLedger(
         source_key=key,
         name=_name(element),
@@ -280,7 +293,7 @@ def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalReco
         is_bill_wise=_flag(element, "ISBILLWISEON"),
         is_cost_centre_applicable=_flag(element, "ISCOSTCENTRESON"),
         gstin=gstin,
-        tax_type=_tax_type(element),
+        tax_type=tax_type,
         party=CanonicalParty(
             gstin=gstin,
             pan=_text(element, "INCOMETAXNUMBER"),
@@ -291,6 +304,10 @@ def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalReco
             email=_text(element, "EMAIL"),
             phone=_text(element, "LEDGERMOBILE") or _text(element, "LEDGERPHONE"),
         ),
+        default_standard_account_code=STANDARD_ACCOUNT_BY_TAX_TYPE.get(
+            _text(element, "TAXTYPE") or ""
+        ),
+        warnings=warnings,
     )
     return [_primary_group(entity_key), record] if parent == PRIMARY else [record]
 

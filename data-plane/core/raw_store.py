@@ -4,7 +4,7 @@ import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from connectors.base import SourceRecord
@@ -17,6 +17,7 @@ class StoreResult:
     received: int = 0
     stored: int = 0
     skipped: int = 0
+    requeued: int = 0  # unchanged, but marked pending again (reprocess_unchanged)
 
 
 def payload_hash(payload: str) -> str:
@@ -28,9 +29,9 @@ class RawStore:
         self._session = session
         self._batch_size = batch_size
 
-    def _latest_hash(self, connection_id: int, record: SourceRecord) -> str | None:
+    def _latest(self, connection_id: int, record: SourceRecord) -> tuple[int, str] | None:
         stmt = (
-            select(RawRecord.payload_hash)
+            select(RawRecord.id, RawRecord.payload_hash)
             .where(
                 RawRecord.connection_id == connection_id,
                 RawRecord.object_type == record.object_type,
@@ -39,7 +40,8 @@ class RawStore:
             .order_by(RawRecord.id.desc())
             .limit(1)
         )
-        return self._session.scalar(stmt)
+        row = self._session.execute(stmt).first()
+        return (row[0], row[1]) if row else None
 
     def add(
         self,
@@ -47,15 +49,28 @@ class RawStore:
         connection_id: int,
         sync_run_id: int | None = None,
         import_batch_id: int | None = None,
+        reprocess_unchanged: bool = False,
     ) -> StoreResult:
-        """Store records, skipping any whose payload is unchanged since the last delivery."""
+        """Store records, skipping any whose payload is unchanged since the last delivery.
+
+        With reprocess_unchanged (full syncs), an unchanged record's stored row is marked
+        pending again, so the transform re-applies the current mapping rules to it.
+        """
         result = StoreResult()
         pending = 0
         for record in records:
             result.received += 1
             digest = payload_hash(record.payload)
-            if self._latest_hash(connection_id, record) == digest:
+            latest = self._latest(connection_id, record)
+            if latest is not None and latest[1] == digest:
                 result.skipped += 1
+                if reprocess_unchanged:
+                    self._session.execute(
+                        update(RawRecord)
+                        .where(RawRecord.id == latest[0])
+                        .values(process_status="pending", process_error=None)
+                    )
+                    result.requeued += 1
                 continue
             self._session.add(
                 RawRecord(

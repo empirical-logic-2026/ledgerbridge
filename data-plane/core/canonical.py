@@ -71,6 +71,10 @@ class CanonicalLedger:
     gstin: str | None = None
     tax_type: str | None = None  # cgst/sgst/igst/cess/tds/tcs/vat/other for tax ledgers
     party: CanonicalParty | None = None  # details, used if the group makes it a party
+    # Used only when the ledger's group tree gives no standard account (e.g. by tax type).
+    default_standard_account_code: str | None = None
+    # Assumptions the connector made for this record; reported in the sync output.
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -3,10 +3,12 @@
     python -m workers.cli entities --connection tally-test --source tally
     python -m workers.cli extract --connection tally-test --entity "LedgerBridge Test Co"
     python -m workers.cli sync --connection tally-test --entity "LedgerBridge Test Co" [--full]
+    python -m workers.cli check-deletions --connection tally-test
     python -m workers.cli status
     python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
 
-`extract` only stores raw records (M1); `sync` also transforms them (M3).
+`extract` only stores raw records (M1); `sync` also transforms them (M3); `check-deletions`
+soft-deletes what no longer exists in the source (also run by `sync --check-deletions`).
 Output shows names, keys and counts only, except `trial-balance`, which prints balances
 for the developer's own use (never paste them anywhere for client data).
 """
@@ -14,7 +16,7 @@ for the developer's own use (never paste them anywhere for client data).
 import argparse
 import sys
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,12 +24,21 @@ from sqlalchemy.orm import Session
 from connectors import registry
 from connectors.base import Period
 from core.db import get_engine
-from core.models import Connection
+from core.models import Connection, SyncRun
 from core.models.accounting import Entity
 from core.models.base import utcnow
 from core.transform import trial_balance
 from workers.extract import connector_for, find_entity, get_or_create_connection, run_extract
-from workers.sync import SyncBusyError, is_due, last_run, run_sync
+from workers.sync import (
+    DELETION_CHECK,
+    SyncBusyError,
+    SyncResult,
+    deletion_check_interval,
+    is_due,
+    last_run,
+    run_deletion_check,
+    run_sync,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -63,9 +74,20 @@ def _parser() -> argparse.ArgumentParser:
     )
     sync.add_argument("--full", action="store_true", help="ignore markers and fetch everything")
     sync.add_argument(
+        "--check-deletions",
+        action="store_true",
+        help="afterwards, run a deletion check (normally on its own, hourly schedule)",
+    )
+    sync.add_argument(
         "--origin", choices=("live", "backup"), help="origin tag for this connection's data"
     )
     period_args(sync)
+
+    deletions = sub.add_parser(
+        "check-deletions", help="soft-delete what no longer exists in the source"
+    )
+    connection_args(deletions)
+    deletions.add_argument("--entity", action="append", help="entity name (repeatable)")
 
     sub.add_parser("status", help="each connection's last sync and when the next is due")
 
@@ -93,7 +115,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         connection = get_or_create_connection(session, args.connection, args.source)
         if getattr(args, "origin", None):
             connection.config = {**connection.config, "origin": args.origin}
-        if args.command == "sync" and args.entity:
+        if args.command in ("sync", "check-deletions") and args.entity:
             # Remember which entities this connection syncs (used by the scheduler).
             known = list(dict.fromkeys([*connection.config.get("entities", []), *args.entity]))
             connection.config = {**connection.config, "entities": known}
@@ -107,11 +129,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"  {entity.name}  [{entity.key}]")
             return 0
 
-        if args.command == "sync":
+        if args.command in ("sync", "check-deletions"):
             try:
-                result = run_sync(
-                    session, connection, connector, args.entity, args.full, _period(args)
-                )
+                if args.command == "sync":
+                    result = run_sync(
+                        session, connection, connector, args.entity, args.full, _period(args)
+                    )
+                    code = _print_sync(result)
+                    if code or not args.check_deletions:
+                        return code
+                result = run_deletion_check(session, connection, connector, args.entity)
             except SyncBusyError as exc:
                 print(str(exc), file=sys.stderr)
                 return 3
@@ -132,16 +159,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _print_sync(result: object) -> int:
-    r = result  # SyncResult
+def _print_sync(r: SyncResult) -> int:
     print(f"Sync run {r.sync_run_id} ({r.run_type}): {r.status}  entities: {', '.join(r.entities)}")
-    print(f"  fetched:     {dict(sorted(r.fetched.items()))}")
-    print(f"  raw stored:  {r.stored} new or changed, {r.unchanged} unchanged")
-    print(f"  transformed: {dict(sorted(r.transformed.items()))}  failed: {r.failed}")
-    print(f"  soft-deleted: {r.deleted or 'none'}")
+    if r.run_type == DELETION_CHECK:
+        print(f"  keys listed:  {dict(sorted(r.fetched.items()))}")
+        print(f"  soft-deleted: {r.deleted or 'none'}")
+    else:
+        print(f"  fetched:     {dict(sorted(r.fetched.items()))}")
+        print(f"  raw stored:  {r.stored} new or changed, {r.unchanged} unchanged")
+        print(f"  transformed: {dict(sorted(r.transformed.items()))}  failed: {r.failed}")
     for entity, names in r.unmapped_ledgers.items():
         listed = ", ".join(names) if names else "none"
         print(f"  unmapped ledgers in {entity} ({len(names)}): {listed}")
+    for warning in r.warnings:
+        print(f"  warning: {warning}")
     if r.error:
         print(f"  error: {r.error}", file=sys.stderr)
         return 1
@@ -154,29 +185,52 @@ def _status(session: Session) -> int:
     if not connections:
         print("No connections yet.")
     for connection in connections:
-        run = last_run(session, connection.id)
         entities = ", ".join(connection.config.get("entities", [])) or "all loaded"
+        check_every = deletion_check_interval(connection)
         print(
-            f"{connection.name}: {connection.status}, every {connection.sync_interval_sec}s, "
-            f"origin {connection.config.get('origin', 'live')}, entities: {entities}"
+            f"{connection.name}: {connection.status}, origin "
+            f"{connection.config.get('origin', 'live')}, entities: {entities}"
         )
-        if run is None:
-            print("  last sync: never; next: due now")
+        sync = last_run(session, connection.id)
+        _print_schedule(
+            "sync", connection, sync, connection.sync_interval_sec, now, "fetched", "failed"
+        )
+        if sync is None:
+            print(f"  deletion check (every {check_every}s): after the first sync")
             continue
-        finished = f"{run.finished_at:%Y-%m-%d %H:%M:%S}" if run.finished_at else "-"
-        print(
-            f"  last sync: run {run.id} ({run.run_type}) {run.status}, "
-            f"started {run.started_at:%Y-%m-%d %H:%M:%S} UTC, finished {finished}, "
-            f"{run.records_received} fetched, {run.records_failed} failed"
-        )
-        if run.status == "running":
-            print("  next: after the current run")
-        elif is_due(connection, run.started_at, now):
-            print("  next: due now (picked up within a minute by the worker)")
-        else:
-            wait = connection.sync_interval_sec - int((now - run.started_at).total_seconds())
-            print(f"  next: in about {wait}s")
+        check = last_run(session, connection.id, (DELETION_CHECK,))
+        _print_schedule("deletion check", connection, check, check_every, now, "keys listed")
     return 0
+
+
+def _print_schedule(
+    label: str,
+    connection: Connection,
+    run: SyncRun | None,
+    interval: int,
+    now: datetime,
+    received: str,
+    failed: str | None = None,
+) -> None:
+    head = f"  {label} (every {interval}s):"
+    if run is None:
+        print(f"{head} never ran; next: due now")
+        return
+    finished = f"{run.finished_at:%Y-%m-%d %H:%M:%S}" if run.finished_at else "-"
+    counts = f"{run.records_received} {received}"
+    if failed:
+        counts += f", {run.records_failed} {failed}"
+    print(
+        f"{head} last run {run.id} ({run.run_type}) {run.status}, started "
+        f"{run.started_at:%Y-%m-%d %H:%M:%S} UTC, finished {finished}, {counts}"
+    )
+    if run.status == "running":
+        print("    next: after the current run")
+    elif is_due(connection, run.started_at, now, interval):
+        print("    next: due now (picked up within a minute by the worker)")
+    else:
+        wait = interval - int((now - run.started_at).total_seconds())
+        print(f"    next: in about {wait}s")
 
 
 def _trial_balance(session: Session, entity_code: str) -> int:
