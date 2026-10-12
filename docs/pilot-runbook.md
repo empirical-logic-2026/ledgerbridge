@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.4 |
+| Version | 0.5 |
 | Date | 2026-10-12 |
 | Who runs it | **The developer only.** Claude Code never runs these steps, never connects to the `pilot` environment and never sees its data (CLAUDE.md, ADR-011). |
 
@@ -109,7 +109,12 @@ Each company is then transformed and validated **before the next one starts**, s
 - **Tally answers:** the month is fetched in smaller parts (half-months, then weeks, then days). The month is then checked against Tally's own list of its vouchers, and remembered as slow, so later runs split it straight away.
 - **Tally never answers:** the run stops with `the source appears UNRESPONSIVE`. Everything fetched so far is stored. Restart TallyPrime if needed, then **run `./dev.ps1 sync full -Env pilot` again: it continues after the last completed chunk** (`resuming: N of M chunks were completed by an earlier attempt`).
 - **To start over** instead: `./dev.ps1 sync full -Env pilot -Restart`.
-- **Longer timeout:** `./dev.ps1 connect -Env pilot -Origin backup -All -TimeoutSec 300`. New connections take `TALLY_TIMEOUT_SEC` from `.env.pilot`.
+- **Longer timeout:** `./dev.ps1 connect -Env pilot -Origin backup -All -TimeoutSec 600`.
+- **Where the timeout comes from:** a connection uses **its own** timeout if one was ever set on it, otherwise `TALLY_TIMEOUT_SEC` from `.env.pilot`. Connections created before 2026-10-13 stored the 120 s default, so for them **changing `.env.pilot` has no effect**: use `connect -TimeoutSec`. `status` and `summary` show the timeout in effect and where it comes from.
+- **Parts of a month:** TallyPrime in Educational mode can't answer requests for part of a month. The sync checks this once and remembers it, or you can set it with `connect -PartMonth unsupported`. When parts aren't supported, a slow month is never split. It is retried **whole** with longer timeouts (300, then 600, then 1200 s), with a 60 s pause before each attempt. If it still fails, the sync stops with a clear message.
+- **Easing the load on Tally:** `connect -PauseSec 2` pauses 2 s between requests.
+- **Nothing unverified counts as done:** a month that can't be proven complete (its listing is too slow, or it comes back empty while other months are full and Tally lists vouchers for it) **stops the sync**. It's recorded as UNVERIFIED (shown in `summary`) and fetched again on the next `sync full`.
+- **Re-fetch from a date** (e.g. a damaged range): `./dev.ps1 sync full -Env pilot -From 2024-03-01`. This continues an interrupted full sync but fetches again every month from that date; earlier completed months are kept.
 
 At the end each company gets a line that keeps fetched, stored and transformed apart, for example:
 
@@ -149,6 +154,8 @@ It also lists open alerts. **This is the output to share.**
 | `validation: ... PASSED` | All checks passed. | – |
 | `unfinished full sync of entity N: K chunks done` (in `summary`) | A full sync was interrupted. | Run `./dev.ps1 sync full -Env pilot` again to continue it. |
 | `raw records by type and status: voucher pending N` (in `summary`) | Records stored but not yet transformed, e.g. after an interrupted sync. | They're transformed when that company's sync completes. |
+| `UNVERIFIED voucher 2024-03-01..2024-03-31` (in `summary`), `UnverifiedChunkError` | A month couldn't be proven complete; the sync stopped rather than count it as done. | Run `./dev.ps1 sync full -Env pilot` again: it fetches that month again. If it keeps happening, raise the timeout (`connect -TimeoutSec`). |
+| `ChunkTooSlowError: ... no answer within 1200 s even as a whole` | Even the whole month with the longest timeout didn't arrive. | Restart TallyPrime, close other programs, then run `sync full` again (it resumes). |
 | `IncompleteChunkError` | A month fetched in parts didn't contain everything Tally lists for it (Tally may not answer requests for parts of a month). | Share the line; raise the timeout (`-TimeoutSec`) so whole months fit. |
 | `EntityLookupError: N of M configured entities are not available in the source` | Tally doesn't list a configured company (by GUID). | Check that both companies are loaded; run `./dev.ps1 entity-check -Env pilot` and share its output. |
 | `error: voucher_unbalanced xN` | N vouchers whose lines don't sum to zero after transformation. | Share the count. |
@@ -172,6 +179,7 @@ It also lists open alerts. **This is the output to share.**
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-13 | 0.5 | Fourth attempt (Educational mode, part-month requests empty, unverified month carried on): timeout in effect and its source in `status`/`summary`; `connect -TimeoutSec/-PauseSec/-PartMonth`; whole-month retries; unverified months stop the sync and are re-fetched; `sync full -From`. |
 | 2026-10-12 | 0.4 | Third attempt (Tally stopped answering after 18 minutes): chunked and resumable `sync full` (`-Restart` to start over), source checks and splitting after a timeout, `-TimeoutSec`, per-company progress and results, `summary` shows raw-record status and unfinished syncs. Data stored by the third attempt is kept and reused. |
 | 2026-10-12 | 0.3 | Second attempt: "entities not available" after a successful fetch. `connect -All`; companies stored and found by GUID; `entity-check`; progress lines and a `Result:` line; sync and validation reported separately. |
 | 2026-10-12 | 0.2 | After the first attempt failed (MySQL 1205 lock wait on the connection): step 0 `reset -Env pilot`; `connect` before anything that could sync; new connections stay paused unless `-Activate`; `tally-companies` only reads; errors show type and a short message only. |

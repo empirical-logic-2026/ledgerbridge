@@ -95,7 +95,7 @@ Host-side values such as `MYSQL_HOST=127.0.0.1` and `MYSQL_PORT=3307` suit tools
 | `MYSQL_MIGRATOR_*`, `MYSQL_REPORT_*`, `MYSQL_AI_*` | The other three MySQL users (schema.md 2.1): `migrator` changes the schema, `report_ro` reads for reports, `ai_ro` reads `ledgerbridge_reporting` only. Created by the init script on a fresh volume (section 8). |
 | `MYSQL_HOST_PORT`, `REDIS_HOST_PORT`, `QDRANT_HOST_PORT`, `API_HOST_PORT` | Which ports on your PC map into the containers. Test uses 3307, 6380, 6333 and 8001; pilot uses 3317, 6390, 6343 and 8010. |
 | `MYSQL_HOST`/`MYSQL_PORT`, `REDIS_URL`, `QDRANT_URL`, `TALLY_URL` | Where host-side tools connect |
-| `TALLY_TIMEOUT_SEC` | Seconds one Tally request may take before a sync checks Tally and splits the request (new connections; `connect -TimeoutSec` changes one). The containers read it from the env file like every other setting. |
+| `TALLY_TIMEOUT_SEC` | Seconds one Tally request may take, for connections **without a timeout of their own**. A connection that has one (set by `connect -TimeoutSec`, or stored at creation before 2026-10-13) keeps it: changing the env file doesn't change it. `./dev.ps1 status` shows the timeout in effect and where it comes from. The containers read the env file when they start, so run `./dev.ps1 up` after editing it. |
 | `FRONTEND_ORIGIN` | The only browser address the API accepts calls from (CORS): `http://localhost:5175` for test. The dashboard dev server is pinned to the same port in `frontend/vite.config.ts`. |
 
 **After editing `.env.test`, run `./dev.ps1 up` again.** A container reads its environment once, when it's created. Compose notices the changed settings and *recreates* the `api` container; you'll see `Recreate` in the output. A plain restart would keep the old values.
@@ -428,6 +428,7 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
 | 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |
+| 2026-10-13 | `TALLY_TIMEOUT_SEC` applies to connections without their own timeout; `status` shows the effective one. Env changes reach the containers on the next `./dev.ps1 up`. |
 | 2026-10-12 | New env setting `TALLY_TIMEOUT_SEC` in both example env files (copy it into your `.env.test`/`.env.pilot`, or the default 120 s applies); `sync full -Restart`. |
 | 2026-10-12 | `./dev.ps1 entity-check` runs `workers.cli entity-check` through `docker compose exec`. The CLI flushes every output line, so progress shows while a long sync runs inside the container (through `exec -T` stdout is a pipe, which Python otherwise buffers). |
 | 2026-10-12 | `./dev.ps1 reset` deletes one environment's volumes after a typed confirmation (section 6.7b). |
