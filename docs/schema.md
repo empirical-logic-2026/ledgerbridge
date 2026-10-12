@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.9 (Draft) |
+| Version | 0.10 (Draft) |
 | Date | 2026-10-09 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -531,6 +531,8 @@ Mapped ledgers get `mapping_status = 'auto'`; every sync lists the unmapped ones
 6. Aggregates in `ledgerbridge_reporting` are refreshed for affected entities and dates only.
 7. **A voucher's child rows are replaced as a whole.** Whenever a voucher is created or changed in the source, all its child rows are deleted and re-inserted from the new version, together with the voucher header update, **in one transaction**. The child rows are `voucher_lines`, `bill_allocations`, `line_cost_allocations`, `line_dimensions`, `inventory_lines` and `tax_lines`. Edits therefore never leave stale lines behind, and a reader never sees half a voucher. The child tables carry no [SRC] columns; their origin is their voucher's. Their foreign keys to the voucher, or to its lines, use `ON DELETE CASCADE` so the replacement is a single delete. The voucher row itself is never physically deleted: a voucher deleted in the source is soft-deleted (rule 3). The sync implementation is M3.
 
+8. **Short transactions while syncing (ADR-020).** Inserts into tables with a foreign key to `ledgerbridge_system.connections` lock that connection's row until commit. Syncs therefore commit each batch as soon as it is written and never wait for the source with uncommitted writes. Stored error summaries (`sync_runs.error_summary`, `raw_records.process_error`) hold the error type and a short message only, never SQL statements or parameters.
+
 ## 9. Implementation rules (M2)
 
 Where Sections 4 and 5 give only column lists, migration `0002` applies these rules. The SQLAlchemy models in `data-plane/core/models/` are kept identical, and a test asserts it.
@@ -567,6 +569,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-12 | 0.10 | Section 8 rule 8: short transactions while syncing; error summaries without SQL (ADR-020). |
 | 2026-10-12 | 0.9 | M4: validation check codes, severities and the as-of-date rule (5.2); `validation_runs.as_of` and `alerts` (migration `0006`). |
 | 2026-10-12 | 0.8 | M3 review: *Deposits (Asset)* → 1160; *Duties & Taxes* mapped by tax type (GST 1250/3230, TDS/TCS 1260/3240, by balance side at the reporting date, applied in M6); reports place unmapped ledgers under the nearest standard parent of their Tally primary group (M6); the empty-GST-duty-head rule is an assumption to verify, applied to GST ledgers only and reported as a warning; deletion check as its own run on its own schedule (migration `0005`). |
 | 2026-10-12 | 0.7 | M3: `ledgers.tax_type` (migration `0004`); Section 7.3 field mapping, standard-account mapping by Tally group (*Duties & Taxes* and *Indirect Expenses* unmapped), synthetic *Primary* group, *Branch / Divisions* classified by balance at the reporting date; Section 7.4 sync rules (incremental by AlterID, deletions, overlaps, several companies, origin). |
