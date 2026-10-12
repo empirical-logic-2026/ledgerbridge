@@ -43,6 +43,40 @@ class Period:
     end: date
 
 
+@dataclass(frozen=True)
+class Chunk:
+    """One piece of a fetch: an object type, optionally limited to a date range.
+
+    Large sources are fetched chunk by chunk (masters per type, transactions per month,
+    smaller ranges when a month is too slow), so each chunk can be stored, committed and
+    checkpointed on its own (architecture ADR-022).
+    """
+
+    object_type: str
+    period: Period | None = None
+
+    @property
+    def key(self) -> str:
+        if self.period is None:
+            return self.object_type
+        return f"{self.object_type}:{self.period.start.isoformat()}..{self.period.end.isoformat()}"
+
+    @property
+    def label(self) -> str:
+        """For progress output: the object type and dates only, never names."""
+        if self.period is None:
+            return self.object_type
+        return f"{self.object_type} {self.period.start.isoformat()}..{self.period.end.isoformat()}"
+
+
+class SourceTimeoutError(RuntimeError):
+    """The source didn't answer one request in time (it may just be too large)."""
+
+
+class SourceUnresponsiveError(RuntimeError):
+    """The source doesn't answer even a minimal request: stop and resume later."""
+
+
 @dataclass
 class ConnectionStatus:
     ok: bool
@@ -100,6 +134,29 @@ class Connector(Protocol):
 
     def to_canonical(self, record: SourceRecord) -> list[CanonicalRecord]:
         """Map one raw record to canonical records (core/canonical.py)."""
+        ...
+
+    # --- optional: chunked fetching for large sources (ADR-022) ------------------------
+    # A connector offering these lets the sync fetch, store and checkpoint chunk by chunk.
+
+    def fetch_plan(
+        self, entity: SourceEntity, markers: Markers | None, period: Period | None
+    ) -> list[Chunk]:
+        """The chunks of one entity's fetch, in transform order."""
+        ...
+
+    def fetch_chunk(
+        self, entity: SourceEntity, chunk: Chunk, markers: Markers | None
+    ) -> list[SourceRecord]:
+        """One chunk's records. Raises SourceTimeoutError if the source is too slow."""
+        ...
+
+    def chunk_keys(self, entity: SourceEntity, chunk: Chunk) -> set[str]:
+        """Keys only of a chunk (cheap): proves a split chunk was fetched completely."""
+        ...
+
+    def ping(self) -> None:
+        """A minimal request with a short timeout; raises if the source doesn't answer."""
         ...
 
     def closing_balances(self, entity: SourceEntity, as_of: date) -> SourceBalances:

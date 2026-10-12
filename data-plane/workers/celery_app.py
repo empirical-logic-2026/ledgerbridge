@@ -118,13 +118,16 @@ def _locked_run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict
 def _run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict[str, object]:
     from workers.extract import connector_for
     from workers.sync import SyncBusyError
-    from workers.validate import after_run
+    from workers.validate import AfterRun, alert_for_run, entity_validator
 
     with Session(get_engine()) as session:
         connection = session.get_one(Connection, connection_id)
         connector = connector_for(session, connection)
+        after = AfterRun()
         try:
-            result = runner(session, connection, connector)
+            # Each entity is validated as soon as it is synced (ADR-022).
+            hook = entity_validator(session, connection, connector, after)
+            result = runner(session, connection, connector, after_entity=hook)
         except SyncBusyError:
             return {"status": "skipped", "reason": "running"}
         # Counts only: never names or amounts in task results or logs.
@@ -137,7 +140,7 @@ def _run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict[str, o
             sum(result.deleted.values()),
             len(result.warnings),
         )
-        after = after_run(session, connection, connector, result)
+        alert_for_run(session, connection, result)
         return {
             "sync_run_id": result.sync_run_id,
             "status": result.status,

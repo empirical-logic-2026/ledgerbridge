@@ -7,11 +7,18 @@ from typing import Self
 
 import httpx
 
+from connectors.base import SourceTimeoutError
+
 logger = logging.getLogger(__name__)
 
 
 class TallyError(RuntimeError):
     """Tally could not be reached or rejected a request."""
+
+
+class TallySlowError(TallyError, SourceTimeoutError):
+    """Tally didn't answer within the timeout. Not retried here: resending the same large
+    request rarely helps; the sync checks Tally and splits the request instead (ADR-022)."""
 
 
 def decode_response(body: bytes) -> str:
@@ -40,10 +47,12 @@ class TallyClient:
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.url = url
+        self.timeout = timeout
         self._retries = retries
         self._http = httpx.Client(timeout=timeout, transport=transport)
 
-    def post(self, request_xml: str) -> bytes:
+    def post(self, request_xml: str, timeout: float | None = None) -> bytes:
+        """`timeout` overrides the client's for this request (e.g. a quick health check)."""
         if "<TALLYREQUEST>Export</TALLYREQUEST>" not in request_xml:
             # Read-only towards sources (CON-008): never send Import or other requests.
             raise ValueError("Only Tally Export requests are allowed")
@@ -54,9 +63,20 @@ class TallyClient:
                     self.url,
                     content=request_xml.encode("utf-8"),
                     headers={"Content-Type": "text/xml; charset=utf-8"},
+                    timeout=timeout if timeout is not None else httpx.USE_CLIENT_DEFAULT,
                 )
                 response.raise_for_status()
                 return response.content
+            except httpx.TimeoutException as exc:
+                if isinstance(exc, httpx.ConnectTimeout) and attempt < self._retries:
+                    attempt += 1
+                    logger.warning("Tally connect timed out; retry %d", attempt)
+                    time.sleep(2**attempt)
+                    continue
+                limit = timeout if timeout is not None else self.timeout
+                raise TallySlowError(
+                    f"Tally didn't answer within {limit:g} s ({type(exc).__name__})"
+                ) from exc
             except httpx.TransportError as exc:
                 if attempt >= self._retries:
                     raise TallyError(

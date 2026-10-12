@@ -52,23 +52,25 @@ from core.models import accounting as A  # noqa: N812
 from core.models.accounting import Entity
 from core.models.base import utcnow
 from core.models.source import RawRecord
-from core.models.system import Alert, ValidationIssue, ValidationRun
+from core.models.system import Alert, SyncCheckpoint, ValidationIssue, ValidationRun
 from core.transform import trial_balance
 from core.validation import ValidationReport
 from workers.entities import by_names, configured, to_config
 from workers.extract import connector_for, get_or_create_connection, run_extract
 from workers.sync import (
     DELETION_CHECK,
+    EntityOutcome,
     SyncBusyError,
     SyncResult,
     deletion_check_interval,
+    entity_ids_for,
     is_due,
     last_run,
     run_deletion_check,
     run_sync,
     running_run,
 )
-from workers.validate import AfterRun, alert_for_run, run_validation, validate_after
+from workers.validate import AfterRun, alert_for_run, entity_validator, run_validation
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -103,6 +105,11 @@ def _parser() -> argparse.ArgumentParser:
         "--entity", action="append", help="entity name (repeatable); default: configured or all"
     )
     sync.add_argument("--full", action="store_true", help="ignore markers and fetch everything")
+    sync.add_argument(
+        "--restart",
+        action="store_true",
+        help="with --full: ignore an interrupted full sync's progress and fetch everything again",
+    )
     sync.add_argument(
         "--check-deletions",
         action="store_true",
@@ -141,6 +148,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     which.add_argument(
         "--all", action="store_true", help="every entity currently loaded in the source"
+    )
+    connect.add_argument(
+        "--timeout-sec",
+        type=float,
+        help="how long one request to the source may take before the sync splits it",
     )
     schedule = connect.add_mutually_exclusive_group()
     schedule.add_argument(
@@ -276,31 +288,49 @@ def _progress(message: str) -> None:
 def _sync(
     session: Session, connection: Connection, connector: object, args: argparse.Namespace
 ) -> int:
-    """sync [--check-deletions] or check-deletions, then validation. The runs' statuses and
-    the validation's are reported separately: a failed validation never fails the sync."""
+    """sync [--check-deletions] or check-deletions. Each entity is validated as soon as it
+    is synced; the runs' statuses and the validation's are reported separately: a failed
+    validation never fails the sync, and one entity's failure doesn't block the others."""
     validate = not getattr(args, "no_validate", False)
+    after = AfterRun()
+
+    def hook(only_if_changed: bool = False):  # noqa: ANN202
+        if not validate:
+            return None
+        return entity_validator(
+            session,
+            connection,
+            connector,  # type: ignore[arg-type]
+            after,
+            progress=_progress,
+            only_if_changed=only_if_changed,
+        )
+
     runs: list[SyncResult] = []
     try:
         if args.command == "sync":
-            runs.append(
-                run_sync(
-                    session,
-                    connection,
-                    connector,  # type: ignore[arg-type]
-                    args.entity,
-                    args.full,
-                    _period(args),
-                    progress=_progress,
-                )
+            sync = run_sync(
+                session,
+                connection,
+                connector,  # type: ignore[arg-type]
+                args.entity,
+                args.full,
+                _period(args),
+                progress=_progress,
+                restart=getattr(args, "restart", False),
+                after_entity=hook(),
             )
-            if args.check_deletions and runs[0].status == "succeeded":
+            runs.append(sync)
+            if args.check_deletions and sync.entity_keys:
+                # Entities that synced; re-validated only if something was deleted.
                 runs.append(
                     run_deletion_check(
                         session,
                         connection,
                         connector,  # type: ignore[arg-type]
                         progress=_progress,
-                        entity_keys=runs[0].entity_keys,
+                        entity_keys=sync.entity_keys,
+                        after_entity=hook(only_if_changed=True),
                     )
                 )
         else:
@@ -311,6 +341,7 @@ def _sync(
                     connector,  # type: ignore[arg-type]
                     args.entity,
                     progress=_progress,
+                    after_entity=hook(),
                 )
             )
     except SyncBusyError as exc:
@@ -320,16 +351,8 @@ def _sync(
     for run in runs:
         code |= _print_sync(run)
         alert_for_run(session, connection, run)
-    after = AfterRun()
-    if validate and runs[0].status == "succeeded":
-        after = validate_after(
-            session,
-            connection,
-            connector,
-            runs[0],
-            progress=_progress,  # type: ignore[arg-type]
-        )
-        code |= _print_validation(after.reports)
+    if validate:
+        code |= _print_validation(after.latest)
         if after.validation_error:
             print(f"Validation couldn't run: {_error(after.validation_error)}", file=sys.stderr)
             code |= 1
@@ -401,6 +424,8 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
         session.execute(text(f"SET SESSION innodb_lock_wait_timeout = {CONNECT_LOCK_WAIT_SEC}"))
     # Store the entities found by key (and their names); names not found are not stored.
     connection.config = {**connection.config, "origin": args.origin, "entities": to_config(found)}
+    if args.timeout_sec:
+        connection.config = {**connection.config, "timeout_sec": args.timeout_sec}
     if args.activate:
         connection.status = "active"
     elif args.pause:
@@ -418,7 +443,8 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
     print(
         f"Connection '{connection.name}': origin {args.origin}, {connection.status}, "
         f"{len(wanted)} entities configured, {len(found)} found in the source "
-        f"({len(available)} loaded there)"
+        f"({len(available)} loaded there); request timeout "
+        f"{connection.config.get('timeout_sec', '-')} s"
     )
     if missing:
         detail = f": {', '.join(missing)}" if _show_names() else ""
@@ -516,6 +542,8 @@ def _print_sync(r: SyncResult) -> int:
         print(f"  fetched:     {dict(sorted(r.fetched.items()))}")
         print(f"  raw stored:  {r.stored} new or changed, {r.unchanged} unchanged")
         print(f"  transformed: {dict(sorted(r.transformed.items()))}  failed: {r.failed}")
+        for e in r.entity_results:
+            print(f"  {_entity_line(e)}")
     for number, (entity, names) in enumerate(r.unmapped_ledgers.items(), start=1):
         if _show_names():
             print(f"  unmapped ledgers in {entity} ({len(names)}): {', '.join(names) or 'none'}")
@@ -530,6 +558,33 @@ def _print_sync(r: SyncResult) -> int:
         print(f"  error: {_error(r.error)}", file=sys.stderr)
         return 1
     return 0
+
+
+def _entity_line(e: EntityOutcome) -> str:
+    """One entity's outcome: fetched, stored and transformed kept apart (counts only)."""
+    name = f" ({e.name})" if _show_names() else ""
+    if e.status == "not attempted":
+        return f"{e.label}{name}: not attempted"
+    chunks = ""
+    if e.chunks:
+        chunks = f" in {e.chunks} chunks"
+        extras = []
+        if e.chunks_skipped:
+            extras.append(f"{e.chunks_skipped} done by an earlier attempt")
+        if e.splits:
+            extras.append(f"{e.splits} split")
+        if e.unverified:
+            extras.append(f"{e.unverified} UNVERIFIED")
+        if extras:
+            chunks += f" ({', '.join(extras)})"
+    line = (
+        f"{e.label}{name}: {e.status.upper()}: fetched {e.fetched:,}{chunks}; "
+        f"stored {e.stored:,} new or changed, {e.unchanged:,} unchanged; "
+        f"transformed {e.transformed:,}, {e.transform_failed} failed"
+    )
+    if e.error:
+        line += f"; error: {_error(e.error)}"
+    return line
 
 
 def _print_validation(reports: list[ValidationReport]) -> int:
@@ -682,6 +737,28 @@ def _summary(session: Session) -> int:
             RawRecord.process_status == "failed",
         )
         print(f"  raw records that failed to transform: {failed_raw}")
+        raw = session.execute(
+            select(RawRecord.object_type, RawRecord.process_status, func.count())
+            .where(RawRecord.connection_id == connection.id)
+            .group_by(RawRecord.object_type, RawRecord.process_status)
+            .order_by(RawRecord.object_type, RawRecord.process_status)
+        ).all()
+        listed = ", ".join(f"{kind} {status} {n:,}" for kind, status, n in raw) or "none"
+        print(f"  raw records by type and status: {listed}")
+        resumable = session.execute(
+            select(
+                SyncCheckpoint.source_entity_key, func.count(), func.min(SyncCheckpoint.created_at)
+            )
+            .where(SyncCheckpoint.connection_id == connection.id)
+            .group_by(SyncCheckpoint.source_entity_key)
+        ).all()
+        ids = entity_ids_for(session, connection.id, [key for key, _, _ in resumable])
+        for key, chunks, since in resumable:
+            who = f"entity {ids[key]}" if key in ids else "an entity not yet transformed"
+            print(
+                f"  unfinished full sync of {who}: {chunks} chunks done since "
+                f"{since:%Y-%m-%d %H:%M} UTC (sync full continues it; add restart to start over)"
+            )
         entity_ids = session.scalars(
             select(A.EntitySource.entity_id)
             .where(A.EntitySource.connection_id == connection.id)
