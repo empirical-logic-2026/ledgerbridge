@@ -6,7 +6,7 @@
     python -m workers.cli check-deletions --connection tally-test
     python -m workers.cli validate --connection tally-test [--as-of 2026-09-30]
     python -m workers.cli connect --connection tally-pilot --source tally --origin backup \
-        --entity "Company A" --entity "Company B" [--paused]
+        --entity "Company A" --entity "Company B" [--activate | --pause]
     python -m workers.cli status
     python -m workers.cli summary
     python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
@@ -22,7 +22,12 @@ the database and the API, never in this output.
 **Outside the test environment (APP_ENV=pilot) the output holds no names at all:** no
 company, ledger or party names and no error messages (only their type), so it can be
 shared as counts and pass/fail. Companies appear as "entity <id>", and `trial-balance`
-refuses to run (docs/pilot-runbook.md).
+refuses to run (docs/pilot-runbook.md). Unexpected errors print their type and a short
+message only, never SQL statements or parameters.
+
+`entities` only reads: it never creates or changes a connection. Connections created by
+any command start **paused**; only `connect --activate` makes the worker sync them on a
+schedule.
 """
 
 import argparse
@@ -30,13 +35,15 @@ import sys
 from collections.abc import Sequence
 from datetime import date, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from connectors import registry
 from connectors.base import Period
 from core.config import get_settings
 from core.db import get_engine
+from core.errors import redact_quoted, short_error
 from core.models import Connection, SyncRun
 from core.models import accounting as A  # noqa: N812
 from core.models.accounting import Entity
@@ -55,6 +62,7 @@ from workers.sync import (
     last_run,
     run_deletion_check,
     run_sync,
+    running_run,
 )
 from workers.validate import after_run, run_validation
 
@@ -124,8 +132,12 @@ def _parser() -> argparse.ArgumentParser:
     connect.add_argument(
         "--entity", action="append", required=True, help="entity name (repeatable)"
     )
-    connect.add_argument(
-        "--paused",
+    schedule = connect.add_mutually_exclusive_group()
+    schedule.add_argument(
+        "--activate", action="store_true", help="let the worker sync it on its schedule"
+    )
+    schedule.add_argument(
+        "--pause",
         action="store_true",
         help="no scheduled syncs (e.g. backup data that doesn't change); manual syncs work",
     )
@@ -146,67 +158,76 @@ def _period(args: argparse.Namespace) -> Period | None:
     return Period(args.date_from, args.date_to)
 
 
+# How long `connect` waits for a lock on the connection row before giving up (MySQL).
+CONNECT_LOCK_WAIT_SEC = 10
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     with Session(get_engine()) as session:
-        if args.command == "status":
-            return _status(session)
-        if args.command == "summary":
-            return _summary(session)
-        if args.command == "trial-balance":
-            if not _show_names():
-                print("trial-balance prints amounts: test environment only.", file=sys.stderr)
-                return 2
-            return _trial_balance(session, args.entity_code)
-
-        connection = get_or_create_connection(session, args.connection, args.source)
-        if getattr(args, "origin", None):
-            connection.config = {**connection.config, "origin": args.origin}
-        if args.command in ("sync", "check-deletions") and args.entity:
-            # Remember which entities this connection syncs (used by the scheduler).
-            known = list(dict.fromkeys([*connection.config.get("entities", []), *args.entity]))
-            connection.config = {**connection.config, "entities": known}
-        session.commit()
-        connector = connector_for(session, connection)
-
-        if args.command == "connect":
-            return _connect(session, connection, connector, args)
-
-        if args.command == "entities":
-            entities = connector.list_entities()
-            print(f"{len(entities)} entities in connection '{connection.name}'")
+        try:
+            return _run(session, args)
+        except Exception as exc:
             if _show_names():
-                for entity in entities:
-                    print(f"  {entity.name}  [{entity.key}]")
-            return 0
+                raise  # test environment: the full traceback helps
+            # Elsewhere: never SQL statements or their parameters, nor quoted values.
+            print(f"error: {short_error(exc, redact=True)}", file=sys.stderr)
+            return 1
 
-        if args.command == "validate":
-            reports = run_validation(session, connection, connector, args.entity, args.as_of)
-            return _print_validation(reports)
 
-        if args.command in ("sync", "check-deletions"):
-            validate = not getattr(args, "no_validate", False)
-            try:
-                if args.command == "sync":
-                    result = run_sync(
-                        session, connection, connector, args.entity, args.full, _period(args)
-                    )
-                    code = _print_sync(result)
-                    if validate and not (args.check_deletions and not code):
-                        code |= _print_validation(after_run(session, connection, connector, result))
-                    if code or not args.check_deletions:
-                        return code
-                result = run_deletion_check(session, connection, connector, args.entity)
-            except SyncBusyError as exc:
-                print(str(exc), file=sys.stderr)
-                return 3
-            code = _print_sync(result)
-            if validate:
-                code |= _print_validation(after_run(session, connection, connector, result))
-            return code
+def _run(session: Session, args: argparse.Namespace) -> int:
+    if args.command == "status":
+        return _status(session)
+    if args.command == "summary":
+        return _summary(session)
+    if args.command == "trial-balance":
+        if not _show_names():
+            print("trial-balance prints amounts: test environment only.", file=sys.stderr)
+            return 2
+        return _trial_balance(session, args.entity_code)
 
-        entity = find_entity(connector, args.entity)
-        extracted = run_extract(session, connection, connector, entity, _period(args))
+    if args.command == "entities":
+        return _list_entities(session, args)
+    if args.command == "connect":
+        return _connect(session, args)
+
+    connection = get_or_create_connection(session, args.connection, args.source)
+    if getattr(args, "origin", None):
+        connection.config = {**connection.config, "origin": args.origin}
+    if args.command in ("sync", "check-deletions") and args.entity:
+        # Remember which entities this connection syncs (used by the scheduler).
+        known = list(dict.fromkeys([*connection.config.get("entities", []), *args.entity]))
+        connection.config = {**connection.config, "entities": known}
+    session.commit()
+    connector = connector_for(session, connection)
+
+    if args.command == "validate":
+        reports = run_validation(session, connection, connector, args.entity, args.as_of)
+        return _print_validation(reports)
+
+    if args.command in ("sync", "check-deletions"):
+        validate = not getattr(args, "no_validate", False)
+        try:
+            if args.command == "sync":
+                result = run_sync(
+                    session, connection, connector, args.entity, args.full, _period(args)
+                )
+                code = _print_sync(result)
+                if validate and not (args.check_deletions and not code):
+                    code |= _print_validation(after_run(session, connection, connector, result))
+                if code or not args.check_deletions:
+                    return code
+            result = run_deletion_check(session, connection, connector, args.entity)
+        except SyncBusyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 3
+        code = _print_sync(result)
+        if validate:
+            code |= _print_validation(after_run(session, connection, connector, result))
+        return code
+
+    entity = find_entity(connector, args.entity)
+    extracted = run_extract(session, connection, connector, entity, _period(args))
 
     print(f"Sync run {extracted.sync_run_id}: {extracted.status}")
     for object_type, count in sorted(extracted.by_object_type.items()):
@@ -226,23 +247,70 @@ def _show_names() -> bool:
 
 
 def _error(summary: str) -> str:
-    """'Type: message' in test; only 'Type' elsewhere (messages can name companies)."""
-    return summary if _show_names() else summary.split(":", 1)[0]
+    """A stored 'Type: message' (already free of SQL): in full in test; elsewhere with
+    quoted values removed (messages can name companies)."""
+    return summary if _show_names() else redact_quoted(summary)
 
 
 def _entities(names: Sequence[str]) -> str:
     return ", ".join(names) if _show_names() else f"{len(names)} entities"
 
 
-def _connect(
-    session: Session, connection: Connection, connector: object, args: argparse.Namespace
-) -> int:
-    """Sets the connection's origin, its exact list of entities and whether it's scheduled."""
+def _list_entities(session: Session, args: argparse.Namespace) -> int:
+    """Read-only: an existing connection's settings, or the source's defaults."""
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is not None:
+        connector = connector_for(session, connection)
+    elif args.source:
+        connector = registry.create_connector(args.source, registry.default_config(args.source))
+    else:
+        print(f"No connection '{args.connection}'; pass --source.", file=sys.stderr)
+        return 2
+    session.rollback()  # nothing to write; end the read transaction
+    entities = connector.list_entities()
+    print(f"{len(entities)} entities in the source of '{args.connection}'")
+    if _show_names():
+        for entity in entities:
+            print(f"  {entity.name}  [{entity.key}]")
+    return 0
+
+
+def _connect(session: Session, args: argparse.Namespace) -> int:
+    """Sets the connection's origin and exact list of entities, and, only when asked,
+    whether the worker syncs it on a schedule. Refuses while a sync is running."""
+    existing = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if existing is not None:
+        running = running_run(session, existing.id)
+        if running is not None:
+            print(
+                f"Refused: sync run {running.id} of '{existing.name}' is running (started "
+                f"{running.started_at:%Y-%m-%d %H:%M:%S} UTC). Wait for it to finish "
+                "(check with status), then run connect again.",
+                file=sys.stderr,
+            )
+            return 3
+    connection = existing or get_or_create_connection(session, args.connection, args.source)
     wanted = list(dict.fromkeys(args.entity))
+    if session.get_bind().dialect.name == "mysql":
+        # Fail fast instead of hanging if the row is locked after all.
+        session.execute(text(f"SET SESSION innodb_lock_wait_timeout = {CONNECT_LOCK_WAIT_SEC}"))
     connection.config = {**connection.config, "origin": args.origin, "entities": wanted}
-    connection.status = "paused" if args.paused else "active"
-    session.commit()
-    available = {e.name for e in connector.list_entities()}  # type: ignore[attr-defined]
+    if args.activate:
+        connection.status = "active"
+    elif args.pause:
+        connection.status = "paused"
+    try:
+        session.commit()
+    except OperationalError as exc:
+        session.rollback()
+        print(
+            f"Refused: the connection is locked ({short_error(exc, redact=True)}). A sync may "
+            "have just started; check with status and run connect again when it's done.",
+            file=sys.stderr,
+        )
+        return 3
+    connector = connector_for(session, connection)
+    available = {e.name for e in connector.list_entities()}
     missing = [name for name in wanted if name not in available]
     print(
         f"Connection '{connection.name}': origin {args.origin}, {connection.status}, "

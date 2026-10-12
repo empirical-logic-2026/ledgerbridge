@@ -35,6 +35,7 @@ from core.canonical import (
     CanonicalVoucher,
     CanonicalVoucherType,
 )
+from core.errors import short_error
 from core.models import accounting as A  # noqa: N812 - short alias for many models
 from core.models.base import utcnow
 from core.models.source import RawRecord
@@ -215,7 +216,7 @@ class Transformer:
 
     def _fail(self, row: RawRecord, exc: Exception, result: TransformResult) -> None:
         row.process_status = "failed"
-        row.process_error = f"{type(exc).__name__}: {exc}"[:1000]
+        row.process_error = short_error(exc)
         result.failed += 1
 
     def _done(self, items: Iterable[_Raw], result: TransformResult) -> None:

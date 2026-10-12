@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.1 |
+| Version | 0.2 |
 | Date | 2026-10-12 |
 | Who runs it | **The developer only.** Claude Code never runs these steps, never connects to the `pilot` environment and never sees its data (CLAUDE.md, ADR-011). |
 
@@ -24,13 +24,23 @@ This runbook loads the client's two Tally companies into the `pilot` environment
 
 ## Steps
 
+### 0. If an earlier attempt left data: reset
+
+The first pilot attempt (2026-10-12) may have synced data tagged `live` before it failed. Start from an empty pilot database:
+
+```powershell
+./dev.ps1 reset -Env pilot
+```
+
+This stops the pilot stack and deletes **only the pilot volumes**: `ledgerbridge-pilot_mysql-data`, `_redis-data` and `_qdrant-data`. It lists them first and asks you to type `delete pilot`. `.env.pilot` is kept, so the next `up` recreates the databases with the same passwords. Skip this step on a first run.
+
 ### 1. Create `.env.pilot` (once)
 
 ```powershell
 ./dev.ps1 init-env -Env pilot
 ```
 
-This copies `.env.pilot.example` to `.env.pilot` and replaces the five MySQL passwords (root, `app_rw`, `migrator`, `report_ro`, `ai_ro`) with 32 random letters and digits. The values are never printed. It refuses if `.env.pilot` already exists.
+This copies `.env.pilot.example` to `.env.pilot` and replaces the five MySQL passwords (root, `app_rw`, `migrator`, `report_ro`, `ai_ro`) with 32 random letters and digits. The values are never printed. It refuses if `.env.pilot` already exists; after a reset, keep using the existing file.
 
 - Keep a backup of `.env.pilot` somewhere safe, such as a password manager. The pilot database is created with these passwords; without the file you can't reach it.
 - Never commit it (it's git-ignored) and never share it.
@@ -43,23 +53,26 @@ This copies `.env.pilot.example` to `.env.pilot` and replaces the five MySQL pas
 
 This builds and starts MySQL, Redis, Qdrant, the API and the worker as the Docker Compose project `ledgerbridge-pilot`. On the first start, MySQL creates the four databases and the database users from `.env.pilot`. Then the one-off `migrate` container creates the tables. Expect `LedgerBridge (pilot) is up.` and `API readiness: ok`.
 
-### 3. Check that Tally shows both companies
+Nothing syncs yet: there's no connection, and the worker only syncs connections that have been explicitly activated.
+
+### 3. Create the connection, before anything else that touches Tally
+
+```powershell
+./dev.ps1 connect -Env pilot -Origin backup -Company "<exact name of company 1>","<exact name of company 2>"
+```
+
+- `-Origin backup` tags every row as backup data (IMP-004). The connection must exist with this origin **before the first sync**, otherwise the data would be tagged `live`.
+- **The connection stays paused:** the worker never syncs it on a schedule. New connections always start paused, and only `-Activate` changes that. Backup data doesn't change, so there's no reason to activate it. Manual syncs still work.
+- Expect `origin backup, paused, 2 entities configured, 2 found in the source`. If it says `1 not found`, the name doesn't exactly match TallyPrime's (spaces, punctuation, capitals) or the company isn't loaded. Fix it and run the command again: it replaces the list.
+- If it says `Refused: sync run N ... is running`, a sync is in progress. Wait for it, then run `connect` again. It never hangs.
+
+### 4. Optional: check that Tally shows both companies
 
 ```powershell
 ./dev.ps1 tally-companies -Env pilot
 ```
 
-Expect `2 entities in connection 'tally-pilot'`. Names aren't printed in the pilot environment; check them in TallyPrime if needed.
-
-### 4. Create the connection
-
-```powershell
-./dev.ps1 connect -Env pilot -Origin backup -Paused -Company "<exact name of company 1>","<exact name of company 2>"
-```
-
-- `-Origin backup` tags every row as backup data (IMP-004).
-- `-Paused` turns off scheduled syncs. Backup data doesn't change, and it stops the worker from starting a sync while you run the first one by hand. Manual syncs still work.
-- Expect `origin backup, paused, 2 entities configured, 2 found in the source`. If it says `1 not found`, the name doesn't exactly match TallyPrime's (spaces, punctuation, capitals) or the company isn't loaded. Fix it and run the command again: it replaces the list.
+Expect `2 entities in the source of 'tally-pilot'`. This only reads: it never creates or changes a connection. Names aren't printed in the pilot environment; check them in TallyPrime if needed.
 
 ### 5. Sync and validate
 
@@ -105,6 +118,7 @@ It also lists open alerts. **This is the output to share.**
 | `error: closing_mismatch xN` | N ledgers whose balance differs from Tally's. | Share the count. |
 | `error: ledger_missing xN` | Ledgers in Tally but not synced, or the other way round. | Share the count; re-run step 5 once. |
 | `error: profit_carrier_mismatch x1` | *Profit & Loss A/c* doesn't reconcile with the computed profit. Known points to check: books spanning several financial years, and companies that keep stock without integrated inventory (schema.md 10). | Share it, plus how many financial years the books cover and whether inventory is maintained. |
+| `error: <ErrorType>: <short message>` from any command | Something failed unexpectedly. Outside the test environment you see only the error type and a short message (for database errors, the MySQL code), never SQL or values. | Share that line as it is. |
 | `error: closing_unavailable` | Tally couldn't be reached for closing balances. | Check that TallyPrime is running with both companies loaded; run `./dev.ps1 validate -Env pilot`. |
 | `warning: opening_difference x1` | The company's opening balances don't total zero (Tally's "Difference in opening balances"). Not a sync error. | Note it. The fix belongs in the client's books. |
 
@@ -113,11 +127,12 @@ It also lists open alerts. **This is the output to share.**
 - **Validate again** (e.g. after reloading Tally): `./dev.ps1 validate -Env pilot`.
 - **Reload a newer backup:** restore it in TallyPrime, then `./dev.ps1 sync full -Env pilot`. Changes are picked up by AlterID, and deletions by the deletion check.
 - **Stop:** `./dev.ps1 down -Env pilot`. The data stays in the pilot volumes.
-- **Start over completely:** `./deploy/stack.ps1 -Env pilot down -v` deletes all pilot data. Then `./dev.ps1 up -Env pilot` with the same `.env.pilot`.
+- **Start over completely:** `./dev.ps1 reset -Env pilot` (step 0) deletes all pilot data and keeps `.env.pilot`. Then continue from step 2.
 - **Never** run `./dev.ps1 test` against pilot (it refuses), and never point `-Env test` at client companies.
 
 ## Change log
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-12 | 0.2 | After the first attempt failed (MySQL 1205 lock wait on the connection): step 0 `reset -Env pilot`; `connect` before anything that could sync; new connections stay paused unless `-Activate`; `tally-companies` only reads; errors show type and a short message only. |
 | 2026-10-12 | 0.1 | First version, prepared with M4: `init-env`, `connect`, `summary`, name-free CLI output outside test. Not yet run. |

@@ -25,13 +25,14 @@
     Pilot (developer only; see docs/pilot-runbook.md):
     ./dev.ps1 init-env -Env pilot
     ./dev.ps1 up -Env pilot
-    ./dev.ps1 connect -Env pilot -Origin backup -Paused -Company "Company A","Company B"
+    ./dev.ps1 connect -Env pilot -Origin backup -Company "Company A","Company B"
     ./dev.ps1 sync full -Env pilot
     ./dev.ps1 summary -Env pilot
+    ./dev.ps1 reset -Env pilot
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'down', 'status', 'summary', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'seed-test-data', 'help')]
+    [ValidateSet('init-env', 'up', 'down', 'reset', 'status', 'summary', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'seed-test-data', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -49,8 +50,16 @@ param(
     [ValidateSet('live', 'backup')]
     [string]$Origin = 'live',
 
-    # For `connect`: no scheduled syncs (backup data doesn't change); manual syncs still work.
-    [switch]$Paused
+    # For `connect`: new connections start paused (no scheduled syncs; manual syncs work).
+    # -Activate lets the worker sync it on its schedule; -Paused stops that again.
+    [switch]$Activate,
+    [switch]$Paused,
+
+    # For `reset`: required to reset the test environment; pilot always asks.
+    [switch]$Force,
+
+    # For `reset`: the typed confirmation, for scripted use. Normally you're asked to type it.
+    [string]$Confirmation = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -159,8 +168,33 @@ ew-env.ps1') -Env $Env
         Assert-ApiRunning
         $connectArgs = @('python', '-m', 'workers.cli', 'connect', '--connection', $connection, '--source', 'tally', '--origin', $Origin)
         foreach ($name in $Company) { $connectArgs += @('--entity', $name) }
-        if ($Paused) { $connectArgs += '--paused' }
+        if ($Activate -and $Paused) { throw 'Use -Activate or -Paused, not both.' }
+        if ($Activate) { $connectArgs += '--activate' }
+        if ($Paused) { $connectArgs += '--pause' }
         Invoke-Checked exec -T api @connectArgs
+    }
+    'reset' {
+        # Deletes this environment's data: stops its stack and removes only its own Docker
+        # volumes (MySQL, Redis, Qdrant). Keeps .env.<Env>. Needs a typed confirmation.
+        if ($Env -eq 'test' -and -not $Force) {
+            throw 'reset deletes the test database too: add -Force to reset the test environment.'
+        }
+        Assert-EnvFile
+        $project = "ledgerbridge-$Env"
+        $volumes = @(& docker volume ls --quiet --filter "label=com.docker.compose.project=$project")
+        Write-Host "This stops '$project' and deletes its data volumes:"
+        if ($volumes) { $volumes | ForEach-Object { Write-Host "  $_" } } else { Write-Host '  (none found)' }
+        Write-Host ".env.$Env is kept, so the next 'up' recreates the databases with the same passwords."
+        $expected = "delete $Env"
+        $answer = if ($Confirmation) { $Confirmation } else { Read-Host "Type '$expected' to continue" }
+        if ($answer -cne $expected) {
+            Write-Host 'Not confirmed: nothing was deleted.' -ForegroundColor Yellow
+            exit 2
+        }
+        Invoke-Stack down --volumes --remove-orphans
+        $left = @(& docker volume ls --quiet --filter "label=com.docker.compose.project=$project")
+        if ($left) { throw "Volumes still present: $($left -join ', ')" }
+        Write-Host "Deleted the $Env data. Start again with: ./dev.ps1 up -Env $Env" -ForegroundColor Green
     }
     'summary' {
         # Counts and pass/fail per connection and company; no names or amounts (safe to share).

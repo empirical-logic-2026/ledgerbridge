@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from core.config import get_settings
 from core.db import get_engine
+from core.errors import short_error
 from core.models import Connection
 from core.models.base import utcnow
 
@@ -93,39 +94,52 @@ def deletion_check_connection(connection_id: int) -> dict[str, object]:
 
 
 def _locked_run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict[str, object]:
-    """Runs one sync or deletion check, then its alerts and validation (ADR-019)."""
-    from workers.extract import connector_for
-    from workers.sync import SyncBusyError
-    from workers.validate import after_run
+    """Runs one sync or deletion check, then its alerts and validation (ADR-019).
 
+    "Sync in progress" is marked by this Redis lock and the run's `running` row in sync_runs,
+    never by a database lock on the connection. Errors are logged as type and short message
+    only: a traceback would print SQL statements and their parameters.
+    """
     lock = Redis.from_url(settings.redis_url).lock(
         f"ledgerbridge:sync:{connection_id}", timeout=LOCK_TIMEOUT_SEC, blocking=False
     )
     if not lock.acquire():
         return {"status": "skipped", "reason": "locked"}
     try:
-        with Session(get_engine()) as session:
-            connection = session.get_one(Connection, connection_id)
-            connector = connector_for(session, connection)
-            try:
-                result = runner(session, connection, connector)
-            except SyncBusyError:
-                return {"status": "skipped", "reason": "running"}
-            # Counts only: never names or amounts in task results or logs.
-            logger.info(
-                "Sync run %s (%s): %s (%s objects fetched, %s soft-deleted, %s warnings)",
-                result.sync_run_id,
-                result.run_type,
-                result.status,
-                sum(result.fetched.values()),
-                sum(result.deleted.values()),
-                len(result.warnings),
-            )
-            reports = after_run(session, connection, connector, result)
-            return {
-                "sync_run_id": result.sync_run_id,
-                "status": result.status,
-                "validation": [r.status for r in reports],
-            }
+        return _run(connection_id, runner)
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        error = short_error(exc, redact=True)
+        logger.error("Run for connection %s failed: %s", connection_id, error)
+        return {"status": "error", "error": error}
     finally:
         lock.release()
+
+
+def _run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict[str, object]:
+    from workers.extract import connector_for
+    from workers.sync import SyncBusyError
+    from workers.validate import after_run
+
+    with Session(get_engine()) as session:
+        connection = session.get_one(Connection, connection_id)
+        connector = connector_for(session, connection)
+        try:
+            result = runner(session, connection, connector)
+        except SyncBusyError:
+            return {"status": "skipped", "reason": "running"}
+        # Counts only: never names or amounts in task results or logs.
+        logger.info(
+            "Sync run %s (%s): %s (%s objects fetched, %s soft-deleted, %s warnings)",
+            result.sync_run_id,
+            result.run_type,
+            result.status,
+            sum(result.fetched.values()),
+            sum(result.deleted.values()),
+            len(result.warnings),
+        )
+        reports = after_run(session, connection, connector, result)
+        return {
+            "sync_run_id": result.sync_run_id,
+            "status": result.status,
+            "validation": [r.status for r in reports],
+        }

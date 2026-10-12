@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from connectors import registry
 from connectors.base import Connector, Period, SourceEntity, SourceRecord
+from core.errors import short_error
 from core.models import Connection, Source, SyncRun
 from core.models.base import utcnow
 from core.raw_store import RawStore
@@ -30,7 +31,11 @@ class ExtractResult:
 
 
 def get_or_create_connection(session: Session, name: str, source_code: str | None) -> Connection:
-    """Find a connection by name, or create it with config from settings if a source is given."""
+    """Find a connection by name, or create it with config from settings if a source is given.
+
+    A new connection is **paused**: the worker doesn't sync it on a schedule until it is
+    activated explicitly (`workers.cli connect --activate`). Manual syncs work regardless.
+    """
     connection = session.scalar(select(Connection).where(Connection.name == name))
     if connection is not None:
         return connection
@@ -43,7 +48,10 @@ def get_or_create_connection(session: Session, name: str, source_code: str | Non
         session.add(source)
         session.flush()
     connection = Connection(
-        source_id=source.id, name=name, config=registry.default_config(source_code)
+        source_id=source.id,
+        name=name,
+        config=registry.default_config(source_code),
+        status="paused",
     )
     session.add(connection)
     session.flush()
@@ -102,7 +110,7 @@ def run_extract(
     except Exception as exc:
         session.rollback()
         # Type and message only; connector errors never include payloads.
-        result.error = run.error_summary = f"{type(exc).__name__}: {exc}"[:2000]
+        result.error = run.error_summary = short_error(exc)
         result.status = run.status = "failed"
         logger.error("Sync run %s failed: %s", run.id, type(exc).__name__)
     run.records_received = result.received

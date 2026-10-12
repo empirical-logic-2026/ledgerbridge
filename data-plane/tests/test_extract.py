@@ -70,7 +70,11 @@ def test_successful_run_is_logged(session: Session, fake_source: None) -> None:
     assert (second.stored, second.skipped) == (0, 2)
 
 
-def test_failed_run_rolls_back_and_records_error(session: Session, fake_source: None) -> None:
+def test_failed_run_records_error_and_keeps_only_completed_batches(
+    session: Session, fake_source: None
+) -> None:
+    """Batches are committed as they complete (short transactions, see RawStore): masters
+    stored before the failure stay pending; the unfinished voucher batch is not stored."""
     connection = get_or_create_connection(session, "fake-conn", "fake")
     session.commit()
     result = run_extract(session, connection, FakeConnector(fail_on_transactions=True), ENTITY)
@@ -78,7 +82,9 @@ def test_failed_run_rolls_back_and_records_error(session: Session, fake_source: 
     run = session.get_one(SyncRun, result.sync_run_id)
     assert run.status == "failed"
     assert run.error_summary == "RuntimeError: source went away"
-    assert session.scalar(select(func.count()).select_from(RawRecord)) == 0
+    stored = session.execute(select(RawRecord.object_type, RawRecord.process_status)).all()
+    assert stored and all(status == "pending" for _, status in stored)
+    assert "voucher" not in {object_type for object_type, _ in stored}
 
 
 def test_find_entity_by_name() -> None:

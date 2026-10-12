@@ -259,6 +259,17 @@ Since M3 it starts with `./dev.ps1 up` (it has no profile any more). It reaches 
 
 Why it refuses when the file already exists: MySQL sets its users' passwords **only when its data volume is first created** (the init scripts in `deploy/mysql/init` run on an empty volume). If you replaced the passwords later, the containers would log in with new passwords that the existing database doesn't know. To really start over, delete the volume (`./deploy/stack.ps1 -Env pilot down -v`, which deletes that environment's data) and then the file.
 
+### 6.7b Deleting one environment's data: `./dev.ps1 reset`
+
+Each environment's data lives in its own named volumes, prefixed with the Compose project name: `ledgerbridge-pilot_mysql-data`, `ledgerbridge-pilot_redis-data` and `ledgerbridge-pilot_qdrant-data` (the test ones start with `ledgerbridge-test_`). `./dev.ps1 reset -Env pilot`:
+
+1. lists the project's volumes (`docker volume ls --filter label=com.docker.compose.project=ledgerbridge-pilot`; Compose labels every volume it creates with its project);
+2. asks you to type `delete pilot`;
+3. runs `docker compose -p ledgerbridge-pilot down --volumes --remove-orphans`, which removes that project's containers, network and volumes, and nothing from any other project;
+4. checks that no volume of the project is left.
+
+`.env.pilot` stays. On the next `up`, MySQL finds an empty volume and runs its init scripts again with the same passwords. For the test environment it refuses unless you add `-Force`.
+
 ### 6.8 Profiles: `tools`
 
 Services with a profile are skipped by `up` unless you ask for them. `migrate` (profile `tools`) is a one-off job, run with `run` (section 6.6).
@@ -416,6 +427,7 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
 | 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |
+| 2026-10-12 | `./dev.ps1 reset` deletes one environment's volumes after a typed confirmation (section 6.7b). |
 | 2026-10-12 | Pilot preparation: `deploy/new-env.ps1` and `./dev.ps1 init-env` create an env file with random passwords (section 6.7a); `connect` and `summary` run `workers.cli` through `docker compose exec`. |
 | 2026-10-12 | M4: the worker validates after every sync and deletion check and raises alerts; `./dev.ps1 validate` runs `workers.cli validate` through `docker compose exec`. For `sync` and `validate`, exit code 1 now means "ran, but checks failed" and is reported as such instead of as a Docker failure. |
 | 2026-10-12 | M3 review: the worker also runs the hourly deletion check (section 6.7); `./dev.ps1 sync deletions` runs one through `docker compose exec`; `status` shows both schedules. |
