@@ -57,7 +57,7 @@ def test_expected_table_counts_and_empty_reporting_database() -> None:
     command.upgrade(_config(), "head")
     tables = _tables()
     count = {schema: sum(t.startswith(f"{schema}.") for t in tables) for schema in ALL}
-    assert count == {SOURCE: 1, ACCOUNTING: 25, REPORTING: 0, SYSTEM: 22}  # 21 + alembic_version
+    assert count == {SOURCE: 1, ACCOUNTING: 25, REPORTING: 0, SYSTEM: 24}  # 23 + alembic_version
     assert f"{ACCOUNTING}.bank_statement_lines" not in tables  # phase 2
 
 

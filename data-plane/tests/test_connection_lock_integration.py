@@ -9,15 +9,13 @@ This test syncs the recorded fixtures and, in the middle of fetching, changes th
 connection from a second session that waits at most 3 seconds for a lock.
 """
 
-from collections.abc import Iterator
-
 import pytest
 from alembic import command
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from connectors.base import Markers, Period, SourceEntity, SourceRecord
+from connectors.base import Chunk, Markers, SourceEntity, SourceRecord
 from connectors.tally.connector import TallyConnector
 from connectors.tally.fixtures import DEFAULT_DIR, FixtureTransport
 from core.db import get_engine
@@ -31,18 +29,21 @@ pytestmark = pytest.mark.integration
 
 
 class ProbingConnector(TallyConnector):
-    """Fixture connector that tries to update the connection while transactions stream."""
+    """Fixture connector that tries to update the connection while the sync waits for the
+    source: before the third voucher month (masters and two months already stored)."""
 
     probe_results: list[str]
     connection_id: int
+    voucher_chunks: int = 0
 
-    def fetch_transactions(
-        self, entity: SourceEntity, markers: Markers | None = None, period: Period | None = None
-    ) -> Iterator[SourceRecord]:
-        for number, record in enumerate(super().fetch_transactions(entity, markers, period)):
-            if number == 3:  # mid-fetch: masters and some vouchers already received
+    def fetch_chunk(
+        self, entity: SourceEntity, chunk: Chunk, markers: Markers | None
+    ) -> list[SourceRecord]:
+        if chunk.object_type == "voucher":
+            self.voucher_chunks += 1
+            if self.voucher_chunks == 3:
                 self.probe_results.append(_try_update(self.connection_id))
-            yield record
+        return super().fetch_chunk(entity, chunk, markers)
 
 
 def _try_update(connection_id: int) -> str:

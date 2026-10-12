@@ -239,7 +239,7 @@ class TallyConnector:
                 spec, company=name, period=period, since_alter_id=since
             ),
         )
-        return list(parser.parse_records(body, spec, entity.key))
+        return list(parser.parse_records(body, spec, entity.key, period))
 
     def chunk_keys(self, entity: SourceEntity, chunk: Chunk) -> set[str]:
         spec = envelopes.SPEC_BY_OBJECT_TYPE[chunk.object_type]
@@ -250,10 +250,7 @@ class TallyConnector:
                 envelopes.keys_only(spec), company=name, period=period
             ),
         )
-        return {
-            parser.source_key(element)
-            for element in parser.objects(parser.parse_response(body), spec.object_tag)
-        }
+        return {r.source_key for r in parser.parse_records(body, spec, entity.key, period)}
 
     def ping(self) -> None:
         """The company list with a short timeout: does Tally answer at all?"""

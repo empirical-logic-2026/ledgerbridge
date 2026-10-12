@@ -167,6 +167,18 @@ def test_parts_the_source_leaves_empty_are_caught(db: Session, sim) -> None:  # 
     assert _count(db, A.Voucher) == 0  # never transformed with a gap
 
 
+def test_parts_the_source_widens_are_held_to_their_dates(db: Session, sim) -> None:  # noqa: ANN001
+    """Like Educational mode: a part-month request returns everything since the start of
+    the books. Only each part's own dates count, so nothing is stored twice."""
+    connection, connector = sim
+    transport = SimTally(per_day=2, slow_months=(date(2026, 7, 1),), widen_partial=True)
+    result, lines, _ = _sync(db, connection, transport, connector)
+    assert result.status == "succeeded", result.error
+    assert _raw_vouchers(db) == transport.total_vouchers
+    assert result.entity_results[0].fetched == result.entity_results[0].stored
+    assert any("2026-07-01..2026-07-31: verified complete" in line for line in lines)
+
+
 def test_a_day_that_never_answers_fails_the_entity_with_a_clear_message(db: Session, sim) -> None:  # noqa: ANN001
     connection, connector = sim
     transport = SimTally(per_day=1, fail_days=(date(2026, 6, 10),))

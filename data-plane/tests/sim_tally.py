@@ -9,8 +9,9 @@ and numbers. Behaviour can be made difficult:
 - `fail_days`: a request including one of these days always times out;
 - `dead_after`: after this many voucher requests, Tally stops answering anything (also the
   minimal check) until `revive()`;
-- `empty_partial`: requests not aligned to whole months return nothing, like TallyPrime in
-  Educational mode;
+- `empty_partial`: requests not aligned to whole months return nothing;
+- `widen_partial`: requests not aligned to whole months return everything from the start of
+  the books, like TallyPrime in Educational mode (seen 2026-10-12);
 - `companies`: how many companies are listed (vouchers are generated per company).
 
 Keys-only listings never time out (they're small). Every voucher request is logged.
@@ -51,6 +52,7 @@ class SimTally(FixtureTransport):
         fail_days: tuple[date, ...] = (),
         dead_after: int | None = None,
         empty_partial: bool = False,
+        widen_partial: bool = False,
     ) -> None:
         super().__init__(DEFAULT_DIR)
         self.per_day = per_day
@@ -60,6 +62,7 @@ class SimTally(FixtureTransport):
         self.fail_days = set(fail_days)
         self.dead_after = dead_after
         self.empty_partial = empty_partial
+        self.widen_partial = widen_partial
         self.dead = False
         self.voucher_requests = 0
         self.log: list[tuple[str, date | None, date | None]] = []  # (kind, from, to incl.)
@@ -135,6 +138,8 @@ class SimTally(FixtureTransport):
             whole = start.day == 1 and (end + timedelta(days=1)).day == 1
             if self.empty_partial and not whole:
                 return self._xml("")
+            if self.widen_partial and not whole:
+                start = BOOKS_START
         else:
             self.log.append(("keys", start, end))
         out = []
