@@ -55,7 +55,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$stack = Join-Path $root 'deploy\stack.ps1'
+$stack = Join-Path (Join-Path $PSScriptRoot 'deploy') 'stack.ps1'
 $envFile = Join-Path $root ".env.$Env"
 $connection = "tally-$Env"
 
@@ -137,7 +137,7 @@ function Show-Health {
 function Invoke-Uv {
     # uv may only be installed as a Python module. `python` on PATH can be the Windows Store
     # alias, so prefer the Python install manager's copy when it exists.
-    $localPython = Join-Path $env:LOCALAPPDATA 'Python\bin\python.exe'
+    $localPython = Join-Path (Join-Path (Join-Path $env:LOCALAPPDATA 'Python') 'bin') 'python.exe'
     if (Get-Command uv -ErrorAction SilentlyContinue) { & uv @args }
     elseif (Test-Path $localPython) { & $localPython -m uv @args }
     else { & python -m uv @args }
@@ -148,8 +148,7 @@ switch ($Command) {
     'init-env' {
         # Creates .env.<Env> from its example with strong random MySQL passwords (never
         # printed). Refuses if the file exists.
-        & (Join-Path $root 'deploy
-ew-env.ps1') -Env $Env
+        & (Join-Path (Join-Path $PSScriptRoot 'deploy') 'new-env.ps1') -Env $Env
     }
     'connect' {
         # Creates or updates this environment's connection: origin and the exact companies.
