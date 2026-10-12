@@ -73,6 +73,7 @@ npm run build
 ./dev.ps1 connect -Origin live -Company "LedgerBridge Test Co" -Activate   # origin, companies; new connections are paused until -Activate
 ./dev.ps1 reset -Env test -Force                     # delete the test volumes (asks to type "delete test"); keeps .env.test
 ./dev.ps1 entity-check                               # are the configured companies in Tally? kinds of difference, never names
+./dev.ps1 sync full -Restart                         # full sync from scratch (otherwise an interrupted one resumes)
 # Pilot commands (init-env, connect -Origin backup, sync full, summary with -Env pilot) are in
 # docs/pilot-runbook.md: the developer runs them. Claude Code never does.
 ./dev.ps1 seed-test-data create-only                 # create missing seed items, skip alterations and deletions

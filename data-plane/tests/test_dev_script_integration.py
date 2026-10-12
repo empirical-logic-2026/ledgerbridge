@@ -21,7 +21,17 @@ REPO = Path(__file__).resolve().parents[2]
 
 def _dev(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - fixed arguments, no shell
-        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-File", str(REPO / "dev.ps1"), *args],
+        [
+            str(POWERSHELL),
+            "-NoProfile",
+            "-NonInteractive",
+            # For this child process only, so the test doesn't depend on how pytest was started.
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(REPO / "dev.ps1"),
+            *args,
+        ],
         capture_output=True,
         text=True,
         timeout=120,

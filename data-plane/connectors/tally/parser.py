@@ -127,8 +127,20 @@ def parse_companies(body: bytes) -> list[SourceEntity]:
     return entities
 
 
-def parse_records(body: bytes, spec: CollectionSpec, entity_key: str) -> Iterator[SourceRecord]:
+def parse_records(
+    body: bytes,
+    spec: CollectionSpec,
+    entity_key: str,
+    period: tuple[date, date] | None = None,
+) -> Iterator[SourceRecord]:
+    """With `period`, only objects dated within it (inclusive). TallyPrime in Educational mode
+    answers a request for part of a month with everything from the start of the books: the
+    request's dates are a request, the objects' own dates decide (checked 2026-10-12)."""
     for element in objects(parse_response(body), spec.object_tag):
+        if period is not None:
+            dated = tally_date(text_of(element, "DATE"))
+            if dated is not None and not period[0] <= dated <= period[1]:
+                continue
         yield SourceRecord(
             source_entity_key=entity_key,
             object_type=spec.object_type,

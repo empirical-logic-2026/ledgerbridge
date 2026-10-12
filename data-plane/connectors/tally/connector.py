@@ -9,6 +9,7 @@ from typing import Any, Self
 import httpx
 
 from connectors.base import (
+    Chunk,
     ConnectionStatus,
     Markers,
     Period,
@@ -63,7 +64,8 @@ class TallyConnector:
 
     @staticmethod
     def default_config() -> dict[str, Any]:
-        return {"url": get_settings().tally_url, "timeout_sec": 120}
+        settings = get_settings()
+        return {"url": settings.tally_url, "timeout_sec": settings.tally_timeout_sec}
 
     def _post(self, request_xml: str) -> bytes:
         return self.client.post(request_xml)
@@ -202,10 +204,67 @@ class TallyConnector:
         for body in self.voucher_bodies(entity, period):
             yield from parser.parse_records(body, envelopes.VOUCHERS, entity.key)
 
+    # --- chunked fetching (ADR-022) ----------------------------------------------------
+
+    def fetch_plan(
+        self, entity: SourceEntity, markers: Markers | None, period: Period | None
+    ) -> list[Chunk]:
+        """The company record, each master type, then vouchers: by AlterID in one request
+        when there's a voucher marker, otherwise month by month."""
+        markers = markers or {}
+        chunks = [Chunk(envelopes.COMPANIES.object_type)]
+        chunks += [Chunk(spec.object_type) for spec in envelopes.MASTER_SPECS]
+        voucher = envelopes.VOUCHERS.object_type
+        if period is None and _marker(markers, voucher) is not None:
+            return [*chunks, Chunk(voucher)]
+        return chunks + [Chunk(voucher, month) for month in self.voucher_periods(entity, period)]
+
+    def fetch_chunk(
+        self, entity: SourceEntity, chunk: Chunk, markers: Markers | None
+    ) -> list[SourceRecord]:
+        markers = markers or {}
+        if chunk.object_type == envelopes.COMPANIES.object_type:
+            body = self._post(envelopes.collection_request(envelopes.COMPANIES))
+            return [
+                r
+                for r in parser.parse_records(body, envelopes.COMPANIES, entity.key)
+                if r.source_key == entity.key
+            ]
+        spec = envelopes.SPEC_BY_OBJECT_TYPE[chunk.object_type]
+        since = _marker(markers, chunk.object_type)
+        period = (chunk.period.start, chunk.period.end) if chunk.period else None
+        body = self._company_post(
+            entity,
+            lambda name: envelopes.collection_request(
+                spec, company=name, period=period, since_alter_id=since
+            ),
+        )
+        return list(parser.parse_records(body, spec, entity.key, period))
+
+    def chunk_keys(self, entity: SourceEntity, chunk: Chunk) -> set[str]:
+        spec = envelopes.SPEC_BY_OBJECT_TYPE[chunk.object_type]
+        period = (chunk.period.start, chunk.period.end) if chunk.period else None
+        body = self._company_post(
+            entity,
+            lambda name: envelopes.collection_request(
+                envelopes.keys_only(spec), company=name, period=period
+            ),
+        )
+        return {r.source_key for r in parser.parse_records(body, spec, entity.key, period)}
+
+    def ping(self) -> None:
+        """The company list with a short timeout: does Tally answer at all?"""
+        body = self.client.post(
+            envelopes.collection_request(envelopes.COMPANIES),
+            timeout=get_settings().tally_ping_timeout_sec,
+        )
+        parser.parse_response(body)
+
     def list_keys(self, entity: SourceEntity) -> dict[str, set[str]]:
-        """GUIDs of every master and voucher that exists now (GUID-only exports)."""
+        """GUIDs of every master and voucher that exists now (GUID-only exports). Voucher
+        GUIDs are listed month by month: one listing of a large company would be too big."""
         keys: dict[str, set[str]] = {}
-        for spec in (*envelopes.MASTER_SPECS, envelopes.VOUCHERS):
+        for spec in envelopes.MASTER_SPECS:
             body = self._company_post(
                 entity,
                 lambda name, spec=spec: envelopes.collection_request(
@@ -216,6 +275,10 @@ class TallyConnector:
                 parser.source_key(element)
                 for element in parser.objects(parser.parse_response(body), spec.object_tag)
             }
+        voucher = envelopes.VOUCHERS.object_type
+        keys[voucher] = set()
+        for month in self.voucher_periods(entity):
+            keys[voucher] |= self.chunk_keys(entity, Chunk(voucher, month))
         return keys
 
     def to_canonical(self, record: SourceRecord) -> list[CanonicalRecord]:

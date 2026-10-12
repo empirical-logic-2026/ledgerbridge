@@ -223,10 +223,13 @@ def test_sync_prints_progress_and_a_result(pilot_cli) -> None:  # noqa: ANN001
     _, out = pilot_cli("sync", "--connection", "tally-pilot", "--full", "--check-deletions")
     steps = [
         "entity 1 of 1: fetching (full)",
-        "entity 1 of 1: fetched;",
-        "transforming into the accounting tables",
+        "entity 1 of 1: ledger: 21 received, 21 stored, 0 unchanged (chunk 3 of",
+        "entity 1 of 1: voucher 2026-04-01..2026-04-30:",
+        "entity 1 of 1: fetched ",
+        "entity 1 of 1: transforming into the accounting tables",
+        "entity 1 of 1: validating as of",  # right after its transform
         "entity 1 of 1: checking for deletions",
-        "entity 1 of 1: validating as of",
+        "entity 1 of 1: SUCCEEDED: fetched",
         "Result: full succeeded; deletion_check succeeded; validation passed",
     ]
     positions = [out.index(step) for step in steps]

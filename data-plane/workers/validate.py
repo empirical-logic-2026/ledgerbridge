@@ -8,14 +8,14 @@
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from connectors.base import Connector, SourceBalances
+from connectors.base import Connector, SourceBalances, SourceEntity
 from core.alerts import raise_alert, resolve_alert
 from core.config import get_settings
 from core.errors import short_error
@@ -104,12 +104,58 @@ class AfterRun:
     validation_error: str | None = None  # why validation couldn't run (short, no SQL)
 
     @property
+    def latest(self) -> list[ValidationReport]:
+        """The last report per entity (an entity is validated again after deletions)."""
+        return list({r.entity_id: r for r in self.reports}.values())
+
+    @property
     def validation_status(self) -> str:
         if self.validation_error:
             return "failed"
         if not self.reports:
             return "not run"
-        return "failed" if any(r.status == "failed" for r in self.reports) else "passed"
+        return "failed" if any(r.status == "failed" for r in self.latest) else "passed"
+
+
+def entity_validator(
+    session: Session,
+    connection: Connection,
+    connector: Connector,
+    collect: AfterRun,
+    progress: Progress | None = None,
+    only_if_changed: bool = False,
+) -> Callable[[SyncResult, SourceEntity, bool], None]:
+    """An `after_entity` hook for runs: validates each entity as soon as it is synced, so a
+    later entity's failure can't hold it up (ADR-022). Never raises: a validation that can't
+    run is recorded in `collect` and alerted, never a failed sync."""
+
+    def validate(result: SyncResult, entity: SourceEntity, changed: bool) -> None:
+        if only_if_changed and not changed:
+            return
+        try:
+            collect.reports += run_validation(
+                session,
+                connection,
+                connector,
+                sync_run_id=result.sync_run_id,
+                entity_keys=[entity.key],
+                progress=progress,
+            )
+        except Exception as exc:  # noqa: BLE001 - see the docstring
+            session.rollback()
+            error = short_error(exc, redact=True)
+            collect.validation_error = error
+            raise_alert(
+                session,
+                "validation_failed",
+                connection.id,
+                f"Validation after {result.run_type} run {result.sync_run_id} couldn't run: "
+                f"{error}",
+                sync_run_id=result.sync_run_id,
+            )
+            logger.error("Validation in sync run %s couldn't run: %s", result.sync_run_id, error)
+
+    return validate
 
 
 def alert_for_run(session: Session, connection: Connection, result: SyncResult) -> bool:

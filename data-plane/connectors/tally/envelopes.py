@@ -156,8 +156,11 @@ def tally_date(value: date) -> str:
 
 
 def keys_only(spec: CollectionSpec) -> CollectionSpec:
-    """The same collection fetching only GUID and AlterID (for spotting deletions)."""
-    return replace(spec, collection_id=f"{spec.collection_id}Keys", fetch=("GUID", "ALTERID"))
+    """The same collection fetching only GUID and AlterID (for spotting deletions), plus the
+    date, so a listing for part of a month can be held to its dates (parser.parse_records)."""
+    return replace(
+        spec, collection_id=f"{spec.collection_id}Keys", fetch=("GUID", "ALTERID", "DATE")
+    )
 
 
 def collection_request(

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.3 |
+| Version | 0.4 |
 | Date | 2026-10-12 |
 | Who runs it | **The developer only.** Claude Code never runs these steps, never connects to the `pilot` environment and never sees its data (CLAUDE.md, ADR-011). |
 
@@ -96,7 +96,28 @@ This runs, in order:
    - each ledger's balance equals Tally's own closing balance
    - *Profit & Loss A/c* reconciles with the computed profit
 
-Large companies can take several minutes: vouchers are read one month at a time. Progress lines with the time appear as it goes (`[10:42:01] entity 1 of 2: 15,000 records received so far`). It ends with one line such as:
+Large companies take a while. Each company is fetched chunk by chunk (the company record, each master type, then vouchers month by month), and each chunk is stored as soon as it arrives. Every chunk prints a line:
+
+```text
+[10:42:01] entity 1 of 2: voucher 2023-04-01..2023-04-30: 812 received, 812 stored, 0 unchanged (chunk 14 of 96)
+```
+
+Each company is then transformed and validated **before the next one starts**, so a problem with one doesn't hold up the other.
+
+**If Tally is slow or stops answering:**
+- **A request takes longer than the timeout** (120 s by default). The sync doesn't resend it. It first checks with a tiny request whether Tally answers at all, and says so: `responsive, so the request was too large`, `slow, but responding`, or no answer. If there's no answer, it waits and checks again after 10, 30 and 90 s.
+- **Tally answers:** the month is fetched in smaller parts (half-months, then weeks, then days). The month is then checked against Tally's own list of its vouchers, and remembered as slow, so later runs split it straight away.
+- **Tally never answers:** the run stops with `the source appears UNRESPONSIVE`. Everything fetched so far is stored. Restart TallyPrime if needed, then **run `./dev.ps1 sync full -Env pilot` again: it continues after the last completed chunk** (`resuming: N of M chunks were completed by an earlier attempt`).
+- **To start over** instead: `./dev.ps1 sync full -Env pilot -Restart`.
+- **Longer timeout:** `./dev.ps1 connect -Env pilot -Origin backup -All -TimeoutSec 300`. New connections take `TALLY_TIMEOUT_SEC` from `.env.pilot`.
+
+At the end each company gets a line that keeps fetched, stored and transformed apart, for example:
+
+```text
+entity 1 of 2: SUCCEEDED: fetched 128,227 in 96 chunks (40 done by an earlier attempt, 3 split); stored 128,227 new or changed, 0 unchanged; transformed 128,226, 0 failed
+```
+
+The run ends with one line such as:
 
 ```text
 Result: full succeeded; deletion_check succeeded; validation passed
@@ -126,6 +147,9 @@ It also lists open alerts. **This is the output to share.**
 | `unmapped ...: N` | Ledgers without a standard account (e.g. under *Indirect Expenses*), by design. Reports will place them under the nearest standard parent account (M6). | Expected. Share the count. |
 | `warnings (mapping assumptions): N` | GST ledgers whose duty head Tally left empty, assumed to be Central Tax (schema.md 7.3, an assumption to verify). | Check in TallyPrime that the company's Central Tax (CGST) ledgers number N. Report "matches" or "doesn't match". |
 | `validation: ... PASSED` | All checks passed. | – |
+| `unfinished full sync of entity N: K chunks done` (in `summary`) | A full sync was interrupted. | Run `./dev.ps1 sync full -Env pilot` again to continue it. |
+| `raw records by type and status: voucher pending N` (in `summary`) | Records stored but not yet transformed, e.g. after an interrupted sync. | They're transformed when that company's sync completes. |
+| `IncompleteChunkError` | A month fetched in parts didn't contain everything Tally lists for it (Tally may not answer requests for parts of a month). | Share the line; raise the timeout (`-TimeoutSec`) so whole months fit. |
 | `EntityLookupError: N of M configured entities are not available in the source` | Tally doesn't list a configured company (by GUID). | Check that both companies are loaded; run `./dev.ps1 entity-check -Env pilot` and share its output. |
 | `error: voucher_unbalanced xN` | N vouchers whose lines don't sum to zero after transformation. | Share the count. |
 | `error: tb_unbalanced xN` | The trial balance doesn't balance at a year end or today. | Share the count; usually follows another error. |
@@ -148,6 +172,7 @@ It also lists open alerts. **This is the output to share.**
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-12 | 0.4 | Third attempt (Tally stopped answering after 18 minutes): chunked and resumable `sync full` (`-Restart` to start over), source checks and splitting after a timeout, `-TimeoutSec`, per-company progress and results, `summary` shows raw-record status and unfinished syncs. Data stored by the third attempt is kept and reused. |
 | 2026-10-12 | 0.3 | Second attempt: "entities not available" after a successful fetch. `connect -All`; companies stored and found by GUID; `entity-check`; progress lines and a `Result:` line; sync and validation reported separately. |
 | 2026-10-12 | 0.2 | After the first attempt failed (MySQL 1205 lock wait on the connection): step 0 `reset -Env pilot`; `connect` before anything that could sync; new connections stay paused unless `-Activate`; `tally-companies` only reads; errors show type and a short message only. |
 | 2026-10-12 | 0.1 | First version, prepared with M4: `init-env`, `connect`, `summary`, name-free CLI output outside test. Not yet run. |

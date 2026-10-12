@@ -27,7 +27,8 @@
     ./dev.ps1 up -Env pilot
     ./dev.ps1 connect -Env pilot -Origin backup -All
     ./dev.ps1 entity-check -Env pilot
-    ./dev.ps1 sync full -Env pilot
+    ./dev.ps1 sync full -Env pilot              (re-run it to continue after an interruption)
+    ./dev.ps1 sync full -Env pilot -Restart     (start over)
     ./dev.ps1 summary -Env pilot
     ./dev.ps1 reset -Env pilot
 #>
@@ -58,6 +59,12 @@ param(
 
     # For `connect`: every company currently loaded in Tally, instead of -Company names.
     [switch]$All,
+
+    # For `connect`: seconds one Tally request may take before the sync splits it (default 120).
+    [int]$TimeoutSec = 0,
+
+    # For `sync full`: ignore an interrupted full sync's progress and fetch everything again.
+    [switch]$Restart,
 
     # For `reset`: required to reset the test environment; pilot always asks.
     [switch]$Force,
@@ -173,6 +180,7 @@ switch ($Command) {
         $connectArgs = @('python', '-m', 'workers.cli', 'connect', '--connection', $connection, '--source', 'tally', '--origin', $Origin)
         foreach ($name in $Company) { $connectArgs += @('--entity', $name) }
         if ($All) { $connectArgs += '--all' }
+        if ($TimeoutSec -gt 0) { $connectArgs += @('--timeout-sec', "$TimeoutSec") }
         if ($Activate -and $Paused) { throw 'Use -Activate or -Paused, not both.' }
         if ($Activate) { $connectArgs += '--activate' }
         if ($Paused) { $connectArgs += '--pause' }
@@ -257,6 +265,10 @@ switch ($Command) {
         $syncArgs = @('python', '-m', 'workers.cli', $mode, '--connection', $connection, '--source', 'tally')
         foreach ($name in $Company) { $syncArgs += @('--entity', $name) }
         if ($Service -eq 'full') { $syncArgs += @('--full', '--check-deletions') }
+        if ($Restart) {
+            if ($Service -ne 'full') { throw '-Restart only applies to: sync full -Restart' }
+            $syncArgs += '--restart'
+        }
         Invoke-Checked exec -T api @syncArgs
     }
     'validate' {

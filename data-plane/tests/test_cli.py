@@ -163,3 +163,14 @@ def test_unexpected_errors_outside_test_print_no_sql(
         assert leak not in out
     with pytest.raises(OperationalError):  # the test environment keeps the full traceback
         run_cli("status", env="test")
+
+
+def test_status_in_test_shows_configured_entities_stored_by_key(db: Session, run_cli) -> None:  # noqa: ANN001
+    """Entities are stored as {key, name} (ADR-021); status lists their names in test."""
+    run_cli("connect", "--connection", "tally-test", "--source", "tally",
+            "--origin", "live", "--entity", COMPANY, "--activate", env="test")  # fmt: skip
+    code, out = run_cli("status", env="test")
+    assert code == 0, out
+    assert f"entities: {COMPANY}" in out
+    code, out = run_cli("status")  # pilot: a count
+    assert code == 0 and "entities: 1 entities" in out

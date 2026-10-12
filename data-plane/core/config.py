@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://127.0.0.1:6333"
 
     tally_url: str = "http://localhost:9000"
+    # How long one Tally request may take before the sync checks Tally and splits the
+    # request (ADR-022); a connection can override it with config.timeout_sec.
+    tally_timeout_sec: float = 120.0
+    # The quick "does Tally answer at all?" check after a timeout.
+    tally_ping_timeout_sec: float = 15.0
     # How often the worker checks which connections are due for a sync (SYN-001); each
     # connection's own interval is ledgerbridge_system.connections.sync_interval_sec.
     sync_tick_sec: int = 60

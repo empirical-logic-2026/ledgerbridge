@@ -121,6 +121,43 @@ class SyncRun(TimestampMixin, Base):
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class SyncCheckpoint(TimestampMixin, Base):
+    """A chunk of a full sync that has been fetched and stored (ADR-022). An interrupted full
+    sync skips these chunks when re-run; a completed one deletes its entity's checkpoints."""
+
+    __tablename__ = "sync_checkpoints"
+    __table_args__ = (
+        UniqueConstraint("connection_id", "source_entity_key", "chunk_key"),
+        _S,
+    )
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    connection_id: Mapped[int] = mapped_column(Id, ForeignKey(f"{SYSTEM}.connections.id"))
+    source_entity_key: Mapped[str] = mapped_column(String(191))
+    object_type: Mapped[str] = mapped_column(String(64))
+    chunk_key: Mapped[str] = mapped_column(String(128))  # e.g. voucher:2023-04-01..2023-04-30
+    records: Mapped[int] = mapped_column(Integer, default=0)
+    sync_run_id: Mapped[int | None] = mapped_column(
+        Id, ForeignKey(f"{SYSTEM}.sync_runs.id"), nullable=True
+    )
+
+
+class SyncSlowPeriod(TimestampMixin, Base):
+    """A month the source couldn't deliver in one request: later runs request it directly in
+    pieces of `piece_days` days (ADR-022)."""
+
+    __tablename__ = "sync_slow_periods"
+    __table_args__ = _S
+
+    connection_id: Mapped[int] = mapped_column(
+        Id, ForeignKey(f"{SYSTEM}.connections.id"), primary_key=True
+    )
+    source_entity_key: Mapped[str] = mapped_column(String(191), primary_key=True)
+    object_type: Mapped[str] = mapped_column(String(64), primary_key=True)
+    month: Mapped[date] = mapped_column(primary_key=True)  # first day of the month
+    piece_days: Mapped[int] = mapped_column(Integer)
+
+
 class ImportBatch(TimestampMixin, Base):
     """A backup or file import (IMP-003, IMP-004)."""
 
