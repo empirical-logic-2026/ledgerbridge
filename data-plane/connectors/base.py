@@ -7,6 +7,7 @@ under `connectors/` and implements `Connector`.
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import date
+from decimal import Decimal
 from typing import Literal, Protocol
 
 from core.canonical import CanonicalRecord
@@ -52,6 +53,23 @@ class ConnectionStatus:
 Markers = Mapping[str, str]  # object_type -> last change marker seen (e.g. Tally AlterID)
 
 
+@dataclass(frozen=True)
+class SourceBalances:
+    """The source's own closing balances as of a date, for validation (VAL-002).
+
+    Amounts use the canonical sign (debit positive). `profit_carriers` are ledgers whose
+    source balance includes the period's computed profit (e.g. Tally's Profit & Loss A/c);
+    the stock values (canonical sign, None if the source keeps no stock) are the ones the
+    source uses when it computes that profit.
+    """
+
+    as_of: date
+    ledgers: Mapping[str, Decimal]  # ledger source_key -> closing balance
+    profit_carriers: frozenset[str] = frozenset()
+    opening_stock: Decimal | None = None
+    closing_stock: Decimal | None = None
+
+
 class Connector(Protocol):
     source_code: str
     # Object types in the order they must be transformed (each may refer to earlier ones).
@@ -82,4 +100,9 @@ class Connector(Protocol):
 
     def to_canonical(self, record: SourceRecord) -> list[CanonicalRecord]:
         """Map one raw record to canonical records (core/canonical.py)."""
+        ...
+
+    def closing_balances(self, entity: SourceEntity, as_of: date) -> SourceBalances:
+        """The source's closing balance of every ledger as of `as_of` (inclusive), from the
+        entity's books-from date. Optional: validation skips closing checks without it."""
         ...

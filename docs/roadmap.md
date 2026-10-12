@@ -2,9 +2,9 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.5 |
+| Version | 0.7 |
 | Date | 2026-10-09 |
-| Current milestone | **M3** |
+| Current milestone | **M4** |
 
 Goal: load the client's Tally backup data (two companies) into MySQL and deliver dashboards and AI querying, with every part built generically so it later works for live Tally, other accounting books and other clients (PIL-001 to PIL-005).
 
@@ -54,7 +54,7 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 ## M5 — Local login and access control
 
-**Done when:** users can log in locally; roles, entity access and permissions are enforced on every API endpoint; audit log records logins and data access.
+**Done when:** users can log in locally; roles, entity access and permissions are enforced on every API endpoint; the validation and alert endpoints from M4 are protected with `validation.view`; audit log records logins and data access.
 
 > Plan milestone M5: implement AUTH_MODE=local per architecture.md Section 13 and ADR-010, with token verification behind an interface so control-plane tokens can replace it later. Implement roles, permissions, user_entity_access and audit logging per schema.md Sections 5.3 and 5.4, enforced in the data plane on every endpoint (requirements ACC-001, ACC-002, ACC-004, AUD-001). Show me the plan first.
 
@@ -66,7 +66,7 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 - simple rule-based alerts with severity, message and suggested action, with configurable rules and thresholds
 - a recent-events feed for the LIVE ticker (new vouchers, payments, bank balance and GST payable changes, data-check results), written after each sync
 
-> Plan milestone M6: implement the ledgerbridge_reporting database objects from docs/schema.md Section 6, incremental refresh of aggregate tables after each sync, the semantic_catalog with descriptions of every view and column, and API endpoints for requirements RPT-001 to RPT-004 and RPT-006 to RPT-008, all respecting the user's entity access. Also provide the data for the dashboard home page in docs/design/dashboard.md Section 4: propose a business health score formula (components, weights, label bands) and a cash-cover definition for my approval and document them in docs/schema.md; rule-based alerts with severity, message and suggested action; a recent-events feed written after each sync for the LIVE ticker; and the last-sync status per connection. Update docs/schema.md for any new tables or views in the same change. Show me the plan first.
+> Plan milestone M6: implement the ledgerbridge_reporting database objects from docs/schema.md Section 6, incremental refresh of aggregate tables after each sync, the semantic_catalog with descriptions of every view and column, and API endpoints for requirements RPT-001 to RPT-004 and RPT-006 to RPT-008, all respecting the user's entity access. Also provide the data for the dashboard home page in docs/design/dashboard.md Section 4: propose a business health score formula (components, weights, label bands) and a cash-cover definition for my approval and document them in docs/schema.md; rule-based alerts with severity, message and suggested action; a recent-events feed written after each sync for the LIVE ticker; and the last-sync status per connection. Every report calculates **as of a date** (default today): vouchers dated after it, including post-dated ones, are excluded, the same rule as validation in M4. Update docs/schema.md for any new tables or views in the same change. Show me the plan first.
 
 ## M7 — Dashboard
 
@@ -120,7 +120,7 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 **Done when:** both client companies are loaded in the `pilot` environment, validation passes against Tally, dashboards show both companies and the consolidated view, and AI querying works with the local model.
 
-This milestone is run by the developer, not Claude Code. Fix any problems by describing errors to Claude Code without sharing client data.
+This milestone is run by the developer, not Claude Code, following [pilot-runbook.md](pilot-runbook.md). Fix any problems by describing errors to Claude Code without sharing client data: the runbook's `summary` output (counts and pass/fail) is safe to share.
 
 ---
 
@@ -137,3 +137,5 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | 2026-10-09 | 0.3 | Current milestone M2. Database names `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016) in M2 to M8; M2 "Done when" adds users, grants and the `migrate` container; M3 prompt references the child-row replacement rule. |
 | 2026-10-12 | 0.4 | Current milestone M3. |
 | 2026-10-12 | 0.5 | Approved dashboard home page design (docs/design/dashboard.md, dashboard-mockup.png). M6 adds the home page data: business health score formula, cash cover in months, rule-based alerts, recent-events feed. M7 "Done when" and prompt require matching the design; forecast question chip deferred until forecasting (AI-009, phase 3). |
+| 2026-10-12 | 0.6 | Current milestone M4. M5 "Done when" protects the M4 validation and alert endpoints with `validation.view`. M6 reports calculate as of a date, like validation. |
+| 2026-10-12 | 0.7 | M9 points to docs/pilot-runbook.md. |

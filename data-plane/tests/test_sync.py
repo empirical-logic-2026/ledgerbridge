@@ -1,6 +1,5 @@
 """M3: sync and transform on the recorded LedgerBridge Test Co fixtures (SQLite, no Tally)."""
 
-from collections.abc import Iterator
 from datetime import timedelta
 from decimal import Decimal
 
@@ -10,15 +9,14 @@ from sqlalchemy.orm import Session
 
 from connectors.base import SourceRecord
 from connectors.tally.connector import TallyConnector
-from connectors.tally.fixtures import DEFAULT_DIR, FixtureTransport
+from connectors.tally.fixtures import DEFAULT_DIR
 from core.models import accounting as A  # noqa: N812
 from core.models import system as S  # noqa: N812
 from core.models.base import utcnow
 from core.models.source import RawRecord
 from core.raw_store import RawStore
 from core.transform import Transformer, mark_deleted, trial_balance
-from tests.test_standard_accounts import seeded_accounts
-from workers.extract import get_or_create_connection
+from tests.conftest import COMPANY
 from workers.sync import (
     deletion_check_interval,
     is_due,
@@ -31,59 +29,6 @@ from workers.sync import (
 pytestmark = pytest.mark.skipif(
     not (DEFAULT_DIR / "manifest.json").exists(), reason="no recorded fixtures"
 )
-
-COMPANY = "LedgerBridge Test Co"
-
-
-@pytest.fixture
-def db(session: Session) -> Session:
-    """SQLite stand-in with the reference data of migration 0003."""
-    now = utcnow()
-    session.add(A.Currency(code="INR", name="Indian Rupee", created_at=now, updated_at=now))
-    ids: dict[str, int] = {}
-    for order, (code, parent, name, nature, statement, line, cash) in enumerate(seeded_accounts()):
-        account = A.StandardAccount(
-            parent_id=ids.get(parent) if parent else None,
-            code=code,
-            name=name,
-            nature=nature,
-            statement=statement,
-            statement_line=line,
-            cash_flow_class=cash,
-            sort_order=order,
-            created_at=now,
-            updated_at=now,
-        )
-        session.add(account)
-        session.flush()
-        ids[code] = account.id
-    session.commit()
-    return session
-
-
-@pytest.fixture
-def connector() -> TallyConnector:
-    return TallyConnector.from_config(
-        {"url": "http://tally.test:9000"}, transport=FixtureTransport(DEFAULT_DIR)
-    )
-
-
-@pytest.fixture
-def synced(
-    db: Session, connector: TallyConnector, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[S.Connection]:
-    monkeypatch.setattr(
-        "connectors.registry.default_config", lambda code: {"url": "http://tally.test:9000"}
-    )
-    connection = get_or_create_connection(db, "tally-test", "tally")
-    db.commit()
-    result = run_sync(db, connection, connector, [COMPANY])
-    assert result.status == "succeeded", result.error
-    assert result.failed == 0
-    # Only the two Central Tax ledgers come back with an empty GST duty head.
-    assert sorted(w.split(":")[0] for w in result.warnings) == ["Input CGST", "Output CGST"]
-    assert all("assumed Central Tax" in w for w in result.warnings)
-    yield connection
 
 
 def _count(db: Session, model: type, *where: object) -> int:
@@ -136,7 +81,7 @@ def test_every_object_lands_in_its_table(db: Session, synced: S.Connection) -> N
         "godowns": 1,
         "items": 1,
         "cost_centres": 2,
-        "vouchers": 17,
+        "vouchers": 18,  # incl. ALTER-2; DEL-1 was deleted in Tally
         "cancelled": 1,
         "cost_allocations": 2,
         "inventory_lines": 1,
@@ -163,7 +108,7 @@ def test_trial_balance_matches_tally(db: Session, synced: S.Connection) -> None:
     assert balances["Cash"] == Decimal("27500")
     assert balances["Capital"] == Decimal("-50000")
     assert balances["Electricity"] == Decimal("4500")
-    assert balances["Test Bank Current A/c"] == Decimal("19360")
+    assert balances["Test Bank Current A/c"] == Decimal("25260")  # ALTER-2: +5,900
     assert sum(balances.values()) == 0
 
 
@@ -202,7 +147,7 @@ def test_bills_tax_and_inventory_details(db: Session, synced: S.Connection) -> N
         ).all()
     )
     assert set(bills.values()) <= {"new_ref", "against_ref"}
-    assert _count(db, A.BillAllocation, A.BillAllocation.bill_type == "against_ref") == 4
+    assert _count(db, A.BillAllocation, A.BillAllocation.bill_type == "against_ref") == 5
     taxes = dict(
         db.execute(select(A.TaxLine.tax_type, func.count()).group_by(A.TaxLine.tax_type)).all()
     )
@@ -302,7 +247,7 @@ def test_full_sync_reapplies_mapping_to_unchanged_records(
     assert full.stored == 0 and full.transformed["ledger"] == 21
     db.refresh(ledger)
     assert ledger.mapping_status == "auto"
-    assert _count(db, A.Voucher) == 17 and sum(_balances(db).values()) == 0
+    assert _count(db, A.Voucher) == 18 and sum(_balances(db).values()) == 0
 
 
 def test_sync_alone_never_soft_deletes(
@@ -328,7 +273,7 @@ def test_deletion_check_run_soft_deletes_what_has_gone(
     result = run_deletion_check(db, synced, connector, [COMPANY])
     assert (result.status, result.run_type) == ("succeeded", "deletion_check")
     assert result.deleted == {"voucher:vouchers": 1}
-    assert result.fetched["voucher"] == 16
+    assert result.fetched["voucher"] == 17
     assert _balances(db)["Rent"] == Decimal("0")
     # Logged as its own run; the latest *sync* is still the first one.
     assert last_run(db, synced.id, ("deletion_check",)).id == result.sync_run_id

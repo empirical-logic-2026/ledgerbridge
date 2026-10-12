@@ -68,6 +68,11 @@ npm run build
 ./dev.ps1 extract -Company "LedgerBridge Test Co"   # raw records only (M1)
 ./dev.ps1 sync -Company "LedgerBridge Test Co"      # fetch changes and transform (M3); `sync full` forces everything
 ./dev.ps1 sync deletions                             # deletion check only (the worker runs it hourly)
+./dev.ps1 validate                                   # validation as of today (M4); syncs also validate
+./dev.ps1 summary                                    # counts and pass/fail only
+./dev.ps1 connect -Origin live -Company "LedgerBridge Test Co"   # connection origin and companies
+# Pilot commands (init-env, connect -Origin backup, sync full, summary with -Env pilot) are in
+# docs/pilot-runbook.md: the developer runs them. Claude Code never does.
 ./dev.ps1 seed-test-data create-only                 # create missing seed items, skip alterations and deletions
 ./deploy/stack.ps1 -Env test exec -T api python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
 

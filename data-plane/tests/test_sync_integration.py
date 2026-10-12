@@ -1,4 +1,5 @@
-"""M3 on MySQL: a full and an incremental sync of the recorded fixtures (./dev.ps1 up)."""
+"""M3 and M4 on MySQL: full and incremental sync of the recorded fixtures, then validation
+(./dev.ps1 up)."""
 
 from decimal import Decimal
 
@@ -16,6 +17,7 @@ from core.transform import trial_balance
 from tests.test_migrations_integration import _config
 from workers.extract import get_or_create_connection
 from workers.sync import run_sync
+from workers.validate import run_validation
 
 pytestmark = pytest.mark.integration
 
@@ -60,6 +62,10 @@ def _cleanup(session: Session) -> None:
         A.AccountGroup,
     ):
         session.execute(delete(model).where(model.connection_id == connection.id))
+    runs = select(S.ValidationRun.id).where(S.ValidationRun.entity_id.in_(entity_ids))
+    session.execute(delete(S.Alert).where(S.Alert.connection_id == connection.id))
+    session.execute(delete(S.ValidationIssue).where(S.ValidationIssue.validation_run_id.in_(runs)))
+    session.execute(delete(S.ValidationRun).where(S.ValidationRun.entity_id.in_(entity_ids)))
     session.execute(delete(A.EntitySource).where(A.EntitySource.connection_id == connection.id))
     session.execute(delete(A.Entity).where(A.Entity.id.in_(entity_ids)))
     session.execute(delete(RawRecord).where(RawRecord.connection_id == connection.id))
@@ -100,7 +106,10 @@ def test_full_then_incremental_sync_on_mysql(monkeypatch: pytest.MonkeyPatch) ->
                 .select_from(A.Voucher)
                 .where(A.Voucher.connection_id == connection.id)
             )
-            assert vouchers == 17
+            assert vouchers == 18
+
+            (report,) = run_validation(session, connection, connector)
+            assert (report.status, report.checks_failed) == ("passed", 0), report.findings
 
             second = run_sync(session, connection, connector)
             assert (second.status, second.run_type) == ("succeeded", "incremental")

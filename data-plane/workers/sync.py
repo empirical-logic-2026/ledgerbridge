@@ -171,7 +171,7 @@ def run_sync(
         result.transformed.update(transformed.by_object_type)
         result.failed = transformed.failed
         result.warnings = transformed.warnings
-        entity_ids = _entity_ids(session, connection.id, [e.key for e in entities])
+        entity_ids = entity_ids_for(session, connection.id, [e.key for e in entities])
         for entity in entities:
             entity_id = entity_ids.get(entity.key)
             if entity_id is None:
@@ -200,7 +200,7 @@ def run_deletion_check(
     run, result = _open_run(session, connection, DELETION_CHECK)
     try:
         entities = select_entities(connector, connection, entity_names)
-        entity_ids = _entity_ids(session, connection.id, [e.key for e in entities])
+        entity_ids = entity_ids_for(session, connection.id, [e.key for e in entities])
         for entity in entities:
             entity_id = entity_ids.get(entity.key)
             if entity_id is None:
@@ -264,7 +264,7 @@ def unmapped_ledgers(session: Session, entity_id: int) -> list[str]:
     )
 
 
-def _entity_ids(session: Session, connection_id: int, keys: list[str]) -> dict[str, int]:
+def entity_ids_for(session: Session, connection_id: int, keys: list[str]) -> dict[str, int]:
     from core.models.accounting import EntitySource
 
     return dict(

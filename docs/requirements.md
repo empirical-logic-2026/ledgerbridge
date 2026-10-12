@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.4 (Draft) |
+| Version | 0.5 (Draft) |
 | Date | 2026-10-08 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
@@ -109,7 +109,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | SYN-003 | Deletions and alterations in source systems are detected and reflected. | P1 |
 | SYN-004 | A connector agent can run on the machine hosting Tally or other on-premise sources and push data outbound to the client deployment; it queues data locally if the connection drops. | P1 |
 | SYN-005 | Every sync run is logged (start, end, records, errors). | P1 |
-| SYN-006 | Sync failures and validation failures trigger alerts to configured users (email; in-app). | P1 |
+| SYN-006 | Sync failures and validation failures trigger alerts to configured users (email; in-app). Phase 1a delivers the log and in-app channels; email follows (architecture ADR-019). | P1 |
 
 ### 4.5 Historical and backup data import
 
@@ -298,3 +298,4 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.2 | Open items deferred until related features are built. |
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
+| 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |

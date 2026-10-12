@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.health import router as health_router
+from api.validation import router as validation_router
 from core.config import get_settings
 
 
@@ -17,6 +18,7 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
     app.include_router(health_router)
+    app.include_router(validation_router)
     return app
 
 

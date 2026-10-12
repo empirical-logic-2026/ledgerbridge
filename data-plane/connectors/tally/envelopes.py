@@ -110,17 +110,27 @@ VOUCHERS = CollectionSpec(
 )  # fmt: skip
 
 # Ledger balances with Tally's own Dr/Cr judgement ($$IsDr), independent of how amounts are
-# signed in XML. Used to confirm the sign convention (schema.md Section 7).
+# signed in XML. Used to confirm the sign convention (schema.md Section 7) and, with a
+# balances period, for closing-balance validation (M4).
 LEDGER_BALANCES = CollectionSpec(
     "LBLedgerBalances",
     "Ledger",
     "LEDGER",
     "ledger_balance",
-    ("NAME", "OPENINGBALANCE", "CLOSINGBALANCE"),
+    ("GUID", "NAME", "PARENT", "OPENINGBALANCE", "CLOSINGBALANCE"),
     compute=(
         "LBOPENINGISDR : $$IsDr:$OpeningBalance",
         "LBCLOSINGISDR : $$IsDr:$ClosingBalance",
     ),
+)
+
+# Stock values Tally uses for the period's profit (opening and closing stock).
+STOCK_VALUES = CollectionSpec(
+    "LBStockValues",
+    "StockItem",
+    "STOCKITEM",
+    "stock_value",
+    ("NAME", "OPENINGVALUE", "CLOSINGVALUE"),
 )
 
 # Masters in the order they must be transformed (each may refer to the ones before it).
@@ -155,6 +165,7 @@ def collection_request(
     company: str | None = None,
     period: tuple[date, date] | None = None,
     since_alter_id: int | None = None,
+    balances_period: tuple[date, date] | None = None,
 ) -> str:
     """Builds a collection export.
 
@@ -164,6 +175,9 @@ def collection_request(
       silently returns nothing for report dates other than the 1st, 2nd or 31st.
     - `since_alter_id` returns only objects created or altered after that AlterID
       (incremental sync, SYN-002). AlterID is a company-wide change counter.
+    - `balances_period` (inclusive) sets the period that balances such as $ClosingBalance
+      are computed for, without filtering objects. TallyPrime accepts any end date here,
+      also in Educational mode.
     """
     static = ["<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"]
     if company is not None:
@@ -179,6 +193,9 @@ def collection_request(
             f'<SYSTEM TYPE="Formulae" NAME="{_PERIOD_FILTER}">'
             "$Date &gt;= ##SVFromDate AND $Date &lt; ##SVToDate</SYSTEM>"
         )
+    if balances_period is not None:
+        static.append(f'<SVFROMDATE TYPE="Date">{tally_date(balances_period[0])}</SVFROMDATE>')
+        static.append(f'<SVTODATE TYPE="Date">{tally_date(balances_period[1])}</SVTODATE>')
     if since_alter_id is not None:
         extra += f"<FILTER>{_CHANGED_FILTER}</FILTER>"
         formulae.append(

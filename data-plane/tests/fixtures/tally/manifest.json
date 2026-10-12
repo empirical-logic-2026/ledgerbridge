@@ -10,7 +10,8 @@
     "LBGodowns": "godowns.xml",
     "LBStockItems": "stock_items.xml",
     "LBCostCentres": "cost_centres.xml",
-    "LBLedgerBalances": "ledger_balances.xml"
+    "LBLedgerBalances": "ledger_balances.xml",
+    "LBStockValues": "stock_values.xml"
   },
   "vouchers": [
     {

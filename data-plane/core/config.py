@@ -1,5 +1,6 @@
 """Data-plane settings, read from environment variables and the environment's env file."""
 
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
@@ -41,6 +42,9 @@ class Settings(BaseSettings):
     # Default interval of the deletion check, which lists every key in the source (SYN-003);
     # a connection can override it with config.deletion_check_interval_sec.
     deletion_check_interval_sec: int = 3600
+    # Largest difference accepted between our balances and the source's (VAL-002); exact by
+    # default. A connection can override it with config.validation_tolerance.
+    validation_tolerance: Decimal = Decimal(0)
 
     ai_provider: Literal["anthropic", "ollama"] = "anthropic"
     anthropic_api_key: SecretStr = SecretStr("")

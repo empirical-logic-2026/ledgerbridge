@@ -168,6 +168,8 @@ class ValidationRun(TimestampMixin, Base):
         Id, ForeignKey(f"{SYSTEM}.import_batches.id"), nullable=True
     )
     entity_id: Mapped[int] = mapped_column(Id, ForeignKey(f"{ACCOUNTING}.entities.id"))
+    # Balances are compared as of this date: vouchers dated after it don't count (M4).
+    as_of: Mapped[date]
     started_at: Mapped[datetime] = mapped_column(Timestamp)
     status: Mapped[str] = mapped_column(
         Enum("running", "passed", "failed", name="validation_status"), default="running"
@@ -190,6 +192,36 @@ class ValidationIssue(TimestampMixin, Base):
     actual_value: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     message: Mapped[str] = mapped_column(Text)
     resolved_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
+
+
+ALERT_KINDS = ("sync_failed", "deletion_check_failed", "validation_failed")
+
+
+class Alert(TimestampMixin, Base):
+    """An in-app alert (SYN-006). One open alert per connection and kind (per entity for
+    validation); resolved when the next run succeeds or passes. `message` holds counts and
+    check codes only, never amounts or names."""
+
+    __tablename__ = "alerts"
+    __table_args__ = (Index("ix_alerts_open", "connection_id", "kind", "resolved_at"), _S)
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(Enum(*ALERT_KINDS, name="alert_kind"))
+    severity: Mapped[str] = mapped_column(Enum("error", "warning", name="alert_severity"))
+    connection_id: Mapped[int] = mapped_column(Id, ForeignKey(f"{SYSTEM}.connections.id"))
+    entity_id: Mapped[int | None] = mapped_column(
+        Id, ForeignKey(f"{ACCOUNTING}.entities.id"), nullable=True
+    )
+    sync_run_id: Mapped[int | None] = mapped_column(
+        Id, ForeignKey(f"{SYSTEM}.sync_runs.id"), nullable=True
+    )
+    validation_run_id: Mapped[int | None] = mapped_column(
+        Id, ForeignKey(f"{SYSTEM}.validation_runs.id"), nullable=True
+    )
+    message: Mapped[str] = mapped_column(Text)
+    resolved_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
+    acknowledged_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 # --- 5.3 Security ----------------------------------------------------------------------

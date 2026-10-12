@@ -16,15 +16,22 @@
     ./dev.ps1 sync -Company "LedgerBridge Test Co"
     ./dev.ps1 sync full -Company "LedgerBridge Test Co"
     ./dev.ps1 sync deletions
+    ./dev.ps1 validate
     ./dev.ps1 test
     ./dev.ps1 seed-test-data
     ./dev.ps1 seed-test-data create-only
     ./dev.ps1 down
+
+    Pilot (developer only; see docs/pilot-runbook.md):
+    ./dev.ps1 init-env -Env pilot
     ./dev.ps1 up -Env pilot
+    ./dev.ps1 connect -Env pilot -Origin backup -Paused -Company "Company A","Company B"
+    ./dev.ps1 sync full -Env pilot
+    ./dev.ps1 summary -Env pilot
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('up', 'down', 'status', 'test', 'logs', 'tally-companies', 'extract', 'sync', 'seed-test-data', 'help')]
+    [ValidateSet('init-env', 'up', 'down', 'status', 'summary', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'seed-test-data', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -34,8 +41,16 @@ param(
     [ValidateSet('test', 'pilot')]
     [string]$Env = 'test',
 
-    # Company (entity) name in the source, for `extract` and `seed-test-data`.
-    [string]$Company = ''
+    # Company (entity) names in the source: one for `extract` and `seed-test-data`; one or
+    # more (comma-separated) for `connect`, `sync` and `validate`.
+    [string[]]$Company = @(),
+
+    # For `connect`: the origin tag of the connection's data (IMP-004).
+    [ValidateSet('live', 'backup')]
+    [string]$Origin = 'live',
+
+    # For `connect`: no scheduled syncs (backup data doesn't change); manual syncs still work.
+    [switch]$Paused
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,6 +63,20 @@ function Invoke-Stack {
     # All Docker calls go through deploy/stack.ps1 (project name, env file, env_file path).
     & $stack -Env $Env @args
     if ($LASTEXITCODE -ne 0) { throw "docker compose failed (exit $LASTEXITCODE)" }
+}
+
+function Invoke-Checked {
+    # For workers.cli commands whose exit codes mean "ran, but": 1 = checks or the sync
+    # failed, 2 = refused or not found, 3 = a sync is already running. Reported plainly
+    # instead of as a Docker failure.
+    & $stack -Env $Env @args
+    switch ($LASTEXITCODE) {
+        0 { }
+        1 { Write-Host 'Finished with problems: see the FAILED / error lines above.' -ForegroundColor Yellow }
+        2 { Write-Host 'Refused or not found: see the message above.' -ForegroundColor Yellow }
+        3 { Write-Host "A sync of this connection is already running (the worker may have started it). Wait, then: ./dev.ps1 status -Env $Env" -ForegroundColor Yellow }
+        default { throw "docker compose failed (exit $LASTEXITCODE)" }
+    }
 }
 
 function Get-EnvValue([string]$Name, [string]$Default = '') {
@@ -116,6 +145,29 @@ function Invoke-Uv {
 }
 
 switch ($Command) {
+    'init-env' {
+        # Creates .env.<Env> from its example with strong random MySQL passwords (never
+        # printed). Refuses if the file exists.
+        & (Join-Path $root 'deploy
+ew-env.ps1') -Env $Env
+    }
+    'connect' {
+        # Creates or updates this environment's connection: origin and the exact companies.
+        # Prints counts only outside the test environment.
+        if (-not $Company) { throw 'connect needs -Company "<name>","<name>" (exact names as in the source).' }
+        Assert-EnvFile
+        Assert-ApiRunning
+        $connectArgs = @('python', '-m', 'workers.cli', 'connect', '--connection', $connection, '--source', 'tally', '--origin', $Origin)
+        foreach ($name in $Company) { $connectArgs += @('--entity', $name) }
+        if ($Paused) { $connectArgs += '--paused' }
+        Invoke-Checked exec -T api @connectArgs
+    }
+    'summary' {
+        # Counts and pass/fail per connection and company; no names or amounts (safe to share).
+        Assert-EnvFile
+        Assert-ApiRunning
+        Invoke-Stack exec -T api python -m workers.cli summary
+    }
     'up' {
         Assert-EnvFile
         Assert-PortsFree
@@ -156,9 +208,19 @@ switch ($Command) {
         # (the worker runs it on its own schedule, hourly by default).
         $mode = if ($Service -eq 'deletions') { 'check-deletions' } else { 'sync' }
         $syncArgs = @('python', '-m', 'workers.cli', $mode, '--connection', $connection, '--source', 'tally')
-        if ($Company) { $syncArgs += @('--entity', $Company) }
+        foreach ($name in $Company) { $syncArgs += @('--entity', $name) }
         if ($Service -eq 'full') { $syncArgs += @('--full', '--check-deletions') }
-        Invoke-Stack exec -T api @syncArgs
+        Invoke-Checked exec -T api @syncArgs
+    }
+    'validate' {
+        # Validation as of today (M4): voucher balance, trial balance and closing balances
+        # against the source. Prints counts, check codes and pass/fail only. Syncs validate
+        # on their own; this runs it on demand.
+        Assert-EnvFile
+        Assert-ApiRunning
+        $validateArgs = @('python', '-m', 'workers.cli', 'validate', '--connection', $connection, '--source', 'tally')
+        foreach ($name in $Company) { $validateArgs += @('--entity', $name) }
+        Invoke-Checked exec -T api @validateArgs
     }
     'logs' {
         Assert-EnvFile
@@ -170,21 +232,21 @@ switch ($Command) {
         Invoke-Stack exec -T api python -m workers.cli entities --connection $connection --source tally
     }
     'extract' {
-        if (-not $Company) { throw 'extract needs -Company "<name>", e.g. ./dev.ps1 extract -Company "LedgerBridge Test Co"' }
+        if ($Company.Count -ne 1) { throw 'extract needs -Company "<name>", e.g. ./dev.ps1 extract -Company "LedgerBridge Test Co"' }
         Assert-EnvFile
         Assert-ApiRunning
-        Invoke-Stack exec -T api python -m workers.cli extract --connection $connection --source tally --entity $Company
+        Invoke-Stack exec -T api python -m workers.cli extract --connection $connection --source tally --entity $Company[0]
     }
     'seed-test-data' {
         # Writes into Tally (ADR-014): test environment and test company only. The tool itself
         # re-checks APP_ENV, that only one company is loaded and that its name matches exactly.
         if ($Env -ne 'test') { throw 'seed-test-data runs only against the test environment.' }
         Assert-EnvFile
-        if (-not $Company) { $Company = 'LedgerBridge Test Co' }
+        if (-not $Company) { $Company = @('LedgerBridge Test Co') }
         Push-Location (Join-Path $root 'data-plane')
         # `seed-test-data create-only` creates missing items but skips alterations,
         # cancellations and deletions, so a sync can see vouchers before they change.
-        $seedArgs = @('--company', $Company)
+        $seedArgs = @('--company', $Company[0])
         if ($Service -eq 'create-only') { $seedArgs += '--create-only' }
         try { Invoke-Uv run python -m devtools.tally_seed @seedArgs }
         finally { Pop-Location }

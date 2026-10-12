@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.7 (Draft) |
+| Version | 0.8 (Draft) |
 | Date | 2026-10-08 |
 | Related | `docs/requirements.md`, `CLAUDE.md` |
 
@@ -167,6 +167,17 @@ Run it with `python -m workers.cli sync` (or `./dev.ps1 sync`), and the deletion
 ### 4.6 Validation
 
 After each sync or import: voucher balance check, trial balance check, ledger closing balance comparison against source-reported figures. Results go to `validation_runs` / `validation_issues` and feed the data-quality dashboard and alerts.
+
+How it works (M4, `core/validation.py`, source-independent):
+
+- **When:** after every successful sync and deletion check, for each entity in the run, inside the same worker job (ADR-019). Also on demand: `python -m workers.cli validate` (`./dev.ps1 validate`).
+- **As of a date** (default today): balances count only vouchers dated on or before it. Post-dated vouchers are stored as they are (`is_post_dated` recorded, `is_effective` unchanged) and simply fall outside earlier dates. All reports in M6 also calculate as of a date.
+- **Checks:** `voucher_unbalanced`, `tb_unbalanced`, `opening_difference` (warning), `closing_mismatch`, `ledger_missing`, `profit_carrier_mismatch` (schema.md 5.2). Closing balances come from the connector's `closing_balances(entity, as_of)`; a connector without it gets an info issue and no closing checks.
+- **Profit carriers:** a ledger whose source balance includes the period's computed profit (Tally's *Profit & Loss A/c*) is reconciled instead of compared: source closing − our posted balance must equal our computed profit for the period, adjusted by the change in stock value the source reports.
+- **Tolerance:** exact by default; `VALIDATION_TOLERANCE` or `connections.config.validation_tolerance`.
+- **Issues:** stored per run. A problem still present in the next run is the same open problem; one that disappears gets `resolved_at` on its earlier rows.
+
+**Alerts (SYN-006, ADR-019):** `core/alerts.py` raises an alert when a sync or deletion check fails, or when validation finds errors, and resolves it when the next run of that kind succeeds or passes. One open alert per connection and kind (per entity for validation), so a failure repeating every 5 minutes doesn't create a new alert each time. Alerts go through channels: the log (counts and codes only, never amounts or names) and in-app (`ledgerbridge_system.alerts`). An email channel plugs into the same interface later.
 
 ## 5. AI layer
 
@@ -335,6 +346,7 @@ Every call to any model, local or external, writes one append-only record in the
 | ADR-016 | The four MySQL databases are named `ledgerbridge_source` (raw layer), `ledgerbridge_accounting` (canonical), `ledgerbridge_reporting` (semantic layer) and `ledgerbridge_system` (system), replacing `raw`, `core`, `rpt` and `app`. "Raw", "canonical", "reporting" and "system" remain the names of the layers. Code refers to them through constants in `core/models/schemas.py`; migrations use the literal names. **One-time exception:** the rename was made by editing migration 0001 and recreating the test database, which was acceptable only because no pilot or client database existed yet. **After the first release, any rename must be done with a proper migration**, never by editing an applied one. | The short names didn't say what they hold, and generic names like `app` and `core` can clash with other applications' databases when a client hosts us on a shared MySQL server. The prefix groups our databases together in any MySQL tool, and the names read clearly in grants (`ai_ro` can read `ledgerbridge_reporting` only). |
 | ADR-017 | Scheduled sync (SYN-001) runs in the Celery worker with Celery Beat embedded (`worker -B`). A tick every `SYNC_TICK_SEC` (60 s) queues an incremental sync for each active connection whose own `sync_interval_sec` (default 300) has passed since its last run. A connection never runs twice at once: a Redis lock per connection plus a check for a `running` row in `sync_runs` (stale after 2 hours). | One small always-on process covers near-real-time sync without a separate scheduler service. Per-connection intervals and the double lock keep slow sources and manual runs (`./dev.ps1 sync`) from overlapping. Embedded Beat suits one worker; a separate Beat process can follow if workers scale out. |
 | ADR-018 | Deletions in the source (SYN-003) are found by a **deletion check** that lists every key in the source and soft-deletes stored rows whose key has gone. It runs as its own `sync_runs` row (`run_type = 'deletion_check'`) on its own schedule, every `connections.config.deletion_check_interval_sec` seconds (default `DELETION_CHECK_INTERVAL_SEC` = 3600), queued by the same tick as syncs and under the same per-connection lock. Incremental syncs never list keys. | Listing every key costs about 1.3 KB per Tally voucher on every run, far more than an incremental sync of a few changes, so doing it every 5 minutes doesn't scale to years of books. Deletions are rare and an hour's delay is acceptable for MIS reporting; the interval is configurable per connection and a full sync also checks. |
+| ADR-019 | Validation runs after every successful sync and deletion check, as of a date (default today), and alerts are raised on **changes of state** only: one open alert per connection and kind (per entity for validation), resolved automatically when the next run succeeds or passes. Alerts are delivered through channels behind one interface: log and in-app in phase 1a, email later. Until M5, the validation and alert endpoints are read-only and unauthenticated, which is acceptable only because the API binds to 127.0.0.1; M5 protects them with `validation.view`. | The closing-balance check costs one ledger export, cheap enough to run every 5 minutes, and it also catches differences between hourly deletion checks. Alerting on every failing run would bury users in repeats; state changes are what someone has to act on. Channels keep email (and later other routes) a configuration change, not a rewrite. |
 
 New decisions are appended here with the next ADR number.
 
@@ -371,5 +383,6 @@ The pilot runs the data plane on the developer's Windows machine.
 | 2026-10-09 | 0.3 | Environment separation (ADR-012), uv (ADR-013), connector framework details (Section 4.4), dev-only Tally seeding (ADR-014). |
 | 2026-10-09 | 0.4 | AI data protection: Section 5 rewritten around privacy modes (5.4), the data protection gate with masking (5.5), outbound network allowlist (5.6) and model call log (5.7). ADR-015 supersedes ADR-004. Security summary and pilot table updated. Requirements AI-011 to AI-018 and SEC-010. |
 | 2026-10-09 | 0.5 | Databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); data-layers table (4.2) shows each layer's database; AI guardrail names `ai_ro` and its single database. |
-| 2026-10-12 | 0.7 | ADR-018: deletion check on its own schedule (default hourly), separate from incremental syncs; Section 4.4 pipeline step 5. |
 | 2026-10-12 | 0.6 | M3: Section 4.4 describes the source-independent sync pipeline (fetch, raw store, map, transform, deletions, log); ADR-017 scheduled sync in the worker. |
+| 2026-10-12 | 0.7 | ADR-018: deletion check on its own schedule (default hourly), separate from incremental syncs; Section 4.4 pipeline step 5. |
+| 2026-10-12 | 0.8 | M4: Section 4.6 validation (as of a date, checks, profit carriers, tolerance, issue resolution) and alerts; ADR-019. |

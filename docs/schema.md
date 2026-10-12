@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.7 (Draft) |
+| Version | 0.9 (Draft) |
 | Date | 2026-10-09 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -97,6 +97,7 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 | `0003` | M2 | Reference data: the `INR` currency and the default standard chart of accounts, 75 accounts (Section 4.2) |
 | `0004` | M3 | `ledgerbridge_accounting.ledgers.tax_type` (Section 4.2) |
 | `0005` | M3 | `ledgerbridge_system.sync_runs.run_type` adds `deletion_check` (Sections 5.1 and 7.4) |
+| `0006` | M4 | `ledgerbridge_system.validation_runs.as_of`; `ledgerbridge_system.alerts` (Section 5.2) |
 
 `ledgerbridge_reporting` exists from M2 but stays empty until M6 (Section 6). The per-call AI model log (AI-018) is designed in M8. Type and key choices for tables documented here only as column lists are in Section 9.
 
@@ -349,8 +350,24 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 
 | Table | Key columns |
 | --- | --- |
-| `ledgerbridge_system.validation_runs` | `id, sync_run_id NULL, import_batch_id NULL, entity_id, started_at, status, checks_passed, checks_failed` |
+| `ledgerbridge_system.validation_runs` | `id, sync_run_id NULL, import_batch_id NULL, entity_id, as_of DATE, started_at, status, checks_passed, checks_failed` (`as_of` added by migration `0006`) |
 | `ledgerbridge_system.validation_issues` | `id, validation_run_id, check_code ('voucher_unbalanced','tb_unbalanced','closing_mismatch',...), severity, object_type, object_id, expected_value, actual_value, message, resolved_at` |
+| `ledgerbridge_system.alerts` | `id, kind ENUM('sync_failed','deletion_check_failed','validation_failed'), severity ENUM('error','warning'), connection_id, entity_id NULL, sync_run_id NULL, validation_run_id NULL, message, resolved_at NULL, acknowledged_at NULL, acknowledged_by VARCHAR(36) NULL` (SYN-006, migration `0006`). Index `(connection_id, kind, resolved_at)`. `message` holds counts and check codes only. |
+
+**Checks (M4, VAL-001, VAL-002)**, all **as of a date** (`as_of`, default today): only vouchers dated on or before it count. Post-dated vouchers are stored as they are (`is_post_dated` recorded, `is_effective` unchanged); reports in M6 likewise calculate as of a date.
+
+| `check_code` | Severity | Fails when | `object_type` / `expected_value` / `actual_value` |
+| --- | --- | --- | --- |
+| `voucher_unbalanced` | error | An effective voucher's lines don't sum to zero. | `voucher` / 0 / the sum |
+| `opening_difference` | **warning**, shown prominently in status and the API | Opening balances don't total zero (Tally allows this as "Difference in opening balances"; it must be fixed in the books). | `entity` / 0 / the difference |
+| `tb_unbalanced` | error | The trial balance at `as_of`, or at a financial year end before it, doesn't total the opening difference (i.e. the movements don't balance). | `entity` / the opening difference / the total |
+| `closing_mismatch` | error | A ledger's balance differs from the source's own closing balance by more than the tolerance (default 0, exact). | `ledger` / source balance / ours |
+| `ledger_missing` | error | A ledger exists in the source but not here, or here (not deleted) but not in the source. | `ledger` / source balance or NULL / ours or NULL |
+| `profit_carrier_mismatch` | error | For a ledger whose source balance includes the computed profit (Tally *Profit & Loss A/c*): source closing − our posted balance ≠ our profit for the period (income and expense ledgers, adjusted by the change in stock value the source reports). | `ledger` / source closing / ours + computed profit |
+| `closing_unavailable` | error | The source's closing balances couldn't be read (e.g. Tally unreachable); the closing checks didn't run. | `entity` |
+| `closing_not_supported` | info | The connector can't report closing balances. | `entity` |
+
+A run is `failed` when any error-severity issue is recorded, else `passed`. `checks_passed` and `checks_failed` count individual checks (per voucher, ledger and date). An issue (same `check_code`, `object_type`, `object_id`) that is absent from a later run gets `resolved_at` on its earlier rows; the open issues are the latest run's.
 
 ### 5.3 Security (ACC-*)
 
@@ -537,6 +554,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 - Exact GST fields needed for GST reports (phase 2).
 - Whether budgets from Tally are in scope (would add `ledgerbridge_accounting.budgets`).
 - Partitioning thresholds once real data volumes are known.
+- **To verify on client data (M9):** for books spanning several financial years, that Tally's *Profit & Loss A/c* closing balance for a period starting at the books-from date equals its opening plus all profit since then (the `profit_carrier_mismatch` rule), and how a company without integrated inventory reports closing stock.
 - **Assumption to verify on client data (M9):** an empty GST duty head means Central Tax (7.3). Check the sync warnings on the pilot companies: every GST ledger listed should really be a Central Tax ledger.
 
 ## Change log
@@ -549,5 +567,6 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-12 | 0.9 | M4: validation check codes, severities and the as-of-date rule (5.2); `validation_runs.as_of` and `alerts` (migration `0006`). |
 | 2026-10-12 | 0.8 | M3 review: *Deposits (Asset)* → 1160; *Duties & Taxes* mapped by tax type (GST 1250/3230, TDS/TCS 1260/3240, by balance side at the reporting date, applied in M6); reports place unmapped ledgers under the nearest standard parent of their Tally primary group (M6); the empty-GST-duty-head rule is an assumption to verify, applied to GST ledgers only and reported as a warning; deletion check as its own run on its own schedule (migration `0005`). |
 | 2026-10-12 | 0.7 | M3: `ledgers.tax_type` (migration `0004`); Section 7.3 field mapping, standard-account mapping by Tally group (*Duties & Taxes* and *Indirect Expenses* unmapped), synthetic *Primary* group, *Branch / Divisions* classified by balance at the reporting date; Section 7.4 sync rules (incremental by AlterID, deletions, overlaps, several companies, origin). |
