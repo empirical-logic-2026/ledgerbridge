@@ -5,7 +5,10 @@
     python -m workers.cli sync --connection tally-test --entity "LedgerBridge Test Co" [--full]
     python -m workers.cli check-deletions --connection tally-test
     python -m workers.cli validate --connection tally-test [--as-of 2026-09-30]
+    python -m workers.cli connect --connection tally-pilot --source tally --origin backup \
+        --entity "Company A" --entity "Company B" [--paused]
     python -m workers.cli status
+    python -m workers.cli summary
     python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
 
 `extract` only stores raw records (M1); `sync` also transforms them (M3); `check-deletions`
@@ -13,8 +16,13 @@ soft-deletes what no longer exists in the source (also run by `sync --check-dele
 `sync` and `check-deletions` validate afterwards (VAL-001, VAL-002), like the worker does.
 
 Output shows names, keys, counts, check codes and pass/fail only, except `trial-balance`,
-which prints balances for the developer's own use (never for client data). Validation
-results with amounts are in the database and the API, never in this output.
+which prints balances for the developer's own use. Validation results with amounts are in
+the database and the API, never in this output.
+
+**Outside the test environment (APP_ENV=pilot) the output holds no names at all:** no
+company, ledger or party names and no error messages (only their type), so it can be
+shared as counts and pass/fail. Companies appear as "entity <id>", and `trial-balance`
+refuses to run (docs/pilot-runbook.md).
 """
 
 import argparse
@@ -27,10 +35,13 @@ from sqlalchemy.orm import Session
 
 from connectors import registry
 from connectors.base import Period
+from core.config import get_settings
 from core.db import get_engine
 from core.models import Connection, SyncRun
+from core.models import accounting as A  # noqa: N812
 from core.models.accounting import Entity
 from core.models.base import utcnow
+from core.models.source import RawRecord
 from core.models.system import Alert, ValidationIssue, ValidationRun
 from core.transform import trial_balance
 from core.validation import ValidationReport
@@ -105,7 +116,22 @@ def _parser() -> argparse.ArgumentParser:
     connection_args(deletions)
     deletions.add_argument("--entity", action="append", help="entity name (repeatable)")
 
+    connect = sub.add_parser(
+        "connect", help="create or update a connection: origin and the entities it syncs"
+    )
+    connection_args(connect)
+    connect.add_argument("--origin", choices=("live", "backup"), required=True)
+    connect.add_argument(
+        "--entity", action="append", required=True, help="entity name (repeatable)"
+    )
+    connect.add_argument(
+        "--paused",
+        action="store_true",
+        help="no scheduled syncs (e.g. backup data that doesn't change); manual syncs work",
+    )
+
     sub.add_parser("status", help="each connection's last sync and when the next is due")
+    sub.add_parser("summary", help="counts and pass/fail per entity (safe to share)")
 
     tb = sub.add_parser("trial-balance", help="trial balance computed from voucher lines")
     tb.add_argument("--entity-code", required=True)
@@ -125,7 +151,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     with Session(get_engine()) as session:
         if args.command == "status":
             return _status(session)
+        if args.command == "summary":
+            return _summary(session)
         if args.command == "trial-balance":
+            if not _show_names():
+                print("trial-balance prints amounts: test environment only.", file=sys.stderr)
+                return 2
             return _trial_balance(session, args.entity_code)
 
         connection = get_or_create_connection(session, args.connection, args.source)
@@ -138,11 +169,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         session.commit()
         connector = connector_for(session, connection)
 
+        if args.command == "connect":
+            return _connect(session, connection, connector, args)
+
         if args.command == "entities":
             entities = connector.list_entities()
-            print(f"{len(entities)} entities in connection '{connection.name}':")
-            for entity in entities:
-                print(f"  {entity.name}  [{entity.key}]")
+            print(f"{len(entities)} entities in connection '{connection.name}'")
+            if _show_names():
+                for entity in entities:
+                    print(f"  {entity.name}  [{entity.key}]")
             return 0
 
         if args.command == "validate":
@@ -180,13 +215,52 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"  received {extracted.received}, stored {extracted.stored}, unchanged {extracted.skipped}"
     )
     if extracted.error:
-        print(f"  error: {extracted.error}", file=sys.stderr)
+        print(f"  error: {_error(extracted.error)}", file=sys.stderr)
         return 1
     return 0
 
 
+def _show_names() -> bool:
+    """Names and error messages are printed in the test environment only."""
+    return get_settings().app_env == "test"
+
+
+def _error(summary: str) -> str:
+    """'Type: message' in test; only 'Type' elsewhere (messages can name companies)."""
+    return summary if _show_names() else summary.split(":", 1)[0]
+
+
+def _entities(names: Sequence[str]) -> str:
+    return ", ".join(names) if _show_names() else f"{len(names)} entities"
+
+
+def _connect(
+    session: Session, connection: Connection, connector: object, args: argparse.Namespace
+) -> int:
+    """Sets the connection's origin, its exact list of entities and whether it's scheduled."""
+    wanted = list(dict.fromkeys(args.entity))
+    connection.config = {**connection.config, "origin": args.origin, "entities": wanted}
+    connection.status = "paused" if args.paused else "active"
+    session.commit()
+    available = {e.name for e in connector.list_entities()}  # type: ignore[attr-defined]
+    missing = [name for name in wanted if name not in available]
+    print(
+        f"Connection '{connection.name}': origin {args.origin}, {connection.status}, "
+        f"{len(wanted)} entities configured, {len(wanted) - len(missing)} found in the source"
+    )
+    if missing:
+        detail = f": {', '.join(missing)}" if _show_names() else ""
+        print(
+            f"  {len(missing)} not found{detail}. Check the exact names (and that the "
+            "companies are loaded) in the source.",
+            file=sys.stderr,
+        )
+        return 2
+    return 0
+
+
 def _print_sync(r: SyncResult) -> int:
-    print(f"Sync run {r.sync_run_id} ({r.run_type}): {r.status}  entities: {', '.join(r.entities)}")
+    print(f"Sync run {r.sync_run_id} ({r.run_type}): {r.status}  entities: {_entities(r.entities)}")
     if r.run_type == DELETION_CHECK:
         print(f"  keys listed:  {dict(sorted(r.fetched.items()))}")
         print(f"  soft-deleted: {r.deleted or 'none'}")
@@ -194,13 +268,18 @@ def _print_sync(r: SyncResult) -> int:
         print(f"  fetched:     {dict(sorted(r.fetched.items()))}")
         print(f"  raw stored:  {r.stored} new or changed, {r.unchanged} unchanged")
         print(f"  transformed: {dict(sorted(r.transformed.items()))}  failed: {r.failed}")
-    for entity, names in r.unmapped_ledgers.items():
-        listed = ", ".join(names) if names else "none"
-        print(f"  unmapped ledgers in {entity} ({len(names)}): {listed}")
-    for warning in r.warnings:
-        print(f"  warning: {warning}")
+    for number, (entity, names) in enumerate(r.unmapped_ledgers.items(), start=1):
+        if _show_names():
+            print(f"  unmapped ledgers in {entity} ({len(names)}): {', '.join(names) or 'none'}")
+        else:
+            print(f"  unmapped ledgers in entity {number} of this run: {len(names)}")
+    if _show_names():
+        for warning in r.warnings:
+            print(f"  warning: {warning}")
+    elif r.warnings:
+        print(f"  warnings (mapping assumptions): {len(r.warnings)}")
     if r.error:
-        print(f"  error: {r.error}", file=sys.stderr)
+        print(f"  error: {_error(r.error)}", file=sys.stderr)
         return 1
     return 0
 
@@ -208,8 +287,9 @@ def _print_sync(r: SyncResult) -> int:
 def _print_validation(reports: list[ValidationReport]) -> int:
     """Counts, codes and pass/fail only (safe for client data)."""
     for r in reports:
+        name = r.entity_name if _show_names() else f"entity {r.entity_id}"
         print(
-            f"Validation run {r.validation_run_id} of {r.entity_name} as of {r.as_of}: "
+            f"Validation run {r.validation_run_id} of {name} as of {r.as_of}: "
             f"{r.status.upper()}  {r.checks_passed} checks passed, {r.checks_failed} failed"
         )
         for code, count in sorted(r.failed_by_code.items()):
@@ -228,7 +308,8 @@ def _status(session: Session) -> int:
     if not connections:
         print("No connections yet.")
     for connection in connections:
-        entities = ", ".join(connection.config.get("entities", [])) or "all loaded"
+        configured = connection.config.get("entities", [])
+        entities = _entities(configured) if configured else "all loaded"
         check_every = deletion_check_interval(connection)
         print(
             f"{connection.name}: {connection.status}, origin "
@@ -263,11 +344,12 @@ def _print_validation_status(session: Session, connection: Connection) -> None:
             .order_by(ValidationRun.id.desc())
             .limit(1)
         )
+        name = entity.name if _show_names() else f"entity {entity.id}"
         if run is None:
-            print(f"  validation of {entity.name}: never ran")
+            print(f"  validation of {name}: never ran")
             continue
         print(
-            f"  validation of {entity.name}: run {run.id} {run.status.upper()} as of {run.as_of}, "
+            f"  validation of {name}: run {run.id} {run.status.upper()} as of {run.as_of}, "
             f"{run.checks_passed} passed, {run.checks_failed} failed, "
             f"at {run.started_at:%Y-%m-%d %H:%M:%S} UTC"
         )
@@ -318,6 +400,92 @@ def _print_schedule(
     else:
         wait = interval - int((now - run.started_at).total_seconds())
         print(f"    next: in about {wait}s")
+
+
+def _count(session: Session, model: type, *where: object) -> int:
+    return session.scalar(select(func.count()).select_from(model).where(*where)) or 0
+
+
+def _summary(session: Session) -> int:
+    """Counts and pass/fail per connection and entity; no names or amounts in any
+    environment, so the output can be shared (docs/pilot-runbook.md)."""
+    for connection in session.scalars(select(Connection).order_by(Connection.id)):
+        sync = last_run(session, connection.id)
+        check = last_run(session, connection.id, (DELETION_CHECK,))
+        print(
+            f"connection {connection.id}: origin {connection.config.get('origin', 'live')}, "
+            f"{connection.status}, {len(connection.config.get('entities', []))} entities configured"
+        )
+        for label, run in (("last sync", sync), ("last deletion check", check)):
+            if run is None:
+                print(f"  {label}: never")
+            else:
+                print(
+                    f"  {label}: run {run.id} ({run.run_type}) {run.status}, "
+                    f"{run.records_received} received, {run.records_failed} failed"
+                )
+        failed_raw = _count(
+            session,
+            RawRecord,
+            RawRecord.connection_id == connection.id,
+            RawRecord.process_status == "failed",
+        )
+        print(f"  raw records that failed to transform: {failed_raw}")
+        entity_ids = session.scalars(
+            select(A.EntitySource.entity_id)
+            .where(A.EntitySource.connection_id == connection.id)
+            .order_by(A.EntitySource.entity_id)
+        ).all()
+        for entity_id in entity_ids:
+            live = (A.Ledger.entity_id == entity_id, A.Ledger.is_deleted.is_(False))
+            vouchers = (A.Voucher.entity_id == entity_id, A.Voucher.is_deleted.is_(False))
+            print(f"  entity {entity_id}:")
+            counts = {
+                "ledgers": _count(session, A.Ledger, *live),
+                "unmapped": _count(session, A.Ledger, *live, A.Ledger.mapping_status == "unmapped"),
+                "parties": _count(session, A.Party, A.Party.entity_id == entity_id),
+                "vouchers": _count(session, A.Voucher, *vouchers),
+                "cancelled": _count(
+                    session, A.Voucher, *vouchers, A.Voucher.is_cancelled.is_(True)
+                ),
+                "deleted_in_source": _count(
+                    session, A.Voucher, A.Voucher.entity_id == entity_id, A.Voucher.is_deleted
+                ),
+                "effective_lines": _count(
+                    session,
+                    A.VoucherLine,
+                    A.VoucherLine.entity_id == entity_id,
+                    A.VoucherLine.is_effective,
+                ),
+            }
+            print("    " + ", ".join(f"{k} {v}" for k, v in counts.items()))
+            run = session.scalar(
+                select(ValidationRun)
+                .where(ValidationRun.entity_id == entity_id)
+                .order_by(ValidationRun.id.desc())
+                .limit(1)
+            )
+            if run is None:
+                print("    validation: never ran")
+                continue
+            print(
+                f"    validation: run {run.id} {run.status.upper()} as of {run.as_of}, "
+                f"{run.checks_passed} passed, {run.checks_failed} failed"
+            )
+            codes = session.execute(
+                select(ValidationIssue.check_code, ValidationIssue.severity, func.count())
+                .where(ValidationIssue.validation_run_id == run.id)
+                .group_by(ValidationIssue.check_code, ValidationIssue.severity)
+            ).all()
+            for code, severity, n in sorted(codes):
+                print(f"      {severity}: {code} x{n}")
+        alerts = session.execute(
+            select(Alert.kind, func.count())
+            .where(Alert.connection_id == connection.id, Alert.resolved_at.is_(None))
+            .group_by(Alert.kind)
+        ).all()
+        print(f"  open alerts: {', '.join(f'{k} {n}' for k, n in sorted(alerts)) or 'none'}")
+    return 0
 
 
 def _trial_balance(session: Session, entity_code: str) -> int:
