@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.4 |
+| Version | 0.5 |
 | Date | 2026-10-09 |
 | Current milestone | **M3** |
 
@@ -60,15 +60,19 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 ## M6 — Reporting layer
 
-**Done when:** the `ledgerbridge_reporting` views and aggregate tables from schema.md Section 6 exist and refresh after sync; API endpoints serve trial balance, P&L, balance sheet, cash flow, receivables and payables ageing, KPIs, per entity and consolidated, with drill-down to vouchers.
+**Done when:** the `ledgerbridge_reporting` views and aggregate tables from schema.md Section 6 exist and refresh after sync; API endpoints serve trial balance, P&L, balance sheet, cash flow, receivables and payables ageing, KPIs, per entity and consolidated, with drill-down to vouchers; and the API serves everything the dashboard home page needs (docs/design/dashboard.md Section 4):
+- a business health score (0 to 100 with a label) from a formula documented in docs/schema.md and approved before it is built
+- cash cover in months, with its definition documented
+- simple rule-based alerts with severity, message and suggested action, with configurable rules and thresholds
+- a recent-events feed for the LIVE ticker (new vouchers, payments, bank balance and GST payable changes, data-check results), written after each sync
 
-> Plan milestone M6: implement the ledgerbridge_reporting database objects from docs/schema.md Section 6, incremental refresh of aggregate tables after each sync, the semantic_catalog with descriptions of every view and column, and API endpoints for requirements RPT-001 to RPT-004 and RPT-006 to RPT-008, all respecting the user's entity access. Show me the plan first.
+> Plan milestone M6: implement the ledgerbridge_reporting database objects from docs/schema.md Section 6, incremental refresh of aggregate tables after each sync, the semantic_catalog with descriptions of every view and column, and API endpoints for requirements RPT-001 to RPT-004 and RPT-006 to RPT-008, all respecting the user's entity access. Also provide the data for the dashboard home page in docs/design/dashboard.md Section 4: propose a business health score formula (components, weights, label bands) and a cash-cover definition for my approval and document them in docs/schema.md; rule-based alerts with severity, message and suggested action; a recent-events feed written after each sync for the LIVE ticker; and the last-sync status per connection. Update docs/schema.md for any new tables or views in the same change. Show me the plan first.
 
 ## M7 — Dashboard
 
-**Done when:** the React app supports login, entity and consolidated selection, period filters, MIS overview with health indicators, all statements from M6, ageing, drill-down to voucher detail, and a data-quality page.
+**Done when:** the React app supports login, entity and consolidated selection, period filters, MIS overview with health indicators, all statements from M6, ageing, drill-down to voucher detail, and a data-quality page; and the home page matches the approved design in docs/design/dashboard.md and dashboard-mockup.png in layout, wording and visual style (top bar with company and period switchers and sync status, LIVE ticker, plain-language sidebar, greeting, five KPI cards, sales vs expenses chart, "Needs your attention" panel, "Ask a question" panel), with real data from the M6 API in place of the sample figures.
 
-> Read docs/requirements.md Section 4.8 and the M6 API. Plan milestone M7: build the React dashboard with login, an entity/consolidated switcher, period and dimension filters, an MIS overview with KPI cards flagged good/bad, pages for trial balance, P&L, balance sheet, cash flow, receivables and payables ageing, drill-down from any figure to vouchers, and a data-quality page from M4. Use Ant Design and ECharts, TanStack Query, and generated API types. Show me the plan first.
+> Read docs/requirements.md Section 4.8, docs/design/dashboard.md with docs/design/dashboard-mockup.png, and the M6 API. Plan milestone M7: build the React dashboard with login, an entity/consolidated switcher, period and dimension filters, an MIS overview with KPI cards flagged good/bad, pages for trial balance, P&L, balance sheet, cash flow, receivables and payables ageing, drill-down from any figure to vouchers, and a data-quality page from M4. The home page must match the approved design element by element: layout, the exact wording, colours as Ant Design theme tokens, Indian number format (L / Cr), and the suggested question chips as listed in dashboard.md (no forecast chip until forecasting exists). Settle the open points in dashboard.md Section 6 in the plan. Use Ant Design and ECharts, TanStack Query, and generated API types. Show me the plan first.
 
 ## M8 — AI querying (text-to-SQL + RAG)
 
@@ -132,3 +136,4 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | 2026-10-09 | 0.2 | M8 "Done when" and prompt updated for AI data protection: privacy modes, masking, local embeddings, no outbound tools, egress allowlist, model call log (AI-011 to AI-018, SEC-010, ADR-015). |
 | 2026-10-09 | 0.3 | Current milestone M2. Database names `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016) in M2 to M8; M2 "Done when" adds users, grants and the `migrate` container; M3 prompt references the child-row replacement rule. |
 | 2026-10-12 | 0.4 | Current milestone M3. |
+| 2026-10-12 | 0.5 | Approved dashboard home page design (docs/design/dashboard.md, dashboard-mockup.png). M6 adds the home page data: business health score formula, cash cover in months, rule-based alerts, recent-events feed. M7 "Done when" and prompt require matching the design; forecast question chip deferred until forecasting (AI-009, phase 3). |
