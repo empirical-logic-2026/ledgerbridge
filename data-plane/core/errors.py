@@ -10,7 +10,8 @@ import re
 
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 
-_QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
+# A quoted value, not an apostrophe inside a word ("didn't ... isn't" is not a quote).
+_QUOTED = re.compile(r"(?<![A-Za-z])'[^']*'(?![A-Za-z])|\"[^\"]*\"")
 MAX_LENGTH = 300
 
 

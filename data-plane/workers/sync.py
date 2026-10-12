@@ -28,7 +28,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -42,7 +42,7 @@ from core.models.system import SyncMarker
 from core.raw_store import RawStore
 from core.transform import Transformer, mark_deleted
 from workers.entities import select_entities
-from workers.fetch import ChunkFetcher
+from workers.fetch import AUTO, ChunkFetcher, FetchSettings
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,7 @@ class EntityOutcome:
     chunks: int = 0
     chunks_skipped: int = 0  # completed by an earlier attempt
     splits: int = 0
+    retries: int = 0
     unverified: int = 0
     error: str | None = None
 
@@ -161,6 +162,7 @@ def run_sync(
     restart: bool = False,
     after_entity: AfterEntity | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    refetch_from: date | None = None,
 ) -> SyncResult:
     """`progress`, if given, receives short status lines (counts only, no names).
     `restart` ignores the checkpoints of an interrupted full sync. `after_entity` runs after
@@ -184,6 +186,7 @@ def run_sync(
                 _sync_entity(
                     session, connection, connector, run, result, entity, outcome,
                     full=full, period=period, restart=restart, say=say, sleep=sleep,
+                    refetch_from=refetch_from,
                 )  # fmt: skip
             except SourceUnresponsiveError as exc:
                 session.rollback()
@@ -230,13 +233,24 @@ def _sync_entity(
     restart: bool,
     say: Progress,
     sleep: Callable[[float], None],
+    refetch_from: date | None = None,
 ) -> None:
     """Fetch, store, transform and mark one entity."""
     label = outcome.label
     say(f"{label}: fetching ({result.run_type})")
     markers = {} if full or period else load_markers(session, connection.id, entity.key)
     if hasattr(connector, "fetch_plan"):
-        fetcher = ChunkFetcher(session, connection.id, connector, run.id, say, label, sleep=sleep)
+        fetcher = ChunkFetcher(
+            session,
+            connection.id,
+            connector,
+            run.id,
+            say,
+            label,
+            sleep=sleep,
+            settings=fetch_settings(connection),
+            on_part_month=lambda result: _store_part_month(session, connection, result),
+        )
         try:
             fetcher.fetch_entity(
                 entity,
@@ -245,6 +259,7 @@ def _sync_entity(
                 resumable=full and period is None,
                 restart=restart,
                 reprocess_unchanged=full,
+                refetch_from=refetch_from,
             )
         finally:  # also when it fails: what was stored is stored, and counted
             stats = fetcher.stats
@@ -255,6 +270,7 @@ def _sync_entity(
             outcome.stored, outcome.unchanged = stats.stored, stats.unchanged
             outcome.chunks, outcome.chunks_skipped = stats.chunks, stats.chunks_skipped
             outcome.splits, outcome.unverified = stats.splits, len(stats.unverified)
+            outcome.retries = stats.retries
         fetched, stored, unchanged = outcome.fetched, outcome.stored, outcome.unchanged
     else:  # connectors without chunks: one stream per kind
         fetcher = None
@@ -300,6 +316,23 @@ def _sync_entity(
     session.commit()
     if fetcher is not None:
         fetcher.clear_checkpoints(entity)
+
+
+def fetch_settings(connection: Connection) -> FetchSettings:
+    """A connection's effective fetch settings: its own values, else the defaults (ADR-023).
+    The TALLY_TIMEOUT_SEC setting applies to connections without a timeout of their own."""
+    config = connection.config
+    return FetchSettings(
+        timeout_sec=float(config.get("timeout_sec") or get_settings().tally_timeout_sec),
+        pause_sec=float(config.get("pause_sec") or 0),
+        part_month=str(config.get("part_month_requests") or AUTO),
+    )
+
+
+def _store_part_month(session: Session, connection: Connection, result: str) -> None:
+    """Remembers whether the source answers part-month requests (probed once)."""
+    connection.config = {**connection.config, "part_month_requests": result}
+    session.commit()
 
 
 def stored_markers(session: Session, connection_id: int, entity_key: str) -> dict[str, int]:

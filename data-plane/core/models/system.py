@@ -158,6 +158,31 @@ class SyncSlowPeriod(TimestampMixin, Base):
     piece_days: Mapped[int] = mapped_column(Integer)
 
 
+class SyncUnverifiedRange(TimestampMixin, Base):
+    """A date range whose stored records couldn't be proven complete (ADR-023): its listing
+    timed out, or the source listed objects its parts didn't return, or it came back empty
+    where the source normally has many. Until resolved, the range is always fetched again,
+    whatever its checkpoint says."""
+
+    __tablename__ = "sync_unverified_ranges"
+    __table_args__ = (
+        Index("ix_sync_unverified_open", "connection_id", "source_entity_key", "resolved_at"),
+        _S,
+    )
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    connection_id: Mapped[int] = mapped_column(Id, ForeignKey(f"{SYSTEM}.connections.id"))
+    source_entity_key: Mapped[str] = mapped_column(String(191))
+    object_type: Mapped[str] = mapped_column(String(64))
+    period_from: Mapped[date]
+    period_to: Mapped[date]
+    reason: Mapped[str] = mapped_column(String(255))  # counts and kinds only, never names
+    sync_run_id: Mapped[int | None] = mapped_column(
+        Id, ForeignKey(f"{SYSTEM}.sync_runs.id"), nullable=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
+
+
 class ImportBatch(TimestampMixin, Base):
     """A backup or file import (IMP-003, IMP-004)."""
 

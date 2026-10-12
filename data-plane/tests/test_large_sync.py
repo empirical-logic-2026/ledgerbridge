@@ -156,15 +156,132 @@ def test_slow_month_is_split_verified_and_remembered(db: Session, sim) -> None: 
     assert not any("timed out" in line for line in lines)
 
 
-def test_parts_the_source_leaves_empty_are_caught(db: Session, sim) -> None:  # noqa: ANN001
-    """Like Educational mode: sub-month requests return nothing. Verification notices."""
+def test_source_without_part_month_support_is_never_split(db: Session, sim) -> None:  # noqa: ANN001
+    """Like Educational mode (pilot, 2026-10-13): parts of a month come back empty. The
+    probe finds that out once, stores it, and the sync never splits: it retries whole
+    months with longer timeouts and stops with a clear message when they still fail."""
     connection, connector = sim
     transport = SimTally(per_day=2, max_days=20, empty_partial=True)
-    result, _, _ = _sync(db, connection, transport, connector)
+    result, lines, waits = _sync(db, connection, transport, connector)
     (outcome,) = result.entity_results
-    assert outcome.status == "failed"
-    assert "IncompleteChunkError" in outcome.error and "didn't return" in outcome.error
+    assert outcome.status == "failed" and "ChunkTooSlowError" in outcome.error
+    assert "can't answer requests for part of a month" in outcome.error
+    assert any("CAN'T answer requests for part of a month" in line for line in lines)
+    db.refresh(connection)
+    assert connection.config["part_month_requests"] == "unsupported"
+    voucher_requests = [(s, e) for kind, s, e in transport.log if kind == "vouchers"]
+    assert all(s.day == 1 for s, _ in voucher_requests)  # never a part of a month
+    assert transport.timeouts_seen[-3:] == [300.0, 600.0, 1200.0]
+    assert waits.count(60.0) == 3  # a pause before each whole-month retry
+    assert _count(db, S.SyncCheckpoint, S.SyncCheckpoint.chunk_key.like("voucher:%")) == 0
     assert _count(db, A.Voucher) == 0  # never transformed with a gap
+
+
+def test_whole_month_retry_with_a_longer_timeout_succeeds(db: Session, sim) -> None:  # noqa: ANN001
+    connection, connector = sim
+    connection.config = {**connection.config, "part_month_requests": "unsupported"}
+    db.commit()
+    july = date(2026, 7, 1)
+    transport = SimTally(per_day=2, needs_timeout={july: 600})
+    result, lines, _ = _sync(db, connection, transport, connector)
+    assert result.status == "succeeded", result.error
+    assert result.entity_results[0].retries == 2  # 300 s failed, 600 s worked
+    assert any("asking for it whole with a 600 s timeout" in line for line in lines)
+    assert _raw_vouchers(db) == transport.total_vouchers
+
+
+def test_a_split_that_cant_be_verified_stops_and_is_fetched_again(db: Session, sim) -> None:  # noqa: ANN001
+    """The pilot warning 'couldn't verify ... (listing too slow)' no longer lets the sync go
+    on: the month isn't checkpointed, the range is recorded, and the next run fetches it
+    again and resolves it."""
+    connection, connector = sim
+    may = date(2026, 5, 1)
+    transport = SimTally(per_day=2, slow_months=(may,), slow_listing=(may,))
+    result, lines, _ = _sync(db, connection, transport, connector)
+    (outcome,) = result.entity_results
+    assert outcome.status == "failed" and "UnverifiedChunkError" in outcome.error
+    assert "listing didn't arrive in time" in outcome.error
+    keys = set(db.scalars(select(S.SyncCheckpoint.chunk_key)))
+    assert "voucher:2026-04-01..2026-04-30" in keys
+    assert "voucher:2026-05-01..2026-05-31" not in keys  # never counted as complete
+    (open_range,) = db.scalars(select(S.SyncUnverifiedRange)).all()
+    assert (open_range.period_from, open_range.resolved_at) == (may, None)
+
+    transport.slow_listing.clear()
+    result, lines, _ = _sync(db, connection, transport, connector)
+    assert result.status == "succeeded", result.error
+    assert any("earlier unverified range is now complete" in line for line in lines)
+    db.refresh(open_range)
+    assert open_range.resolved_at is not None
+    assert _raw_vouchers(db) == transport.total_vouchers
+
+
+def test_checkpointed_chunks_overlapping_unverified_ranges_are_fetched_again(
+    db: Session,
+    sim,  # noqa: ANN001
+) -> None:
+    """Like the pilot's March 2024, possibly checkpointed by the older code although
+    unverified: a recorded range overrides the checkpoint."""
+    connection, connector = sim
+    transport = SimTally(per_day=1, dead_after=3)
+    _sync(db, connection, transport, connector)  # April..June done, then Tally stops
+    db.add(
+        S.SyncUnverifiedRange(
+            connection_id=connection.id,
+            source_entity_key=transport.guids[0],
+            object_type="voucher",
+            period_from=date(2026, 5, 1),
+            period_to=date(2026, 5, 7),
+            reason="recorded by hand for the test",
+        )
+    )
+    db.commit()
+    transport.revive()
+    transport.log.clear()
+    result, lines, _ = _sync(db, connection, transport, connector)
+    assert result.status == "succeeded", result.error
+    assert any("1 chunks overlap ranges left unverified" in line for line in lines)
+    assert _voucher_months(transport) == [date(2026, m, 1) for m in (5, 7, 8, 9, 10)]
+
+
+def test_refetch_from_a_date(db: Session, sim) -> None:  # noqa: ANN001
+    connection, connector = sim
+    transport = SimTally(per_day=1, dead_after=4)
+    _sync(db, connection, transport, connector)  # April..July done
+    transport.revive()
+    transport.log.clear()
+    result, lines, _ = _sync(db, connection, transport, connector, refetch_from=date(2026, 6, 15))
+    assert result.status == "succeeded", result.error
+    assert any("from 2026-06-15: 2 completed chunks will be fetched again" in x for x in lines)
+    assert _voucher_months(transport) == [date(2026, m, 1) for m in (6, 7, 8, 9, 10)]
+
+
+def test_empty_month_where_months_are_full_is_checked(db: Session, sim) -> None:  # noqa: ANN001
+    connection, connector = sim
+    august = date(2026, 8, 1)
+    transport = SimTally(per_day=2, missing_months=(august,))
+    result, lines, _ = _sync(db, connection, transport, connector)
+    (outcome,) = result.entity_results
+    assert outcome.status == "failed" and "IncompleteChunkError" in outcome.error
+    assert "empty, but the source lists 62 objects" in outcome.error
+    assert "voucher:2026-08-01..2026-08-31" not in set(
+        db.scalars(select(S.SyncCheckpoint.chunk_key))
+    )
+
+    # October really has no vouchers: the listing confirms it and the sync goes on.
+    transport.missing_months.clear()
+    result, lines, _ = _sync(db, connection, transport, connector)
+    assert result.status == "succeeded", result.error
+    assert any("2026-10-01..2026-10-31: confirmed empty" in line for line in lines)
+
+
+def test_pause_between_requests(db: Session, sim) -> None:  # noqa: ANN001
+    connection, connector = sim
+    connection.config = {**connection.config, "pause_sec": 2}
+    db.commit()
+    result, _, waits = _sync(db, connection, SimTally(per_day=1), connector)
+    assert result.status == "succeeded"
+    assert waits.count(2.0) >= 1 + 8 + MONTHS - 1  # between every two chunk requests
 
 
 def test_parts_the_source_widens_are_held_to_their_dates(db: Session, sim) -> None:  # noqa: ANN001
@@ -184,8 +301,9 @@ def test_a_day_that_never_answers_fails_the_entity_with_a_clear_message(db: Sess
     transport = SimTally(per_day=1, fail_days=(date(2026, 6, 10),))
     result, lines, _ = _sync(db, connection, transport, connector)
     (outcome,) = result.entity_results
-    assert outcome.status == "failed" and "TallySlowError" in outcome.error
-    assert any("can't be split further" in line for line in lines)
+    assert outcome.status == "failed" and "ChunkTooSlowError" in outcome.error
+    assert "even as a whole (it can't be split further)" in outcome.error
+    assert any("asking for it whole with a 1200 s timeout" in line for line in lines)
     assert "2026-06-10..2026-06-10" in "\n".join(lines)
 
 

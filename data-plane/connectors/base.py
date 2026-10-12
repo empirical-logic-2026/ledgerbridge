@@ -146,12 +146,19 @@ class Connector(Protocol):
         ...
 
     def fetch_chunk(
-        self, entity: SourceEntity, chunk: Chunk, markers: Markers | None
+        self,
+        entity: SourceEntity,
+        chunk: Chunk,
+        markers: Markers | None,
+        timeout: float | None = None,
     ) -> list[SourceRecord]:
-        """One chunk's records. Raises SourceTimeoutError if the source is too slow."""
+        """One chunk's records (only those dated within its period). Raises
+        SourceTimeoutError if the source is too slow; `timeout` overrides the connection's."""
         ...
 
-    def chunk_keys(self, entity: SourceEntity, chunk: Chunk) -> set[str]:
+    def chunk_keys(
+        self, entity: SourceEntity, chunk: Chunk, timeout: float | None = None
+    ) -> set[str]:
         """Keys only of a chunk (cheap): proves a split chunk was fetched completely."""
         ...
 

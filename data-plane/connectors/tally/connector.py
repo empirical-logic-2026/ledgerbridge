@@ -57,18 +57,20 @@ class TallyConnector:
         return cls(
             TallyClient(
                 str(config["url"]),
-                timeout=float(config.get("timeout_sec", 120)),
+                # The connection's own timeout, else the TALLY_TIMEOUT_SEC setting (ADR-023).
+                timeout=float(config.get("timeout_sec") or get_settings().tally_timeout_sec),
                 transport=transport,
             )
         )
 
     @staticmethod
     def default_config() -> dict[str, Any]:
-        settings = get_settings()
-        return {"url": settings.tally_url, "timeout_sec": settings.tally_timeout_sec}
+        # No timeout stored: a connection follows TALLY_TIMEOUT_SEC until one is set on it
+        # (connect --timeout-sec).
+        return {"url": get_settings().tally_url}
 
-    def _post(self, request_xml: str) -> bytes:
-        return self.client.post(request_xml)
+    def _post(self, request_xml: str, timeout: float | None = None) -> bytes:
+        return self.client.post(request_xml, timeout=timeout)
 
     def test_connection(self) -> ConnectionStatus:
         try:
@@ -220,11 +222,15 @@ class TallyConnector:
         return chunks + [Chunk(voucher, month) for month in self.voucher_periods(entity, period)]
 
     def fetch_chunk(
-        self, entity: SourceEntity, chunk: Chunk, markers: Markers | None
+        self,
+        entity: SourceEntity,
+        chunk: Chunk,
+        markers: Markers | None,
+        timeout: float | None = None,
     ) -> list[SourceRecord]:
         markers = markers or {}
         if chunk.object_type == envelopes.COMPANIES.object_type:
-            body = self._post(envelopes.collection_request(envelopes.COMPANIES))
+            body = self._post(envelopes.collection_request(envelopes.COMPANIES), timeout)
             return [
                 r
                 for r in parser.parse_records(body, envelopes.COMPANIES, entity.key)
@@ -238,10 +244,13 @@ class TallyConnector:
             lambda name: envelopes.collection_request(
                 spec, company=name, period=period, since_alter_id=since
             ),
+            timeout,
         )
         return list(parser.parse_records(body, spec, entity.key, period))
 
-    def chunk_keys(self, entity: SourceEntity, chunk: Chunk) -> set[str]:
+    def chunk_keys(
+        self, entity: SourceEntity, chunk: Chunk, timeout: float | None = None
+    ) -> set[str]:
         spec = envelopes.SPEC_BY_OBJECT_TYPE[chunk.object_type]
         period = (chunk.period.start, chunk.period.end) if chunk.period else None
         body = self._company_post(
@@ -249,6 +258,7 @@ class TallyConnector:
             lambda name: envelopes.collection_request(
                 envelopes.keys_only(spec), company=name, period=period
             ),
+            timeout,
         )
         return {r.source_key for r in parser.parse_records(body, spec, entity.key, period)}
 
@@ -293,20 +303,22 @@ class TallyConnector:
         )
         return len(parser.objects(parser.parse_response(body), envelopes.GROUPS.object_tag))
 
-    def _company_post(self, entity: SourceEntity, build: Callable[[str], str]) -> bytes:
+    def _company_post(
+        self, entity: SourceEntity, build: Callable[[str], str], timeout: float | None = None
+    ) -> bytes:
         """Posts a request for one company, built with the company's name exactly as Tally
         lists it. If Tally rejects the name (it may list a company slightly differently
         later, e.g. spacing; pilot run 2026-10-12), looks up the company's current name by
         its GUID and retries once."""
         name = self._names.get(entity.key, entity.name)
-        body = self._post(build(name))
+        body = self._post(build(name), timeout)
         if not _rejected_company(body):
             return body
         current = next((e.name for e in self.list_entities() if e.key == entity.key), None)
         if current is None or current == name:
             return body  # parsing it raises Tally's own error
         self._names[entity.key] = current
-        return self._post(build(current))
+        return self._post(build(current), timeout)
 
 
 def _canonical(text: str | None) -> Decimal:

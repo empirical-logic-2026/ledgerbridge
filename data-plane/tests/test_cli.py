@@ -174,3 +174,25 @@ def test_status_in_test_shows_configured_entities_stored_by_key(db: Session, run
     assert f"entities: {COMPANY}" in out
     code, out = run_cli("status")  # pilot: a count
     assert code == 0 and "entities: 1 entities" in out
+
+
+def test_status_and_summary_show_the_effective_timeout(db: Session, run_cli, monkeypatch) -> None:  # noqa: ANN001
+    """A connection keeps its own timeout; TALLY_TIMEOUT_SEC only applies without one."""
+    run_cli("connect", "--connection", "tally-pilot", "--source", "tally",
+            "--origin", "backup", "--entity", COMPANY, "--timeout-sec", "120")  # fmt: skip
+    monkeypatch.setenv("TALLY_TIMEOUT_SEC", "600")  # read by every Settings()
+    monkeypatch.setattr(
+        "workers.sync.get_settings", lambda: Settings(app_env="pilot", ai_provider="ollama")
+    )
+    for command in ("status", "summary"):
+        code, out = run_cli(command)
+        assert code == 0
+        assert (
+            "request timeout 120 s (set on the connection; TALLY_TIMEOUT_SEC=600 applies only "
+            "to connections without one)" in out
+        )
+    code, out = run_cli("connect", "--connection", "tally-pilot", "--origin", "backup",
+                        "--entity", COMPANY, "--timeout-sec", "600", "--pause-sec", "2",
+                        "--part-month", "unsupported")  # fmt: skip
+    assert "request timeout 600 s" in out and "pause between requests 2 s" in out
+    assert "part-month requests: unsupported" in out
