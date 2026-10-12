@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.2 |
+| Version | 0.3 |
 | Date | 2026-10-12 |
 | Who runs it | **The developer only.** Claude Code never runs these steps, never connects to the `pilot` environment and never sees its data (CLAUDE.md, ADR-011). |
 
@@ -58,21 +58,28 @@ Nothing syncs yet: there's no connection, and the worker only syncs connections 
 ### 3. Create the connection, before anything else that touches Tally
 
 ```powershell
-./dev.ps1 connect -Env pilot -Origin backup -Company "<exact name of company 1>","<exact name of company 2>"
+./dev.ps1 connect -Env pilot -Origin backup -All
 ```
 
+- `-All` takes **every company currently loaded in TallyPrime**, so load only the two client companies. Nothing has to be typed, and nothing has to match. The connection stores each company's GUID (Tally's permanent identifier), and every later command finds the companies by GUID, even if Tally later shows a name slightly differently.
+- Instead of `-All` you can name them: `-Company "<exact name 1>","<exact name 2>"`. Names must match exactly as Tally shows them, spaces included.
 - `-Origin backup` tags every row as backup data (IMP-004). The connection must exist with this origin **before the first sync**, otherwise the data would be tagged `live`.
 - **The connection stays paused:** the worker never syncs it on a schedule. New connections always start paused, and only `-Activate` changes that. Backup data doesn't change, so there's no reason to activate it. Manual syncs still work.
-- Expect `origin backup, paused, 2 entities configured, 2 found in the source`. If it says `1 not found`, the name doesn't exactly match TallyPrime's (spaces, punctuation, capitals) or the company isn't loaded. Fix it and run the command again: it replaces the list.
+- Expect `origin backup, paused, 2 entities configured, 2 found in the source (2 loaded there)`. With `-Company`, `1 not found` means a name doesn't exactly match; run step 4 to see how it differs, or use `-All`. Running `connect` again replaces the list.
 - If it says `Refused: sync run N ... is running`, a sync is in progress. Wait for it, then run `connect` again. It never hangs.
 
-### 4. Optional: check that Tally shows both companies
+### 4. Check the companies: `entity-check`
 
 ```powershell
-./dev.ps1 tally-companies -Env pilot
+./dev.ps1 entity-check -Env pilot
 ```
 
-Expect `2 entities in the source of 'tally-pilot'`. This only reads: it never creates or changes a connection. Names aren't printed in the pilot environment; check them in TallyPrime if needed.
+A read-only diagnostic that prints no names. It shows:
+- **each company Tally lists:** the length of its name and anything unusual about it, such as a leading, trailing or repeated space, or characters outside plain ASCII (named by Unicode, e.g. `U+2013 EN DASH`);
+- **each configured company:** found by GUID, or not found, and then how its stored name differs from the closest one Tally lists (e.g. `spacing around hyphens`, `repeated spaces`, `a bracketed suffix such as '(from 1-Apr-23)'`);
+- **a selection check:** each company is selected once, exactly as a sync does, and Tally's company list is read again. If Tally then shows a name differently, it says how.
+
+It ends with `Result: no problems found` or `N problem(s) found`. **Share its output** if anything is found. `./dev.ps1 tally-companies -Env pilot` just counts the loaded companies.
 
 ### 5. Sync and validate
 
@@ -89,7 +96,13 @@ This runs, in order:
    - each ledger's balance equals Tally's own closing balance
    - *Profit & Loss A/c* reconciles with the computed profit
 
-Large companies can take several minutes: vouchers are read one month at a time.
+Large companies can take several minutes: vouchers are read one month at a time. Progress lines with the time appear as it goes (`[10:42:01] entity 1 of 2: 15,000 records received so far`). It ends with one line such as:
+
+```text
+Result: full succeeded; deletion_check succeeded; validation passed
+```
+
+The sync and the validation are reported separately. A sync that fetched and transformed everything stays `succeeded` even if validation then fails or can't run (`validation failed`, with the reason on the line above).
 
 ### 6. See the results
 
@@ -113,6 +126,7 @@ It also lists open alerts. **This is the output to share.**
 | `unmapped ...: N` | Ledgers without a standard account (e.g. under *Indirect Expenses*), by design. Reports will place them under the nearest standard parent account (M6). | Expected. Share the count. |
 | `warnings (mapping assumptions): N` | GST ledgers whose duty head Tally left empty, assumed to be Central Tax (schema.md 7.3, an assumption to verify). | Check in TallyPrime that the company's Central Tax (CGST) ledgers number N. Report "matches" or "doesn't match". |
 | `validation: ... PASSED` | All checks passed. | – |
+| `EntityLookupError: N of M configured entities are not available in the source` | Tally doesn't list a configured company (by GUID). | Check that both companies are loaded; run `./dev.ps1 entity-check -Env pilot` and share its output. |
 | `error: voucher_unbalanced xN` | N vouchers whose lines don't sum to zero after transformation. | Share the count. |
 | `error: tb_unbalanced xN` | The trial balance doesn't balance at a year end or today. | Share the count; usually follows another error. |
 | `error: closing_mismatch xN` | N ledgers whose balance differs from Tally's. | Share the count. |
@@ -134,5 +148,6 @@ It also lists open alerts. **This is the output to share.**
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-12 | 0.3 | Second attempt: "entities not available" after a successful fetch. `connect -All`; companies stored and found by GUID; `entity-check`; progress lines and a `Result:` line; sync and validation reported separately. |
 | 2026-10-12 | 0.2 | After the first attempt failed (MySQL 1205 lock wait on the connection): step 0 `reset -Env pilot`; `connect` before anything that could sync; new connections stay paused unless `-Activate`; `tally-companies` only reads; errors show type and a short message only. |
 | 2026-10-12 | 0.1 | First version, prepared with M4: `init-env`, `connect`, `summary`, name-free CLI output outside test. Not yet run. |
