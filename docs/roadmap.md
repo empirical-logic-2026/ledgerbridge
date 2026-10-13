@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.7 |
-| Date | 2026-10-09 |
+| Version | 0.8 |
+| Date | 2026-10-13 |
 | Current milestone | **M4** |
 
 Goal: load the client's Tally backup data (two companies) into MySQL and deliver dashboards and AI querying, with every part built generically so it later works for live Tally, other accounting books and other clients (PIL-001 to PIL-005).
@@ -54,9 +54,9 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 ## M5 — Local login and access control
 
-**Done when:** users can log in locally; roles, entity access and permissions are enforced on every API endpoint; the validation and alert endpoints from M4 are protected with `validation.view`; audit log records logins and data access.
+**Done when:** users can log in locally; roles, entity access and permissions are enforced on every API endpoint; the validation and alert endpoints from M4 are protected with `validation.view`; the budget permissions `budget.view`, `budget.edit` and `budget.approve` exist and are granted to the default roles (requirements.md Section 3, BUD-013), ready for M7b; audit log records logins and data access.
 
-> Plan milestone M5: implement AUTH_MODE=local per architecture.md Section 13 and ADR-010, with token verification behind an interface so control-plane tokens can replace it later. Implement roles, permissions, user_entity_access and audit logging per schema.md Sections 5.3 and 5.4, enforced in the data plane on every endpoint (requirements ACC-001, ACC-002, ACC-004, AUD-001). Show me the plan first.
+> Plan milestone M5: implement AUTH_MODE=local per architecture.md Section 13 and ADR-010, with token verification behind an interface so control-plane tokens can replace it later. Implement roles, permissions, user_entity_access and audit logging per schema.md Sections 5.3 and 5.4, enforced in the data plane on every endpoint (requirements ACC-001, ACC-002, ACC-004, AUD-001). Seed the permissions `validation.view`, `budget.view`, `budget.edit` and `budget.approve` and the default role grants from requirements.md Section 3 (BUD-013); the budget endpoints themselves come in M7b. Show me the plan first.
 
 ## M6 — Reporting layer
 
@@ -74,10 +74,34 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 > Read docs/requirements.md Section 4.8, docs/design/dashboard.md with docs/design/dashboard-mockup.png, and the M6 API. Plan milestone M7: build the React dashboard with login, an entity/consolidated switcher, period and dimension filters, an MIS overview with KPI cards flagged good/bad, pages for trial balance, P&L, balance sheet, cash flow, receivables and payables ageing, drill-down from any figure to vouchers, and a data-quality page from M4. The home page must match the approved design element by element: layout, the exact wording, colours as Ant Design theme tokens, Indian number format (L / Cr), and the suggested question chips as listed in dashboard.md (no forecast chip until forecasting exists). Settle the open points in dashboard.md Section 6 in the plan. Use Ant Design and ECharts, TanStack Query, and generated API types. Show me the plan first.
 
+## M7b — Budget planning and analysis
+
+**Done when:**
+- budgets can be created per company and financial year (and for the consolidated group) by importing Tally budgets, entering them in a month-by-account grid, uploading the Excel template, or copying last year's actuals with growth percentages (BUD-001, BUD-002, BUD-015);
+- yearly amounts spread to months equally or by last year's seasonality, and every line's months sum exactly to its yearly amount (BUD-003);
+- lines can be set by standard account or account group (Tally group), optionally by ledger, cost centre and custom dimension (BUD-004);
+- original and revised versions move through draft, approved and locked, with `budget.edit` and `budget.approve` enforced and every change in the append-only history (BUD-005, BUD-006, BUD-013);
+- the Budget page shows budget vs actual vs last year for any month, quarter, YTD or full year, per company and consolidated, with variance amount and %, favourable or unfavourable by account nature, the full-year projection, and drill-down to vouchers and to budget history (BUD-007 to BUD-010);
+- the four graphs (monthly bars with last-year line, cumulative YTD lines, variance waterfall, account-by-month heatmap) respond to the year, month-range, company, cost-centre and account filters (BUD-012), matching docs/design/dashboard.md Section 7;
+- variance rules raise alerts that appear in "Needs your attention" (BUD-011);
+- tests cover spreading and rounding, the sum rule, sign handling and favourable/unfavourable per nature, version states and permissions, Excel upload errors, the Tally budget import from test-company fixtures, and budget vs actual figures on the test company.
+
+> Read docs/requirements.md Section 4.12 (BUD-001 to BUD-016), architecture.md Section 4.7 and ADR-026, the proposed budget tables and views in docs/schema.md Sections 4.7, 5.5 and 6, and docs/design/dashboard.md Section 7. Plan milestone M7b: budget planning and analysis, built generically (PIL-003). Confirm or adjust the proposed tables and views, then build:
+> - Alembic migrations for the budget tables, `budget_alert_rules`, the `budget_variance` alert kind and the reporting views, with docs/schema.md updated in the same change;
+> - a source-independent budget service: create versions, spread (equal, last year's seasonality, rounding to the last month), copy last year's actuals with growth, revise, approve (not by the last editor, by default), lock, with every change written to `budget_changes` in the same transaction;
+> - the Tally budget import behind an optional connector method, read-only, from test-company budgets (seed one with the ADR-014 seeder) and recorded fixtures;
+> - Excel template download and upload with validation by row and column. Ask me before adding a library for Excel files;
+> - API endpoints protected by `budget.view`, `budget.edit` and `budget.approve` and the user's entity access;
+> - the Budget page and the budget editing grid in the dashboard per docs/design/dashboard.md Section 7, with ECharts graphs and drill-down;
+> - variance alert rules evaluated after each sync and each approval, feeding "Needs your attention".
+>
+> Amounts are DECIMAL in the canonical sign, shown in natural signs. Every figure calculates as of a date like the other reports. Show me the plan first.
+
 ## M8 — AI querying (text-to-SQL + RAG)
 
 **Done when:**
 - users ask questions in plain language and get correct answers with the SQL shown
+- budget questions are answered from the budget views (BUD-014), e.g. "Which expenses are over budget this quarter?" and "What is the projected full-year profit against budget?", with budget figures protected like actuals in every privacy mode
 - the guardrails from architecture.md Section 5.2 are enforced
 - all three privacy modes work, and `private` is the default:
   - `private` sends nothing outside the deployment
@@ -93,7 +117,7 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 > Plan milestone M8 per architecture.md Section 5 (including 5.4 to 5.7) and ADR-015, and requirements AI-001 to AI-004, AI-010 to AI-018 and SEC-010 (AI-005 and AI-006 are withdrawn). Build:
 > - **AI privacy mode** as a per-client setting in the data plane (`private` default, `schema-only`, `full`), changeable only by a Client Admin and audited.
 > - **Provider abstraction**: Ollama as the local model; Anthropic API for the test environment only, on synthetic data; Bedrock and Vertex interfaces for client cloud accounts, where configured. Each provider is allowed only in its permitted modes.
-> - **Local embedding model**: embed ledgerbridge_reporting.semantic_catalog, business definitions and ledger names into Qdrant.
+> - **Local embedding model**: embed ledgerbridge_reporting.semantic_catalog (including the budget views from M7b), business definitions and ledger names into Qdrant.
 > - **One data protection gate** that every model payload goes through:
 >   - mode checks; in `schema-only` the external request type cannot carry result rows or sample values
 >   - pseudonymization of party names (matched against the party master), GSTIN, PAN, bank account numbers and salary amounts, with a token map kept only in memory, never sent or logged
@@ -110,7 +134,7 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 > - **Dashboard**: a chat panel, and an admin view of the model call log.
 >
 > **Tests:**
-> - an evaluation set of 20 questions with expected answers from the test company, run in every mode
+> - an evaluation set of 20 questions with expected answers from the test company, run in every mode, at least 4 of them about budgets (BUD-014)
 > - leak tests asserting that no result rows, figures or unmasked names, GSTINs, PANs, bank account numbers or salaries reach an external request in `schema-only` and `full`
 > - a test that egress outside the allowlist is blocked
 >
@@ -118,7 +142,7 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 ## M9 — Pilot run on client data (developer only)
 
-**Done when:** both client companies are loaded in the `pilot` environment, validation passes against Tally, dashboards show both companies and the consolidated view, and AI querying works with the local model.
+**Done when:** both client companies are loaded in the `pilot` environment, validation passes against Tally, dashboards show both companies and the consolidated view, budgets can be created and analysed for both companies, and AI querying works with the local model.
 
 This milestone is run by the developer, not Claude Code, following [pilot-runbook.md](pilot-runbook.md). Fix any problems by describing errors to Claude Code without sharing client data: the runbook's `summary` output (counts and pass/fail) is safe to share.
 
@@ -139,3 +163,4 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | 2026-10-12 | 0.5 | Approved dashboard home page design (docs/design/dashboard.md, dashboard-mockup.png). M6 adds the home page data: business health score formula, cash cover in months, rule-based alerts, recent-events feed. M7 "Done when" and prompt require matching the design; forecast question chip deferred until forecasting (AI-009, phase 3). |
 | 2026-10-12 | 0.6 | Current milestone M4. M5 "Done when" protects the M4 validation and alert endpoints with `validation.view`. M6 reports calculate as of a date, like validation. |
 | 2026-10-12 | 0.7 | M9 points to docs/pilot-runbook.md. |
+| 2026-10-13 | 0.8 | New milestone M7b "Budget planning and analysis" (BUD-001 to BUD-016, ADR-026) between M7 and M8. M5 seeds `budget.view`, `budget.edit`, `budget.approve`. M8 answers budget questions and embeds the budget views. M9 includes budgets. |

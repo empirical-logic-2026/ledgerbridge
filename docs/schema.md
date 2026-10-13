@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.13 (Draft) |
-| Date | 2026-10-09 |
+| Version | 0.17 (Draft) |
+| Date | 2026-10-13 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
 This document describes the database inside each **client deployment**. The control plane has its own small database (users, clients, licences), described in `docs/architecture.md` Section 3.
@@ -349,6 +349,66 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 
 `ledgerbridge_accounting.bank_statement_lines`: `id, entity_id, ledger_id (bank ledger), txn_date, value_date, description, reference, amount (signed), running_balance, import_batch_id, matched_voucher_line_id NULL, match_status`. Used for bank reconciliation (VAL-004).
 
+### 4.7 Budgets (proposed for M7b; BUD-001 to BUD-016, ADR-026)
+
+User-entered planning data, kept in its own tables: the sync, `transform rebuild` and the deletion check never write them. Amounts are `DECIMAL(20,4)` in the **canonical sign** (debit positive, Section 1), like actuals; the dashboard shows natural signs. Proposed design, to be confirmed in the M7b plan.
+
+#### `ledgerbridge_accounting.budgets`
+
+One row per budget **version**.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | BIGINT UNSIGNED PK | |
+| entity_id | BIGINT UNSIGNED FK NULL | NULL: a budget entered for the consolidated group (lines by standard account only, BUD-001). |
+| name | VARCHAR(255) | E.g. "Budget FY 2027-28". |
+| fy_start | DATE | First day of the financial year (per the entity's `fy_start_month`). |
+| version_kind | ENUM('original','revised') | |
+| version_no | SMALLINT | 1 for the original, then 2, 3 … per revision. |
+| revised_from_id | BIGINT UNSIGNED FK NULL | The version this revision was copied from. |
+| status | ENUM('draft','approved','locked') | Only drafts change (BUD-005). |
+| level | ENUM('standard_account','account_group','ledger') | The level of its lines (BUD-004). |
+| origin | ENUM('manual','excel','copy','live','backup') | How it was created: grid, Excel upload, copy of last year's actuals, or imported from the source (`live`/`backup` as the connection's origin, BUD-015). |
+| connection_id | BIGINT UNSIGNED FK NULL | Imported budgets: the connection. |
+| source_key | VARCHAR(191) NULL | Imported budgets: the source's key (e.g. Tally budget GUID). |
+| import_batch_id | BIGINT UNSIGNED FK NULL | Excel uploads and imports (`import_batches`). |
+| growth_pct | DECIMAL(20,6) NULL | Copied budgets: the overall growth applied. |
+| created_by, approved_by, locked_by | CHAR(36) NULL | User ids. |
+| approved_at, locked_at | DATETIME(6) NULL | |
+| notes | TEXT NULL | |
+| extra | JSON NULL | Imported budgets: source fields with no column (ADR-025). |
+
+Unique `(entity_id, fy_start, name, version_no)`; unique `(connection_id, source_key, version_no)` for imported budgets. The **current** budget of an entity and year is its latest `approved` or `locked` version (BUD-005), unless a request names another.
+
+#### `ledgerbridge_accounting.budget_lines`
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | BIGINT UNSIGNED PK | |
+| budget_id | BIGINT UNSIGNED FK | `ON DELETE CASCADE` (only drafts can be deleted). |
+| standard_account_id | BIGINT UNSIGNED FK NULL | Exactly one of the three account columns is set, matching the budget's `level`. |
+| account_group_id | BIGINT UNSIGNED FK NULL | |
+| ledger_id | BIGINT UNSIGNED FK NULL | |
+| cost_centre_id | BIGINT UNSIGNED FK NULL | Optional. |
+| annual_amount | DECIMAL(20,4) | Equals the sum of the line's months (checked on every save). |
+| spread_method | ENUM('equal','last_year','manual') | How the months were last filled (BUD-003). |
+| growth_pct | DECIMAL(20,6) NULL | Copied lines: growth applied to last year's actuals. |
+| source_ref_deleted | BOOLEAN DEFAULT FALSE | The referenced account, group, ledger or cost centre was deleted in the source: the line stays, flagged (ADR-026). |
+
+Unique `(budget_id, standard_account_id, account_group_id, ledger_id, cost_centre_id)` (with the line's dimension values as part of the key, enforced in the application).
+
+#### `ledgerbridge_accounting.budget_line_months`
+
+`budget_line_id, month DATE (first day), amount DECIMAL(20,4)`; PK `(budget_line_id, month)`. Twelve rows per line (or as many months as the financial year has).
+
+#### `ledgerbridge_accounting.budget_line_dimensions`
+
+`budget_line_id, dimension_value_id` (PK both): custom dimensions of a line (DAT-005, including promoted fields, ADR-025).
+
+#### `ledgerbridge_accounting.budget_changes`
+
+Append-only history of every change (BUD-006): `id, budget_id, budget_line_id NULL, month DATE NULL, action ENUM('create','edit','spread','import','upload','copy','revise','approve','lock','unlock','delete_line'), old_amount DECIMAL(20,4) NULL, new_amount DECIMAL(20,4) NULL, changed_by CHAR(36), changed_at DATETIME(6), note VARCHAR(255) NULL`. Written in the same transaction as the change; the application user has INSERT and SELECT only on this table. Index `(budget_id, changed_at)`.
+
 ## 5. `ledgerbridge_system`
 
 ### 5.1 Integration
@@ -373,7 +433,7 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 | --- | --- |
 | `ledgerbridge_system.validation_runs` | `id, sync_run_id NULL, import_batch_id NULL, entity_id, as_of DATE, started_at, status, checks_passed, checks_failed` (`as_of` added by migration `0006`) |
 | `ledgerbridge_system.validation_issues` | `id, validation_run_id, check_code ('voucher_unbalanced','tb_unbalanced','closing_mismatch',...), severity, object_type, object_id, expected_value, actual_value, message, resolved_at` |
-| `ledgerbridge_system.alerts` | `id, kind ENUM('sync_failed','deletion_check_failed','validation_failed'), severity ENUM('error','warning'), connection_id, entity_id NULL, sync_run_id NULL, validation_run_id NULL, message, resolved_at NULL, acknowledged_at NULL, acknowledged_by VARCHAR(36) NULL` (SYN-006, migration `0006`). Index `(connection_id, kind, resolved_at)`. `message` holds counts and check codes only. |
+| `ledgerbridge_system.alerts` | `id, kind ENUM('sync_failed','deletion_check_failed','validation_failed'), severity ENUM('error','warning'), connection_id, entity_id NULL, sync_run_id NULL, validation_run_id NULL, message, resolved_at NULL, acknowledged_at NULL, acknowledged_by VARCHAR(36) NULL` (SYN-006, migration `0006`). Index `(connection_id, kind, resolved_at)`. `message` holds counts and check codes only. Proposed for M7b: kind `budget_variance` (BUD-011), with `entity_id` set and `connection_id` NULL, so `connection_id` becomes nullable. |
 
 **Checks (M4, VAL-001, VAL-002)**, all **as of a date** (`as_of`, default today): only vouchers dated on or before it count. Post-dated vouchers are stored as they are (`is_post_dated` recorded, `is_effective` unchanged); reports in M6 likewise calculate as of a date.
 
@@ -404,7 +464,7 @@ A run is `failed` when any error-severity issue is recorded, else `passed`. `che
 | --- | --- |
 | `ledgerbridge_system.users` | `id CHAR(36) PK` (same ID as the control plane), `email, display_name, status, password_hash NULL` (`password_hash` used only when `AUTH_MODE=local`) |
 | `ledgerbridge_system.roles` | `id, code, name, is_system` |
-| `ledgerbridge_system.permissions` | `id, code` (e.g. `report.pnl.view`, `ai.query`, `connections.manage`) |
+| `ledgerbridge_system.permissions` | `id, code` (e.g. `report.pnl.view`, `ai.query`, `connections.manage`, `validation.view`, `budget.view`, `budget.edit`, `budget.approve`) |
 | `ledgerbridge_system.role_permissions` | `role_id, permission_id` |
 | `ledgerbridge_system.user_roles` | `user_id, role_id` |
 | `ledgerbridge_system.user_entity_access` | `user_id, entity_id, branch_id NULL` (NULL branch = all branches) |
@@ -423,6 +483,7 @@ A run is `failed` when any error-severity issue is recorded, else `passed`. `che
 | --- | --- |
 | `ledgerbridge_system.kpi_definitions` | `id, code, name, formula_view, good_threshold, bad_threshold, direction ENUM('higher_better','lower_better')` (RPT-002) |
 | `ledgerbridge_system.settings` | `key PK, value JSON` |
+| `ledgerbridge_system.budget_alert_rules` | `id, entity_id NULL (all), standard_account_id NULL, account_group_id NULL (all accounts), period ENUM('month','quarter','ytd'), threshold_pct DECIMAL(20,6) NULL, threshold_amount DECIMAL(20,4) NULL, direction ENUM('unfavourable','any') DEFAULT 'unfavourable', severity ENUM('warning','error'), is_active` (BUD-011; proposed for M7b). A rule fires when both set thresholds are exceeded; alerts go to `alerts` (kind `budget_variance`) and "Needs your attention". |
 
 ## 6. `ledgerbridge_reporting` (semantic layer)
 
@@ -443,6 +504,21 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | `ledgerbridge_reporting.v_consolidated_tb` | View | Trial balance across entities via `standard_accounts` (inter-company eliminations later). |
 | `ledgerbridge_reporting.v_kpis` | View | Values for `ledgerbridge_system.kpi_definitions` (health indicators). |
 | `ledgerbridge_reporting.semantic_catalog` | Table | Plain-language description of every view and column, used to build AI prompts (embedded in the vector store). |
+
+**Budget views (proposed for M7b; BUD-007 to BUD-012, BUD-014).** Same rules as the other reports: actuals as of a date, effective voucher lines only, the user's entity access applied by the API (and injected into AI queries).
+
+| Object | Type | Purpose |
+| --- | --- | --- |
+| `ledgerbridge_reporting.v_group_tree` | View | Each account group with every ancestor (closure), so ledger and sub-group figures roll up to any group. |
+| `ledgerbridge_reporting.v_actual_monthly` | View | Actuals by `entity_id, month, ledger_id, account_group_id, standard_account_id, cost_centre_id` (cost centre from `line_cost_allocations`), from `agg_ledger_daily`; custom dimensions via `line_dimensions`. |
+| `ledgerbridge_reporting.v_budget_current` | View | The current budget version per entity and financial year (latest approved or locked). |
+| `ledgerbridge_reporting.v_budget_monthly` | View | Monthly budget amounts with the line's account, cost centre and dimensions, and the version's status. |
+| `ledgerbridge_reporting.v_budget_vs_actual_monthly` | View | Per entity, month and account at the budget's level: `budget, actual, last_year_actual, variance (actual − budget), variance_pct (n/a when budget is 0), nature, favourable ('favourable','unfavourable','n/a')`. Favourable by nature (BUD-008), comparing in the canonical sign: income favourable when actual is more credit than budget, expenses when actual is less debit; asset, liability and equity lines `n/a`. |
+| `ledgerbridge_reporting.v_budget_vs_actual_period` | View | The same, totalled for month, quarter, year to date and full year, with `ytd_budget, ytd_actual, remaining_budget, projection (ytd_actual + remaining_budget), full_year_budget, projection_variance` (BUD-009). |
+| `ledgerbridge_reporting.v_budget_vs_actual_consolidated` | View | The same across the user's entities by standard account (company budgets summed, plus budgets entered for the group). |
+| `ledgerbridge_reporting.v_budget_variance_alerts` | View | Lines exceeding the active `budget_alert_rules`, for the alert engine and "Needs your attention" (BUD-011). |
+
+All budget views get entries in `semantic_catalog` so the AI can answer budget questions (BUD-014). Graph data (BUD-012) comes from these views: monthly bars and last-year line from `v_budget_vs_actual_monthly`, cumulative lines from its running totals, the waterfall from `v_budget_vs_actual_period` by account group, the heatmap from `v_budget_vs_actual_monthly` by account and month.
 
 ## 7. Tally to canonical mapping
 
@@ -598,6 +674,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-13 | 0.17 | Proposed budget design for M7b: Section 4.7 (`budgets`, `budget_lines`, `budget_line_months`, `budget_line_dimensions`, `budget_changes`), `budget_alert_rules` (5.5), budget permissions (5.3), budget-vs-actual reporting views (6). ADR-026. |
 | 2026-10-13 | 0.16 | `raw_records.process_status` `skipped` used for superseded versions; `transform rebuild` (no schema change). |
 | 2026-10-13 | 0.15 | Migration `0010` (ADR-025): `extra` JSON, `source_fields`, promoted dimensions, wider source text columns, `raw_records.process_warning`, run type `transform`; validation checks VAL-005 to VAL-009. |
 | 2026-10-13 | 0.14 | `sync_runs` status `interrupted`, `heartbeat_at`, `pid`, `host`; `sync_logs`; `connections.config.xml_prefixes_seen` (migration `0009`, ADR-024). |
