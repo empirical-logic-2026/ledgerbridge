@@ -144,7 +144,7 @@ The pipeline, all source-independent (M3):
 1. **Fetch** (`workers/sync.py`, `workers/fetch.py`): objects changed since each object type's marker, or everything on the first run; chunk by chunk with checkpoints, splitting and source checks when the connector supports it (ADR-022), else as one stream per kind (`fetch_masters`, `fetch_transactions`). Steps 1 to 4 run per entity.
 2. **Store raw** (`core/raw_store.py`): payloads are stored unchanged; identical re-deliveries are skipped.
 3. **Map:** the connector's `to_canonical()` turns each raw record into plain canonical records (`core/canonical.py`): amounts with the canonical sign, masters referred to by name.
-4. **Transform** (`core/transform.py`): upserts on `(connection_id, source_key)`, resolves names within the entity, inherits group hints down the group tree (nature, standard account, ledger kind, party type), and replaces each changed voucher's child rows in one transaction (schema.md 8, rule 7).
+4. **Transform** (`core/transform.py`): upserts on `(connection_id, source_key)`, resolves names within the entity, inherits group hints down the group tree (nature, standard account, ledger kind, party type), and replaces each changed voucher's child rows in one transaction (schema.md 8, rule 7). Stored records can be transformed again without the source (DAT-008): `transform retry` (failed and pending) and `transform rebuild` (every object of the chosen entities). Both only queue an object's latest raw record, mark older failed versions `skipped`, and keep objects deleted in the source deleted.
 5. **Deletions:** a separate deletion check run compares the keys from `list_keys()` with the stored rows; keys that are gone become soft deletes. It runs on its own, longer schedule (ADR-018).
 6. **Log:** one `sync_runs` row per run; markers advance only when it succeeds.
 
@@ -397,6 +397,7 @@ The pilot runs the data plane on the developer's Windows machine.
 | 2026-10-12 | 0.9 | ADR-020: short sync transactions, connections paused until activated, read-only company listing, safe error text (pilot run fixes). |
 | 2026-10-12 | 0.10 | ADR-021: entities identified by source key; exact names; one shared lookup. |
 | 2026-10-12 | 0.11 | ADR-022: chunked, resumable, entity-by-entity syncs; timeouts lead to a source check and splitting, not a resend. |
+| 2026-10-13 | 0.15 | Section 4.4: `transform rebuild` re-transforms every stored object (DAT-008); retries and rebuilds only queue an object's latest raw record. |
 | 2026-10-13 | 0.14 | ADR-025: `extra` JSON, field catalogue, promotion to dimensions, fitting values to columns, record-by-record retry of rejected batches. Section 4.6: thorough checks against the source's controls (VAL-005 to VAL-008) and root causes (VAL-009). |
 | 2026-10-13 | 0.13 | ADR-024: background sync jobs with their output in `sync_logs` and `sync watch`; heartbeats, `interrupted` runs, stale-run detection and `sync abandon`; waiting for a busy source after a timeout; undeclared XML prefixes. |
 | 2026-10-13 | 0.12 | ADR-023: unverified chunks never checkpointed; part-month support probed; whole-month retries with longer timeouts; effective timeout and pause; refetch from a date. |
