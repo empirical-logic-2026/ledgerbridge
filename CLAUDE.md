@@ -12,6 +12,7 @@ Read these before any non-trivial task:
 - `docs/architecture.md` — how it is built, including the decision log (ADRs).
 - `docs/schema.md` — the MySQL design. Schema changes must match it.
 - `docs/roadmap.md` — milestone order and the current milestone.
+- `docs/codebase-guide.md` — what every folder and important file is for, and how the main flows move through the code.
 
 ## Current focus: local pilot (Phase 1a)
 
@@ -117,6 +118,7 @@ Claude Code only ever uses `-Env test` (with both `dev.ps1` and `deploy/stack.ps
 3. When a requirement or design changes, update `docs/requirements.md` / `docs/architecture.md` first (including the change log or ADR list), then the code.
 4. Reference requirement IDs in commit messages and PR descriptions, e.g. `CON-002: Tally ledger sync`.
 5. Write or update tests with every change.
+6. Keep `docs/codebase-guide.md` accurate: whenever a folder or an important file is added, moved, renamed or removed (or its purpose changes), update the guide in the same change (its tree, its tables, the flows and "Where to look" if affected), with a change log entry.
 
 ## Docker changes (developer is learning Docker)
 
