@@ -287,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
     stale = []
     for name, content in generated().items():
         path = OUT / name
-        current = path.read_text(encoding="utf-8") if path.exists() else None
+        current = path.read_text(encoding="utf-8").replace("\r\n", "\n") if path.exists() else None
         if current == content:
             continue
         stale.append(name)

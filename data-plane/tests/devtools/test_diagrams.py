@@ -10,7 +10,7 @@ def test_generated_diagram_sources_are_up_to_date() -> None:
         name
         for name, content in diagrams.generated().items()
         if not (diagrams.OUT / name).exists()
-        or (diagrams.OUT / name).read_text(encoding="utf-8") != content
+        or (diagrams.OUT / name).read_text(encoding="utf-8").replace("\r\n", "\n") != content
     ]
     assert not stale, f"out of date: {stale}; run ./dev.ps1 diagrams"
 

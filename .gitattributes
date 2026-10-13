@@ -1,2 +1,5 @@
 # Shell scripts run inside Linux containers; keep LF endings on Windows checkouts.
 *.sh text eol=lf
+
+# Diagram sources are compared with what the generator writes (LF).
+docs/diagrams/*.mmd text eol=lf
