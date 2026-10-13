@@ -30,6 +30,8 @@
     ./dev.ps1 sync full -Env pilot              (re-run it to continue after an interruption)
     ./dev.ps1 sync full -Env pilot -Restart     (start over)
     ./dev.ps1 sync full -Env pilot -From 2024-03-01   (fetch again from a date)
+    ./dev.ps1 sync watch -Env pilot             (follow a running sync again)
+    ./dev.ps1 sync abandon -Env pilot           (mark runs whose process is gone interrupted)
     ./dev.ps1 summary -Env pilot
     ./dev.ps1 reset -Env pilot
 #>
@@ -272,8 +274,25 @@ switch ($Command) {
     'sync' {
         # Fetch changes from the source and transform them (M3). -Company limits it to one
         # company; without it the connection's remembered companies (or all loaded) sync.
+        # The sync runs in the background inside the api container and writes its output to
+        # the database; this window just follows it (ADR-024). Closing the window or Ctrl+C
+        # never stops the sync: `sync watch` follows it again, `sync abandon` recovers runs
+        # whose process is gone.
         Assert-EnvFile
         Assert-ApiRunning
+        if ($Service -eq 'watch') {
+            Invoke-Checked exec -T api python -m workers.cli watch --connection $connection
+            return
+        }
+        if ($Service -eq 'abandon') {
+            $expected = 'abandon'
+            $answer = if ($Confirmation) { $Confirmation } else { Read-Host "Mark this connection's running sync runs as interrupted? Type '$expected' to continue" }
+            if ($answer -cne $expected) { Write-Host 'Not confirmed: nothing changed.' -ForegroundColor Yellow; exit 2 }
+            $abandonArgs = @('python', '-m', 'workers.cli', 'abandon', '--connection', $connection, '--yes')
+            if ($Force) { $abandonArgs += '--force' }
+            Invoke-Checked exec -T api @abandonArgs
+            return
+        }
         # `sync full` also runs a deletion check; `sync deletions` runs only the deletion check
         # (the worker runs it on its own schedule, hourly by default).
         $mode = if ($Service -eq 'deletions') { 'check-deletions' } else { 'sync' }
@@ -288,7 +307,11 @@ switch ($Command) {
             if ($Service -ne 'full') { throw '-From only applies to: sync full -From YYYY-MM-DD' }
             $syncArgs += @('--refetch-from', $From)
         }
-        Invoke-Checked exec -T api @syncArgs
+        $job = [guid]::NewGuid().ToString()
+        $syncArgs += @('--job', $job)
+        Invoke-Stack exec -d api @syncArgs
+        Write-Host "Started sync job $job in the background. Following it; closing this window doesn't stop it (follow again with: ./dev.ps1 sync watch -Env $Env)."
+        Invoke-Checked exec -T api python -m workers.cli watch --connection $connection --job $job
     }
     'validate' {
         # Validation as of today (M4): voucher balance, trial balance and closing balances

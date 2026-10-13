@@ -32,7 +32,7 @@ from core.models.schemas import ACCOUNTING, SYSTEM
 
 CONNECTION_STATUSES = ("active", "paused", "error")
 RUN_TYPES = ("incremental", "full", "import", "deletion_check")
-RUN_STATUSES = ("running", "succeeded", "failed")
+RUN_STATUSES = ("running", "succeeded", "failed", "interrupted")
 _S = {"schema": SYSTEM}
 
 
@@ -119,6 +119,26 @@ class SyncRun(TimestampMixin, Base):
     records_failed: Mapped[int] = mapped_column(Integer, default=0)
     # Exception type and message only; never payloads or accounting values.
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Liveness of a running run (ADR-024): updated every SYNC_HEARTBEAT_SEC by the process;
+    # a run whose heartbeat stops is marked interrupted.
+    heartbeat_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
+    pid: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    host: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class SyncLog(Base):
+    """Output of a sync job run in the background (ADR-024): what the command would have
+    printed, line by line, so `sync watch` can follow it from any terminal. Counts, check
+    codes and pass/fail outside the test environment, as the command prints them."""
+
+    __tablename__ = "sync_logs"
+    __table_args__ = (Index("ix_sync_logs_job", "job_id", "id"), _S)
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    connection_id: Mapped[int] = mapped_column(Id, ForeignKey(f"{SYSTEM}.connections.id"))
+    job_id: Mapped[str] = mapped_column(CHAR(36))
+    logged_at: Mapped[datetime] = mapped_column(Timestamp)
+    line: Mapped[str] = mapped_column(Text)
 
 
 class SyncCheckpoint(TimestampMixin, Base):
