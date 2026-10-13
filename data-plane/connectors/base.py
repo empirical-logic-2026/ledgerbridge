@@ -104,9 +104,31 @@ class SourceBalances:
     closing_stock: Decimal | None = None
 
 
+@dataclass(frozen=True)
+class SourceControls:
+    """The source's own figures that prove the books complete, beyond closing balances
+    (VAL-005 to VAL-008). Each is None when the source can't report it, or the exception
+    that prevented reading it. Amounts use the canonical sign (debit positive).
+
+    - `voucher_counts`: (first day of the month, voucher type name) -> number of vouchers
+      dated in that month, up to the as-of date (cancelled and optional ones included);
+    - `stock_quantities`: stock item source_key -> closing quantity as of the date;
+    - `bill_outstanding`: party ledger name -> total of its outstanding bills, as the source
+      reports them now; `opening_bills`: party ledger name -> total of its opening bills;
+    - `year_ends`: each financial year end before the as-of date -> closing balances then.
+    """
+
+    voucher_counts: Mapping[tuple[date, str], int] | Exception | None = None
+    stock_quantities: Mapping[str, Decimal] | Exception | None = None
+    bill_outstanding: Mapping[str, Decimal] | Exception | None = None
+    opening_bills: Mapping[str, Decimal] | Exception | None = None
+    year_ends: Mapping[date, "SourceBalances | Exception"] = field(default_factory=dict)
+
+
 class Connector(Protocol):
     source_code: str
-    # Object types in the order they must be transformed (each may refer to earlier ones).
+    # Object types in the order they must be transformed (each may refer to earlier ones). The
+    # first is the entity's own record (e.g. a Tally company), which creates the entity.
     object_types: tuple[str, ...]
 
     def test_connection(self) -> ConnectionStatus: ...
@@ -169,4 +191,22 @@ class Connector(Protocol):
     def closing_balances(self, entity: SourceEntity, as_of: date) -> SourceBalances:
         """The source's closing balance of every ledger as of `as_of` (inclusive), from the
         entity's books-from date. Optional: validation skips closing checks without it."""
+        ...
+
+    # --- optional: figures that prove the books complete (VAL-005 to VAL-008) -----------
+
+    def voucher_counts(
+        self, entity: SourceEntity, start: date, end: date
+    ) -> dict[tuple[date, str], int]:
+        """(month start, voucher type name) -> vouchers dated start..end (inclusive)."""
+        ...
+
+    def stock_quantities(self, entity: SourceEntity, as_of: date) -> dict[str, Decimal]:
+        """Stock item source_key -> closing quantity as of `as_of`."""
+        ...
+
+    def bill_outstanding(
+        self, entity: SourceEntity
+    ) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+        """(outstanding bills now, opening bills), each party ledger name -> total."""
         ...

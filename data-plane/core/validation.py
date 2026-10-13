@@ -1,14 +1,27 @@
-"""Validation of one entity's books (VAL-001, VAL-002; schema.md 5.2, architecture 4.6).
+"""Validation of one entity's books (VAL-001, VAL-002, VAL-005 to VAL-009; schema.md 5.2;
+architecture 4.6).
 
-Source-independent: the source's own figures arrive as `connectors.base.SourceBalances`.
-Everything is computed **as of a date**: only vouchers dated on or before it count, so
-post-dated vouchers simply fall outside earlier dates.
+Source-independent: the source's own figures arrive as `connectors.base.SourceBalances` and
+`connectors.base.SourceControls`. Everything is computed **as of a date**: only vouchers
+dated on or before it count, so post-dated vouchers simply fall outside earlier dates.
+
+Checks (all exact by default; amounts within the connection's tolerance):
+- every voucher balances; the trial balance balances at every year end and the as-of date;
+- each ledger's balance equals the source's closing balance as of the date (the profit
+  carrier with the period's profit) and at every financial year end before it;
+- with controls: vouchers per month and voucher type equal the source's counts; each stock
+  item's closing quantity equals the source's; each party's bill-wise outstanding equals
+  the source's.
+
+When raw records failed to transform, the report says how many failures are likely their
+consequences, so the root cause is obvious (`root_cause`).
 
 Issue messages are stored in the database (they may name vouchers and ledgers); nothing
 here logs names or amounts.
 """
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -16,13 +29,73 @@ from decimal import Decimal
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from connectors.base import SourceBalances
+from connectors.base import SourceBalances, SourceControls
 from core.models import accounting as A  # noqa: N812
 from core.models.base import utcnow
+from core.models.source import RawRecord
 from core.models.system import ValidationIssue, ValidationRun
 
 ZERO = Decimal(0)
 PROFIT_NATURES = ("income", "expense")
+# Failures that follow from records missing in the accounting tables (raw records that
+# failed to transform): a missing voucher or ledger changes balances and counts.
+CONSEQUENCES = (
+    "closing_mismatch",
+    "profit_carrier_mismatch",
+    "year_end_mismatch",
+    "tb_unbalanced",
+    "voucher_count_mismatch",
+    "stock_quantity_mismatch",
+    "bills_mismatch",
+)
+
+
+@dataclass
+class RootCause:
+    """Raw records of the entity that failed to transform, and the failures that are
+    likely their consequences (counts only)."""
+
+    failed_records: Counter[str] = field(default_factory=Counter)  # object type -> count
+    missing_ledgers: int = 0  # ledger_missing findings
+    vouchers_for_unknown_ledger: int = 0
+    consequences: Counter[str] = field(default_factory=Counter)  # check code -> count
+
+    @property
+    def any(self) -> bool:
+        return bool(self.failed_records or self.missing_ledgers)
+
+    def lines(self) -> list[str]:
+        """Plain-language explanation (counts and check codes only)."""
+        if not self.any:
+            return []
+        out = []
+        if self.missing_ledgers:
+            out.append(
+                f"{self.missing_ledgers:,} ledgers in the source are missing here"
+                + (
+                    f" ({self.failed_records['ledger']:,} ledger records failed to transform)"
+                    if self.failed_records.get("ledger")
+                    else ""
+                )
+            )
+        if self.vouchers_for_unknown_ledger:
+            out.append(
+                f"{self.vouchers_for_unknown_ledger:,} vouchers failed to transform because they "
+                "refer to a ledger that is missing"
+            )
+        others = {k: v for k, v in self.failed_records.items() if k != "ledger"}
+        if others:
+            listed = ", ".join(f"{kind} {n:,}" for kind, n in sorted(others.items()))
+            out.append(f"raw records that failed to transform: {listed}")
+        total = sum(self.consequences.values())
+        if total:
+            listed = ", ".join(f"{code} {n:,}" for code, n in sorted(self.consequences.items()))
+            out.append(
+                f"{total:,} other failures ({listed}) are likely consequences: fix the records "
+                "that failed to transform first (summary shows why they failed), then run "
+                "transform retry"
+            )
+        return out
 
 
 @dataclass(frozen=True)
@@ -51,6 +124,9 @@ class ValidationReport:
     checks_failed: int = 0
     findings: list[Finding] = field(default_factory=list)
     opening_difference: Decimal = ZERO
+    root_cause: RootCause = field(default_factory=RootCause)
+    # Unbalanced vouchers by voucher base type (sales, journal, ...): counts only.
+    unbalanced_by_type: Counter[str] = field(default_factory=Counter)
 
     @property
     def failed_by_code(self) -> Counter[str]:
@@ -106,6 +182,7 @@ class Validator:
         self,
         source: SourceBalances | Exception | None,
         sync_run_id: int | None = None,
+        controls: SourceControls | None = None,
     ) -> ValidationReport:
         run = ValidationRun(
             entity_id=self.entity.id,
@@ -119,10 +196,17 @@ class Validator:
         report = ValidationReport(run.id, self.entity.id, self.entity.name, self.as_of)
 
         ledgers = self._ledger_balances(self.as_of)
-        self._vouchers()
+        report.unbalanced_by_type = self._vouchers()
         report.opening_difference = self._opening_difference(ledgers)
         self._trial_balance(report.opening_difference)
         self._closing(ledgers, source)
+        if controls is not None:
+            for year_end, balances in sorted(controls.year_ends.items()):
+                self._closing(self._ledger_balances(year_end), balances, year_end)
+            self._voucher_counts(controls.voucher_counts)
+            self._stock_quantities(controls.stock_quantities)
+            self._bills(controls.bill_outstanding, controls.opening_bills)
+        report.root_cause = self._root_cause()
 
         report.findings = self.findings
         report.checks_passed = self.passed
@@ -168,8 +252,9 @@ class Validator:
 
     # --- checks -----------------------------------------------------------------------
 
-    def _vouchers(self) -> None:
-        """VAL-001: every effective voucher's lines sum to zero."""
+    def _vouchers(self) -> Counter[str]:
+        """VAL-001: every effective voucher's lines sum to zero. Returns the unbalanced ones
+        per voucher base type."""
         sums = self.session.execute(
             select(A.VoucherLine.voucher_id, func.sum(A.VoucherLine.amount))
             .where(A.VoucherLine.entity_id == self.entity.id, A.VoucherLine.is_effective.is_(True))
@@ -177,14 +262,21 @@ class Validator:
         ).all()
         unbalanced = {vid: Decimal(total) for vid, total in sums if Decimal(total) != ZERO}
         self.passed += len(sums) - len(unbalanced)
+        by_type: Counter[str] = Counter()
         if not unbalanced:
-            return
+            return by_type
         vouchers = self.session.execute(
-            select(A.Voucher.id, A.Voucher.voucher_number, A.Voucher.voucher_date).where(
-                A.Voucher.id.in_(list(unbalanced))
+            select(
+                A.Voucher.id,
+                A.Voucher.voucher_number,
+                A.Voucher.voucher_date,
+                A.VoucherType.base_type,
             )
+            .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
+            .where(A.Voucher.id.in_(list(unbalanced)))
         ).all()
-        for vid, number, voucher_date in vouchers:
+        for vid, number, voucher_date, base_type in vouchers:
+            by_type[base_type] += 1
             self._fail(
                 Finding(
                     "voucher_unbalanced",
@@ -196,6 +288,7 @@ class Validator:
                     f"Voucher {number or vid} dated {voucher_date} doesn't balance.",
                 )
             )
+        return by_type
 
     def _opening_difference(self, ledgers: list[_LedgerBalance]) -> Decimal:
         difference = sum((ledger.opening for ledger in ledgers), ZERO)
@@ -241,10 +334,20 @@ class Validator:
             )
 
     def _closing(
-        self, ledgers: list[_LedgerBalance], source: SourceBalances | Exception | None
+        self,
+        ledgers: list[_LedgerBalance],
+        source: SourceBalances | Exception | None,
+        year_end: date | None = None,
     ) -> None:
-        """VAL-002: each ledger's balance matches the source's own closing balance."""
+        """VAL-002: each ledger's balance matches the source's own closing balance; with
+        `year_end`, at that financial year end (missing ledgers are reported once, as of the
+        validation date)."""
         entity_id = str(self.entity.id)
+        if year_end is not None:
+            if isinstance(source, Exception) or source is None:
+                self._unavailable("year_end_balances", source, f"at {year_end}")
+                return
+            entity_id = f"{self.entity.id}@{year_end.isoformat()}"
         if source is None:
             self._fail(
                 Finding(
@@ -284,6 +387,8 @@ class Validator:
         for ledger in ours:
             seen.add(ledger.source_key)
             theirs = source.ledgers.get(ledger.source_key)
+            if theirs is None and year_end is not None:
+                continue  # reported as ledger_missing as of the validation date
             if theirs is None:
                 self._fail(
                     Finding(
@@ -308,12 +413,18 @@ class Validator:
                 expected_ours = ledger.balance
                 code = "closing_mismatch"
                 message = f"Ledger '{ledger.name}' closing balance differs from the source."
+            object_id = str(ledger.id)
+            if year_end is not None:
+                code, object_id = "year_end_mismatch", f"{ledger.id}@{year_end.isoformat()}"
+                message = f"{message[:-1]} at the year end {year_end}."
             if abs(theirs - expected_ours) <= self.tolerance:
                 self.passed += 1
             else:
                 self._fail(
-                    Finding(code, "error", "ledger", str(ledger.id), theirs, expected_ours, message)
+                    Finding(code, "error", "ledger", object_id, theirs, expected_ours, message)
                 )
+        if year_end is not None:
+            return
         for key, theirs in source.ledgers.items():
             if key not in seen:
                 self._fail(
@@ -327,6 +438,227 @@ class Validator:
                         "A ledger in the source isn't here (sync it, or check for a failure).",
                     )
                 )
+
+    # --- controls: counts, stock, bills (VAL-005 to VAL-008) ----------------------------
+
+    def _unavailable(self, what: str, problem: Exception | None, detail: str = "") -> None:
+        """A control the source couldn't provide: an error if it failed, a note if the
+        source doesn't offer it."""
+        where = f" {detail}" if detail else ""
+        if problem is None:
+            self._fail(
+                Finding(
+                    f"{what}_not_supported", "info", "entity", str(self.entity.id), None, None,
+                    f"The source can't report {what.replace('_', ' ')}{where}; check skipped.",
+                )
+            )  # fmt: skip
+            return
+        object_id = f"{self.entity.id}{where.replace(' at ', '@')}"[:64]
+        self._fail(
+            Finding(
+                f"{what}_unavailable", "error", "entity", object_id, None, None,
+                f"The source's {what.replace('_', ' ')}{where} couldn't be read "
+                f"({type(problem).__name__}); this check didn't run.",
+            )
+        )  # fmt: skip
+
+    def _voucher_counts(self, theirs: Mapping[tuple[date, str], int] | Exception | None) -> None:
+        """VAL-005: vouchers per month and voucher type equal the source's own counts
+        (cancelled and optional vouchers included; deleted ones excluded)."""
+        if theirs is None or isinstance(theirs, Exception):
+            self._unavailable("voucher_counts", theirs)
+            return
+        types = dict(
+            self.session.execute(
+                select(A.VoucherType.id, A.VoucherType.name).where(
+                    A.VoucherType.entity_id == self.entity.id
+                )
+            ).all()
+        )
+        ours: Counter[tuple[date, str]] = Counter()
+        for voucher_date, type_id, count in self.session.execute(
+            select(A.Voucher.voucher_date, A.Voucher.voucher_type_id, func.count())
+            .where(
+                A.Voucher.entity_id == self.entity.id,
+                A.Voucher.is_deleted.is_(False),
+                A.Voucher.voucher_date <= self.as_of,
+            )
+            .group_by(A.Voucher.voucher_date, A.Voucher.voucher_type_id)
+        ):
+            ours[(voucher_date.replace(day=1), types.get(type_id, ""))] += count
+        ids = {name: type_id for type_id, name in types.items()}
+        for month, kind in sorted(set(ours) | set(theirs)):
+            expected, actual = theirs.get((month, kind), 0), ours.get((month, kind), 0)
+            if expected == actual:
+                self.passed += 1
+                continue
+            self._fail(
+                Finding(
+                    "voucher_count_mismatch",
+                    "error",
+                    "voucher_month",
+                    f"{month:%Y-%m}:{ids.get(kind, 'unknown type')}"[:64],
+                    Decimal(expected),
+                    Decimal(actual),
+                    f"{month:%Y-%m}, voucher type '{kind}': {actual} vouchers here, "
+                    f"{expected} in the source.",
+                )
+            )
+
+    def _stock_quantities(self, theirs: Mapping[str, Decimal] | Exception | None) -> None:
+        """VAL-006: each stock item's closing quantity (opening plus movements of effective
+        vouchers up to the date) equals the source's. Values depend on the source's
+        valuation method and aren't compared item by item (the total closing stock is part
+        of the profit check)."""
+        if theirs is None or isinstance(theirs, Exception):
+            self._unavailable("stock_quantities", theirs)
+            return
+        movements = (
+            select(A.InventoryLine.item_id, func.sum(A.InventoryLine.quantity).label("moved"))
+            .join(A.Voucher, A.Voucher.id == A.InventoryLine.voucher_id)
+            .where(
+                A.InventoryLine.entity_id == self.entity.id,
+                A.InventoryLine.voucher_date <= self.as_of,
+                A.Voucher.is_deleted.is_(False),
+                A.Voucher.is_cancelled.is_(False),
+                A.Voucher.is_optional.is_(False),
+            )
+            .group_by(A.InventoryLine.item_id)
+            .subquery()
+        )
+        ours = {
+            key: (item_id, name, Decimal(opening) + Decimal(moved))
+            for item_id, key, name, opening, moved in self.session.execute(
+                select(
+                    A.Item.id,
+                    A.Item.source_key,
+                    A.Item.name,
+                    A.Item.opening_qty,
+                    func.coalesce(movements.c.moved, 0),
+                )
+                .outerjoin(movements, movements.c.item_id == A.Item.id)
+                .where(A.Item.entity_id == self.entity.id, A.Item.is_deleted.is_(False))
+            )
+        }
+        for key in sorted(set(ours) | set(theirs)):
+            item_id, name, actual = ours.get(key, (None, None, None))
+            expected = theirs.get(key)
+            if actual is not None and expected is not None and actual == expected:
+                self.passed += 1
+                continue
+            self._fail(
+                Finding(
+                    "stock_quantity_mismatch",
+                    "error",
+                    "item" if item_id is not None else "source_item",
+                    str(item_id) if item_id is not None else key[:64],
+                    expected,
+                    actual,
+                    f"Stock item '{name}' closing quantity differs from the source."
+                    if name is not None
+                    else "A stock item in the source isn't here.",
+                )
+            )
+        if ours or theirs:
+            self._fail(
+                Finding(
+                    "stock_values_not_compared", "info", "entity", str(self.entity.id), None, None,
+                    "Stock values per item depend on the source's valuation method and aren't "
+                    "compared item by item; the total closing stock is part of the profit check.",
+                )
+            )  # fmt: skip
+
+    def _bills(
+        self,
+        outstanding: Mapping[str, Decimal] | Exception | None,
+        opening: Mapping[str, Decimal] | Exception | None,
+    ) -> None:
+        """VAL-007: each party's bill-wise outstanding (its opening bills plus every bill
+        allocation of effective vouchers, 'on account' excluded) equals the source's.
+
+        The source reports bills as outstanding now, whatever the as-of date, so the check
+        runs only for validations as of today or later and counts every voucher."""
+        if self.as_of < date.today():
+            self._fail(
+                Finding(
+                    "bills_not_compared", "info", "entity", str(self.entity.id), None, None,
+                    "Bill-wise outstanding is only compared as of today: the source reports "
+                    "bills as outstanding now.",
+                )
+            )  # fmt: skip
+            return
+        for part in (outstanding, opening):
+            if part is None or isinstance(part, Exception):
+                self._unavailable("bill_outstanding", part)
+                return
+        assert isinstance(outstanding, Mapping) and isinstance(opening, Mapping)  # noqa: S101
+        ours: Counter[str] = Counter()
+        ledger_ids: dict[str, int] = {}
+        for ledger_id, name, total in self.session.execute(
+            select(A.Ledger.id, A.Ledger.name, func.sum(A.BillAllocation.amount))
+            .join(A.VoucherLine, A.VoucherLine.ledger_id == A.Ledger.id)
+            .join(A.BillAllocation, A.BillAllocation.voucher_line_id == A.VoucherLine.id)
+            .where(
+                A.Ledger.entity_id == self.entity.id,
+                A.VoucherLine.is_effective.is_(True),
+                A.BillAllocation.bill_type != "on_account",
+            )
+            .group_by(A.Ledger.id, A.Ledger.name)
+        ):
+            ours[name] += Decimal(total)
+            ledger_ids[name] = ledger_id
+        parties = (
+            set(ours)
+            | {p for p, v in outstanding.items() if v}
+            | {p for p, v in opening.items() if v}
+        )
+        for party in sorted(parties):
+            expected = Decimal(outstanding.get(party, ZERO))
+            actual = Decimal(opening.get(party, ZERO)) + ours.get(party, ZERO)
+            if abs(expected - actual) <= self.tolerance:
+                self.passed += 1
+                continue
+            known = party in ledger_ids
+            self._fail(
+                Finding(
+                    "bills_mismatch",
+                    "error",
+                    "ledger" if known else "source_party",
+                    str(ledger_ids[party]) if known else party[:64],
+                    expected,
+                    actual,
+                    f"Bill-wise outstanding of '{party}' differs from the source.",
+                )
+            )
+
+    def _root_cause(self) -> RootCause:
+        """Failed raw records of this entity and the failures likely caused by them."""
+        cause = RootCause()
+        keys = select(A.EntitySource.source_entity_key).where(
+            A.EntitySource.entity_id == self.entity.id
+        )
+        conditions = [RawRecord.source_entity_key.in_(keys), RawRecord.process_status == "failed"]
+        if self.connection_id is not None:
+            conditions.append(RawRecord.connection_id == self.connection_id)
+        for object_type, count in self.session.execute(
+            select(RawRecord.object_type, func.count())
+            .where(*conditions)
+            .group_by(RawRecord.object_type)
+        ):
+            cause.failed_records[object_type] = count
+        cause.vouchers_for_unknown_ledger = (
+            self.session.scalar(
+                select(func.count()).where(
+                    *conditions, RawRecord.process_error.like("%unknown ledger%")
+                )
+            )
+            or 0
+        )
+        errors = Counter(f.check_code for f in self.findings if f.severity == "error")
+        cause.missing_ledgers = errors.get("ledger_missing", 0)
+        if cause.any:
+            cause.consequences = Counter({c: errors[c] for c in CONSEQUENCES if errors.get(c)})
+        return cause
 
     # --- storage ----------------------------------------------------------------------
 

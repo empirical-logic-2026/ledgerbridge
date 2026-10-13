@@ -12,16 +12,18 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy.orm import Session
 
-from connectors.base import Connector, SourceBalances, SourceEntity
+from connectors.base import Connector, SourceBalances, SourceControls, SourceEntity
 from core.alerts import raise_alert, resolve_alert
 from core.config import get_settings
 from core.errors import short_error
 from core.models import Connection
-from core.validation import ValidationReport, Validator
-from workers.entities import select_entities
+from core.models.accounting import Entity
+from core.validation import ValidationReport, Validator, financial_year_ends
+from workers.entities import Labels, select_entities
 from workers.sync import DELETION_CHECK, Progress, SyncResult, entity_ids_for
 
 logger = logging.getLogger(__name__)
@@ -44,26 +46,35 @@ def run_validation(
     sync_run_id: int | None = None,
     entity_keys: Sequence[str] | None = None,
     progress: Progress | None = None,
+    thorough: bool = False,
 ) -> list[ValidationReport]:
-    """Validates each synced entity of the connection as of a date (default today)."""
+    """Validates each synced entity of the connection as of a date (default today).
+
+    `thorough` also compares the source's own controls (VAL-005 to VAL-008): voucher counts
+    per month and type, stock quantities, bill-wise outstanding and the balances at every
+    year end. They take more requests to the source, so scheduled incremental syncs skip
+    them; `validate`, full syncs and `transform retry` run them."""
     as_of = as_of or date.today()
     entities = select_entities(connector, connection, entity_names, entity_keys)
     entity_ids = entity_ids_for(session, connection.id, [e.key for e in entities])
+    labels = Labels(session, connection)
     reports = []
-    for number, entity in enumerate(entities, start=1):
+    for entity in entities:
         entity_id = entity_ids.get(entity.key)
         if entity_id is None:
             continue  # never synced: nothing to validate
+        label = labels.for_key(entity.key)
         if progress:
-            progress(f"entity {number} of {len(entities)}: validating as of {as_of}")
-        source: SourceBalances | Exception | None = None
-        if hasattr(connector, "closing_balances"):
-            try:
-                source = connector.closing_balances(entity, as_of)
-            except Exception as exc:  # noqa: BLE001 - recorded as a closing_unavailable issue
-                source = exc
+            depth = " (thorough: counts, stock, bills, year ends)" if thorough else ""
+            progress(f"{label}: validating as of {as_of}{depth}")
+        source: SourceBalances | Exception | None = _read(
+            connector, "closing_balances", entity, as_of
+        )
+        controls = None
+        if thorough:
+            controls = source_controls(connector, entity, session.get_one(Entity, entity_id), as_of)
         report = Validator(session, entity_id, as_of, tolerance_for(connection), connection.id).run(
-            source, sync_run_id
+            source, sync_run_id, controls
         )
         _alert(session, connection, report)
         # Counts and codes only: never names or amounts in logs.
@@ -77,6 +88,43 @@ def run_validation(
         )
         reports.append(report)
     return reports
+
+
+def _read(connector: Connector, method: str, *args: Any) -> Any:
+    """A source figure; None if the connector can't provide it; the exception if reading it
+    failed (recorded as an `_unavailable` issue)."""
+    read = getattr(connector, method, None)
+    if read is None:
+        return None
+    try:
+        return read(*args)
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        return exc
+
+
+def source_controls(
+    connector: Connector, entity: SourceEntity, row: Entity, as_of: date
+) -> SourceControls:
+    """The source's own figures for one entity (each read separately: one that fails or
+    isn't supported doesn't stop the others)."""
+    books_from = entity.books_from or row.books_from
+    bills = _read(connector, "bill_outstanding", entity)
+    outstanding, opening = (
+        (bills, bills) if bills is None or isinstance(bills, Exception) else bills
+    )
+    year_ends = {}
+    if hasattr(connector, "closing_balances"):
+        for year_end in financial_year_ends(row.books_from, row.fy_start_month, as_of):
+            year_ends[year_end] = _read(connector, "closing_balances", entity, year_end)
+    return SourceControls(
+        voucher_counts=_read(connector, "voucher_counts", entity, books_from, as_of)
+        if books_from
+        else None,
+        stock_quantities=_read(connector, "stock_quantities", entity, as_of),
+        bill_outstanding=outstanding,
+        opening_bills=opening,
+        year_ends=year_ends,
+    )
 
 
 def _alert(session: Session, connection: Connection, report: ValidationReport) -> None:
@@ -124,6 +172,7 @@ def entity_validator(
     collect: AfterRun,
     progress: Progress | None = None,
     only_if_changed: bool = False,
+    thorough: bool = False,
 ) -> Callable[[SyncResult, SourceEntity, bool], None]:
     """An `after_entity` hook for runs: validates each entity as soon as it is synced, so a
     later entity's failure can't hold it up (ADR-022). Never raises: a validation that can't
@@ -140,6 +189,7 @@ def entity_validator(
                 sync_run_id=result.sync_run_id,
                 entity_keys=[entity.key],
                 progress=progress,
+                thorough=thorough,
             )
         except Exception as exc:  # noqa: BLE001 - see the docstring
             session.rollback()

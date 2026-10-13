@@ -12,10 +12,17 @@
     python -m workers.cli status
     python -m workers.cli summary
     python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
+    python -m workers.cli transform-retry --connection tally-pilot [--entity NAME]
+    python -m workers.cli fields [--entity-id 3]
+    python -m workers.cli promote-field --field-id 12 --code SALESMAN --name "Salesman"
 
 `extract` only stores raw records (M1); `sync` also transforms them (M3); `check-deletions`
 soft-deletes what no longer exists in the source (also run by `sync --check-deletions`).
-`sync` and `check-deletions` validate afterwards (VAL-001, VAL-002), like the worker does.
+`sync` and `check-deletions` validate afterwards (VAL-001, VAL-002, VAL-005 to VAL-009), like
+the worker does.
+`transform-retry` transforms stored records again (failed ones and any left pending) with
+the current code, without contacting the source, then validates the entities it touched.
+Companies appear as `entity <id> (company <n>)` everywhere (workers.entities.Labels).
 
 Output shows names, keys, counts, check codes and pass/fail only, except `trial-balance`,
 which prints balances for the developer's own use. Validation results with amounts are in
@@ -23,7 +30,8 @@ the database and the API, never in this output.
 
 **Outside the test environment (APP_ENV=pilot) the output holds no names at all:** no
 company, ledger or party names and no error messages (only their type), so it can be
-shared as counts and pass/fail. Companies appear as "entity <id>", and `trial-balance`
+shared as counts and pass/fail. Companies appear as "entity <id> (company <n>)", and
+`trial-balance`
 refuses to run (docs/pilot-runbook.md). Unexpected errors print their type and a short
 message only, never SQL statements or parameters.
 
@@ -65,8 +73,10 @@ from core.models.system import (
 )
 from core.transform import trial_balance
 from core.validation import ValidationReport
-from workers.entities import by_names, configured, to_config
+from workers.entities import Labels, by_names, configured, to_config
 from workers.extract import connector_for, get_or_create_connection, run_extract
+from workers.failures import failure_breakdown, format_group, warning_breakdown
+from workers.fields import PromoteError, catalogue, catalogue_counts, promote_field
 from workers.runs import (
     FINISHED,
     JobLog,
@@ -87,6 +97,7 @@ from workers.sync import (
     last_run,
     run_deletion_check,
     run_sync,
+    run_transform,
     running_run,
 )
 from workers.validate import AfterRun, alert_for_run, entity_validator, run_validation
@@ -156,6 +167,35 @@ def _parser() -> argparse.ArgumentParser:
     validate.add_argument(
         "--as-of", type=date.fromisoformat, help="balances as of this date (default today)"
     )
+    validate.add_argument(
+        "--quick",
+        action="store_true",
+        help="skip the source's controls (voucher counts, stock, bills, year ends)",
+    )
+
+    retry = sub.add_parser(
+        "transform-retry",
+        help="transform stored records again (failed and pending) without contacting the "
+        "source, then validate",
+    )
+    connection_args(retry)
+    retry.add_argument(
+        "--entity", action="append", help="entity name as stored (repeatable); default: all"
+    )
+    retry.add_argument("--no-validate", action="store_true", help="skip validation afterwards")
+    retry.add_argument("--job", help="job id: also write the output to sync_logs, for `watch`")
+
+    fields = sub.add_parser(
+        "fields", help="the field catalogue: fields with no column (e.g. custom fields)"
+    )
+    fields.add_argument("--entity-id", type=int, action="append", help="entity id (repeatable)")
+
+    promote = sub.add_parser(
+        "promote-field", help="make a catalogued voucher field a reporting dimension"
+    )
+    promote.add_argument("--field-id", type=int, required=True, help="id from `fields`")
+    promote.add_argument("--code", required=True, help="dimension code, e.g. SALESMAN")
+    promote.add_argument("--name", required=True, help="dimension name, e.g. Salesman")
 
     deletions = sub.add_parser(
         "check-deletions", help="soft-delete what no longer exists in the source"
@@ -296,7 +336,7 @@ def _terminate_raises_system_exit() -> None:
 
 def _start_job_log(session: Session, args: argparse.Namespace) -> JobLog | None:
     # Only the jobs themselves: `watch --job` reads that job's log, it must never write to it.
-    if args.command not in ("sync", "check-deletions") or not args.job:
+    if args.command not in ("sync", "check-deletions", "transform-retry") or not args.job:
         return None
     connection = get_or_create_connection(session, args.connection, args.source)
     session.commit()
@@ -321,6 +361,12 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _abandon(session, args)
     if args.command == "status":
         return _status(session)
+    if args.command == "fields":
+        return _fields(session, args)
+    if args.command == "promote-field":
+        return _promote(session, args)
+    if args.command == "transform-retry":
+        return _transform_retry(session, args)
     if args.command == "summary":
         return _summary(session)
     if args.command == "trial-balance":
@@ -360,9 +406,15 @@ def _run(session: Session, args: argparse.Namespace) -> int:
 
     if args.command == "validate":
         reports = run_validation(
-            session, connection, connector, args.entity, args.as_of, progress=_progress
+            session,
+            connection,
+            connector,
+            args.entity,
+            args.as_of,
+            progress=_progress,
+            thorough=not args.quick,
         )
-        return _print_validation(reports)
+        return _print_validation(reports, Labels(session, connection))
 
     if args.command in ("sync", "check-deletions"):
         if getattr(args, "refetch_from", None) and not args.full:
@@ -412,6 +464,7 @@ def _sync(
             after,
             progress=_progress,
             only_if_changed=only_if_changed,
+            thorough=bool(getattr(args, "full", False)),
         )
 
     runs: list[SyncResult] = []
@@ -461,7 +514,7 @@ def _sync(
         code |= _print_sync(run)
         alert_for_run(session, connection, run)
     if validate:
-        code |= _print_validation(after.latest)
+        code |= _print_validation(after.latest, Labels(session, connection))
         if after.validation_error:
             print(f"Validation couldn't run: {_error(after.validation_error)}", file=sys.stderr)
             code |= 1
@@ -753,13 +806,27 @@ def _print_sync(r: SyncResult) -> int:
         print(f"  fetched:     {dict(sorted(r.fetched.items()))}")
         print(f"  raw stored:  {r.stored} new or changed, {r.unchanged} unchanged")
         print(f"  transformed: {dict(sorted(r.transformed.items()))}  failed: {r.failed}")
+        if r.failed_by_object_type:
+            print(f"  failed by type: {dict(sorted(r.failed_by_object_type.items()))}")
+        if r.retried:
+            print(f"  failed records retried: {r.retried:,}")
         for e in r.entity_results:
             print(f"  {_entity_line(e)}")
-    for number, (entity, names) in enumerate(r.unmapped_ledgers.items(), start=1):
+    labels = {e.name: e.label for e in r.entity_results}
+    for entity, names in r.unmapped_ledgers.items():
+        label = labels.get(entity, "an entity")
         if _show_names():
-            print(f"  unmapped ledgers in {entity} ({len(names)}): {', '.join(names) or 'none'}")
+            print(
+                f"  unmapped ledgers in {label} ({entity}) ({len(names)}): "
+                f"{', '.join(names) or 'none'}"
+            )
         else:
-            print(f"  unmapped ledgers in entity {number} of this run: {len(names)}")
+            print(f"  unmapped ledgers in {label}: {len(names)}")
+    if r.data_warnings:
+        print(
+            f"  values kept in extra (didn't fit their column): {sum(r.data_warnings.values()):,}"
+            " (summary groups them)"
+        )
     if _show_names():
         for warning in r.warnings:
             print(f"  warning: {warning}")
@@ -800,16 +867,22 @@ def _entity_line(e: EntityOutcome) -> str:
     return line
 
 
-def _print_validation(reports: list[ValidationReport]) -> int:
+def _print_validation(reports: list[ValidationReport], labels: Labels | None = None) -> int:
     """Counts, codes and pass/fail only (safe for client data)."""
     for r in reports:
-        name = r.entity_name if _show_names() else f"entity {r.entity_id}"
+        label = labels.for_entity(r.entity_id) if labels else f"entity {r.entity_id}"
+        name = f"{label} ({r.entity_name})" if _show_names() else label
         print(
             f"Validation run {r.validation_run_id} of {name} as of {r.as_of}: "
             f"{r.status.upper()}  {r.checks_passed} checks passed, {r.checks_failed} failed"
         )
         for code, count in sorted(r.failed_by_code.items()):
             print(f"  failed: {code} x{count}")
+        if r.unbalanced_by_type:
+            listed = ", ".join(f"{k} {n:,}" for k, n in sorted(r.unbalanced_by_type.items()))
+            print(f"  voucher_unbalanced by voucher type: {listed}")
+        for line in r.root_cause.lines():
+            print(f"  ROOT CAUSE: {line}")
         if any(f.check_code == "opening_difference" for f in r.findings):
             print("  WARNING: opening balances don't total zero (difference in opening balances)")
         for f in r.findings:
@@ -851,6 +924,7 @@ def _print_validation_status(session: Session, connection: Connection) -> None:
     """Per entity: the latest validation and the opening difference warning; open alerts."""
     from core.models.accounting import EntitySource
 
+    labels = Labels(session, connection)
     for entity in session.scalars(
         select(Entity)
         .join(EntitySource, EntitySource.entity_id == Entity.id)
@@ -863,7 +937,8 @@ def _print_validation_status(session: Session, connection: Connection) -> None:
             .order_by(ValidationRun.id.desc())
             .limit(1)
         )
-        name = entity.name if _show_names() else f"entity {entity.id}"
+        label = labels.for_entity(entity.id)
+        name = f"{label} ({entity.name})" if _show_names() else label
         if run is None:
             print(f"  validation of {name}: never ran")
             continue
@@ -946,6 +1021,7 @@ def _summary(session: Session) -> int:
                     f"  {label}: run {run.id} ({run.run_type}) {run.status}, "
                     f"{run.records_received} received, {run.records_failed} failed"
                 )
+        labels = Labels(session, connection)
         failed_raw = _count(
             session,
             RawRecord,
@@ -953,6 +1029,7 @@ def _summary(session: Session) -> int:
             RawRecord.process_status == "failed",
         )
         print(f"  raw records that failed to transform: {failed_raw}")
+        _print_breakdowns(session, connection.id)
         raw = session.execute(
             select(RawRecord.object_type, RawRecord.process_status, func.count())
             .where(RawRecord.connection_id == connection.id)
@@ -970,7 +1047,7 @@ def _summary(session: Session) -> int:
         ).all()
         ids = entity_ids_for(session, connection.id, [key for key, _, _ in resumable])
         for key, chunks, since in resumable:
-            who = f"entity {ids[key]}" if key in ids else "an entity not yet transformed"
+            who = labels.for_key(key, ids.get(key))
             print(
                 f"  unfinished full sync of {who}: {chunks} chunks done since "
                 f"{since:%Y-%m-%d %H:%M} UTC (sync full continues it; add restart to start over)"
@@ -998,9 +1075,7 @@ def _summary(session: Session) -> int:
         ).all()
         range_ids = entity_ids_for(session, connection.id, [r[0] for r in open_ranges])
         for key, kind, start, end, reason in open_ranges:
-            who = (
-                f"entity {range_ids[key]}" if key in range_ids else "an entity not yet transformed"
-            )
+            who = labels.for_key(key, range_ids.get(key))
             print(
                 f"  UNVERIFIED {kind} {start}..{end} of {who}: {reason} "
                 "(fetched again by the next sync full)"
@@ -1013,7 +1088,7 @@ def _summary(session: Session) -> int:
         for entity_id in entity_ids:
             live = (A.Ledger.entity_id == entity_id, A.Ledger.is_deleted.is_(False))
             vouchers = (A.Voucher.entity_id == entity_id, A.Voucher.is_deleted.is_(False))
-            print(f"  entity {entity_id}:")
+            print(f"  {labels.for_entity(entity_id)}:")
             counts = {
                 "ledgers": _count(session, A.Ledger, *live),
                 "unmapped": _count(session, A.Ledger, *live, A.Ledger.mapping_status == "unmapped"),
@@ -1033,6 +1108,13 @@ def _summary(session: Session) -> int:
                 ),
             }
             print("    " + ", ".join(f"{k} {v}" for k, v in counts.items()))
+            fields = catalogue_counts(session, entity_id)
+            if fields:
+                listed = ", ".join(f"{prefix} {n}" for prefix, n in sorted(fields.items()))
+                print(
+                    f"    fields with no column, kept in extra: {sum(fields.values())} "
+                    f"(by prefix: {listed}; see `fields`)"
+                )
             run = session.scalar(
                 select(ValidationRun)
                 .where(ValidationRun.entity_id == entity_id)
@@ -1059,6 +1141,112 @@ def _summary(session: Session) -> int:
             .group_by(Alert.kind)
         ).all()
         print(f"  open alerts: {', '.join(f'{k} {n}' for k, n in sorted(alerts)) or 'none'}")
+    return 0
+
+
+def _print_breakdowns(session: Session, connection_id: int) -> None:
+    """Failed raw records and values kept aside, grouped by object type and kind: counts
+    and messages without values (safe to share)."""
+    failures = failure_breakdown(session, connection_id)
+    if failures:
+        print("  why raw records failed (object type, count, error; no values):")
+        for group in failures:
+            print(f"    {format_group(group)}")
+    warnings = warning_breakdown(session, connection_id)
+    if warnings:
+        print("  values kept in extra because they didn't fit their column (no values):")
+        for group in warnings:
+            print(f"    {format_group(group)}")
+
+
+def _entity_keys_by_name(
+    session: Session, connection: Connection, names: Sequence[str]
+) -> tuple[list[str], list[str]]:
+    """Source keys of entities named exactly as stored (entity_sources) or configured,
+    without contacting the source; and the names not found."""
+    stored = dict(
+        session.execute(
+            select(A.EntitySource.source_entity_name, A.EntitySource.source_entity_key).where(
+                A.EntitySource.connection_id == connection.id
+            )
+        ).all()
+    )
+    for entry in configured(connection):
+        if entry.key:
+            stored.setdefault(entry.name, entry.key)
+    found = [stored[n] for n in dict.fromkeys(names) if n in stored]
+    return found, [n for n in dict.fromkeys(names) if n not in stored]
+
+
+def _transform_retry(session: Session, args: argparse.Namespace) -> int:
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    keys = None
+    if args.entity:
+        keys, missing = _entity_keys_by_name(session, connection, args.entity)
+        if missing:
+            print(
+                f"{len(missing)} of {len(args.entity)} named entities aren't known on this "
+                "connection (names must match exactly).",
+                file=sys.stderr,
+            )
+            return 2
+    connector = connector_for(session, connection)  # the source isn't contacted
+    after = AfterRun()
+    hook = None
+    if not args.no_validate:
+        hook = entity_validator(
+            session, connection, connector, after, progress=_progress, thorough=True
+        )
+    try:
+        result = run_transform(
+            session, connection, connector, keys, progress=_progress, after_entity=hook
+        )
+    except SyncBusyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 3
+    code = _print_sync(result)
+    alert_for_run(session, connection, result)
+    if not args.no_validate:
+        code |= _print_validation(after.latest, Labels(session, connection))
+        if after.validation_error:
+            print(f"Validation couldn't run: {_error(after.validation_error)}", file=sys.stderr)
+            code |= 1
+    _print_breakdowns(session, connection.id)
+    validation = after.validation_status if not args.no_validate else "skipped"
+    print(f"Result: transform {result.status}; validation {validation}")
+    return code
+
+
+def _fields(session: Session, args: argparse.Namespace) -> int:
+    """The catalogue. Field paths are shown in the test environment only; elsewhere each
+    field's id, object type, prefix, type and count (promote by id)."""
+    rows = catalogue(session, args.entity_id)
+    if not rows:
+        print("No fields catalogued yet (they are found when records are transformed).")
+        return 0
+    for f in rows:
+        path = f" {f.field_path}" if _show_names() else ""
+        print(
+            f"field {f.id}: entity {f.entity_id}, {f.object_type}, prefix {f.prefix or 'none'}, "
+            f"{f.inferred_type}, in {f.record_count:,} records{path}"
+        )
+    return 0
+
+
+def _promote(session: Session, args: argparse.Namespace) -> int:
+    try:
+        promoted = promote_field(session, args.field_id, args.code, args.name)
+    except PromoteError as exc:
+        print(f"Can't promote: {exc}", file=sys.stderr)
+        return 2
+    print(
+        f"Field {args.field_id} is dimension {args.code} (id {promoted.dimension_id}): "
+        f"{promoted.values:,} values on {promoted.lines:,} lines of {promoted.vouchers:,} "
+        "vouchers; the transform keeps it up to date"
+    )
     return 0
 
 
