@@ -49,6 +49,7 @@ class TallyConnector:
     def __init__(self, client: TallyClient) -> None:
         self.client = client
         self._names: dict[str, str] = {}  # company GUID -> name Tally accepted last
+        self._prefixes: set[str] = set()  # undeclared XML prefixes met (names only)
 
     @classmethod
     def from_config(
@@ -70,7 +71,9 @@ class TallyConnector:
         return {"url": get_settings().tally_url}
 
     def _post(self, request_xml: str, timeout: float | None = None) -> bytes:
-        return self.client.post(request_xml, timeout=timeout)
+        body = self.client.post(request_xml, timeout=timeout)
+        self._prefixes |= parser.undeclared_prefixes(body)
+        return body
 
     def test_connection(self) -> ConnectionStatus:
         try:
@@ -293,6 +296,12 @@ class TallyConnector:
 
     def to_canonical(self, record: SourceRecord) -> list[CanonicalRecord]:
         return mapping.to_canonical(record)
+
+    @property
+    def xml_prefixes_seen(self) -> set[str]:
+        """Undeclared namespace prefixes met in Tally's answers (e.g. UDF from TDL
+        customisations): names only. Their fields are stored unchanged, not mapped yet."""
+        return set(self._prefixes)
 
     def probe_entity(self, entity: SourceEntity) -> int:
         """Diagnostics: select the company by its name exactly as listed, the way every sync
