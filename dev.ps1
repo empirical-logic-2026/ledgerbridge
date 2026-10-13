@@ -23,6 +23,7 @@
     ./dev.ps1 fields
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
+    ./dev.ps1 diagrams                          (regenerate docs/diagrams from the models, render SVG/PNG)
     ./dev.ps1 seed-test-data
     ./dev.ps1 seed-test-data create-only
     ./dev.ps1 down
@@ -45,7 +46,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'fields', 'promote-field', 'seed-test-data', 'help')]
+    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -395,6 +396,41 @@ switch ($Command) {
         Assert-EnvFile
         Assert-ApiRunning
         Invoke-Stack exec -T api python -m workers.cli extract --connection $connection --source tally --entity $Company[0]
+    }
+    'diagrams' {
+        # Regenerates the diagram sources that come from the code (ER and database diagrams,
+        # from the SQLAlchemy models), then renders every docs/diagrams/*.mmd to SVG and PNG
+        # with the official mermaid-cli image in a throwaway container. Needs no database,
+        # no Tally and no running stack; starts and stops nothing else.
+        $mermaidImage = 'ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.4.2'
+        $diagrams = Join-Path (Join-Path $root 'docs') 'diagrams'
+        Push-Location (Join-Path $root 'data-plane')
+        try { Invoke-Uv run python -m devtools.diagrams }
+        finally { Pop-Location }
+        # Remove renders of sources that no longer exist (e.g. a diagram split in two).
+        foreach ($render in Get-ChildItem -Path $diagrams -Include '*.svg', '*.png' -Recurse) {
+            if (-not (Test-Path (Join-Path $diagrams "$($render.BaseName).mmd"))) { Remove-Item $render.FullName }
+        }
+        foreach ($source in Get-ChildItem -Path $diagrams -Filter '*.mmd') {
+            $name = $source.BaseName
+            foreach ($format in @('svg', 'png')) {
+                $render = @('run', '--rm', '-v', "${diagrams}:/data", $mermaidImage,
+                    '-i', "/data/$name.mmd", '-o', "/data/$name.$format", '-b', 'white',
+                    '-c', '/data/mermaid-config.json')
+                if ($format -eq 'png') { $render += @('-s', '2') }
+                # mermaid-cli writes notices to stderr; under 'Stop', Windows PowerShell 5.1
+                # turns them into errors, so rely on the exit code (as deploy/stack.ps1 does).
+                $ErrorActionPreference = 'Continue'
+                $output = & docker @render 2>&1
+                $code = $LASTEXITCODE
+                $ErrorActionPreference = 'Stop'
+                if ($code -ne 0) {
+                    $output | Select-Object -Last 5 | ForEach-Object { Write-Host "  $_" }
+                    throw "Rendering $name.$format failed (exit $code)"
+                }
+            }
+            Write-Host "Rendered $name (svg, png)"
+        }
     }
     'seed-test-data' {
         # Writes into Tally (ADR-014): test environment and test company only. The tool itself
