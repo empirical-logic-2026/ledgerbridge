@@ -2,14 +2,14 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.1 |
-| Date | 2026-10-12 |
-| Status | Approved design for M7 |
+| Version | 0.2 |
+| Date | 2026-10-13 |
+| Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) |
 
 The mockup is the approved design for the dashboard home page. M7 must match its **layout, wording and visual style**. The figures, company names, party names and voucher numbers in it are illustrative sample data; the built page shows real values from the reporting API (M6). The footer text "Illustrative mockup with sample figures" belongs to the mockup only and is not part of the product.
 
-Requirements covered: RPT-001 (MIS dashboard), RPT-002 (health indicators with good/bad flags), RPT-006 (entity and consolidated), RPT-007 (drill-down), RPT-008 (period filters), AI-001 (questions in plain language, M8), VAL-* (data checks, M4).
+Requirements covered: RPT-001 (MIS dashboard), RPT-002 (health indicators with good/bad flags), RPT-006 (entity and consolidated), RPT-007 (drill-down), RPT-008 (period filters), AI-001 (questions in plain language, M8), VAL-* (data checks, M4), BUD-007 to BUD-014 (Budget page, Section 7, M7b).
 
 ![Dashboard home page mockup](dashboard-mockup.png)
 
@@ -83,6 +83,7 @@ Light background, icon plus label, in this order and with this wording:
 | Cash Flow | Cash flow statement | M6/M7 |
 | Who owes us | Receivables with ageing | M6/M7 |
 | Who we owe | Payables with ageing | M6/M7 |
+| Budget | Budget vs actual, and budget planning (Section 7) | M7b |
 | Data checks | Validation results (data-quality page) | M4/M7 |
 | Ask a question | Full-page AI questions | M8 |
 
@@ -126,7 +127,7 @@ White card titled **"Needs your attention"**, beside the chart. A short list (up
 - a bold one-line message, for example **"Customer A is 94 days overdue (₹16.2 L)"**, **"Rent and electricity up 18% this quarter"**, **"All entries match Tally for both companies"**;
 - a grey suggested action or detail, for example "Send a reminder or review credit terms", "See the expense breakdown", "Last checked 1 min ago".
 
-Alerts come from simple rules computed in M6 (Section 4). Clicking an alert opens the related page or entries. When nothing needs attention, the panel shows the green data-check line only.
+Alerts come from simple rules computed in M6 (Section 4), and from M7b budget variance rules, for example **"Marketing is 24% over budget this quarter (₹3.1 L)"** with "See budget vs actual" (BUD-011). Clicking an alert opens the related page or entries. When nothing needs attention, the panel shows the green data-check line only.
 
 ### 3.8 "Ask a question" panel
 
@@ -185,8 +186,66 @@ Typography: the Ant Design sans-serif font stack; bold for card values and panel
 - Login, user menu and sign-out are not in the mockup; proposed in the top bar's right corner after the sync pill.
 - What the "Ask a question" panel shows between M7 and M8: proposed hidden, so the page never offers something that does not work yet; the alternative is showing it with Ask disabled.
 
+## 7. Budget page (M7b, proposed)
+
+Requirements: BUD-001 to BUD-014. Same top bar, LIVE strip, sidebar, visual style and number format as the home page; the sidebar item **"Budget"** is active. No mockup yet: one is to be approved before M7b is built, like the home page's.
+
+### 7.1 Filters
+
+A filter bar under the page title **"Budget vs actual"**, driving every figure and graph on the page:
+
+| Filter | Options | Default |
+| --- | --- | --- |
+| Financial year | Years with a budget, plus the current year | Current financial year |
+| Months | A month range within the year, plus shortcuts: This month, This quarter, Year to date, Full year | Year to date |
+| Company | Consolidated or one company (from the top bar's company switcher; entity access applies) | As in the top bar |
+| Cost centre | All, or one or more | All |
+| Account | All, or a standard account, account group or ledger (searchable tree) | All |
+| Version | Current (latest approved or locked), or any version including drafts (drafts only with `budget.edit`) | Current |
+
+The selection is kept in the page URL, so a view can be bookmarked or shared with someone who has access.
+
+### 7.2 Summary cards
+
+Four cards in one row, for the filtered period:
+
+| Card | Value | Status line |
+| --- | --- | --- |
+| **Budget** | Budgeted profit (or the selected account's budget) | Version and state, e.g. "Revised 2 · Approved" |
+| **Actual** | Actual for the same period | "▲ 9% vs last year" |
+| **Variance** | Actual − budget, in amount and % | **"Favourable"** in green or **"Unfavourable"** in red, by account nature |
+| **Full-year projection** | Actual YTD + remaining budget | "₹1.2 Cr above the full-year budget", coloured like Variance |
+
+### 7.3 Graphs (ECharts)
+
+1. **Monthly budget vs actual:** grouped bars per month, **Budget** in light grey-blue and **Actual** in dark teal, with **Last year** as an orange line with markers. Title: "Budget vs actual, month by month (₹ lakh)".
+2. **Year to date, cumulative:** three lines (Budget, Actual, Last year) accumulating month by month; future months show the projection as a dashed actual line.
+3. **Variance waterfall:** from budgeted profit to actual profit, one bar per account group (largest variances first, the rest grouped as "Other"), green for favourable and red for unfavourable.
+4. **Variance heatmap:** accounts as rows, months as columns, each cell the variance % (green favourable, red unfavourable, grey for no budget), with the amount on hover.
+
+Every bar, point and cell opens the drill-down: the actual's vouchers (RPT-007) and the budget's lines and change history (BUD-010).
+
+### 7.4 Budget vs actual table
+
+Below the graphs: one row per account at the budget's level, expandable down the tree (standard account → group → ledger), with columns **Budget, Actual, Variance, Variance %, Last year, Full-year budget, Projection**. Favourable or unfavourable as a coloured dot. Sorting by any column; a toggle for month, quarter, YTD or full year. Exact amounts in full Indian grouping on hover.
+
+### 7.5 Planning (with `budget.edit`)
+
+A **"Plan budget"** button opens the planning view for the selected company and year:
+
+- **Version bar:** version name and state (Draft, Approved, Locked) with **Approve** and **Lock** buttons for users with `budget.approve`, and **"Create revision"** on approved versions. Locked versions show a padlock and are read-only.
+- **Create a budget:** four choices, in plain words: **"Import from Tally"** (shows the source name), **"Start from last year's actuals"** (with a growth % for all accounts and per account), **"Upload Excel"** (with **"Download template"**), **"Enter in the grid"**.
+- **Grid:** accounts as rows, months as columns, plus **Year total**. Editing the year total offers **"Spread equally"** or **"Spread like last year"**; editing a month updates the total. Last year's actual is shown in grey under each cell. Unsaved changes are highlighted; **Save** writes them as one change set.
+- **History:** a side panel listing every change (who, when, what, old and new amount), filterable by account and month.
+- **Upload errors:** listed by row and column in plain language, for example "Row 14, Aug: not a number", "Row 22: account not found"; nothing is saved until the file has no errors.
+
+### 7.6 Ask about the budget
+
+The "Ask a question" panel from the home page (Section 3.8), with budget chips: **"Which expenses are over budget this quarter?"**, **"Projected profit for the full year vs budget"**, **"Biggest variances this month"** (M8, BUD-014). Same privacy note as on the home page.
+
 ## Change log
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-13 | 0.2 | Budget page (Section 7, proposed for M7b): filters, summary cards, four graphs, budget vs actual table, planning view, budget questions; sidebar item "Budget"; budget variance alerts in "Needs your attention". |
 | 2026-10-12 | 0.1 | Home page design described from the approved mockup. "Cash forecast for next month" chip replaced by "Who do we owe the most?" until forecasting (AI-009, phase 3). |

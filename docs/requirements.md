@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.5 (Draft) |
-| Date | 2026-10-08 |
+| Version | 0.7 (Draft) |
+| Date | 2026-10-13 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
 
@@ -56,6 +56,8 @@ The long-term vision (from client requirements) is for the platform to:
 | Finance Manager | Full reporting and analysis across assigned entities. |
 | Accountant | Reporting and data validation for assigned entities. |
 | Viewer / Auditor | Read-only access to assigned reports and audit logs. |
+
+Budget permissions (BUD-013) are granted per role: by default Management / CXO and Finance Manager have `budget.view`, `budget.edit` and `budget.approve`; Accountant has `budget.view` and `budget.edit`; Viewer / Auditor has `budget.view`.
 
 Roles are configurable; the list above is the default set.
 
@@ -162,7 +164,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | RPT-005 | GST reports, stock/inventory reports, sales and expense analysis. | P2 |
 | RPT-006 | Entity-level and consolidated reporting. | P1 |
 | RPT-007 | Drill-down from any figure to underlying vouchers. | P1 |
-| RPT-008 | Filters across all dimensions in DAT-005; period comparisons (MoM, YoY, vs budget where available). | P1 |
+| RPT-008 | Filters across all dimensions in DAT-005; period comparisons (MoM, YoY, vs budget where available; budgets in Section 4.12). | P1 |
 | RPT-009 | Export to Excel and PDF. | P2 |
 | RPT-010 | Scheduled reports by email, generated inside the client deployment. | P2 |
 | RPT-011 | Over time, "all reports" requested by the client will be delivered; the phase 1 report set is listed in RPT-001 to RPT-004 and RPT-006 to RPT-008, pending confirmation. | — |
@@ -212,6 +214,41 @@ No AI feature may send client data anywhere the client hasn't approved. These re
 | AUD-001 | Audit log of logins, report views, AI queries, exports, connection changes and permission changes, stored inside the client deployment. | P1 |
 | AUD-002 | Audit logs are read-only and retained per client-configured policy. | P1 |
 
+### 4.12 Budget planning and analysis
+
+Budgets are data the client enters or imports, kept alongside the data synced from the books and never mixed with it (ADR-026). Amounts follow the money rules of the rest of the platform (DECIMAL, exact). Everything here respects the user's entity access (ACC-002).
+
+**Creating budgets**
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| BUD-001 | Budgets are kept **per entity and financial year**. A consolidated budget is the sum of the companies' budgets by standard account; a budget can also be entered directly for the consolidated group, by standard account. | P1 |
+| BUD-002 | A budget can be created four ways: **importing the source's own budgets** (Tally budgets, through the read-only connector); **entering it in a month-by-account grid**; **uploading an Excel template** downloaded from the platform (accounts as rows, months as columns), with every row checked and errors reported by row and column; **copying last year's actuals** with a growth percentage, overall or per account. | P1 |
+| BUD-003 | A yearly amount can be **spread to months** equally or by **last year's seasonality** (each month's share of last year's actual for that account, falling back to equal when last year has no usable pattern). Months can then be edited one by one. The monthly amounts of a line always **sum exactly to its yearly amount**; rounding differences go to the last month. | P1 |
+| BUD-004 | A budget line is set at one **level**: standard account (RPT-006), account group as kept in the source (e.g. a Tally group), or optionally ledger; and optionally per **cost centre** and per **custom dimension** (DAT-005, including fields promoted under DAT-009). | P1 |
+| BUD-005 | **Versions:** each budget has an *original* version and any number of *revised* versions, each with a state: **draft**, **approved** or **locked**. Only drafts can be changed. Approving needs `budget.approve`; by default the approver must not be the last person who edited it. A locked version can't be changed or unlocked except by a Client Admin, recorded in the audit log. Analysis uses the latest approved or locked version unless the user picks another. | P1 |
+| BUD-006 | **Every change is audited:** who, when, which line and month, old and new amount, and how (grid edit, spread, import, upload, copy, approval, lock). The history is append-only and visible on the budget. | P1 |
+
+**Analysing budgets**
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| BUD-007 | **Budget vs actual vs last year** for any month, quarter, year to date or full year, per company and consolidated, at the budget's level and rolled up (e.g. ledgers to groups to standard accounts). Actuals follow the reporting rules (as of a date, effective vouchers only). | P1 |
+| BUD-008 | **Variance** in amount and percentage (variance ÷ budget; shown as "n/a" when the budget is zero), marked **favourable or unfavourable by the account's nature**: for income, actual above budget is favourable; for expenses, actual below budget is favourable; balance-sheet lines show the variance without a judgement. | P1 |
+| BUD-009 | **Full-year projection:** actual year to date plus the budget for the remaining months, compared with the full-year budget. | P1 |
+| BUD-010 | **Drill-down** from any actual figure to its vouchers (RPT-007), and from any budget figure to its lines and change history. | P1 |
+| BUD-011 | **Variance alerts:** configurable rules (percentage and amount thresholds, unfavourable only by default, per account or for all, by month, quarter or year to date) raise alerts that appear in "Needs your attention" on the home page, with a suggested action. | P1 |
+| BUD-012 | **Interactive graphs**, all driven by the same filters (financial year, month range, company or consolidated, cost centre, account): monthly budget vs actual bars with last year as a line; cumulative year-to-date lines (budget, actual, last year); a variance waterfall from budgeted to actual profit; an account-by-month variance heatmap. Every point drills down (BUD-010). | P1 |
+
+**Access and AI**
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| BUD-013 | Permissions `budget.view` (see budgets and analysis), `budget.edit` (create and change drafts, import, upload, copy) and `budget.approve` (approve and lock), checked in the data plane on every request (ACC-001). | P1 |
+| BUD-014 | **AI questions about budgets** (AI-001), e.g. "Which expenses are over budget this quarter?", "What is the projected full-year profit against budget?". Budget figures get the same protection as actuals (AI-011 to AI-018): in `schema-only` mode they never leave the deployment. | P1 |
+| BUD-015 | Importing source budgets is **read-only** towards the source (CON-008); imported budgets keep their source key and origin, and a re-import updates the draft it created without touching user edits made in later versions. | P1 |
+| BUD-016 | Budgets can be exported to Excel in the same template layout (RPT-009). | P2 |
+
 ## 5. Non-functional requirements
 
 ### 5.1 Security
@@ -251,7 +288,7 @@ No AI feature may send client data anywhere the client hasn't approved. These re
 
 | Phase | Scope |
 | --- | --- |
-| **Phase 1a: Local pilot** | Repo scaffold; Tally connector (multi-company, incremental); import of the client's backup data; canonical data model; validation against Tally; local login and role-based access; reporting views; MIS dashboard, health indicators, core statements, receivables/payables, entity and consolidated views, drill-down; natural-language querying (text-to-SQL + RAG); audit log. See `docs/roadmap.md`. |
+| **Phase 1a: Local pilot** | Repo scaffold; Tally connector (multi-company, incremental); import of the client's backup data; canonical data model; validation against Tally; local login and role-based access; reporting views; MIS dashboard, health indicators, core statements, receivables/payables, entity and consolidated views, drill-down; budget planning and analysis (Section 4.12, milestone M7b); natural-language querying (text-to-SQL + RAG), including budgets; audit log. See `docs/roadmap.md`. |
 | **Phase 1b: Product foundation** | Control plane (login, MFA, licences); client deployment package; connector framework; Tally connector and agent; CSV/TXT connector; historical import; canonical data model; validation; MIS dashboard, health indicators, core statements, receivables/payables, entity and consolidated views, drill-down; role-based access; natural-language querying; audit log. |
 | **Phase 2: Expansion** | Zoho Books, banking and database connectors; account mapping with AI suggestions; GST, stock, sales and expense reports; exports and scheduled reports; field masking; AI insights, alerts and commentary; RAG over documents; SSO; multi-currency. |
 | **Phase 3: Intelligence** | Predictive modelling; upstream/downstream reconciliation; additional platform connectors. |
@@ -306,4 +343,5 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
+| 2026-10-13 | 0.7 | Budget planning and analysis (Section 4.12): BUD-001 to BUD-016; default budget permissions per role (Section 3); RPT-008 points to budgets; phase 1a includes budgets (milestone M7b). ADR-026. |
 | 2026-10-13 | 0.6 | DAT-009 and DAT-010 (custom fields kept and catalogued; values that don't fit never fail other records), VAL-005 to VAL-009 (voucher counts, stock quantities, bill-wise outstanding, year-end balances, root causes). ADR-025. |
