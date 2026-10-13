@@ -1,6 +1,6 @@
 # LedgerBridge
 
-Connects to accounting systems (Tally first), stores their data in MySQL, and provides MIS dashboards, reporting and AI querying. See `docs/` for requirements, architecture, schema and roadmap.
+Connects to accounting systems (Tally first), stores their data in MySQL, and provides MIS dashboards, reporting and AI querying. See `docs/` for requirements, architecture, schema and roadmap; [docs/codebase-guide.md](docs/codebase-guide.md) explains in plain language what every folder and file is for.
 
 ## Prerequisites
 
