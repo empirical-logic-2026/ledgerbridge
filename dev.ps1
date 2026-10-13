@@ -19,6 +19,7 @@
     ./dev.ps1 validate
     ./dev.ps1 transform retry                   (transform failed records again; no Tally)
     ./dev.ps1 transform rebuild                 (transform every stored record again; no Tally)
+    ./dev.ps1 transform explain [-CheckSource]  (why references didn't resolve; counts only)
     ./dev.ps1 fields
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
@@ -38,6 +39,7 @@
     ./dev.ps1 sync abandon -Env pilot           (mark runs whose process is gone interrupted)
     ./dev.ps1 transform retry -Env pilot        (failed records again with the current code)
     ./dev.ps1 transform rebuild -Env pilot      (every stored record again with the current code)
+    ./dev.ps1 transform explain -Env pilot      (why references didn't resolve; -CheckSource asks Tally)
     ./dev.ps1 summary -Env pilot
     ./dev.ps1 reset -Env pilot
 #>
@@ -92,6 +94,9 @@ param(
 
     # For `transform retry`: don't validate afterwards (validation reads Tally's figures).
     [switch]$NoValidate,
+
+    # For `transform explain`: also ask Tally (read-only) what it lists now.
+    [switch]$CheckSource,
 
     # For `promote-field`: the catalogued field's id (from `fields`), and the dimension's
     # code and name.
@@ -348,13 +353,16 @@ switch ($Command) {
         # the companies it touched (validation reads Tally's own figures; -NoValidate skips
         # it). `transform rebuild`: the same for every stored object, processed ones too.
         # Runs in the background like a sync and is followed here (ADR-024).
-        if ($Service -notin @('retry', 'rebuild')) { throw 'Usage: ./dev.ps1 transform retry|rebuild [-Company "<name>"] [-NoValidate]' }
+        # `transform explain`: why references by name didn't resolve (counts and kinds only);
+        # it reads only the database unless -CheckSource.
+        if ($Service -notin @('retry', 'rebuild', 'explain')) { throw 'Usage: ./dev.ps1 transform retry|rebuild|explain [-Company "<name>"] [-NoValidate] [-CheckSource]' }
         Assert-EnvFile
         Assert-ApiRunning
         $job = [guid]::NewGuid().ToString()
         $retryArgs = @('python', '-m', 'workers.cli', "transform-$Service", '--connection', $connection, '--job', $job)
         foreach ($name in $Company) { $retryArgs += @('--entity', $name) }
-        if ($NoValidate) { $retryArgs += '--no-validate' }
+        if ($NoValidate -and $Service -ne 'explain') { $retryArgs += '--no-validate' }
+        if ($CheckSource -and $Service -eq 'explain') { $retryArgs += '--check-source' }
         Invoke-Stack exec -d api @retryArgs
         Write-Host "Started transform job $job in the background. Following it; closing this window doesn't stop it (follow again with: ./dev.ps1 sync watch -Env $Env)."
         Invoke-Checked exec -T api python -m workers.cli watch --connection $connection --job $job
