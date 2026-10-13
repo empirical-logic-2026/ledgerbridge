@@ -1,0 +1,66 @@
+---
+title: "Data flow, level 1: inside the data plane (dashed = planned)"
+---
+%% Written by hand. Update it when the flows change (CLAUDE.md); the code is named in
+%% docs/codebase-guide.md Section 3.
+flowchart TB
+    tally[("Tally XML interface")]
+    users(["Users"])
+    devcli["dev.ps1 / workers.cli<br/>sync, transform, validate"]
+    sched["Worker: scheduler (Celery Beat)<br/>sync when due, deletion check hourly"]
+
+    subgraph connect["Connector"]
+        conn["connectors/tally<br/>requests, answers, mapping"]
+    end
+
+    subgraph src["ledgerbridge_source"]
+        raw[("raw records<br/>exactly as received")]
+    end
+
+    subgraph acc["ledgerbridge_accounting"]
+        accounting[("accounting tables<br/>entities, ledgers, vouchers, lines, ...<br/>with extra fields and field catalogue")]
+        budgets[("budgets<br/>user-entered, versioned<br/>PLANNED (M7b)")]
+    end
+
+    subgraph sys["ledgerbridge_system"]
+        runs[("connections, sync runs,<br/>checkpoints, job output")]
+        results[("validation results<br/>and alerts")]
+    end
+
+    subgraph rep["ledgerbridge_reporting"]
+        views[("reporting views<br/>PLANNED (M6)")]
+    end
+
+    transform["Transform<br/>(core/transform.py)"]
+    validate["Validation<br/>(core/validation.py)"]
+    deletions["Deletion check<br/>marks objects deleted in Tally"]
+    api["API (FastAPI)"]
+    dash["Dashboard<br/>PLANNED (M7)"]
+    ai["AI questions<br/>PLANNED (M8), read-only via ai_ro"]
+
+    devcli --> conn
+    sched --> conn
+    sched --> deletions
+    conn -->|"read-only export requests"| tally
+    tally -->|"XML"| conn
+    conn -->|"store unchanged"| raw
+    conn --> runs
+    raw --> transform
+    transform --> accounting
+    tally -->|"Tally's own figures:<br/>balances, counts, stock, bills"| validate
+    accounting --> validate
+    validate --> results
+    deletions -->|"key listings"| tally
+    deletions --> accounting
+    accounting -.-> views
+    budgets -.-> views
+    results --> api
+    views -.-> api
+    views -.-> ai
+    api -.-> dash
+    dash -.-> users
+    ai -.-> users
+    users -.->|"enter budgets"| budgets
+
+    classDef planned fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:5 5,color:#4b5563
+    class budgets,views,dash,ai planned
