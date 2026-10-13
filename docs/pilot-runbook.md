@@ -150,20 +150,61 @@ The sync and the validation are reported separately. A sync that fetched and tra
 ./dev.ps1 status -Env pilot
 ```
 
-`summary` shows for the connection the last sync and deletion check, plus any raw records that failed to transform. For each company (`entity <id>`) it shows:
+**Companies are always named the same way:** `entity <id> (company <n>)`, in sync progress, transform, validation, `status` and `summary`. `entity <id>` is the company's id in the database; `company <n>` is its position in the connection's list of companies (as `connect` stored them). A company that hasn't been transformed yet shows as `company <n> (no entity yet)`, and the sync says when it becomes `entity <id> (company <n>)`.
+
+`summary` shows for the connection the last sync and deletion check, plus any raw records that failed to transform:
+- **why raw records failed**, grouped by object type and kind of error, with counts and a short message without values (e.g. `ledger x2,170: DataError: MySQL 1406 too long: parties.phone (values up to 61 characters)`);
+- **values kept in extra** because they didn't fit their column, grouped the same way (e.g. `voucher x12: too long: vouchers.voucher_number (length 300, column allows 255)`). These records were transformed; the full value is kept.
+
+For each company (`entity <id> (company <n>)`) it shows:
 - counts of ledgers (and how many are unmapped), parties, vouchers (cancelled, deleted in source) and effective voucher lines
+- how many fields with no column were found (e.g. Tally UDFs), by prefix (`fields with no column, kept in extra: 15 (by prefix: UDF 3, none 12)`)
 - the latest validation, PASSED or FAILED, with each failed check code and how often it occurred
 
 It also lists open alerts. **This is the output to share.**
 
-If Tally's data has **custom fields** (TDL customisations export them with prefixes such as `UDF:`), `summary` shows the prefix names, e.g. `XML prefixes seen in the source's data: UDF`. Those fields are stored unchanged but not used yet. Earlier this failed with `Tally response is not valid XML (unbound prefix ...)`.
+If Tally's data has **custom fields** (TDL customisations export them with prefixes such as `UDF:`), `summary` shows the prefix names, e.g. `XML prefixes seen in the source's data: UDF`. Each record keeps them (`extra`), and they are counted in a field catalogue: `./dev.ps1 fields -Env pilot` lists them by id, object type, prefix, kind and number of records (field names only in the test environment). A voucher field useful for reports can become a reporting dimension: `./dev.ps1 promote-field -Env pilot -FieldId <id> -Code SALESMAN -Name "Salesman"`.
+
+### 7. Records that failed to transform: `transform retry`
+
+Raw records are kept exactly as Tally sent them, so records that failed to transform (e.g. with older code) can be transformed again **without Tally**:
+
+```powershell
+./dev.ps1 transform retry -Env pilot                         # every company
+./dev.ps1 transform retry -Env pilot -Company "<exact name>" # one company
+```
+
+It runs in the background like a sync (follow it again with `./dev.ps1 sync watch -Env pilot`), prints progress per object type every 10,000 records, and ends with a `Result:` line. Afterwards it **validates** the companies it touched, which reads Tally's own figures: have TallyPrime running with the companies loaded, or add `-NoValidate` and run `./dev.ps1 validate -Env pilot` later.
+
+**One bad value no longer fails a batch:** a value too long for its column (or out of range, an invalid date, invalid characters) is kept in full in the record's `extra` and reported as a warning in `summary`. Only a record whose amounts, quantities or date can't be stored at all fails, alone, and `summary` says why.
+
+**Validation proves more** (in `validate`, full syncs and `transform retry`): besides voucher balance, trial balance and closing balances, it compares with Tally the number of vouchers per month and voucher type, each stock item's closing quantity, each party's bill-wise outstanding (as of today), and every ledger's balance at each financial year end. `./dev.ps1 validate -Env pilot -Quick` skips these extra comparisons.
+
+When records failed to transform, the validation output starts the explanation with the **root cause**, e.g.:
+
+```text
+  ROOT CAUSE: 1,016 ledgers in the source are missing here (2,170 ledger records failed to transform)
+  ROOT CAUSE: 238,392 vouchers failed to transform because they refer to a ledger that is missing
+  ROOT CAUSE: 884 other failures (closing_mismatch 877, tb_unbalanced 7) are likely consequences: ...
+```
+
+Fix the root cause first (share the `summary` breakdown), then run `transform retry`.
 
 ## Reading the results
 
 | Line | Meaning | What to do |
 | --- | --- | --- |
 | `Sync run N (full): succeeded`, `failed: 0` | Everything was read and transformed. | – |
-| `raw records that failed to transform: N` (N > 0) | Some Tally objects couldn't be mapped. | Share the count and run `summary`. The reason is stored per record; Claude Code will ask for the error types only. |
+| `raw records that failed to transform: N` (N > 0) | Some Tally objects couldn't be mapped or stored. | Share the `summary` lines under *why raw records failed* (counts and kinds, no values). After a fix: `./dev.ps1 transform retry -Env pilot`. |
+| `values kept in extra (didn't fit their column): N` | Records transformed, with some values kept aside in full (too long, out of range, invalid date). | Share the `summary` lines under *values kept in extra*. |
+| `ROOT CAUSE: ...` (validation) | Records failed to transform; the other failures counted there are likely their consequences. | Fix the root cause first, then `transform retry`. |
+| `voucher_unbalanced by voucher type: sales N, ...` | Which kinds of vouchers don't balance. | Share the line. |
+| `error: voucher_count_mismatch xN` | N (month, voucher type) pairs where the number of vouchers differs from Tally's. | Share the count. Usually follows vouchers that failed to transform. |
+| `error: stock_quantity_mismatch xN` | N stock items whose closing quantity differs from Tally's. | Share the count. |
+| `error: bills_mismatch xN` | N parties whose bill-wise outstanding differs from Tally's. | Share the count. |
+| `error: year_end_mismatch xN` | Ledger balances that differ from Tally's at a financial year end. | Share the count. |
+| `error: voucher_counts_unavailable` (or `stock_quantities_`, `bill_outstanding_`, `year_end_balances_`) | Tally couldn't provide those figures (e.g. timed out). | Share the line; `validate -Env pilot` again later. |
+| `note: stock_values_not_compared` | Stock values per item depend on Tally's valuation method and aren't compared item by item. | Expected. |
 | `unmapped ...: N` | Ledgers without a standard account (e.g. under *Indirect Expenses*), by design. Reports will place them under the nearest standard parent account (M6). | Expected. Share the count. |
 | `warnings (mapping assumptions): N` | GST ledgers whose duty head Tally left empty, assumed to be Central Tax (schema.md 7.3, an assumption to verify). | Check in TallyPrime that the company's Central Tax (CGST) ledgers number N. Report "matches" or "doesn't match". |
 | `validation: ... PASSED` | All checks passed. | – |
@@ -185,6 +226,7 @@ If Tally's data has **custom fields** (TDL customisations export them with prefi
 ## Afterwards
 
 - **Validate again** (e.g. after reloading Tally): `./dev.ps1 validate -Env pilot`.
+- **Transform failed records again** (no Tally needed): `./dev.ps1 transform retry -Env pilot` (step 7).
 - **Reload a newer backup:** restore it in TallyPrime, then `./dev.ps1 sync full -Env pilot`. Changes are picked up by AlterID, and deletions by the deletion check.
 - **Stop:** `./dev.ps1 down -Env pilot`. The data stays in the pilot volumes.
 - **Start over completely:** `./dev.ps1 reset -Env pilot` (step 0) deletes all pilot data and keeps `.env.pilot`. Then continue from step 2.
@@ -194,6 +236,7 @@ If Tally's data has **custom fields** (TDL customisations export them with prefi
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-13 | 0.7 | After the fifth attempt (2,170 ledgers and 238,392 vouchers failed, "Transform batch failed: DataError"): `transform retry` (step 7); one way to name companies (`entity <id> (company <n>)`); failure and warning breakdowns in `summary`; values that don't fit kept in `extra`; field catalogue (`fields`, `promote-field`); validation compares voucher counts, stock quantities, bills and year-end balances, and names the root cause. |
 | 2026-10-13 | 0.6 | Fifth attempt (unbound `UDF:` prefix; Tally still busy after a timeout; terminal lost mid-run; Ctrl+C left a run running): custom-field prefixes parsed and shown in `summary`; source checks wait up to the timeout; syncs run in the background, `sync watch`; `interrupted` runs, stale-run detection, `sync abandon`. |
 | 2026-10-13 | 0.5 | Fourth attempt (Educational mode, part-month requests empty, unverified month carried on): timeout in effect and its source in `status`/`summary`; `connect -TimeoutSec/-PauseSec/-PartMonth`; whole-month retries; unverified months stop the sync and are re-fetched; `sync full -From`. |
 | 2026-10-12 | 0.4 | Third attempt (Tally stopped answering after 18 minutes): chunked and resumable `sync full` (`-Restart` to start over), source checks and splitting after a timeout, `-TimeoutSec`, per-company progress and results, `summary` shows raw-record status and unfinished syncs. Data stored by the third attempt is kept and reused. |

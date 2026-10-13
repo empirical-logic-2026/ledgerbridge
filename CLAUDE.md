@@ -77,6 +77,10 @@ npm run build
 ./dev.ps1 sync full -From 2026-06-01                 # resume, but fetch again from a date
 ./dev.ps1 sync watch                                 # syncs run in the background; follow the latest again
 ./dev.ps1 sync abandon                               # mark runs whose process is gone interrupted (asks to type "abandon")
+./dev.ps1 transform retry                            # transform failed/pending records again (no Tally), then validate
+./dev.ps1 validate -Quick                            # skip voucher counts, stock, bills and year-end checks
+./dev.ps1 fields                                     # field catalogue (fields with no column, e.g. UDFs)
+./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"   # catalogued voucher field -> dimension
 ./dev.ps1 connect -Origin live -Company "LedgerBridge Test Co" -TimeoutSec 600 -PauseSec 0 -PartMonth auto
 # Pilot commands (init-env, connect -Origin backup, sync full, summary with -Env pilot) are in
 # docs/pilot-runbook.md: the developer runs them. Claude Code never does.
