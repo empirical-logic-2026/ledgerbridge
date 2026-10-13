@@ -41,7 +41,11 @@ class FixtureTransport(httpx.BaseTransport):
         if not match:
             return None
         collection_id = match.group(1).removesuffix("Keys")  # GUID-only = same objects
-        if collection_id == envelopes.VOUCHERS.collection_id:
+        # Voucher counts list the same vouchers (with their type only).
+        if collection_id in (
+            envelopes.VOUCHERS.collection_id,
+            envelopes.VOUCHER_COUNTS.collection_id,
+        ):
             vouchers = self.manifest.get("vouchers", [])
             start = _FROM.search(body)
             if not start:  # incremental or key listing: every recorded voucher
@@ -52,7 +56,13 @@ class FixtureTransport(httpx.BaseTransport):
             return [self.manifest["files"][collection_id]]
         known = {spec.collection_id for spec in envelopes.ALL_SPECS}
         known.update(
-            (envelopes.LEDGER_BALANCES.collection_id, envelopes.STOCK_VALUES.collection_id)
+            spec.collection_id
+            for spec in (
+                envelopes.LEDGER_BALANCES,
+                envelopes.STOCK_VALUES,
+                envelopes.BILLS,
+                envelopes.LEDGER_OPENING_BILLS,
+            )
         )
         # A type this fixture set didn't record answers like Tally with no such objects.
         return [] if collection_id in known else None

@@ -38,8 +38,11 @@ Every canonical table populated from a source carries these columns (abbreviated
 | `import_batch_id` | BIGINT UNSIGNED NULL | Batch for backup/file imports. |
 | `raw_record_id` | BIGINT UNSIGNED NULL | Link to the raw record it was built from (lineage). |
 | `is_deleted` | BOOLEAN DEFAULT FALSE | Soft delete when removed in source. |
+| `extra` | JSON NULL | Fields the source sent that have no column (e.g. Tally UDFs), by path, and under `_unfit` values that didn't fit their column, in full (ADR-025, migration `0010`). |
 
 Unique key on `(connection_id, source_key)` makes every sync an idempotent upsert.
+
+**Fields with no column and values that don't fit (ADR-025, DAT-009, DAT-010).** The connector puts every field its mapping doesn't use into `extra`, keyed by path below the object (for Tally, list levels included and prefixed names as Tally wrote them, e.g. `UDF:SALESMAN.LIST/UDF:SALESMAN`; a path that repeats, e.g. per ledger entry, holds a list). Tally's own bookkeeping fields (`VOUCHERKEY`, `PERSISTEDVIEW`, ...) are left out; the raw record keeps them. Before writing, each value is checked against its column (`core/fit.py`): a value too long, out of range, with more decimals than the column keeps, an invalid date, an unknown enum value or characters MySQL can't store is kept in full in `extra._unfit` (child rows of a voucher as `<table>[<line>].<column>`), and the column gets NULL, the rounded number, or `(too long; kept in extra)` for required text; the raw record gets a `process_warning`. Only a required amount, quantity or date that can't be stored fails, and only its own record.
 
 ## 2. Database layout
 
@@ -82,7 +85,8 @@ The users and the four databases are created when MySQL first initialises its vo
 | payload_hash | CHAR(64) | SHA-256, skips unchanged re-deliveries. |
 | received_at | DATETIME(6) | |
 | process_status | ENUM('pending','processed','failed','skipped') | |
-| process_error | TEXT NULL | |
+| process_error | TEXT NULL | Why it failed: error type and a short message naming fields, tables and columns, never values. MySQL data errors as `MySQL <code> <kind>: <table>.<column> (<size>)`. |
+| process_warning | TEXT NULL | Processed, but values were kept aside (`<kind> (<size>): <table>.<column>`; migration `0010`). |
 
 Indexes: `(connection_id, object_type, source_key)`, `(process_status, received_at)`. Partition by month of `received_at` once volumes grow.
 
@@ -101,6 +105,7 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 | `0007` | Pilot | `ledgerbridge_system.sync_checkpoints`, `ledgerbridge_system.sync_slow_periods` (Section 5.1, ADR-022) |
 | `0008` | Pilot | `ledgerbridge_system.sync_unverified_ranges` (Section 5.1, ADR-023) |
 | `0009` | Pilot | `ledgerbridge_system.sync_runs`: status `interrupted`, `heartbeat_at`, `pid`, `host`; `ledgerbridge_system.sync_logs` (Section 5.1, ADR-024) |
+| `0010` | Pilot | `extra` JSON on [SRC] tables and `entities`; `ledgerbridge_accounting.source_fields`; `dimensions.source_object_type`, `source_field`; wider `voucher_number`, `reference_number`, `gstin`, `pan`, `phone`, `units.symbol`, `items.code`, `hsn_code`, `cost_centres.category`; `raw_records.process_warning`; `sync_runs.run_type` `transform` (ADR-025) |
 
 `ledgerbridge_reporting` exists from M2 but stays empty until M6 (Section 6). The per-call AI model log (AI-018) is designed in M8. Type and key choices for tables documented here only as column lists are in Section 9.
 
@@ -138,12 +143,13 @@ erDiagram
 | legal_name | VARCHAR(255) NULL | |
 | country_code | CHAR(2) | Default `IN`. |
 | state_code | VARCHAR(8) NULL | |
-| gstin | VARCHAR(15) NULL | |
-| pan | VARCHAR(10) NULL | |
+| gstin | VARCHAR(32) NULL | 15 characters when valid; wider so source data that isn't fits (migration `0010`). |
+| pan | VARCHAR(32) NULL | |
 | base_currency_code | CHAR(3) | Default `INR`. |
 | fy_start_month | TINYINT | Default 4 (April) (DAT-006). |
 | books_from | DATE NULL | Company inception / books start (IMP-001). |
 | is_active | BOOLEAN | |
+| extra | JSON NULL | The company record's fields with no column (ADR-025). |
 
 #### `ledgerbridge_accounting.entity_sources`
 
@@ -235,7 +241,7 @@ Source group hierarchy (Tally groups), kept as-is per entity.
 | currency_code | CHAR(3) | |
 | is_bill_wise | BOOLEAN | |
 | is_cost_centre_applicable | BOOLEAN | |
-| gstin | VARCHAR(15) NULL | |
+| gstin | VARCHAR(32) NULL | |
 | tax_type | ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other') NULL | Set for tax ledgers. Voucher lines posted to them become `tax_lines` (migration `0004`, M3). |
 
 Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
@@ -250,13 +256,13 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 | entity_id | BIGINT UNSIGNED FK | |
 | name | VARCHAR(255) | **Sensitive** (masking candidate). |
 | party_type | ENUM('customer','vendor','both','other') | Tally: Sundry Debtors → customer, Sundry Creditors → vendor. |
-| gstin | VARCHAR(15) NULL | |
-| pan | VARCHAR(10) NULL | **Sensitive.** |
+| gstin | VARCHAR(32) NULL | |
+| pan | VARCHAR(32) NULL | **Sensitive.** |
 | state_code | VARCHAR(8) NULL | |
 | country_code | CHAR(2) NULL | |
 | credit_days | INT NULL | Used for ageing and overdue flags. |
 | credit_limit | DECIMAL(20,4) NULL | |
-| email, phone | VARCHAR NULL | **Sensitive.** |
+| email, phone | VARCHAR(255) NULL | **Sensitive.** `phone` was 32 until migration `0010` (Tally fields may hold several numbers). |
 
 #### Other masters [SRC]
 
@@ -264,10 +270,16 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 | --- | --- |
 | `ledgerbridge_accounting.voucher_types` | `entity_id, name, base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory` |
 | `ledgerbridge_accounting.item_groups` | `entity_id, parent_id, name` |
-| `ledgerbridge_accounting.items` | `entity_id, item_group_id, name, code, unit_id, hsn_code, gst_rate, opening_qty, opening_value` |
-| `ledgerbridge_accounting.units` | `entity_id, symbol, name, decimal_places` |
+| `ledgerbridge_accounting.items` | `entity_id, item_group_id, name, code VARCHAR(255), unit_id, hsn_code VARCHAR(32), gst_rate, opening_qty, opening_value` |
+| `ledgerbridge_accounting.units` | `entity_id, symbol VARCHAR(255), name, decimal_places` |
 | `ledgerbridge_accounting.godowns` | `entity_id, parent_id, name` |
-| `ledgerbridge_accounting.cost_centres` | `entity_id, parent_id, category, name` |
+| `ledgerbridge_accounting.cost_centres` | `entity_id, parent_id, category VARCHAR(255), name` |
+
+All of them also have `extra JSON NULL` ([SRC], ADR-025).
+
+#### `ledgerbridge_accounting.source_fields` (field catalogue, ADR-025, DAT-009)
+
+`id, entity_id, object_type VARCHAR(64), field_path VARCHAR(255), prefix VARCHAR(64) NULL, inferred_type ENUM('text','number','date','flag','mixed'), record_count BIGINT, first_seen_at, last_seen_at`; unique `(entity_id, object_type, field_path)`. Every field found in `extra` (not `_unfit`), filled by the transform: `record_count` is the number of records carrying the field (a re-transformed record is counted once). Field names only; values stay in `extra`. `fields` lists it (paths in the test environment only; elsewhere ids, kinds and counts).
 
 ### 4.4 Dimensions (DAT-005)
 
@@ -275,9 +287,11 @@ User-defined reporting dimensions beyond the built-in ones (entity, branch, cost
 
 | Table | Columns |
 | --- | --- |
-| `ledgerbridge_accounting.dimensions` | `id, code, name, applies_to ENUM('voucher','line'), is_active` |
+| `ledgerbridge_accounting.dimensions` | `id, code, name, applies_to ENUM('voucher','line'), is_active, source_object_type VARCHAR(64) NULL, source_field VARCHAR(255) NULL` |
 | `ledgerbridge_accounting.dimension_values` | `id, dimension_id, entity_id NULL, parent_id NULL, code, name` |
 | `ledgerbridge_accounting.line_dimensions` | `voucher_line_id, dimension_value_id` (PK both) |
+
+**Promoted fields (ADR-025).** `promote-field --field-id N --code C --name "..."` makes a catalogued voucher field a dimension: `source_object_type` and `source_field` name the field, each distinct value becomes a `dimension_values` row per entity (`code` `e<entity id>:<value>`, or a hash for long values), and every line of a voucher carrying the field gets it in `line_dimensions` (backfilled from `extra`; the transform keeps it current when vouchers are written again). Only voucher fields for now.
 
 ### 4.5 Transactions
 
@@ -289,9 +303,9 @@ User-defined reporting dimensions beyond the built-in ones (entity, branch, cost
 | entity_id | BIGINT UNSIGNED FK | |
 | branch_id | BIGINT UNSIGNED NULL | |
 | voucher_type_id | BIGINT UNSIGNED FK | |
-| voucher_number | VARCHAR(64) | |
+| voucher_number | VARCHAR(255) | Was 64 until migration `0010`. |
 | voucher_date | DATE | |
-| reference_number | VARCHAR(128) NULL | |
+| reference_number | VARCHAR(255) NULL | Was 128 until migration `0010`. |
 | reference_date | DATE NULL | |
 | party_id | BIGINT UNSIGNED NULL | Main party, if any. |
 | narration | TEXT NULL | Searchable via RAG later (AI-010). |
@@ -348,7 +362,7 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 | `ledgerbridge_system.sync_checkpoints` | `id, connection_id, source_entity_key, object_type, chunk_key VARCHAR(128), records, sync_run_id NULL`; unique `(connection_id, source_entity_key, chunk_key)` | A chunk of a full sync that was fetched, stored and committed (e.g. `chunk_key` `voucher:2023-04-01..2023-04-30`, or `ledger` for a master type). An interrupted full sync skips these when run again; the entity's checkpoints are deleted when its full sync completes, and ignored after 7 days (ADR-022, migration `0007`). |
 | `ledgerbridge_system.sync_unverified_ranges` | `id, connection_id, source_entity_key, object_type, period_from, period_to, reason VARCHAR(255), sync_run_id NULL, resolved_at NULL`; index `(connection_id, source_entity_key, resolved_at)` | A range whose stored records couldn't be proven complete (listing too slow, objects missing, or empty where the source lists objects). Until resolved it is fetched again on every full sync, whatever its checkpoint says; resolved when its whole chunk is fetched and accepted (ADR-023, migration `0008`). `reason` holds counts and kinds only. |
 | `ledgerbridge_system.sync_slow_periods` | PK `(connection_id, source_entity_key, object_type, month)`, `piece_days` | A month the source couldn't deliver in one request: later runs request it directly in pieces of `piece_days` days (ADR-022). |
-| `ledgerbridge_system.sync_runs` | `id, connection_id, run_type ENUM('incremental','full','import','deletion_check'), status ENUM('running','succeeded','failed','interrupted'), started_at, finished_at, heartbeat_at NULL, pid NULL, host VARCHAR(64) NULL, records_received, records_failed, error_summary` | SYN-005. `deletion_check` runs only look for objects deleted in the source (7.4, migration `0005`). A `running` run updates `heartbeat_at` every `SYNC_HEARTBEAT_SEC`; Ctrl+C or termination marks it `interrupted`, and so does the stale-run check when its heartbeat is older than `SYNC_STALE_SEC` or its process (`pid` on `host`) is gone; checkpoints are kept (ADR-024, migration `0009`). |
+| `ledgerbridge_system.sync_runs` | `id, connection_id, run_type ENUM('incremental','full','import','deletion_check','transform'), status ENUM('running','succeeded','failed','interrupted'), started_at, finished_at, heartbeat_at NULL, pid NULL, host VARCHAR(64) NULL, records_received, records_failed, error_summary` | SYN-005. `deletion_check` runs only look for objects deleted in the source (7.4, migration `0005`). A `running` run updates `heartbeat_at` every `SYNC_HEARTBEAT_SEC`; Ctrl+C or termination marks it `interrupted`, and so does the stale-run check when its heartbeat is older than `SYNC_STALE_SEC` or its process (`pid` on `host`) is gone; checkpoints are kept (ADR-024, migration `0009`). |
 | `ledgerbridge_system.sync_logs` | `id, connection_id, job_id CHAR(36), logged_at, line TEXT`; index `(job_id, id)` | The output of a background sync job, line by line, ending with `[job finished: exit N]`; `sync watch` follows it. Lines are what the CLI prints: counts and, in the test environment only, names (ADR-024, migration `0009`). |
 | `ledgerbridge_system.import_batches` | `id, connection_id, kind ENUM('backup','file'), file_name, file_sha256, period_from, period_to, status, created_by` | IMP-003, IMP-004. |
 | `ledgerbridge_system.file_layouts` | `id, connection_id, name, column_mapping JSON` | Saved CSV/TXT mappings (CON-003). |
@@ -373,6 +387,14 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 | `profit_carrier_mismatch` | error | For a ledger whose source balance includes the computed profit (Tally *Profit & Loss A/c*): source closing − our posted balance ≠ our profit for the period (income and expense ledgers, adjusted by the change in stock value the source reports). | `ledger` / source closing / ours + computed profit |
 | `closing_unavailable` | error | The source's closing balances couldn't be read (e.g. Tally unreachable); the closing checks didn't run. | `entity` |
 | `closing_not_supported` | info | The connector can't report closing balances. | `entity` |
+| `year_end_mismatch` | error | VAL-008: a ledger's balance at a financial year end before `as_of` differs from the source's (the profit carrier reconciled as above). | `ledger` (`object_id` `<ledger id>@<date>`) / source / ours |
+| `voucher_count_mismatch` | error | VAL-005: vouchers in a month of a voucher type differ from the source's count (cancelled and optional included, deleted excluded). | `voucher_month` (`<YYYY-MM>:<voucher type id>`) / source count / ours |
+| `stock_quantity_mismatch` | error | VAL-006: an item's closing quantity (opening plus movements of effective vouchers) differs from the source's. | `item` or `source_item` / source / ours |
+| `bills_mismatch` | error | VAL-007: a party's bill-wise outstanding (its opening bills plus all bill allocations of effective vouchers, on account excluded) differs from the source's outstanding bills. As of today only. | `ledger` or `source_party` / source / ours |
+| `<control>_unavailable` | error | One of the source's controls (`voucher_counts`, `stock_quantities`, `bill_outstanding`, `year_end_balances`) couldn't be read. | `entity` |
+| `<control>_not_supported`, `stock_values_not_compared`, `bills_not_compared` | info | The connector can't report it; stock values aren't compared per item (valuation method); bills are only compared as of today. | `entity` |
+
+The year-end, count, stock and bill checks run in **thorough** validations (`validate`, full syncs, `transform retry`); scheduled incremental syncs skip them. When raw records of the entity failed to transform, the report's **root cause** (VAL-009) lists them by object type and counts the failures above that are likely their consequences.
 
 A run is `failed` when any error-severity issue is recorded, else `passed`. `checks_passed` and `checks_failed` count individual checks (per voucher, ledger and date). An issue (same `check_code`, `object_type`, `object_id`) that is absent from a later run gets `resolved_at` on its earlier rows; the open issues are the latest run's.
 
@@ -546,7 +568,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 
 | Topic | Rule |
 | --- | --- |
-| Names, codes | `name`, `display_name`, `bill_name`, `file_name`: `VARCHAR(255)`. `code`, `symbol`, `label`, `category`: `VARCHAR(64)`. `email`: `VARCHAR(255)`, `phone`: `VARCHAR(32)`. `hsn_code`: `VARCHAR(16)`. |
+| Names, codes | `name`, `display_name`, `bill_name`, `file_name`: `VARCHAR(255)`. `code`, `label`: `VARCHAR(64)`. Since `0010`, columns filled from source text are wider: `voucher_number`, `reference_number`, `units.symbol`, `items.code`, `cost_centres.category`, `email`, `phone`: `VARCHAR(255)`; `gstin`, `pan`, `hsn_code`: `VARCHAR(32)`. Values that still don't fit go to `extra` (ADR-025). |
 | Amounts, rates, quantities | Money `DECIMAL(20,4)` (`amount`, `*_value`, `credit_limit`, `expected_value`, `actual_value`, thresholds). Rates, percentages and quantities `DECIMAL(20,6)` (`rate`, `gst_rate`, `discount_pct`, `quantity`, `opening_qty`). Exchange rates `DECIMAL(20,8)`. |
 | Flags | `BOOLEAN NOT NULL DEFAULT FALSE`, except `is_active` (`DEFAULT TRUE`). |
 | Statuses | `ENUM`s: `import_batches.status` (`pending`, `running`, `succeeded`, `failed`); `validation_runs.status` (`running`, `passed`, `failed`); `validation_issues.severity` (`error`, `warning`, `info`); `agents.status` (`active`, `disabled`); `users.status` (`active`, `disabled`, `locked`); `ai_query_log.status` (`succeeded`, `failed`, `refused`). |
@@ -576,6 +598,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-13 | 0.15 | Migration `0010` (ADR-025): `extra` JSON, `source_fields`, promoted dimensions, wider source text columns, `raw_records.process_warning`, run type `transform`; validation checks VAL-005 to VAL-009. |
 | 2026-10-13 | 0.14 | `sync_runs` status `interrupted`, `heartbeat_at`, `pid`, `host`; `sync_logs`; `connections.config.xml_prefixes_seen` (migration `0009`, ADR-024). |
 | 2026-10-13 | 0.13 | `sync_unverified_ranges` (migration `0008`); `connections.config` `pause_sec`, `part_month_requests`; `timeout_sec` optional (ADR-023). |
 | 2026-10-12 | 0.12 | `sync_checkpoints`, `sync_slow_periods` (migration `0007`); markers saved per entity from what is stored; `connections.config.timeout_sec` (ADR-022). |

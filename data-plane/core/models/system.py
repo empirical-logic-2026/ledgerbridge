@@ -31,7 +31,7 @@ from core.models.base import (
 from core.models.schemas import ACCOUNTING, SYSTEM
 
 CONNECTION_STATUSES = ("active", "paused", "error")
-RUN_TYPES = ("incremental", "full", "import", "deletion_check")
+RUN_TYPES = ("incremental", "full", "import", "deletion_check", "transform")
 RUN_STATUSES = ("running", "succeeded", "failed", "interrupted")
 _S = {"schema": SYSTEM}
 

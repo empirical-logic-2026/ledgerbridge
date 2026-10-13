@@ -1,8 +1,10 @@
 """Declarative base, shared column types and mixins (schema.md Sections 1 and 9)."""
 
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -80,6 +82,9 @@ class SourceTrackingMixin:
     # tables (schema.md Section 9).
     raw_record_id: Mapped[int | None] = mapped_column(Id, nullable=True)
     is_deleted: Mapped[bool] = flag()
+    # Everything the source sent that has no column (custom fields such as Tally UDFs), and
+    # values that didn't fit their column, in full (ADR-025). Never truncated.
+    extra: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 def src_table_args(table: str, schema: str, *extra: object) -> tuple[object, ...]:

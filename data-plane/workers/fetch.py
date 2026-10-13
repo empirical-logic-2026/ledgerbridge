@@ -400,7 +400,7 @@ class ChunkFetcher:
             try:
                 self.connector.ping()
             except Exception as exc:  # noqa: BLE001 - any failure means "no answer"
-                waited += self.clock() - started
+                waited += round(self.clock() - started)  # whole seconds: no timing noise
                 self.say(
                     f"{self.label}: source check {attempt}: no answer "
                     f"({short_error(exc, redact=True)})"

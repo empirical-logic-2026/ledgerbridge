@@ -11,7 +11,9 @@
     "LBStockItems": "stock_items.xml",
     "LBCostCentres": "cost_centres.xml",
     "LBLedgerBalances": "ledger_balances.xml",
-    "LBStockValues": "stock_values.xml"
+    "LBStockValues": "stock_values.xml",
+    "LBBills": "bills.xml",
+    "LBLedgerOpeningBills": "ledger_opening_bills.xml"
   },
   "vouchers": [
     {

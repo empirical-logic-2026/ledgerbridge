@@ -16,9 +16,13 @@ Older connections stored plain names; those are still found by exact name until
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from connectors.base import Connector, SourceEntity
 from core.models import Connection
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @dataclass(frozen=True)
@@ -102,3 +106,59 @@ def select_entities(
     if missing:
         raise EntityLookupError(len(missing), len(wanted))
     return found
+
+
+class Labels:
+    """One way to refer to a company in every output (sync, transform, validation, status,
+    summary): `entity <id> (company <n>)`.
+
+    - `entity <id>` is the entity's id in ledgerbridge_accounting, the same everywhere.
+    - `company <n>` is the company's number on its connection: its position in the
+      connection's configured list (`connect`), then companies synced without being
+      configured, in the order they were first synced. It never depends on which companies
+      a particular run includes.
+
+    A company not transformed yet has no entity id: `company <n> (no entity yet)`. Names are
+    never part of a label (callers add them in the test environment only).
+    """
+
+    def __init__(self, session: "Session", connection: Connection) -> None:
+        from sqlalchemy import select
+
+        from core.models.accounting import EntitySource
+
+        self.session = session
+        self.connection = connection
+        links = session.execute(
+            select(EntitySource.source_entity_key, EntitySource.entity_id)
+            .where(EntitySource.connection_id == connection.id)
+            .order_by(EntitySource.id)
+        ).all()
+        self.entity_ids = {key: entity_id for key, entity_id in links}
+        self.numbers: dict[str, int] = {}
+        for entry in configured(connection):
+            if entry.key and entry.key not in self.numbers:
+                self.numbers[entry.key] = len(self.numbers) + 1
+        for key, _ in links:
+            self.numbers.setdefault(key, len(self.numbers) + 1)
+        self.keys_by_id = {entity_id: key for key, entity_id in links}
+
+    def refresh(self) -> "Labels":
+        return Labels(self.session, self.connection)
+
+    def number(self, key: str) -> int:
+        if key not in self.numbers:
+            self.numbers[key] = len(self.numbers) + 1
+        return self.numbers[key]
+
+    def for_key(self, key: str, entity_id: int | None = None) -> str:
+        entity_id = entity_id if entity_id is not None else self.entity_ids.get(key)
+        if entity_id is None:
+            return f"company {self.number(key)} (no entity yet)"
+        return f"entity {entity_id} (company {self.number(key)})"
+
+    def for_entity(self, entity_id: int) -> str:
+        key = self.keys_by_id.get(entity_id)
+        if key is None:
+            return f"entity {entity_id}"
+        return f"entity {entity_id} (company {self.number(key)})"

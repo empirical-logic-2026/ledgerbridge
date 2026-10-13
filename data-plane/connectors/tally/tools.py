@@ -69,6 +69,12 @@ def capture_fixtures(company: str, directory: Path) -> int:
     stock_request = envelopes.collection_request(envelopes.STOCK_VALUES, company=company)
     save("stock_values.xml", connector.client.post(stock_request))
     files[envelopes.STOCK_VALUES.collection_id] = "stock_values.xml"
+    for spec, name in (
+        (envelopes.BILLS, "bills.xml"),
+        (envelopes.LEDGER_OPENING_BILLS, "ledger_opening_bills.xml"),
+    ):
+        save(name, connector.client.post(envelopes.collection_request(spec, company=company)))
+        files[spec.collection_id] = name
 
     vouchers = []
     for month in connector.voucher_periods(entity):

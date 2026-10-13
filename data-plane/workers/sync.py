@@ -41,8 +41,8 @@ from core.models import Connection, SyncRun
 from core.models.base import utcnow
 from core.models.system import SyncMarker
 from core.raw_store import RawStore
-from core.transform import Transformer, mark_deleted
-from workers.entities import select_entities
+from core.transform import Transformer, TransformResult, mark_deleted
+from workers.entities import Labels, select_entities
 from workers.fetch import AUTO, ChunkFetcher, FetchSettings
 from workers.runs import (
     INTERRUPTED_BY_SIGNAL,
@@ -64,6 +64,7 @@ def _quiet(message: str) -> None:
 
 
 DELETION_CHECK = "deletion_check"
+TRANSFORM = "transform"
 
 
 class SyncBusyError(RuntimeError):
@@ -74,7 +75,7 @@ class SyncBusyError(RuntimeError):
 class EntityOutcome:
     """One entity's part of a run (counts only; `name` is for test output)."""
 
-    label: str  # "entity 1 of 2"
+    label: str  # "entity 3 (company 2)": workers.entities.Labels
     name: str
     key: str
     status: str = "not attempted"  # succeeded / failed / not attempted
@@ -109,6 +110,10 @@ class SyncResult:
     deleted: dict[str, int] = field(default_factory=dict)
     unmapped_ledgers: dict[str, list[str]] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    # Values kept in extra because they didn't fit their column: kind and column -> count.
+    data_warnings: Counter[str] = field(default_factory=Counter)
+    failed_by_object_type: Counter[str] = field(default_factory=Counter)
+    retried: int = 0  # failed records set back to pending (transform retry)
     error: str | None = None
     entity_results: list[EntityOutcome] = field(default_factory=list)
 
@@ -183,11 +188,10 @@ def run_sync(
     try:
         entities = select_entities(connector, connection, entity_names)
         result.entities = [e.name for e in entities]
-        outcomes = [
-            EntityOutcome(f"entity {n} of {len(entities)}", e.name, e.key)
-            for n, e in enumerate(entities, start=1)
-        ]
+        labels = Labels(session, connection)
+        outcomes = [EntityOutcome(labels.for_key(e.key), e.name, e.key) for e in entities]
         result.entity_results = outcomes
+        say(f"{len(outcomes)} companies in this run: {', '.join(o.label for o in outcomes)}")
         for entity, outcome in zip(entities, outcomes, strict=True):
             try:
                 _sync_entity(
@@ -309,12 +313,12 @@ def _sync_entity(
     say(f"{label}: fetched {fetched:,}, stored {stored:,} new or changed, {unchanged:,} unchanged")
 
     say(f"{label}: transforming into the accounting tables")
-    origin = str(connection.config.get("origin", "live"))
-    transformed = Transformer(session, connection.id, connector, origin).run([entity.key])
-    result.transformed.update(transformed.by_object_type)
-    result.failed += transformed.failed
-    result.warnings.extend(transformed.warnings)
-    outcome.transformed, outcome.transform_failed = transformed.processed, transformed.failed
+    transformed = transformer(session, connection, connector, say).run([entity.key])
+    _add_transformed(result, outcome, transformed)
+    relabelled = Labels(session, connection).for_key(entity.key)
+    if relabelled != outcome.label:
+        say(f"{outcome.label} is now {relabelled}")
+        outcome.label = label = relabelled
     say(f"{label}: transformed {transformed.processed:,} records, {transformed.failed} failed")
 
     entity_id = entity_ids_for(session, connection.id, [entity.key]).get(entity.key)
@@ -327,6 +331,97 @@ def _sync_entity(
     session.commit()
     if fetcher is not None:
         fetcher.clear_checkpoints(entity)
+
+
+def transformer(
+    session: Session, connection: Connection, connector: Connector, say: Progress
+) -> Transformer:
+    """A transformer whose progress lines use the shared company labels."""
+    origin = str(connection.config.get("origin", "live"))
+    return Transformer(
+        session,
+        connection.id,
+        connector,
+        origin,
+        progress=say,
+        label=lambda key, entity_id: Labels(session, connection).for_key(key, entity_id),
+    )
+
+
+def _add_transformed(
+    result: SyncResult, outcome: EntityOutcome, transformed: TransformResult
+) -> None:
+    result.transformed.update(transformed.by_object_type)
+    result.failed += transformed.failed
+    result.failed_by_object_type.update(transformed.failed_by_object_type)
+    result.warnings.extend(transformed.warnings)
+    result.data_warnings.update(transformed.data_warnings)
+    result.retried += transformed.retried
+    outcome.transformed, outcome.transform_failed = transformed.processed, transformed.failed
+
+
+def run_transform(
+    session: Session,
+    connection: Connection,
+    connector: Connector,
+    entity_keys: Sequence[str] | None = None,
+    progress: Progress | None = None,
+    retry_failed: bool = True,
+    after_entity: AfterEntity | None = None,
+) -> SyncResult:
+    """Transforms the stored raw records again, without contacting the source: those that
+    failed before (with retry_failed) and any left pending, entity by entity, with the
+    current code. Runs as a `transform` run, so it never overlaps a sync. `after_entity`
+    (validation) runs after each entity."""
+    from core.models.accounting import EntitySource
+    from core.models.source import RawRecord
+
+    say = progress or _quiet
+    run, result = _open_run(session, connection, TRANSFORM)
+    try:
+        statuses = ("failed", "pending") if retry_failed else ("pending",)
+        waiting = select(RawRecord.source_entity_key).where(
+            RawRecord.connection_id == connection.id, RawRecord.process_status.in_(statuses)
+        )
+        keys = (
+            list(entity_keys) if entity_keys else sorted(set(session.scalars(waiting.distinct())))
+        )
+        names = dict(
+            session.execute(
+                select(EntitySource.source_entity_key, EntitySource.source_entity_name).where(
+                    EntitySource.connection_id == connection.id
+                )
+            ).all()
+        )
+        labels = Labels(session, connection)
+        outcomes = [EntityOutcome(labels.for_key(k), names.get(k, ""), k) for k in keys]
+        result.entity_results = outcomes
+        result.entities = [o.name for o in outcomes]
+        if outcomes:
+            say(f"{len(outcomes)} companies to transform: {', '.join(o.label for o in outcomes)}")
+        else:
+            say("Nothing to transform: no failed or pending records.")
+        for outcome in outcomes:
+            say(f"{outcome.label}: transforming stored records again (the source isn't contacted)")
+            transformed = transformer(session, connection, connector, say).run(
+                [outcome.key], retry_failed=retry_failed
+            )
+            _add_transformed(result, outcome, transformed)
+            outcome.status = "succeeded"
+            say(
+                f"{outcome.label}: {transformed.retried:,} failed records retried; transformed "
+                f"{transformed.processed:,}, {transformed.failed:,} failed"
+            )
+            result.entity_keys.append(outcome.key)
+            if after_entity is not None:
+                after_entity(result, SourceEntity(outcome.key, outcome.name), True)
+        result.status = run.status = "succeeded"
+    except (KeyboardInterrupt, SystemExit):
+        _interrupt_run(session, run, result)
+        raise
+    except Exception as exc:
+        _fail_run(session, run, result, exc)
+    return _close_run(session, run, result)
 
 
 def fetch_settings(connection: Connection) -> FetchSettings:
@@ -394,11 +489,12 @@ def run_deletion_check(
     try:
         entities = select_entities(connector, connection, entity_names, entity_keys)
         entity_ids = entity_ids_for(session, connection.id, [e.key for e in entities])
-        for number, entity in enumerate(entities, start=1):
+        labels = Labels(session, connection)
+        for entity in entities:
             entity_id = entity_ids.get(entity.key)
             if entity_id is None:
                 continue
-            say(f"entity {number} of {len(entities)}: checking for deletions")
+            say(f"{labels.for_key(entity.key)}: checking for deletions")
             result.entities.append(entity.name)
             result.entity_keys.append(entity.key)
             existing = connector.list_keys(entity)

@@ -221,20 +221,25 @@ def test_sync_prints_progress_and_a_result(pilot_cli) -> None:  # noqa: ANN001
     pilot_cli("connect", "--connection", "tally-pilot", "--source", "tally",
               "--origin", "backup", "--entity", ALPHA)  # fmt: skip
     _, out = pilot_cli("sync", "--connection", "tally-pilot", "--full", "--check-deletions")
+    new, known = "company 1 (no entity yet)", "entity 1 (company 1)"
     steps = [
-        "entity 1 of 1: fetching (full)",
-        "entity 1 of 1: ledger: 21 received, 21 stored, 0 unchanged (chunk 3 of",
-        "entity 1 of 1: voucher 2026-04-01..2026-04-30:",
-        "entity 1 of 1: fetched ",
-        "entity 1 of 1: transforming into the accounting tables",
-        "entity 1 of 1: validating as of",  # right after its transform
-        "entity 1 of 1: checking for deletions",
-        "entity 1 of 1: SUCCEEDED: fetched",
+        f"1 companies in this run: {new}",
+        f"{new}: fetching (full)",
+        f"{new}: ledger: 21 received, 21 stored, 0 unchanged (chunk 3 of",
+        f"{new}: voucher 2026-04-01..2026-04-30:",
+        f"{new}: fetched ",
+        f"{new}: transforming into the accounting tables",
+        f"{new} is now {known}",
+        f"{known}: transformed ",
+        f"{known}: validating as of",  # right after its transform
+        f"{known}: checking for deletions",
+        f"{known}: SUCCEEDED: fetched",
+        f"Validation run 1 of {known} as of",
         "Result: full succeeded; deletion_check succeeded; validation passed",
     ]
     positions = [out.index(step) for step in steps]
     assert positions == sorted(positions), out
-    assert re.search(r"^\[\d\d:\d\d:\d\d\] entity 1 of 1: fetching", out, re.M)
+    assert re.search(rf"^\[\d\d:\d\d:\d\d\] {re.escape(new)}: fetching", out, re.M)
     assert ALPHA not in out
 
 

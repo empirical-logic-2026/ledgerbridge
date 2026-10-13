@@ -1,6 +1,7 @@
 """Tally connector: implements connectors.base.Connector over Tally's XML interface."""
 
 import xml.etree.ElementTree as ET  # noqa: N817
+from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
 from datetime import date, timedelta
 from decimal import Decimal
@@ -181,6 +182,72 @@ class TallyConnector:
             opening_stock=sum((_canonical(i.findtext("OPENINGVALUE")) for i in items), Decimal(0)),
             closing_stock=sum((_canonical(i.findtext("CLOSINGVALUE")) for i in items), Decimal(0)),
         )
+
+    # --- figures that prove the books complete (VAL-005 to VAL-008) ---------------------
+
+    def voucher_counts(
+        self, entity: SourceEntity, start: date, end: date
+    ) -> dict[tuple[date, str], int]:
+        """(month start, voucher type name) -> vouchers dated start..end, from a small
+        listing per month (whole months, so Educational mode answers them)."""
+        counts: Counter[tuple[date, str]] = Counter()
+        for month in month_periods(start.replace(day=1), month_end(end)):
+            body = self._company_post(
+                entity,
+                lambda name, month=month: envelopes.collection_request(
+                    envelopes.VOUCHER_COUNTS, company=name, period=(month.start, month.end)
+                ),
+            )
+            for element in parser.objects(
+                parser.parse_response(body), envelopes.VOUCHER_COUNTS.object_tag
+            ):
+                dated = parser.tally_date(parser.text_of(element, "DATE"))
+                if dated is None or not start <= dated <= end:
+                    continue
+                kind = parser.text_of(element, "VOUCHERTYPENAME") or ""
+                counts[(dated.replace(day=1), kind)] += 1
+        return dict(counts)
+
+    def stock_quantities(self, entity: SourceEntity, as_of: date) -> dict[str, Decimal]:
+        """Stock item GUID -> Tally's closing quantity as of `as_of` (from books-from)."""
+        if entity.books_from is None:
+            raise TallyError(f"Company '{entity.name}' has no books-from date")
+        body = self._company_post(
+            entity,
+            lambda name: envelopes.collection_request(
+                envelopes.STOCK_VALUES, company=name, balances_period=(entity.books_from, as_of)
+            ),
+        )
+        quantities = {}
+        for element in parser.objects(parser.parse_response(body), "STOCKITEM"):
+            quantity, _ = mapping.quantity(parser.text_of(element, "CLOSINGBALANCE"))
+            quantities[parser.source_key(element)] = quantity
+        return quantities
+
+    def bill_outstanding(
+        self, entity: SourceEntity
+    ) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+        """(outstanding bills now, opening bills): party ledger name -> total, canonical
+        sign. Tally reports bills outstanding as of its latest date, whatever the period."""
+        outstanding: Counter[str] = Counter()
+        body = self._company_post(
+            entity, lambda name: envelopes.collection_request(envelopes.BILLS, company=name)
+        )
+        for bill in parser.objects(parser.parse_response(body), envelopes.BILLS.object_tag):
+            party = parser.text_of(bill, "PARENT") or ""
+            outstanding[party] += _canonical(bill.findtext("CLOSINGBALANCE"))
+        opening: Counter[str] = Counter()
+        body = self._company_post(
+            entity,
+            lambda name: envelopes.collection_request(envelopes.LEDGER_OPENING_BILLS, company=name),
+        )
+        for ledger in parser.objects(parser.parse_response(body), "LEDGER"):
+            bills = ledger.findall("BILLALLOCATIONS.LIST")
+            if bills:
+                name = parser.object_name(ledger) or ""
+                for bill in bills:
+                    opening[name] += _canonical(bill.findtext("OPENINGBALANCE"))
+        return dict(outstanding), dict(opening)
 
     def ledger_elements(self, entity: SourceEntity) -> list[ET.Element]:
         body = self._company_post(

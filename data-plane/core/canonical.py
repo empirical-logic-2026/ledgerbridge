@@ -8,13 +8,21 @@ Section 1). Other objects are referred to by name within the same entity, becaus
 such as Tally refer to masters by name rather than by key.
 """
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 # A group's standard_account_code meaning "no standard account here": stops sub-groups and
 # ledgers inheriting a mapping from further up the tree.
 NO_STANDARD_ACCOUNT = "-"
+
+
+def _extra() -> Any:
+    """Fields the source sent that the mapping doesn't use (e.g. custom fields), by path:
+    stored in the row's `extra` JSON and catalogued (ADR-025). Not part of equality."""
+    return field(default=None, compare=False, hash=False)
 
 
 @dataclass(frozen=True)
@@ -29,6 +37,7 @@ class CanonicalCompany:
     gstin: str | None = None
     pan: str | None = None
     base_currency_code: str = "INR"
+    extra: Mapping[str, Any] | None = _extra()
 
 
 @dataclass(frozen=True)
@@ -43,6 +52,7 @@ class CanonicalGroup:
     standard_account_code: str | None = None
     ledger_kind: str | None = None  # bank/cash/tax/party/stock
     party_type: str | None = None  # customer/vendor
+    extra: Mapping[str, Any] | None = _extra()
 
 
 @dataclass(frozen=True)
@@ -75,6 +85,7 @@ class CanonicalLedger:
     default_standard_account_code: str | None = None
     # Assumptions the connector made for this record; reported in the sync output.
     warnings: tuple[str, ...] = ()
+    extra: Mapping[str, Any] | None = _extra()
 
 
 @dataclass(frozen=True)
@@ -84,6 +95,7 @@ class CanonicalVoucherType:
     base_type: str
     is_accounting: bool = True
     is_inventory: bool = False
+    extra: Mapping[str, Any] | None = _extra()
 
 
 @dataclass(frozen=True)
@@ -92,6 +104,7 @@ class CanonicalUnit:
     symbol: str
     name: str
     decimal_places: int = 0
+    extra: Mapping[str, Any] | None = _extra()
 
 
 @dataclass(frozen=True)
@@ -99,6 +112,7 @@ class CanonicalItemGroup:
     source_key: str
     name: str
     parent_name: str | None
+    extra: Mapping[str, Any] | None = _extra()
 
 
 @dataclass(frozen=True)
@@ -109,6 +123,7 @@ class CanonicalItem:
     unit_name: str | None
     opening_qty: Decimal = Decimal(0)
     opening_value: Decimal = Decimal(0)
+    extra: Mapping[str, Any] | None = _extra()
 
 
 @dataclass(frozen=True)
@@ -116,6 +131,7 @@ class CanonicalGodown:
     source_key: str
     name: str
     parent_name: str | None
+    extra: Mapping[str, Any] | None = _extra()
 
 
 @dataclass(frozen=True)
@@ -124,6 +140,7 @@ class CanonicalCostCentre:
     name: str
     parent_name: str | None
     category: str | None = None
+    extra: Mapping[str, Any] | None = _extra()
 
 
 @dataclass(frozen=True)
@@ -171,6 +188,7 @@ class CanonicalVoucher:
     is_cancelled: bool = False
     is_optional: bool = False
     is_post_dated: bool = False
+    extra: Mapping[str, Any] | None = _extra()
 
 
 CanonicalRecord = (

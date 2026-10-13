@@ -6,10 +6,22 @@ Voucher child tables cascade on delete: a changed voucher's children are replace
 whole in one transaction (schema.md Section 8, rule 7).
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import CHAR, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    CHAR,
+    JSON,
+    BigInteger,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.models.base import (
@@ -20,6 +32,7 @@ from core.models.base import (
     Rate,
     SmallInt,
     SourceTrackingMixin,
+    Timestamp,
     TimestampMixin,
     TinyInt,
     flag,
@@ -49,14 +62,15 @@ class Entity(TimestampMixin, Base):
     legal_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     country_code: Mapped[str] = mapped_column(CHAR(2), default="IN", server_default="IN")
     state_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
-    gstin: Mapped[str | None] = mapped_column(String(15), nullable=True)
-    pan: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    gstin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    pan: Mapped[str | None] = mapped_column(String(32), nullable=True)
     base_currency_code: Mapped[str] = mapped_column(
         CHAR(3), ForeignKey(f"{ACCOUNTING}.currencies.code"), default="INR", server_default="INR"
     )
     fy_start_month: Mapped[int] = mapped_column(TinyInt, default=4, server_default="4")
     books_from: Mapped[date | None] = mapped_column(nullable=True)
     is_active: Mapped[bool] = flag(True)
+    extra: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)  # ADR-025
 
 
 class EntitySource(TimestampMixin, Base):
@@ -87,7 +101,7 @@ class Branch(TimestampMixin, Base):
     code: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = name_column()
     state_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
-    gstin: Mapped[str | None] = mapped_column(String(15), nullable=True)
+    gstin: Mapped[str | None] = mapped_column(String(32), nullable=True)
     is_active: Mapped[bool] = flag(True)
 
 
@@ -209,7 +223,7 @@ class Ledger(SourceTrackingMixin, TimestampMixin, Base):
     )
     is_bill_wise: Mapped[bool] = flag()
     is_cost_centre_applicable: Mapped[bool] = flag()
-    gstin: Mapped[str | None] = mapped_column(String(15), nullable=True)
+    gstin: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Set for tax ledgers (e.g. CGST payable); lines posted to them become tax_lines (M3).
     tax_type: Mapped[str | None] = mapped_column(
         Enum("cgst", "sgst", "igst", "cess", "tds", "tcs", "vat", "other", name="tax_type"),
@@ -232,14 +246,14 @@ class Party(SourceTrackingMixin, TimestampMixin, Base):
     party_type: Mapped[str] = mapped_column(
         Enum("customer", "vendor", "both", "other", name="party_type")
     )
-    gstin: Mapped[str | None] = mapped_column(String(15), nullable=True)
-    pan: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    gstin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    pan: Mapped[str | None] = mapped_column(String(32), nullable=True)
     state_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
     country_code: Mapped[str | None] = mapped_column(CHAR(2), nullable=True)
     credit_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     credit_limit: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class VoucherType(SourceTrackingMixin, TimestampMixin, Base):
@@ -276,7 +290,7 @@ class Unit(SourceTrackingMixin, TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
     entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
-    symbol: Mapped[str] = mapped_column(String(64))
+    symbol: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = name_column()
     decimal_places: Mapped[int] = mapped_column(TinyInt, default=0, server_default="0")
 
@@ -289,9 +303,9 @@ class Item(SourceTrackingMixin, TimestampMixin, Base):
     entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
     item_group_id: Mapped[int | None] = mapped_column(Id, _fk("item_groups"), nullable=True)
     name: Mapped[str] = name_column()
-    code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    code: Mapped[str | None] = mapped_column(String(255), nullable=True)
     unit_id: Mapped[int | None] = mapped_column(Id, _fk("units"), nullable=True)
-    hsn_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    hsn_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     gst_rate: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
     opening_qty: Mapped[Decimal] = mapped_column(Rate, default=0, server_default="0")
     opening_value: Mapped[Decimal] = mapped_column(Money, default=0, server_default="0")
@@ -314,7 +328,7 @@ class CostCentre(SourceTrackingMixin, TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
     entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
     parent_id: Mapped[int | None] = mapped_column(Id, _fk("cost_centres"), nullable=True)
-    category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = name_column()
 
 
@@ -332,6 +346,11 @@ class Dimension(TimestampMixin, Base):
     name: Mapped[str] = name_column()
     applies_to: Mapped[str] = mapped_column(Enum("voucher", "line", name="dimension_applies_to"))
     is_active: Mapped[bool] = flag(True)
+    # Set for a dimension promoted from a catalogued source field (ADR-025): its values come
+    # from that field in `extra` of records of this object type, kept up to date by the
+    # transform.
+    source_object_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_field: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class DimensionValue(TimestampMixin, Base):
@@ -347,6 +366,30 @@ class DimensionValue(TimestampMixin, Base):
     parent_id: Mapped[int | None] = mapped_column(Id, _fk("dimension_values"), nullable=True)
     code: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = name_column()
+
+
+class SourceField(Base):
+    """Field catalogue (ADR-025): every field found in `extra` (fields with no column, e.g.
+    Tally UDFs), per entity and object type, filled by the transform. Field names only;
+    values stay in `extra`."""
+
+    __tablename__ = "source_fields"
+    __table_args__ = (
+        UniqueConstraint("entity_id", "object_type", "field_path", name="uq_source_fields_field"),
+        _A,
+    )
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    object_type: Mapped[str] = mapped_column(String(64))
+    field_path: Mapped[str] = mapped_column(String(255))
+    prefix: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    inferred_type: Mapped[str] = mapped_column(
+        Enum("text", "number", "date", "flag", "mixed", name="source_field_type")
+    )
+    record_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    first_seen_at: Mapped[datetime] = mapped_column(Timestamp)
+    last_seen_at: Mapped[datetime] = mapped_column(Timestamp)
 
 
 # --- 4.5 Transactions ------------------------------------------------------------------
@@ -366,9 +409,9 @@ class Voucher(SourceTrackingMixin, TimestampMixin, Base):
     entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
     branch_id: Mapped[int | None] = mapped_column(Id, _fk("branches"), nullable=True)
     voucher_type_id: Mapped[int] = mapped_column(Id, _fk("voucher_types"))
-    voucher_number: Mapped[str] = mapped_column(String(64))
+    voucher_number: Mapped[str] = mapped_column(String(255))
     voucher_date: Mapped[date]
-    reference_number: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reference_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reference_date: Mapped[date | None] = mapped_column(nullable=True)
     party_id: Mapped[int | None] = mapped_column(Id, _fk("parties"), nullable=True)
     narration: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -477,4 +520,4 @@ class TaxLine(TimestampMixin, Base):
     rate: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
     taxable_amount: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     tax_amount: Mapped[Decimal] = mapped_column(Money)
-    hsn_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    hsn_code: Mapped[str | None] = mapped_column(String(32), nullable=True)

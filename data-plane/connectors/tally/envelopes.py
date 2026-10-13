@@ -124,13 +124,35 @@ LEDGER_BALANCES = CollectionSpec(
     ),
 )
 
-# Stock values Tally uses for the period's profit (opening and closing stock).
+# Stock values Tally uses for the period's profit (opening and closing stock), and each
+# item's closing quantity (validation, VAL-006).
 STOCK_VALUES = CollectionSpec(
     "LBStockValues",
     "StockItem",
     "STOCKITEM",
     "stock_value",
-    ("NAME", "OPENINGVALUE", "CLOSINGVALUE"),
+    ("GUID", "NAME", "OPENINGVALUE", "CLOSINGVALUE", "CLOSINGBALANCE"),
+)
+
+# Vouchers of a month with their type only, to count them (validation, VAL-005). Small,
+# like a keys-only listing.
+VOUCHER_COUNTS = CollectionSpec(
+    "LBVoucherCounts", "Voucher", "VOUCHER", "voucher_count", ("GUID", "DATE", "VOUCHERTYPENAME")
+)
+
+# Outstanding bills (bill-wise details) as Tally reports them now: Tally's Bills collection
+# ignores the period (checked on the test company, 2026-10-13). PARENT is the party ledger.
+BILLS = CollectionSpec(
+    "LBBills", "Bills", "BILL", "bill", ("NAME", "PARENT", "BILLDATE", "CLOSINGBALANCE")
+)
+
+# Each ledger's opening bills (bill-wise opening balance), from the ledger master.
+LEDGER_OPENING_BILLS = CollectionSpec(
+    "LBLedgerOpeningBills",
+    "Ledger",
+    "LEDGER",
+    "ledger_opening_bills",
+    ("GUID", "NAME", "BILLALLOCATIONS.NAME", "BILLALLOCATIONS.OPENINGBALANCE"),
 )
 
 # Masters in the order they must be transformed (each may refer to the ones before it).

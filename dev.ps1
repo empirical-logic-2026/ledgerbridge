@@ -17,6 +17,9 @@
     ./dev.ps1 sync full -Company "LedgerBridge Test Co"
     ./dev.ps1 sync deletions
     ./dev.ps1 validate
+    ./dev.ps1 transform retry                   (transform failed records again; no Tally)
+    ./dev.ps1 fields
+    ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
     ./dev.ps1 seed-test-data
     ./dev.ps1 seed-test-data create-only
@@ -32,12 +35,13 @@
     ./dev.ps1 sync full -Env pilot -From 2024-03-01   (fetch again from a date)
     ./dev.ps1 sync watch -Env pilot             (follow a running sync again)
     ./dev.ps1 sync abandon -Env pilot           (mark runs whose process is gone interrupted)
+    ./dev.ps1 transform retry -Env pilot        (failed records again with the current code)
     ./dev.ps1 summary -Env pilot
     ./dev.ps1 reset -Env pilot
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'seed-test-data', 'help')]
+    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'fields', 'promote-field', 'seed-test-data', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -80,6 +84,18 @@ param(
 
     # For `sync full`: ignore an interrupted full sync's progress and fetch everything again.
     [switch]$Restart,
+
+    # For `validate`: skip the source's controls (voucher counts, stock, bills, year ends).
+    [switch]$Quick,
+
+    # For `transform retry`: don't validate afterwards (validation reads Tally's figures).
+    [switch]$NoValidate,
+
+    # For `promote-field`: the catalogued field's id (from `fields`), and the dimension's
+    # code and name.
+    [int]$FieldId = 0,
+    [string]$Code = '',
+    [string]$Name = '',
 
     # For `reset`: required to reset the test environment; pilot always asks.
     [switch]$Force,
@@ -321,7 +337,38 @@ switch ($Command) {
         Assert-ApiRunning
         $validateArgs = @('python', '-m', 'workers.cli', 'validate', '--connection', $connection, '--source', 'tally')
         foreach ($name in $Company) { $validateArgs += @('--entity', $name) }
+        if ($Quick) { $validateArgs += '--quick' }
         Invoke-Checked exec -T api @validateArgs
+    }
+    'transform' {
+        # `transform retry`: transform the stored raw records again (those that failed, and
+        # any left pending) with the current code, without contacting Tally, then validate
+        # the companies it touched (validation reads Tally's own figures; -NoValidate skips
+        # it). Runs in the background like a sync and is followed here (ADR-024).
+        if ($Service -ne 'retry') { throw 'Usage: ./dev.ps1 transform retry [-Company "<name>"] [-NoValidate]' }
+        Assert-EnvFile
+        Assert-ApiRunning
+        $job = [guid]::NewGuid().ToString()
+        $retryArgs = @('python', '-m', 'workers.cli', 'transform-retry', '--connection', $connection, '--job', $job)
+        foreach ($name in $Company) { $retryArgs += @('--entity', $name) }
+        if ($NoValidate) { $retryArgs += '--no-validate' }
+        Invoke-Stack exec -d api @retryArgs
+        Write-Host "Started transform job $job in the background. Following it; closing this window doesn't stop it (follow again with: ./dev.ps1 sync watch -Env $Env)."
+        Invoke-Checked exec -T api python -m workers.cli watch --connection $connection --job $job
+    }
+    'fields' {
+        # The field catalogue: fields with no column (e.g. Tally UDFs), per entity. Field
+        # names in the test environment only; elsewhere ids, kinds and counts.
+        Assert-EnvFile
+        Assert-ApiRunning
+        Invoke-Checked exec -T api python -m workers.cli fields
+    }
+    'promote-field' {
+        # Make a catalogued voucher field a reporting dimension, with backfill (ADR-025).
+        if ($FieldId -le 0 -or -not $Code -or -not $Name) { throw 'Usage: ./dev.ps1 promote-field -FieldId <id from fields> -Code <CODE> -Name "<name>"' }
+        Assert-EnvFile
+        Assert-ApiRunning
+        Invoke-Checked exec -T api python -m workers.cli promote-field --field-id $FieldId --code $Code --name $Name
     }
     'logs' {
         Assert-EnvFile
