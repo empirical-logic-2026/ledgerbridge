@@ -1,0 +1,94 @@
+---
+title: "PLANNED (M7b, not built yet): budget tables, as proposed in schema.md 4.7"
+---
+%% Written by hand from docs/schema.md Section 4.7 (proposed design). When M7b builds
+%% these tables, move them into the models and devtools/diagrams.py, and delete this file.
+erDiagram
+    budgets {
+        bigint id PK
+        bigint entity_id FK "to entities; NULL = consolidated group"
+        varchar name
+        date fy_start
+        enum version_kind "original or revised"
+        int version_no
+        bigint revised_from_id FK "to budgets"
+        enum status "draft, approved, locked"
+        enum level "standard_account, account_group, ledger"
+        enum origin "manual, excel, copy, live, backup"
+        bigint connection_id FK "to connections; imported budgets"
+        varchar source_key "imported budgets"
+        bigint import_batch_id FK "to import_batches"
+    }
+    budget_lines {
+        bigint id PK
+        bigint budget_id FK "to budgets"
+        bigint standard_account_id FK "one of the three account columns"
+        bigint account_group_id FK
+        bigint ledger_id FK
+        bigint cost_centre_id FK "optional"
+        decimal annual_amount "sum of the months"
+        enum spread_method "equal, last_year, manual"
+    }
+    budget_line_months {
+        bigint budget_line_id PK, FK
+        date month PK
+        decimal amount
+    }
+    budget_line_dimensions {
+        bigint budget_line_id PK, FK
+        bigint dimension_value_id PK, FK
+    }
+    budget_changes {
+        bigint id PK
+        bigint budget_id FK
+        bigint budget_line_id FK
+        date month
+        enum action "create, edit, spread, import, approve, lock, ..."
+        decimal old_amount
+        decimal new_amount
+        varchar changed_by
+        datetime changed_at "append-only history"
+    }
+    budget_alert_rules {
+        bigint id PK
+        bigint entity_id FK "NULL = all"
+        bigint standard_account_id FK
+        bigint account_group_id FK
+        enum period "month, quarter, ytd"
+        decimal threshold_pct
+        decimal threshold_amount
+        enum severity
+    }
+    entities {
+        bigint id PK
+    }
+    standard_accounts {
+        bigint id PK
+    }
+    account_groups {
+        bigint id PK
+    }
+    ledgers {
+        bigint id PK
+    }
+    cost_centres {
+        bigint id PK
+    }
+    dimension_values {
+        bigint id PK
+    }
+    entities |o--o{ budgets : "entity_id"
+    budgets |o--o{ budgets : "revised_from_id"
+    budgets ||--o{ budget_lines : "budget_id"
+    budget_lines ||--o{ budget_line_months : "budget_line_id"
+    budget_lines ||--o{ budget_line_dimensions : "budget_line_id"
+    dimension_values ||--o{ budget_line_dimensions : "dimension_value_id"
+    budgets ||--o{ budget_changes : "budget_id"
+    budget_lines |o--o{ budget_changes : "budget_line_id"
+    standard_accounts |o--o{ budget_lines : "standard_account_id"
+    account_groups |o--o{ budget_lines : "account_group_id"
+    ledgers |o--o{ budget_lines : "ledger_id"
+    cost_centres |o--o{ budget_lines : "cost_centre_id"
+    entities |o--o{ budget_alert_rules : "entity_id"
+    standard_accounts |o--o{ budget_alert_rules : "standard_account_id"
+    account_groups |o--o{ budget_alert_rules : "account_group_id"

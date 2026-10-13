@@ -1,0 +1,5 @@
+{
+  "theme": "default",
+  "er": { "useMaxWidth": false },
+  "flowchart": { "useMaxWidth": false }
+}

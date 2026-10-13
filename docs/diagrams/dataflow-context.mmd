@@ -1,0 +1,27 @@
+---
+title: "Data flow, level 0: LedgerBridge and the outside world (dashed = planned)"
+---
+%% Written by hand. Update it when sources, users or providers change (CLAUDE.md).
+flowchart LR
+    tally[("Tally<br/>(TallyPrime, Tally.ERP 9)<br/>at the client")]
+    future[("Future sources: Zoho Books, banks,<br/>CSV/TXT files, ERP databases<br/>PLANNED")]
+    users(["Client users<br/>owners, finance, accountants, admins"])
+    ai["Client's AI provider<br/>local model by default<br/>PLANNED (M8)"]
+    cp["LedgerBridge control plane<br/>provider-hosted: login and licences only<br/>PLANNED (Phase 1b)"]
+
+    subgraph client["Client-hosted"]
+        dp["<b>LedgerBridge data plane</b><br/>connectors, raw and accounting data,<br/>validation, reports, AI layer, API"]
+    end
+
+    dp -->|"read-only export requests"| tally
+    tally -->|"masters and vouchers (XML)"| dp
+    future -.->|"accounting and bank data"| dp
+    users -->|"commands, questions, budgets"| dp
+    dp -->|"dashboards, reports, answers, alerts"| users
+    users -.->|"login (planned)"| cp
+    cp -.->|"signed token: who and which client<br/>never any client data"| dp
+    dp -.->|"masked question and schema only,<br/>per privacy mode"| ai
+    ai -.->|"proposed SQL"| dp
+
+    classDef planned fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:5 5,color:#4b5563
+    class future,ai,cp planned
