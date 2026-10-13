@@ -21,6 +21,11 @@ and numbers. Behaviour can be made difficult:
   next this many other requests (e.g. the source check) time out too;
 - `udf`: masters and vouchers carry user-defined fields with an undeclared `UDF:` prefix,
   as TDL customisations export them (pilot 2026-10-13).
+- `bad_values`: data that doesn't fit the accounting tables (pilot 2026-10-13): every
+  ledger has a GSTIN of 40 characters; on the 1st of each month the first voucher has a
+  voucher number and a reference of 300 characters and a reference date in year 1, on the
+  2nd its rate is out of range, and on 2026-05-03 its amounts are too large to store at
+  all (only that voucher may fail). See BAD_VOUCHER.
 
 Keys-only listings never time out (they're small). Every voucher request is logged.
 """
@@ -43,6 +48,8 @@ _CURRENT = re.compile(r"<SVCURRENTCOMPANY>(.*?)</SVCURRENTCOMPANY>", re.S)
 
 BOOKS_START = date(2026, 4, 1)
 BOOKS_END = date(2026, 9, 30)
+BAD_VOUCHER = date(2026, 5, 3)  # with bad_values: amounts too large for DECIMAL(20,4)
+LONG = 300
 
 
 def _day(text: str) -> date:
@@ -66,6 +73,7 @@ class SimTally(FixtureTransport):
         missing_months: tuple[date, ...] = (),
         busy_after_timeout: int = 0,
         udf: bool = False,
+        bad_values: bool = False,
     ) -> None:
         super().__init__(DEFAULT_DIR)
         self.per_day = per_day
@@ -82,6 +90,7 @@ class SimTally(FixtureTransport):
         self.busy_after_timeout = busy_after_timeout
         self.busy = 0
         self.udf = udf
+        self.bad_values = bad_values
         self.timeouts_seen: list[float | None] = []
         self.dead = False
         self.voucher_requests = 0
@@ -116,6 +125,8 @@ class SimTally(FixtureTransport):
             )
         if collection == envelopes.COMPANIES.collection_id and current is None:
             return self._xml(self._companies())
+        if collection == envelopes.VOUCHER_COUNTS.collection_id:
+            return self._vouchers(request, body, keys=True, current=current, with_type=True)
         if collection.startswith(envelopes.VOUCHERS.collection_id):
             try:
                 return self._vouchers(
@@ -127,6 +138,13 @@ class SimTally(FixtureTransport):
         response = super().handle_request(request)
         if self.udf:
             response = httpx.Response(200, content=self._with_udf(response.content))
+        if self.bad_values:
+            content = re.sub(
+                rb"(</LEDGER>)",
+                b"<PARTYGSTIN>" + b"G" * 40 + b"</PARTYGSTIN>" + rb"\1",
+                response.content,
+            )
+            response = httpx.Response(200, content=content)
         company = self.names.index(current.group(1)) if current else 0
         if company == 0:
             return response
@@ -147,7 +165,12 @@ class SimTally(FixtureTransport):
         return "".join(companies)
 
     def _vouchers(
-        self, request: httpx.Request, body: str, keys: bool, current: re.Match | None
+        self,
+        request: httpx.Request,
+        body: str,
+        keys: bool,
+        current: re.Match | None,
+        with_type: bool = False,
     ) -> httpx.Response:
         start = _day(m.group(1)) if (m := _FROM.search(body)) else BOOKS_START
         end = _day(m.group(1)) - timedelta(days=1) if (m := _TO.search(body)) else BOOKS_END
@@ -193,7 +216,15 @@ class SimTally(FixtureTransport):
                     continue
                 guid = f"sim{company}-{day:%Y%m%d}-{i:04d}"
                 if keys:
-                    out.append(f"<VOUCHER><GUID>{guid}</GUID><ALTERID>{alter}</ALTERID></VOUCHER>")
+                    kind = (
+                        f"<DATE>{day:%Y%m%d}</DATE><VOUCHERTYPENAME>"
+                        f"{self.voucher_template.findtext('VOUCHERTYPENAME')}</VOUCHERTYPENAME>"
+                        if with_type
+                        else ""
+                    )
+                    out.append(
+                        f"<VOUCHER><GUID>{guid}</GUID><ALTERID>{alter}</ALTERID>{kind}</VOUCHER>"
+                    )
                 else:
                     out.append(self._voucher(guid, alter, day, i))
             day += timedelta(days=1)
@@ -208,6 +239,8 @@ class SimTally(FixtureTransport):
         narration = voucher.find("NARRATION")
         if narration is not None:
             narration.text = "synthetic"
+        if self.bad_values and number == 0:
+            self._spoil(voucher, day)
         voucher.tail = None
         text = ET.tostring(voucher, encoding="unicode")
         if self.udf:
@@ -218,6 +251,27 @@ class SimTally(FixtureTransport):
                 '<TDL:FLAG.LIST TYPE="Logical"><TDL:FLAG>Yes</TDL:FLAG></TDL:FLAG.LIST></VOUCHER>',
             )
         return text
+
+    @staticmethod
+    def _spoil(voucher: ET.Element, day: date) -> None:
+        """Values that don't fit the accounting tables (see `bad_values`)."""
+        if day.day == 1:
+            voucher.find("VOUCHERNUMBER").text = "N" * LONG
+            voucher.find("REFERENCE").text = "R" * LONG
+            voucher.find("REFERENCEDATE").text = "00010101"
+        if day.day == 2:
+            entry = voucher.find("ALLLEDGERENTRIES.LIST")
+            ET.SubElement(entry, "RATE").text = "1" * 20  # not read for ledger entries
+            stock = ET.SubElement(voucher, "ALLINVENTORYENTRIES.LIST")
+            ET.SubElement(stock, "STOCKITEMNAME").text = "Widget"
+            ET.SubElement(stock, "ACTUALQTY").text = " 1 Nos"
+            ET.SubElement(stock, "RATE").text = "1" * 20 + "/Nos"
+            ET.SubElement(stock, "AMOUNT").text = "0"
+        if day == BAD_VOUCHER:
+            for entry in voucher.findall("ALLLEDGERENTRIES.LIST"):
+                amount = entry.find("AMOUNT")
+                negative = (amount.text or "").strip().startswith("-")
+                amount.text = ("-" if negative else "") + "9" * 18 + ".00"
 
     @staticmethod
     def _with_udf(content: bytes) -> bytes:

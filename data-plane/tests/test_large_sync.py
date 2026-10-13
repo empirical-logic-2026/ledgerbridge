@@ -380,13 +380,15 @@ def test_progress_per_chunk_and_summary_counts(db: Session, sim) -> None:  # noq
     transport = SimTally(per_day=1)
     result, lines, _ = _sync(db, connection, transport, connector)
     assert any(
-        line.startswith("entity 1 of 1: voucher 2026-04-01..2026-04-30: 30 received, 30 stored")
+        line.startswith(
+            "company 1 (no entity yet): voucher 2026-04-01..2026-04-30: 30 received, 30 stored"
+        )
         for line in lines
     )
     (outcome,) = result.entity_results
     assert outcome.status == "succeeded"
     assert outcome.fetched == outcome.stored == _count(db, RawRecord)
-    assert outcome.transformed == outcome.fetched - 1  # the company record goes with the entity
+    assert outcome.transformed == outcome.fetched  # the company record counts too
     assert outcome.chunks == 1 + 8 + MONTHS and outcome.chunks_skipped == 0
     assert not any("Sim Co" in line for line in lines)  # no names in progress lines
 
