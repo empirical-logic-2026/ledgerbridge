@@ -33,7 +33,10 @@ schedule.
 """
 
 import argparse
+import signal
 import sys
+import threading
+import time
 from collections.abc import Sequence
 from datetime import date, datetime
 
@@ -55,6 +58,7 @@ from core.models.source import RawRecord
 from core.models.system import (
     Alert,
     SyncCheckpoint,
+    SyncLog,
     SyncUnverifiedRange,
     ValidationIssue,
     ValidationRun,
@@ -63,6 +67,14 @@ from core.transform import trial_balance
 from core.validation import ValidationReport
 from workers.entities import by_names, configured, to_config
 from workers.extract import connector_for, get_or_create_connection, run_extract
+from workers.runs import (
+    FINISHED,
+    JobLog,
+    Tee,
+    abandon_runs,
+    install_tee,
+    reap_stale_runs,
+)
 from workers.sync import (
     DELETION_CHECK,
     EntityOutcome,
@@ -134,6 +146,9 @@ def _parser() -> argparse.ArgumentParser:
     period_args(sync)
 
     sync.add_argument("--no-validate", action="store_true", help="skip validation after the sync")
+    sync.add_argument(
+        "--job", help="job id: also write the output to sync_logs, for `watch` (ADR-024)"
+    )
 
     validate = sub.add_parser("validate", help="validate synced entities against the source")
     connection_args(validate)
@@ -147,6 +162,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     connection_args(deletions)
     deletions.add_argument("--entity", action="append", help="entity name (repeatable)")
+    deletions.add_argument("--job", help="job id: also write the output to sync_logs")
 
     connect = sub.add_parser(
         "connect", help="create or update a connection: origin and the entities it syncs"
@@ -200,6 +216,24 @@ def _parser() -> argparse.ArgumentParser:
         help="skip selecting each entity in the source (read-only requests)",
     )
 
+    watch = sub.add_parser("watch", help="follow a background sync job's output and result")
+    connection_args(watch)
+    watch.add_argument("--job", help="job id (default: the connection's latest job)")
+    watch.add_argument("--poll-sec", type=float, default=2.0)
+    watch.add_argument(
+        "--grace-sec",
+        type=float,
+        default=90.0,
+        help="how long without output and without a live run before the job counts as gone",
+    )
+
+    abandon = sub.add_parser(
+        "abandon", help="mark the connection's running runs interrupted (manual recovery)"
+    )
+    connection_args(abandon)
+    abandon.add_argument("--yes", action="store_true", help="confirmed (dev.ps1 asks first)")
+    abandon.add_argument("--force", action="store_true", help="also runs that still look alive")
+
     sub.add_parser("status", help="each connection's last sync and when the next is due")
     sub.add_parser("summary", help="counts and pass/fail per entity (safe to share)")
 
@@ -227,18 +261,64 @@ def main(argv: Sequence[str] | None = None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(line_buffering=True)
     args = _parser().parse_args(argv)
+    _terminate_raises_system_exit()
     with Session(get_engine()) as session:
+        job = _start_job_log(session, args)
+        code = 1
         try:
-            return _run(session, args)
+            code = _run(session, args)
+            return code
+        except (KeyboardInterrupt, SystemExit) as exc:
+            code = exc.code if isinstance(exc, SystemExit) and isinstance(exc.code, int) else 130
+            print(
+                "Interrupted: the run is marked interrupted and its progress is kept. Run the "
+                "sync again to continue.",
+                file=sys.stderr,
+            )
+            return code
         except Exception as exc:
             if _show_names():
                 raise  # test environment: the full traceback helps
             # Elsewhere: never SQL statements or their parameters, nor quoted values.
             print(f"error: {short_error(exc, redact=True)}", file=sys.stderr)
             return 1
+        finally:
+            if job is not None:
+                _finish_job_log(job, code)
+
+
+def _terminate_raises_system_exit() -> None:
+    """`docker stop` and kill send SIGTERM: end like Ctrl+C, so the run is marked
+    interrupted instead of being left 'running'."""
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(143))
+
+
+def _start_job_log(session: Session, args: argparse.Namespace) -> JobLog | None:
+    # Only the jobs themselves: `watch --job` reads that job's log, it must never write to it.
+    if args.command not in ("sync", "check-deletions") or not args.job:
+        return None
+    connection = get_or_create_connection(session, args.connection, args.source)
+    session.commit()
+    job = JobLog(session.get_bind(), connection.id, args.job)  # type: ignore[arg-type]
+    install_tee(job)
+    return job
+
+
+def _finish_job_log(job: JobLog, code: int) -> None:
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name)
+        if isinstance(stream, Tee):
+            stream.close_line()
+            setattr(sys, name, stream.stream)
+    job.finish(code)
 
 
 def _run(session: Session, args: argparse.Namespace) -> int:
+    if args.command == "watch":
+        return _watch(session, args)
+    if args.command == "abandon":
+        return _abandon(session, args)
     if args.command == "status":
         return _status(session)
     if args.command == "summary":
@@ -389,6 +469,86 @@ def _sync(
     validation = after.validation_status if validate else "skipped"
     print(f"Result: {'; '.join(parts)}; validation {validation}")
     return code
+
+
+def _sleep(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def _watch(session: Session, args: argparse.Namespace) -> int:
+    """Follows a background sync job: prints its output as it arrives and returns its exit
+    code. Leaving (Ctrl+C) stops only the watching, never the job (ADR-024)."""
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    job = args.job or session.scalar(
+        select(SyncLog.job_id)
+        .where(SyncLog.connection_id == connection.id)
+        .order_by(SyncLog.id.desc())
+        .limit(1)
+    )
+    if job is None:
+        print("No background sync job has been started for this connection yet.")
+        return 2
+    print(f"Following sync job {job} (Ctrl+C stops watching; the job carries on).", flush=True)
+    last, quiet = 0, 0.0
+    try:
+        while True:
+            session.rollback()  # a fresh snapshot: see lines committed since
+            rows = session.execute(
+                select(SyncLog.id, SyncLog.line)
+                .where(SyncLog.job_id == job, SyncLog.id > last)
+                .order_by(SyncLog.id)
+            ).all()
+            for row_id, line in rows:
+                last = row_id
+                if line.startswith(FINISHED):
+                    code = int(line[len(FINISHED) :].rstrip("]") or 1)
+                    print(f"Sync job finished (exit {code}).")
+                    return code
+                print(line, flush=True)
+            if rows:
+                quiet = 0.0
+            else:
+                quiet += args.poll_sec
+                if quiet >= args.grace_sec and running_run(session, connection.id) is None:
+                    print(
+                        "The sync job stopped without finishing: its process is gone. Its run is "
+                        "marked interrupted and its progress is kept; run the sync again to "
+                        "continue.",
+                        file=sys.stderr,
+                    )
+                    return 1
+            _sleep(args.poll_sec)
+    except KeyboardInterrupt:
+        print(
+            "Stopped watching. The sync job carries on; follow it again with: sync watch",
+            file=sys.stderr,
+        )
+        return 0
+
+
+def _abandon(session: Session, args: argparse.Namespace) -> int:
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    if not args.yes:
+        print("abandon needs --yes (dev.ps1 asks you to confirm first).", file=sys.stderr)
+        return 2
+    abandoned, live = abandon_runs(session, connection.id, force=args.force)
+    for run_id in abandoned:
+        print(f"Run {run_id} marked interrupted; its checkpoints are kept.")
+    for run_id in live:
+        print(
+            f"Run {run_id} still looks alive (recent heartbeat): left running. Wait for it, or "
+            "add force if you're sure its process is gone.",
+            file=sys.stderr,
+        )
+    if not abandoned and not live:
+        print("No running runs for this connection.")
+    return 3 if live else 0
 
 
 def _show_names() -> bool:
@@ -659,6 +819,8 @@ def _print_validation(reports: list[ValidationReport]) -> int:
 
 
 def _status(session: Session) -> int:
+    for run_id in reap_stale_runs(session):
+        print(f"Run {run_id} had no live process: marked interrupted (its progress is kept).")
     now = utcnow()
     connections = session.scalars(select(Connection).order_by(Connection.name)).all()
     if not connections:
@@ -814,6 +976,12 @@ def _summary(session: Session) -> int:
                 f"{since:%Y-%m-%d %H:%M} UTC (sync full continues it; add restart to start over)"
             )
         print(f"  {_fetch_settings_line(connection)}")
+        prefixes = connection.config.get("xml_prefixes_seen") or []
+        if prefixes:
+            print(
+                f"  XML prefixes seen in the source's data: {', '.join(prefixes)} (custom fields, "
+                "e.g. from TDL customisations; stored unchanged, not mapped yet)"
+            )
         open_ranges = session.execute(
             select(
                 SyncUnverifiedRange.source_entity_key,

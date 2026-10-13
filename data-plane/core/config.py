@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     # Default interval of the deletion check, which lists every key in the source (SYN-003);
     # a connection can override it with config.deletion_check_interval_sec.
     deletion_check_interval_sec: int = 3600
+    # A running sync's process updates its run's heartbeat this often (0 = off, for tests);
+    # a run whose heartbeat is older than SYNC_STALE_SEC has no live process and is marked
+    # interrupted (ADR-024).
+    sync_heartbeat_sec: float = 30.0
+    sync_stale_sec: float = 300.0
     # Largest difference accepted between our balances and the source's (VAL-002); exact by
     # default. A connection can override it with config.validation_tolerance.
     validation_tolerance: Decimal = Decimal(0)

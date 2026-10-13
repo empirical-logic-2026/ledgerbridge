@@ -2,7 +2,7 @@
 
 import re
 import xml.etree.ElementTree as ET  # noqa: N817
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import date, datetime
 
 from connectors.base import SourceEntity, SourceRecord
@@ -33,8 +33,53 @@ def sanitize(text: str) -> str:
     return _CONTROL_CHARS.sub("", _CHAR_REF.sub(replace, text))
 
 
+# Names with a namespace prefix Tally doesn't declare: TDL customisations export
+# user-defined fields such as <UDF:FIELD>, which a namespace-aware parser rejects ("unbound
+# prefix"). Inside tags only, such names are rewritten as PREFIX<MARK>LOCAL before parsing and
+# written back when a payload is stored, so payloads keep their original names (pilot
+# 2026-10-13). The mark is a middle dot: valid inside XML names, never in Tally's own.
+_MARK = chr(0x00B7)
+_TAG = re.compile(r"<(/?)([^\s/>!?]+)([^>]*)>")
+_ATTR = re.compile(r"(\s+)([^\s=/>]+)(\s*=\s*)(\"[^\"]*\"|'[^']*')")
+_RESERVED_PREFIXES = {"xml", "xmlns"}
+_PREFIXED_ELEMENT = re.compile(r"</?([A-Za-z_][\w.-]*):[A-Za-z_]")
+
+
+def undeclared_prefixes(body: bytes) -> set[str]:
+    """Names of the prefixes used in a response's element names (e.g. UDF): names only."""
+    text = decode_response(body)
+    if ":" not in text:
+        return set()
+    return {p for p in _PREFIXED_ELEMENT.findall(text) if p not in _RESERVED_PREFIXES}
+
+
+def _rename(name: str) -> str:
+    prefix, colon, local = name.partition(":")
+    if not colon or prefix in _RESERVED_PREFIXES or not local:
+        return name
+    return f"{prefix}{_MARK}{local}"
+
+
+def _restore(name: str) -> str:
+    return name.replace(_MARK, ":", 1) if _MARK in name else name
+
+
+def _rewrite_tags(text: str, rename: Callable[[str], str]) -> str:
+    def tag(match: re.Match[str]) -> str:
+        closing, name, rest = match.groups()
+        rest = _ATTR.sub(lambda a: a[1] + rename(a[2]) + a[3] + a[4], rest)
+        return f"<{closing}{rename(name)}{rest}>"
+
+    return _TAG.sub(tag, text)
+
+
+def neutralise_prefixes(text: str) -> str:
+    """Undeclared prefixed names (e.g. UDF:FIELD) made parseable; see _MARK."""
+    return _rewrite_tags(text, _rename) if ":" in text else text
+
+
 def parse_response(body: bytes) -> ET.Element:
-    text = sanitize(decode_response(body))
+    text = neutralise_prefixes(sanitize(decode_response(body)))
     # Drop any XML declaration: the text is already decoded.
     text = re.sub(r"^\s*<\?xml[^>]*\?>", "", text)
     try:
@@ -93,8 +138,10 @@ def alter_id(element: ET.Element) -> int | None:
 
 
 def payload(element: ET.Element) -> str:
+    """The object's XML as received, with any prefixed names as Tally wrote them."""
     element.tail = None
-    return ET.tostring(element, encoding="unicode")
+    text = ET.tostring(element, encoding="unicode")
+    return _rewrite_tags(text, _restore) if _MARK in text else text
 
 
 def exact_name(element: ET.Element) -> str | None:

@@ -75,6 +75,8 @@ npm run build
 ./dev.ps1 entity-check                               # are the configured companies in Tally? kinds of difference, never names
 ./dev.ps1 sync full -Restart                         # full sync from scratch (otherwise an interrupted one resumes)
 ./dev.ps1 sync full -From 2026-06-01                 # resume, but fetch again from a date
+./dev.ps1 sync watch                                 # syncs run in the background; follow the latest again
+./dev.ps1 sync abandon                               # mark runs whose process is gone interrupted (asks to type "abandon")
 ./dev.ps1 connect -Origin live -Company "LedgerBridge Test Co" -TimeoutSec 600 -PauseSec 0 -PartMonth auto
 # Pilot commands (init-env, connect -Origin backup, sync full, summary with -Env pilot) are in
 # docs/pilot-runbook.md: the developer runs them. Claude Code never does.

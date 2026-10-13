@@ -428,7 +428,8 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
 def to_canonical(record: SourceRecord) -> list[CanonicalRecord]:
     """One raw Tally record → canonical records (usually one)."""
     try:
-        element = ET.fromstring(record.payload)  # noqa: S314 - our own stored payload
+        # Stored as received, so custom fields keep their undeclared prefixes (e.g. UDF:).
+        element = ET.fromstring(parser.neutralise_prefixes(record.payload))  # noqa: S314
     except ET.ParseError as exc:
         raise MappingError(f"{record.object_type} payload is not valid XML") from exc
     key = record.source_key

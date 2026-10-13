@@ -17,6 +17,10 @@ and numbers. Behaviour can be made difficult:
   allows at least that long (read timeout);
 - `slow_listing`: months whose keys-only listing always times out;
 - `missing_months`: months whose voucher request returns nothing (their listing doesn't).
+- `busy_after_timeout`: after a voucher request times out, Tally is still busy with it: the
+  next this many other requests (e.g. the source check) time out too;
+- `udf`: masters and vouchers carry user-defined fields with an undeclared `UDF:` prefix,
+  as TDL customisations export them (pilot 2026-10-13).
 
 Keys-only listings never time out (they're small). Every voucher request is logged.
 """
@@ -60,6 +64,8 @@ class SimTally(FixtureTransport):
         needs_timeout: dict[date, float] | None = None,
         slow_listing: tuple[date, ...] = (),
         missing_months: tuple[date, ...] = (),
+        busy_after_timeout: int = 0,
+        udf: bool = False,
     ) -> None:
         super().__init__(DEFAULT_DIR)
         self.per_day = per_day
@@ -73,6 +79,9 @@ class SimTally(FixtureTransport):
         self.needs_timeout = needs_timeout or {}
         self.slow_listing = set(slow_listing)
         self.missing_months = set(missing_months)
+        self.busy_after_timeout = busy_after_timeout
+        self.busy = 0
+        self.udf = udf
         self.timeouts_seen: list[float | None] = []
         self.dead = False
         self.voucher_requests = 0
@@ -100,11 +109,24 @@ class SimTally(FixtureTransport):
         body = request.read().decode("utf-8")
         collection = (_ID.search(body) or [None, ""])[1]
         current = _CURRENT.search(body)
+        if self.busy:
+            self.busy -= 1
+            raise httpx.ReadTimeout(
+                "simulated: still busy with an abandoned request", request=request
+            )
         if collection == envelopes.COMPANIES.collection_id and current is None:
             return self._xml(self._companies())
         if collection.startswith(envelopes.VOUCHERS.collection_id):
-            return self._vouchers(request, body, keys=collection.endswith("Keys"), current=current)
+            try:
+                return self._vouchers(
+                    request, body, keys=collection.endswith("Keys"), current=current
+                )
+            except httpx.ReadTimeout:
+                self.busy = self.busy_after_timeout
+                raise
         response = super().handle_request(request)
+        if self.udf:
+            response = httpx.Response(200, content=self._with_udf(response.content))
         company = self.names.index(current.group(1)) if current else 0
         if company == 0:
             return response
@@ -187,7 +209,24 @@ class SimTally(FixtureTransport):
         if narration is not None:
             narration.text = "synthetic"
         voucher.tail = None
-        return ET.tostring(voucher, encoding="unicode")
+        text = ET.tostring(voucher, encoding="unicode")
+        if self.udf:
+            text = text.replace(
+                "</VOUCHER>",
+                '<UDF:REFNO.LIST DESC="`RefNo`" ISLIST="YES" TYPE="String" INDEX="2">'
+                f'<UDF:REFNO DESC="`RefNo`">R{number}</UDF:REFNO></UDF:REFNO.LIST>'
+                '<TDL:FLAG.LIST TYPE="Logical"><TDL:FLAG>Yes</TDL:FLAG></TDL:FLAG.LIST></VOUCHER>',
+            )
+        return text
+
+    @staticmethod
+    def _with_udf(content: bytes) -> bytes:
+        """Adds UDF-prefixed fields to every ledger and group, as a TDL customisation would."""
+        udf = (
+            b'<UDF:CUSTOMCODE.LIST DESC="`CustomCode`" ISLIST="YES" TYPE="String" INDEX="1">'
+            b'<UDF:CUSTOMCODE DESC="`CustomCode`">X1</UDF:CUSTOMCODE></UDF:CUSTOMCODE.LIST>'
+        )
+        return re.sub(rb"(</(?:LEDGER|GROUP)>)", udf + rb"\1", content)
 
     @staticmethod
     def _xml(objects: str) -> httpx.Response:

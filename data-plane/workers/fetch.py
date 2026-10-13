@@ -375,23 +375,39 @@ class ChunkFetcher:
             ) from exc
 
     def check_source(self) -> None:
-        """After a timeout: does the source answer a minimal request? Waits and re-checks
-        with growing pauses; raises SourceUnresponsiveError if it never answers."""
+        """After a timeout: does the source answer a minimal request?
+
+        Tally works on one request at a time and goes on with a request the client has given
+        up on, so right after a timeout it may simply still be busy. The check therefore keeps
+        trying, with growing pauses, for up to the connection's timeout (at least the default
+        backoff) before declaring the source unresponsive (pilot 2026-10-13)."""
         if not hasattr(self.connector, "ping"):
             return
-        attempts = (0.0, *self.backoff)
-        for attempt, wait in enumerate(attempts, start=1):
+        budget = max(self.settings.timeout_sec, sum(self.backoff))
+        waits = [*self.backoff]
+        waited, attempt, wait = 0.0, 0, 0.0
+        while True:
+            attempt += 1
             if wait:
-                self.say(f"{self.label}: waiting {wait:g} s before checking the source again")
+                self.say(
+                    f"{self.label}: no answer yet; the source may still be busy with the request "
+                    f"that timed out. Checking again in {wait:g} s "
+                    f"({waited:g} of up to {budget:g} s waited)"
+                )
                 self.sleep(wait)
+                waited += wait
             started = self.clock()
             try:
                 self.connector.ping()
             except Exception as exc:  # noqa: BLE001 - any failure means "no answer"
+                waited += self.clock() - started
                 self.say(
-                    f"{self.label}: source check {attempt} of {len(attempts)}: no answer "
+                    f"{self.label}: source check {attempt}: no answer "
                     f"({short_error(exc, redact=True)})"
                 )
+                if waited >= budget:
+                    break
+                wait = min(waits.pop(0) if waits else self.backoff[-1], budget - waited)
                 continue
             elapsed = self.clock() - started
             if elapsed > SLOW_ANSWER_SEC:
@@ -403,13 +419,16 @@ class ChunkFetcher:
                 self.say(
                     f"{self.label}: the source answered the check in {elapsed:.1f} s: "
                     "responsive, so the request was too large"
+                    + (f" (it became free after about {waited:g} s)" if waited else "")
                 )
             return
         self.say(
-            f"{self.label}: the source appears UNRESPONSIVE: stopping. Everything fetched so far "
-            "is stored; run the sync again to continue from there."
+            f"{self.label}: the source appears UNRESPONSIVE: no answer for {waited:g} s after the "
+            "timeout, although that is as long as the request itself was allowed. Stopping. "
+            "Everything fetched so far is stored; restart the source if needed, then run the "
+            "sync again to continue from there."
         )
-        raise SourceUnresponsiveError("the source doesn't answer a minimal request")
+        raise SourceUnresponsiveError(f"the source hasn't answered for {waited:g} s")
 
     # --- part-month support -----------------------------------------------------------
 

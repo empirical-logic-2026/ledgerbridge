@@ -24,6 +24,7 @@ runs at once: a run that is still `running` blocks the next one, unless it is st
 """
 
 import logging
+import os
 import time
 from collections import Counter
 from collections.abc import Callable, Sequence
@@ -43,10 +44,16 @@ from core.raw_store import RawStore
 from core.transform import Transformer, mark_deleted
 from workers.entities import select_entities
 from workers.fetch import AUTO, ChunkFetcher, FetchSettings
+from workers.runs import (
+    INTERRUPTED_BY_SIGNAL,
+    RunHeartbeat,
+    heartbeat_for,
+    reap_stale_runs,
+    this_host,
+)
 
 logger = logging.getLogger(__name__)
 
-STALE_RUN = timedelta(hours=2)
 SYNC_RUN_TYPES = ("incremental", "full")
 PROGRESS_EVERY = 5000  # records between progress lines
 Progress = Callable[[str], None]
@@ -140,13 +147,13 @@ def save_markers(
 
 
 def running_run(session: Session, connection_id: int) -> SyncRun | None:
+    """The connection's run in progress, if its process is alive. Runs left `running`
+    without a live process are marked interrupted first (ADR-024)."""
+    reap_stale_runs(session, connection_id)
     return session.scalar(
         select(SyncRun)
-        .where(
-            SyncRun.connection_id == connection_id,
-            SyncRun.status == "running",
-            SyncRun.started_at > utcnow() - STALE_RUN,
-        )
+        .where(SyncRun.connection_id == connection_id, SyncRun.status == "running")
+        .order_by(SyncRun.id.desc())
         .limit(1)
     )
 
@@ -210,6 +217,9 @@ def run_sync(
                 f"({first.label}: {first.error or first.status})"
             )
         result.status = run.status = "succeeded"
+    except (KeyboardInterrupt, SystemExit):
+        _interrupt_run(session, run, result)
+        raise
     except Exception as exc:
         _fail_run(session, run, result, exc)
     return _close_run(session, run, result)
@@ -262,6 +272,7 @@ def _sync_entity(
                 refetch_from=refetch_from,
             )
         finally:  # also when it fails: what was stored is stored, and counted
+            _store_prefixes(session, connection, connector)
             stats = fetcher.stats
             result.fetched.update(stats.fetched)
             result.stored += stats.stored
@@ -329,6 +340,16 @@ def fetch_settings(connection: Connection) -> FetchSettings:
     )
 
 
+def _store_prefixes(session: Session, connection: Connection, connector: Connector) -> None:
+    """Remembers undeclared XML prefixes the source used (names only; shown in summary)."""
+    seen = set(getattr(connector, "xml_prefixes_seen", set()))
+    known = set(connection.config.get("xml_prefixes_seen") or [])
+    if seen - known:
+        session.rollback()  # a failed fetch may have left the transaction unusable
+        connection.config = {**connection.config, "xml_prefixes_seen": sorted(seen | known)}
+        session.commit()
+
+
 def _store_part_month(session: Session, connection: Connection, result: str) -> None:
     """Remembers whether the source answers part-month requests (probed once)."""
     connection.config = {**connection.config, "part_month_requests": result}
@@ -390,6 +411,9 @@ def run_deletion_check(
                 after_entity(result, entity, bool(deleted))
         session.commit()
         result.status = run.status = "succeeded"
+    except (KeyboardInterrupt, SystemExit):
+        _interrupt_run(session, run, result)
+        raise
     except Exception as exc:
         _fail_run(session, run, result, exc)
     return _close_run(session, run, result)
@@ -400,12 +424,32 @@ def _open_run(
 ) -> tuple[SyncRun, SyncResult]:
     if running_run(session, connection.id) is not None:
         raise SyncBusyError(f"connection '{connection.name}' already has a sync running")
+    now = utcnow()
     run = SyncRun(
-        connection_id=connection.id, run_type=run_type, status="running", started_at=utcnow()
+        connection_id=connection.id,
+        run_type=run_type,
+        status="running",
+        started_at=now,
+        heartbeat_at=now,
+        pid=os.getpid(),
+        host=this_host(),
     )
     session.add(run)
     session.commit()
+    _heartbeats[run.id] = heartbeat_for(session.get_bind(), run.id)  # type: ignore[arg-type]
     return run, SyncResult(sync_run_id=run.id, status="running", run_type=run_type)
+
+
+_heartbeats: dict[int, RunHeartbeat] = {}
+
+
+def _interrupt_run(session: Session, run: SyncRun, result: SyncResult) -> None:
+    """Ctrl+C or termination: the run is interrupted, its checkpoints kept (ADR-024)."""
+    session.rollback()
+    result.error = run.error_summary = INTERRUPTED_BY_SIGNAL
+    result.status = run.status = "interrupted"
+    logger.warning("Sync run %s interrupted", run.id)
+    _close_run(session, run, result)
 
 
 def _fail_run(session: Session, run: SyncRun, result: SyncResult, exc: Exception) -> None:
@@ -416,6 +460,9 @@ def _fail_run(session: Session, run: SyncRun, result: SyncResult, exc: Exception
 
 
 def _close_run(session: Session, run: SyncRun, result: SyncResult) -> SyncResult:
+    heartbeat = _heartbeats.pop(run.id, None)
+    if heartbeat is not None:
+        heartbeat.stop()
     run.records_received = sum(result.fetched.values())
     run.records_failed = result.failed
     run.finished_at = utcnow()

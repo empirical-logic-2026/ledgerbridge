@@ -1,4 +1,9 @@
+import os
 from collections.abc import Iterator
+
+# No heartbeat threads in tests: SQLite stand-ins share one connection (tests/test_runs.py
+# covers the heartbeat itself).
+os.environ.setdefault("SYNC_HEARTBEAT_SEC", "0")
 from pathlib import Path
 
 import pytest

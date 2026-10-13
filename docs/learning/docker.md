@@ -50,7 +50,9 @@ Note that the API is `8001` on your PC but `8000` inside its container. The host
 | `./dev.ps1 logs api` | `stack.ps1 logs -f --tail 200 api`: the last 200 lines, then **f**ollows new ones. |
 | `./dev.ps1 tally-companies` | `stack.ps1 exec -T api python -m workers.cli entities ...`: runs our CLI inside the API container, which reaches TallyPrime on your PC through `host.docker.internal:9000`. |
 | `./dev.ps1 extract -Company "..."` | The same pattern with `workers.cli extract` (raw records only). |
-| `./dev.ps1 sync -Company "..."` | The same pattern with `workers.cli sync`: fetch changes and transform them into the accounting tables. The worker container also runs it on a schedule (section 6.7). |
+| `./dev.ps1 sync -Company "..."` | `stack.ps1 exec -d api python -m workers.cli sync ... --job <id>`: starts the sync **detached** (`-d`) inside the api container, so it keeps running whatever happens to your terminal. The sync writes its output to the database under the job id. `dev.ps1` then runs `exec -T api python -m workers.cli watch --job <id>` to print that output as it arrives. The worker container also runs syncs on a schedule (section 6.7). |
+| `./dev.ps1 sync watch` | `stack.ps1 exec -T api python -m workers.cli watch ...`: follows the latest background sync from any terminal. Ctrl+C stops only the watching. |
+| `./dev.ps1 sync abandon` | After you type `abandon`: `exec -T api python -m workers.cli abandon ... --yes`, which marks runs whose process is gone as `interrupted`. |
 | `./dev.ps1 seed-test-data` | No Docker at all: it runs on your PC with `.env.test`, because `devtools/` is deliberately not in the image (section 7). |
 | `./dev.ps1 test` | Runs tests on your PC, not in Docker. It connects to the test containers through the host ports. Refuses `-Env pilot`. |
 | `./dev.ps1 down` | `stack.ps1 down`: removes containers and the network, **keeps volumes**. |
@@ -58,6 +60,8 @@ Note that the API is `8001` on your PC but `8000` inside its container. The host
 Why run commands *inside* the container (`exec`) rather than on your PC? The container already has the selected environment's settings loaded through `env_file:`. Tools on your PC always default to `.env.test`, which would be wrong for `-Env pilot`.
 
 `exec -T` means "run a command in a container that's already running, without a terminal (TTY)". `-T` makes the output plain text, so scripts can capture it.
+
+`exec -d` means "start a command in a running container and return at once" (**d**etached). The command is then a process of the container, not of your PowerShell window: closing the window, a lost terminal or Ctrl+C can't stop it. Only stopping the container (`./dev.ps1 down`, or Docker stopping) does. `docker stop` sends its polite stop signal (SIGTERM) only to the container's main process (the API server); other processes such as an `exec`'d sync are killed outright when the container stops. So the sync can't record that it stopped: its run stops sending heartbeats, and after 5 minutes the next sync or `status` marks it `interrupted`, keeping its progress. To see such a process: `./deploy/stack.ps1 -Env test top api` lists the processes in the api container, including a running `workers.cli sync`. Because a detached process has no window to print to, the sync writes its output to the `sync_logs` table and `sync watch` reads it from there.
 
 ## 4. `deploy/stack.ps1`: the front door to Docker Compose
 
@@ -428,6 +432,7 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
 | 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |
+| 2026-10-13 | `./dev.ps1 sync` runs the sync detached (`exec -d`) in the api container and follows its output with `exec -T ... watch`; `sync watch` and `sync abandon` (section 3). |
 | 2026-10-13 | `TALLY_TIMEOUT_SEC` applies to connections without their own timeout; `status` shows the effective one. Env changes reach the containers on the next `./dev.ps1 up`. |
 | 2026-10-12 | New env setting `TALLY_TIMEOUT_SEC` in both example env files (copy it into your `.env.test`/`.env.pilot`, or the default 120 s applies); `sync full -Restart`. |
 | 2026-10-12 | `./dev.ps1 entity-check` runs `workers.cli entity-check` through `docker compose exec`. The CLI flushes every output line, so progress shows while a long sync runs inside the container (through `exec -T` stdout is a pipe, which Python otherwise buffers). |

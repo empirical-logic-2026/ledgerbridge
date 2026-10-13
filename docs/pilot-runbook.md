@@ -96,6 +96,19 @@ This runs, in order:
    - each ledger's balance equals Tally's own closing balance
    - *Profit & Loss A/c* reconciles with the computed profit
 
+**The sync runs in the background, inside the api container.** `sync full` starts it, prints `Started sync job <id>`, then follows its progress until the `Result:` line. Closing the window, losing the terminal or pressing Ctrl+C **only stops the following, never the sync**. To follow it again, from any PowerShell window:
+
+```powershell
+./dev.ps1 sync watch -Env pilot
+```
+
+It prints the job's output from the start, then new lines as they come, and ends with `Sync job finished (exit N)`.
+
+**If a run is stuck as running:**
+- A sync that is stopped with Ctrl+C in its own process, or terminated, marks its run `interrupted` and keeps its checkpoints. The next `sync full` continues from there.
+- A sync killed without warning (e.g. `./dev.ps1 down -Env pilot`, Docker stopping, or a crash) can't do that. Its run is detected automatically instead: once it has sent no heartbeat for 5 minutes (`SYNC_STALE_SEC`), the next sync or `status` marks it `interrupted`. Its checkpoints are kept too.
+- **By hand:** `./dev.ps1 sync abandon -Env pilot` asks you to type `abandon`, then marks the connection's running runs `interrupted`. It leaves alone a run that still sends heartbeats, i.e. one that is really still running; add `-Force` only if you're sure it isn't. Never edit `sync_runs` in the database again.
+
 Large companies take a while. Each company is fetched chunk by chunk (the company record, each master type, then vouchers month by month), and each chunk is stored as soon as it arrives. Every chunk prints a line:
 
 ```text
@@ -105,9 +118,9 @@ Large companies take a while. Each company is fetched chunk by chunk (the compan
 Each company is then transformed and validated **before the next one starts**, so a problem with one doesn't hold up the other.
 
 **If Tally is slow or stops answering:**
-- **A request takes longer than the timeout** (120 s by default). The sync doesn't resend it. It first checks with a tiny request whether Tally answers at all, and says so: `responsive, so the request was too large`, `slow, but responding`, or no answer. If there's no answer, it waits and checks again after 10, 30 and 90 s.
+- **A request takes longer than the timeout** (120 s by default). The sync doesn't resend it. It first checks with a tiny request whether Tally answers at all, and says so: `responsive, so the request was too large`, `slow, but responding`, or no answer. If there's no answer, Tally is probably **still busy with the request that timed out** (it works on one request at a time and finishes it even though the sync gave up on it). The sync says so, and keeps checking, after 10, 30, 90 s and then every 90 s, **for up to the connection's timeout** (e.g. 1800 s with `-TimeoutSec 1800`). When Tally answers it says how long it took to become free.
 - **Tally answers:** the month is fetched in smaller parts (half-months, then weeks, then days). The month is then checked against Tally's own list of its vouchers, and remembered as slow, so later runs split it straight away.
-- **Tally never answers:** the run stops with `the source appears UNRESPONSIVE`. Everything fetched so far is stored. Restart TallyPrime if needed, then **run `./dev.ps1 sync full -Env pilot` again: it continues after the last completed chunk** (`resuming: N of M chunks were completed by an earlier attempt`).
+- **Tally never answers within that time:** the run stops with `the source appears UNRESPONSIVE`. Everything fetched so far is stored. Restart TallyPrime if needed, then **run `./dev.ps1 sync full -Env pilot` again: it continues after the last completed chunk** (`resuming: N of M chunks were completed by an earlier attempt`).
 - **To start over** instead: `./dev.ps1 sync full -Env pilot -Restart`.
 - **Longer timeout:** `./dev.ps1 connect -Env pilot -Origin backup -All -TimeoutSec 600`.
 - **Where the timeout comes from:** a connection uses **its own** timeout if one was ever set on it, otherwise `TALLY_TIMEOUT_SEC` from `.env.pilot`. Connections created before 2026-10-13 stored the 120 s default, so for them **changing `.env.pilot` has no effect**: use `connect -TimeoutSec`. `status` and `summary` show the timeout in effect and where it comes from.
@@ -142,6 +155,8 @@ The sync and the validation are reported separately. A sync that fetched and tra
 - the latest validation, PASSED or FAILED, with each failed check code and how often it occurred
 
 It also lists open alerts. **This is the output to share.**
+
+If Tally's data has **custom fields** (TDL customisations export them with prefixes such as `UDF:`), `summary` shows the prefix names, e.g. `XML prefixes seen in the source's data: UDF`. Those fields are stored unchanged but not used yet. Earlier this failed with `Tally response is not valid XML (unbound prefix ...)`.
 
 ## Reading the results
 
@@ -179,6 +194,7 @@ It also lists open alerts. **This is the output to share.**
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-13 | 0.6 | Fifth attempt (unbound `UDF:` prefix; Tally still busy after a timeout; terminal lost mid-run; Ctrl+C left a run running): custom-field prefixes parsed and shown in `summary`; source checks wait up to the timeout; syncs run in the background, `sync watch`; `interrupted` runs, stale-run detection, `sync abandon`. |
 | 2026-10-13 | 0.5 | Fourth attempt (Educational mode, part-month requests empty, unverified month carried on): timeout in effect and its source in `status`/`summary`; `connect -TimeoutSec/-PauseSec/-PartMonth`; whole-month retries; unverified months stop the sync and are re-fetched; `sync full -From`. |
 | 2026-10-12 | 0.4 | Third attempt (Tally stopped answering after 18 minutes): chunked and resumable `sync full` (`-Restart` to start over), source checks and splitting after a timeout, `-TimeoutSec`, per-company progress and results, `summary` shows raw-record status and unfinished syncs. Data stored by the third attempt is kept and reused. |
 | 2026-10-12 | 0.3 | Second attempt: "entities not available" after a successful fetch. `connect -All`; companies stored and found by GUID; `entity-check`; progress lines and a `Result:` line; sync and validation reported separately. |
