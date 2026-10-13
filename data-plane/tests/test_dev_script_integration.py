@@ -1,4 +1,5 @@
-"""`./dev.ps1 reset` refuses unless asked properly (test environment only; never pilot).
+"""`./dev.ps1 reset` and `sync abandon` refuse unless asked properly (test environment only;
+never pilot).
 
 Runs dev.ps1 through Windows PowerShell; skipped elsewhere.
 """
@@ -68,3 +69,9 @@ def test_reset_needs_the_exact_confirmation() -> None:
     assert result.returncode == 2
     assert "nothing was deleted" in result.stdout
     assert _test_volumes() == before
+
+
+def test_sync_abandon_needs_the_exact_confirmation() -> None:
+    result = _dev("sync", "abandon", "-Env", "test", "-Confirmation", "yes")
+    assert result.returncode == 2
+    assert "Not confirmed: nothing changed." in result.stdout

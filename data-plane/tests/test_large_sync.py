@@ -29,6 +29,8 @@ def sim(db: Session, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
         "connectors.registry.default_config", lambda code: {"url": "http://tally.test:9000"}
     )
     connection = get_or_create_connection(db, "tally-sim", "tally")
+    # Its own timeout, so the tests don't depend on TALLY_TIMEOUT_SEC in .env.test.
+    connection.config = {**connection.config, "timeout_sec": 120}
     db.commit()
 
     def connector(transport: SimTally) -> TallyConnector:
