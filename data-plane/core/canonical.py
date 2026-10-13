@@ -104,6 +104,8 @@ class CanonicalVoucherType:
     # The source's own standard type this one derives from (e.g. Tally's "Sales Order"),
     # from a fixed list of the source's standard names; None for custom names.
     standard_type: str | None = None
+    # Whether its inventory entries move stock (orders don't); None: inherited.
+    moves_stock: bool | None = True
     extra: Mapping[str, Any] | None = _extra()
 
 

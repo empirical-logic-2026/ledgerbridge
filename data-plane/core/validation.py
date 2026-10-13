@@ -222,6 +222,10 @@ class Validator:
 
     # --- our side ---------------------------------------------------------------------
 
+    def ledger_balances(self, as_of: date) -> list["_LedgerBalance"]:
+        """Each ledger's opening and balance as of a date (used by `validate analyse`)."""
+        return self._ledger_balances(as_of)
+
     def _ledger_balances(self, as_of: date) -> list[_LedgerBalance]:
         movements = (
             select(A.VoucherLine.ledger_id, func.sum(A.VoucherLine.amount).label("movement"))
@@ -537,12 +541,14 @@ class Validator:
         movements = (
             select(A.InventoryLine.item_id, func.sum(A.InventoryLine.quantity).label("moved"))
             .join(A.Voucher, A.Voucher.id == A.InventoryLine.voucher_id)
+            .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
             .where(
                 A.InventoryLine.entity_id == self.entity.id,
                 A.InventoryLine.voucher_date <= self.as_of,
                 A.Voucher.is_deleted.is_(False),
                 A.Voucher.is_cancelled.is_(False),
                 A.Voucher.is_optional.is_(False),
+                A.VoucherType.moves_stock.is_(True),  # orders and memorandum don't
             )
             .group_by(A.InventoryLine.item_id)
             .subquery()

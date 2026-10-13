@@ -106,6 +106,11 @@ VOUCHERS = CollectionSpec(
         "AllInventoryEntries.AccountingAllocations.LedgerName",
         "AllInventoryEntries.AccountingAllocations.Amount",
         "AllInventoryEntries.AccountingAllocations.IsDeemedPositive",
+        # Stock journals and manufacturing journals: consumed (out) and produced (in) items.
+        *(f"InventoryEntries{side}.{field}" for side in ("In", "Out") for field in (
+            "StockItemName", "ActualQty", "BilledQty", "Rate", "Amount", "IsDeemedPositive",
+            "BatchAllocations.GodownName", "BatchAllocations.BatchName",
+        )),
     ),
 )  # fmt: skip
 
