@@ -272,6 +272,9 @@ class VoucherType(SourceTrackingMixin, TimestampMixin, Base):
     )  # fmt: skip
     is_accounting: Mapped[bool] = flag(True)
     is_inventory: Mapped[bool] = flag()
+    # The source's own standard type it derives from (e.g. Tally's "Sales Order"), from the
+    # source's fixed list of standard names only; NULL when it can't be told (ADR-027).
+    standard_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class ItemGroup(SourceTrackingMixin, TimestampMixin, Base):

@@ -137,6 +137,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | DAT-007 | Multi-currency amounts with base-currency conversion. | P2 |
 | DAT-008 | Raw data can be reprocessed into the canonical layer when mapping rules change, without re-fetching from the source. | P1 |
 | DAT-009 | Fields a source sends that have no column in the canonical model (e.g. Tally user-defined fields from TDL customisations) are kept per record, catalogued per entity and object type, and can be promoted to reporting dimensions by an explicit command, without schema changes at run time. | P1 |
+| DAT-011 | References by name (a ledger's group, a voucher's ledgers, cost centres, stock items, voucher types) resolve by defined rules: exact name first, then a known alias (e.g. a renamed reserved group's reserved name), then a defined normalisation applied to both sides (XML entities, Unicode NFC, spaces, case), each accepted only if exactly one candidate fits; otherwise the record fails with a clear reason. Normalised matches are reported as warnings (counts only), and a diagnostic explains references that don't resolve without showing names or values. | P1 |
 | DAT-010 | A value that doesn't fit its column (too long, out of range, invalid date or characters) never fails other records: it is kept in full, never truncated, and flagged. Problems are reported by kind, table, column and size, never the value. | P1 |
 
 ### 4.7 Validation and reconciliation
@@ -343,5 +344,6 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
+| 2026-10-13 | 0.8 | DAT-011: rules for resolving references by name, and a diagnostic for those that don't resolve (ADR-027). |
 | 2026-10-13 | 0.7 | Budget planning and analysis (Section 4.12): BUD-001 to BUD-016; default budget permissions per role (Section 3); RPT-008 points to budgets; phase 1a includes budgets (milestone M7b). ADR-026. |
 | 2026-10-13 | 0.6 | DAT-009 and DAT-010 (custom fields kept and catalogued; values that don't fit never fail other records), VAL-005 to VAL-009 (voucher counts, stock quantities, bill-wise outstanding, year-end balances, root causes). ADR-025. |

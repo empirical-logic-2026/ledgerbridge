@@ -165,7 +165,22 @@ It also lists open alerts. **This is the output to share.**
 
 If Tally's data has **custom fields** (TDL customisations export them with prefixes such as `UDF:`), `summary` shows the prefix names, e.g. `XML prefixes seen in the source's data: UDF`. Each record keeps them (`extra`), and they are counted in a field catalogue: `./dev.ps1 fields -Env pilot` lists them by id, object type, prefix, kind and number of records (field names only in the test environment). A voucher field useful for reports can become a reporting dimension: `./dev.ps1 promote-field -Env pilot -FieldId <id> -Code SALESMAN -Name "Salesman"`.
 
-### 7. Records that failed to transform: `transform retry`
+### 7. Records that failed to transform: `transform explain`, `retry`, `rebuild`
+
+**First, find out why references didn't resolve** (no names or values in the output):
+
+```powershell
+./dev.ps1 transform explain -Env pilot                # reads only the database
+./dev.ps1 transform explain -Env pilot -CheckSource   # also asks Tally (read-only): have the companies loaded
+```
+
+For each kind of reference (ledger → group, voucher → ledger, cost centre, stock item, voucher type) it says how many failed records there are and, per name that didn't resolve:
+- whether it **resolves now** (by alias, or after normalisation, with the kinds of difference: spaces, case, XML entities, Unicode): a `rebuild` then fixes those records;
+- whether it matches **several** targets (ambiguous);
+- otherwise whether a **close match** exists (look-alike characters, punctuation, other small differences), whether it is a **Tally reserved name**, and whether the referenced object is **stored** at all (or failed itself);
+- with `-CheckSource`: whether Tally **lists** it now, and per master type how many objects Tally lists against how many are stored (`listed but not stored` above 0 means our requests missed some).
+
+Share that output as it is.
 
 Raw records are kept exactly as Tally sent them, so records that failed to transform (e.g. with older code) can be transformed again **without Tally**:
 
@@ -205,7 +220,8 @@ Fix the root cause first (share the `summary` breakdown), then run `transform re
 | `raw records that failed to transform: N` (N > 0) | Some Tally objects couldn't be mapped or stored. | Share the `summary` lines under *why raw records failed* (counts and kinds, no values). After a fix: `./dev.ps1 transform retry -Env pilot`. |
 | `values kept in extra (didn't fit their column): N` | Records transformed, with some values kept aside in full (too long, out of range, invalid date). | Share the `summary` lines under *values kept in extra*. |
 | `ROOT CAUSE: ...` (validation) | Records failed to transform; the other failures counted there are likely their consequences. | Fix the root cause first, then `transform retry`. |
-| `voucher_unbalanced by voucher type: sales N, ...` | Which kinds of vouchers don't balance. | Share the line. |
+| `voucher_unbalanced by voucher type: Sales N, custom (other) N` | Unbalanced vouchers by Tally's predefined voucher type they derive from (`custom (...)` when it can't be told). The line before says how many have inventory lines, a single line or are post-dated. | Share both lines. |
+| `values kept in extra ...: reference matched after normalisation: voucher -> ledger` | References that resolved only after normalisation (e.g. case or spaces). | Expected; share the count. |
 | `error: voucher_count_mismatch xN` | N (month, voucher type) pairs where the number of vouchers differs from Tally's. | Share the count. Usually follows vouchers that failed to transform. |
 | `error: stock_quantity_mismatch xN` | N stock items whose closing quantity differs from Tally's. | Share the count. |
 | `error: bills_mismatch xN` | N parties whose bill-wise outstanding differs from Tally's. | Share the count. |
@@ -243,6 +259,7 @@ Fix the root cause first (share the `summary` breakdown), then run `transform re
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-13 | 0.9 | `transform explain` (step 7) for references that don't resolve; references resolve by alias and normalisation; vouchers of types that don't post to the books no longer count in balances; unbalanced vouchers by Tally's predefined type. |
 | 2026-10-13 | 0.8 | `transform rebuild` (every stored record again, without Tally); `retry` and `rebuild` never apply an older version of an object over a newer one. |
 | 2026-10-13 | 0.7 | After the fifth attempt (2,170 ledgers and 238,392 vouchers failed, "Transform batch failed: DataError"): `transform retry` (step 7); one way to name companies (`entity <id> (company <n>)`); failure and warning breakdowns in `summary`; values that don't fit kept in `extra`; field catalogue (`fields`, `promote-field`); validation compares voucher counts, stock quantities, bills and year-end balances, and names the root cause. |
 | 2026-10-13 | 0.6 | Fifth attempt (unbound `UDF:` prefix; Tally still busy after a timeout; terminal lost mid-run; Ctrl+C left a run running): custom-field prefixes parsed and shown in `summary`; source checks wait up to the timeout; syncs run in the background, `sync watch`; `interrupted` runs, stale-run detection, `sync abandon`. |

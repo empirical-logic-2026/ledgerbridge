@@ -14,6 +14,7 @@
     python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
     python -m workers.cli transform-retry --connection tally-pilot [--entity NAME]
     python -m workers.cli transform-rebuild --connection tally-pilot [--entity NAME]
+    python -m workers.cli transform-explain --connection tally-pilot [--check-source]
     python -m workers.cli fields [--entity-id 3]
     python -m workers.cli promote-field --field-id 12 --code SALESMAN --name "Salesman"
 
@@ -80,6 +81,7 @@ from workers.entities import Labels, by_names, configured, to_config
 from workers.extract import connector_for, get_or_create_connection, run_extract
 from workers.failures import failure_breakdown, format_group, warning_breakdown
 from workers.fields import PromoteError, catalogue, catalogue_counts, promote_field
+from workers.references import completeness, explain_entity, failed_reference_counts, lines
 from workers.runs import (
     FINISHED,
     JobLog,
@@ -195,6 +197,23 @@ def _parser() -> argparse.ArgumentParser:
         )
         retry.add_argument("--no-validate", action="store_true", help="skip validation afterwards")
         retry.add_argument("--job", help="job id: also write the output to sync_logs, for `watch`")
+
+    explain = sub.add_parser(
+        "transform-explain",
+        help="why references by name didn't resolve (counts and kinds only; reads only the "
+        "database unless --check-source)",
+    )
+    connection_args(explain)
+    explain.add_argument(
+        "--entity", action="append", help="entity name as stored (repeatable); default: all"
+    )
+    explain.add_argument(
+        "--check-source",
+        action="store_true",
+        help="also ask the source (read-only) whether it lists the missing names, and compare "
+        "what it lists per master type with what is stored",
+    )
+    explain.add_argument("--job", help="job id: also write the output to sync_logs, for `watch`")
 
     fields = sub.add_parser(
         "fields", help="the field catalogue: fields with no column (e.g. custom fields)"
@@ -339,7 +358,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 # Commands that can run as a background job, their output written to sync_logs (ADR-024).
-JOB_COMMANDS = ("sync", "check-deletions", "transform-retry", "transform-rebuild")
+JOB_COMMANDS = (
+    "sync",
+    "check-deletions",
+    "transform-retry",
+    "transform-rebuild",
+    "transform-explain",
+)
 
 
 def _terminate_raises_system_exit() -> None:
@@ -382,6 +407,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _promote(session, args)
     if args.command in ("transform-retry", "transform-rebuild"):
         return _transform_retry(session, args)
+    if args.command == "transform-explain":
+        return _transform_explain(session, args)
     if args.command == "summary":
         return _summary(session)
     if args.command == "trial-balance":
@@ -893,6 +920,9 @@ def _print_validation(reports: list[ValidationReport], labels: Labels | None = N
         )
         for code, count in sorted(r.failed_by_code.items()):
             print(f"  failed: {code} x{count}")
+        if r.unbalanced_details:
+            listed = ", ".join(f"{k} {n:,}" for k, n in sorted(r.unbalanced_details.items()))
+            print(f"  voucher_unbalanced: {listed}")
         if r.unbalanced_by_type:
             listed = ", ".join(f"{k} {n:,}" for k, n in sorted(r.unbalanced_by_type.items()))
             print(f"  voucher_unbalanced by voucher type: {listed}")
@@ -1240,6 +1270,50 @@ def _transform_retry(session: Session, args: argparse.Namespace) -> int:
     kind = "rebuild" if args.command == "transform-rebuild" else "transform"
     print(f"Result: {kind} {result.status}; validation {validation}")
     return code
+
+
+def _transform_explain(session: Session, args: argparse.Namespace) -> int:
+    """Why references by name didn't resolve, per entity: counts and kinds only."""
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    if args.entity:
+        keys, missing = _entity_keys_by_name(session, connection, args.entity)
+        if missing:
+            print(
+                f"{len(missing)} of {len(args.entity)} named entities aren't known on this "
+                "connection (names must match exactly).",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        stored = session.scalars(
+            select(A.EntitySource.source_entity_key).where(
+                A.EntitySource.connection_id == connection.id
+            )
+        )
+        keys = sorted(set(stored) | set(failed_reference_counts(session, connection.id)))
+    connector = connector_for(session, connection)
+    source = {}
+    if args.check_source:  # read-only requests to the source
+        source = {e.key: e for e in connector.list_entities()}
+    labels = Labels(session, connection)
+    ids = entity_ids_for(session, connection.id, keys)
+    for key in keys:
+        label = labels.for_key(key, ids.get(key))
+        _progress(f"{label}: explaining unresolved references")
+        explanation = explain_entity(
+            session, connection, connector, key, ids.get(key), label, _progress, source.get(key)
+        )
+        if key in source:
+            explanation.completeness = completeness(session, connection, connector, source[key])
+        elif args.check_source:
+            print(f"{label}: not loaded in the source: its lists weren't checked")
+        for line in lines(explanation):
+            print(line)
+    print("Result: explain finished")
+    return 0
 
 
 def _fields(session: Session, args: argparse.Namespace) -> int:

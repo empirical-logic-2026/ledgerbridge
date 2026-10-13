@@ -31,6 +31,7 @@ from core.canonical import (
     CanonicalVoucher,
     CanonicalVoucherType,
 )
+from core.names import normalise
 
 # Explicitly "no standard account": stops a sub-group from inheriting its parent's mapping.
 UNMAPPED = NO_STANDARD_ACCOUNT
@@ -104,11 +105,20 @@ VOUCHER_BASE_TYPES = {
     "Delivery Note": "delivery_note",
     "Receipt Note": "receipt_note",
 }
+# Voucher types that don't post to the books: their ledger entries aren't effective.
 NON_ACCOUNTING_VOUCHER_TYPES = {
     "Delivery Note", "Receipt Note", "Stock Journal", "Physical Stock", "Sales Order",
     "Purchase Order", "Job Work In Order", "Job Work Out Order", "Material In",
-    "Material Out", "Rejections In", "Rejections Out", "Memorandum",
+    "Material Out", "Rejections In", "Rejections Out", "Memorandum", "Reversing Journal",
+    "Attendance",
 }  # fmt: skip
+# Tally's predefined voucher types: every voucher type derives from one of them. Only these
+# names are ever shown outside the test environment (they are Tally's, not the client's).
+STANDARD_VOUCHER_TYPES = frozenset((
+    *VOUCHER_BASE_TYPES, *NON_ACCOUNTING_VOUCHER_TYPES, "Payroll",
+))  # fmt: skip
+# Tally's predefined (reserved) groups.
+RESERVED_GROUPS = frozenset(STANDARD_ACCOUNT_BY_GROUP)
 
 GST_DUTY_HEADS = {
     "Central Tax": "cgst",
@@ -190,9 +200,19 @@ def _rate(text: str | None) -> Decimal | None:
         return None
 
 
+def _is_primary(name: str | None) -> bool:
+    return name is None or normalise(name) == normalise(PRIMARY)
+
+
 def _parent(element: ET.Element) -> str | None:
     parent = _text(element, "PARENT")
-    return None if parent in (None, PRIMARY) else parent
+    return None if _is_primary(parent) else parent
+
+
+def _aliases(element: ET.Element, name: str, *more: str | None) -> tuple[str, ...]:
+    """Other names of a master: its alias names (LANGUAGENAME.LIST) and any given."""
+    names = [(n.text or "").strip() for n in element.findall("LANGUAGENAME.LIST/NAME.LIST/NAME")]
+    return tuple(dict.fromkeys(a for a in (*names, *more) if a and a != name))
 
 
 def _reserved(element: ET.Element) -> str | None:
@@ -243,9 +263,10 @@ def group(element: ET.Element, key: str) -> CanonicalGroup:
             nature = "asset" if _flag(element, "ISDEEMEDPOSITIVE") else "liability"
     elif reserved in EQUITY_GROUPS:
         nature = "equity"
+    name = _name(element)
     return CanonicalGroup(
         source_key=key,
-        name=_name(element),
+        name=name,
         parent_name=parent,
         nature=nature,
         is_primary=parent is None,
@@ -253,6 +274,8 @@ def group(element: ET.Element, key: str) -> CanonicalGroup:
         standard_account_code=STANDARD_ACCOUNT_BY_GROUP.get(reserved or ""),
         ledger_kind=LEDGER_KIND_BY_GROUP.get(reserved or ""),
         party_type=PARTY_TYPE_BY_GROUP.get(reserved or ""),
+        # A reserved group the user renamed is still known by its reserved name.
+        aliases=_aliases(element, name, reserved),
     )
 
 
@@ -286,15 +309,17 @@ def _tax_type(element: ET.Element) -> tuple[str | None, tuple[str, ...]]:
 
 
 def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalRecord]:
-    parent = _text(element, "PARENT") or PRIMARY
+    parent = _text(element, "PARENT")
+    parent = PRIMARY if _is_primary(parent) else parent
     credit_days = _NUMBER.search(_text(element, "BILLCREDITPERIOD") or "")
     credit_limit = tally_amount(_text(element, "CREDITLIMIT"))
     gstin = _text(element, "PARTYGSTIN") or _text(element, ".//LEDGSTREGDETAILS.LIST/GSTIN")
     state = _text(element, "LEDSTATENAME") or _text(element, ".//LEDMAILINGDETAILS.LIST/STATE")
     tax_type, warnings = _tax_type(element)
+    name = _name(element)
     record = CanonicalLedger(
         source_key=key,
-        name=_name(element),
+        name=name,
         group_name=parent,
         opening_balance=_canonical(tally_amount(_text(element, "OPENINGBALANCE"))),
         is_bill_wise=_flag(element, "ISBILLWISEON"),
@@ -315,19 +340,39 @@ def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalReco
             _text(element, "TAXTYPE") or ""
         ),
         warnings=warnings,
+        aliases=_aliases(element, name),
     )
     return [_primary_group(entity_key), record] if parent == PRIMARY else [record]
 
 
 def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
+    """A predefined type (RESERVEDNAME), or a type created under another (PARENT). A type
+    under a custom type inherits its standard type through the voucher type tree (the
+    transform resolves it), so e.g. a "Cash Sale 2" under "Cash Sale" under "Sales" is a
+    sale, and one under "Sales Order" doesn't post to the books."""
     name = _name(element)
-    reserved = _reserved(element) or _text(element, "PARENT") or name
+    parent = _text(element, "PARENT")
+    parent = None if parent == name else parent
+    standard = next(
+        (n for n in (_reserved(element), parent, name) if n in STANDARD_VOUCHER_TYPES), None
+    )
+    if standard is None and parent is not None:  # under a custom type: inherited
+        return CanonicalVoucherType(
+            source_key=key,
+            name=name,
+            base_type=None,
+            is_accounting=None,
+            is_inventory=_flag(element, "AFFECTSSTOCK"),
+            parent_name=parent,
+        )
     return CanonicalVoucherType(
         source_key=key,
         name=name,
-        base_type=VOUCHER_BASE_TYPES.get(reserved, "other"),
-        is_accounting=reserved not in NON_ACCOUNTING_VOUCHER_TYPES,
+        base_type=VOUCHER_BASE_TYPES.get(standard or "", "other"),
+        is_accounting=standard not in NON_ACCOUNTING_VOUCHER_TYPES,
         is_inventory=_flag(element, "AFFECTSSTOCK"),
+        parent_name=parent,
+        standard_type=standard,
     )
 
 

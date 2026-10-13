@@ -127,6 +127,8 @@ class ValidationReport:
     root_cause: RootCause = field(default_factory=RootCause)
     # Unbalanced vouchers by voucher base type (sales, journal, ...): counts only.
     unbalanced_by_type: Counter[str] = field(default_factory=Counter)
+    # What unbalanced vouchers have in common (counts): "with inventory lines", ...
+    unbalanced_details: Counter[str] = field(default_factory=Counter)
 
     @property
     def failed_by_code(self) -> Counter[str]:
@@ -196,7 +198,7 @@ class Validator:
         report = ValidationReport(run.id, self.entity.id, self.entity.name, self.as_of)
 
         ledgers = self._ledger_balances(self.as_of)
-        report.unbalanced_by_type = self._vouchers()
+        report.unbalanced_by_type, report.unbalanced_details = self._vouchers()
         report.opening_difference = self._opening_difference(ledgers)
         self._trial_balance(report.opening_difference)
         self._closing(ledgers, source)
@@ -252,31 +254,50 @@ class Validator:
 
     # --- checks -----------------------------------------------------------------------
 
-    def _vouchers(self) -> Counter[str]:
+    def _vouchers(self) -> tuple[Counter[str], Counter[str]]:
         """VAL-001: every effective voucher's lines sum to zero. Returns the unbalanced ones
-        per voucher base type."""
+        per voucher type (the source's standard type, e.g. "Sales Order"; for a type whose
+        standard type isn't known, "custom (<base type>)"), and what they have in common."""
         sums = self.session.execute(
-            select(A.VoucherLine.voucher_id, func.sum(A.VoucherLine.amount))
+            select(A.VoucherLine.voucher_id, func.sum(A.VoucherLine.amount), func.count())
             .where(A.VoucherLine.entity_id == self.entity.id, A.VoucherLine.is_effective.is_(True))
             .group_by(A.VoucherLine.voucher_id)
         ).all()
-        unbalanced = {vid: Decimal(total) for vid, total in sums if Decimal(total) != ZERO}
+        unbalanced = {vid: Decimal(total) for vid, total, _ in sums if Decimal(total) != ZERO}
+        single = {vid for vid, total, lines in sums if vid in unbalanced and lines == 1}
         self.passed += len(sums) - len(unbalanced)
         by_type: Counter[str] = Counter()
+        details: Counter[str] = Counter()
         if not unbalanced:
-            return by_type
+            return by_type, details
+        ids = list(unbalanced)
+        with_inventory: set[int] = set()
+        for start in range(0, len(ids), 5_000):
+            with_inventory.update(
+                self.session.scalars(
+                    select(A.InventoryLine.voucher_id)
+                    .where(A.InventoryLine.voucher_id.in_(ids[start : start + 5_000]))
+                    .distinct()
+                )
+            )
+        details["with inventory lines"] = len(with_inventory)
+        details["with a single effective line"] = len(single)
         vouchers = self.session.execute(
             select(
                 A.Voucher.id,
                 A.Voucher.voucher_number,
                 A.Voucher.voucher_date,
+                A.VoucherType.standard_type,
                 A.VoucherType.base_type,
+                A.Voucher.is_post_dated,
             )
             .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
-            .where(A.Voucher.id.in_(list(unbalanced)))
+            .where(A.Voucher.id.in_(ids))
         ).all()
-        for vid, number, voucher_date, base_type in vouchers:
-            by_type[base_type] += 1
+        for vid, number, voucher_date, standard, base_type, post_dated in vouchers:
+            by_type[standard or f"custom ({base_type})"] += 1
+            if post_dated:
+                details["post-dated"] += 1
             self._fail(
                 Finding(
                     "voucher_unbalanced",
@@ -288,7 +309,7 @@ class Validator:
                     f"Voucher {number or vid} dated {voucher_date} doesn't balance.",
                 )
             )
-        return by_type
+        return by_type, +details
 
     def _opening_difference(self, ledgers: list[_LedgerBalance]) -> Decimal:
         difference = sum((ledger.opening for ledger in ledgers), ZERO)

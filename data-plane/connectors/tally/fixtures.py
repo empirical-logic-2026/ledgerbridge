@@ -40,7 +40,8 @@ class FixtureTransport(httpx.BaseTransport):
         match = _ID.search(body)
         if not match:
             return None
-        collection_id = match.group(1).removesuffix("Keys")  # GUID-only = same objects
+        # Keys-only and names-only listings answer with the same objects.
+        collection_id = match.group(1).removesuffix("Keys").removesuffix("Names")
         # Voucher counts list the same vouchers (with their type only).
         if collection_id in (
             envelopes.VOUCHERS.collection_id,

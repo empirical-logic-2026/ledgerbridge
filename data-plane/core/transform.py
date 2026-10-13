@@ -21,6 +21,12 @@
   raw record. Only the latest raw record of an object is ever queued again: an older
   version must never overwrite a newer one (older failed versions become `skipped`). Rows
   soft-deleted because their object was deleted in the source stay deleted.
+- References by name (a ledger's group, a voucher's ledgers, ...) resolve by the rules of
+  core/names.py (ADR-027): exact, then alias, then normalised, each only when exactly one
+  target fits; normalised and alias matches are recorded as warnings (kinds only).
+- Voucher types inherit their standard type, base type and whether they post to the books
+  from their parent types; lines of vouchers whose type doesn't post to the books (e.g.
+  orders, memorandum) are not effective, like cancelled and optional vouchers.
 - Errors are recorded per raw record as type + field and column names; never values.
 """
 
@@ -56,6 +62,7 @@ from core.fit import PLACEHOLDER, UNFIT, UnfitValueError, fitter, merge_extra
 from core.models import accounting as A  # noqa: N812 - short alias for many models
 from core.models.base import utcnow
 from core.models.source import RawRecord
+from core.names import ALIAS, NORMALISED, NameIndex
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +160,7 @@ def _fields(extra: dict[str, Any] | None) -> dict[str, list[Any]]:
     """Catalogued fields of a row's extra: everything but values kept aside."""
     out = {}
     for path, value in (extra or {}).items():
-        if path == UNFIT:
+        if path.startswith("_"):  # values kept aside, aliases: not source fields
             continue
         out[path] = value if isinstance(value, list) else [value]
     return out
@@ -306,10 +313,15 @@ class _GroupInfo:
 
 
 class _GroupTree:
-    """The entity's group tree with hints inherited from the nearest ancestor."""
+    """The entity's group tree with hints inherited from the nearest ancestor. Parents and
+    lookups resolve by the rules of core/names.py (exact, alias, normalised)."""
 
     def __init__(self, groups: Iterable[CanonicalGroup]) -> None:
         self.by_name = {g.name: _GroupInfo(g) for g in groups}
+        self.index = NameIndex.build(
+            ((name, name) for name in self.by_name),
+            ((alias, g.group.name) for g in self.by_name.values() for alias in g.group.aliases),
+        )
         for info in self.by_name.values():
             info.nature = self._inherit(info.group.name, "nature")
             code = self._inherit(info.group.name, "standard_account_code")
@@ -321,7 +333,7 @@ class _GroupTree:
         seen: set[str] = set()
         while name and name not in seen:
             seen.add(name)
-            info = self.by_name.get(name)
+            info = self.get(name)
             if info is None:
                 return None
             value = getattr(info.group, attribute)
@@ -331,7 +343,45 @@ class _GroupTree:
         return None
 
     def get(self, name: str) -> _GroupInfo | None:
-        return self.by_name.get(name)
+        found = self.index.get(name)
+        return self.by_name.get(found) if found is not None else None
+
+
+@dataclass
+class _TypeInfo:
+    base_type: str
+    is_accounting: bool
+    standard_type: str | None
+
+
+class _TypeTree:
+    """Voucher types with their standard type, base type and whether they post to the books,
+    inherited from the nearest ancestor that has them (a type under a custom type)."""
+
+    def __init__(self, types: Iterable[CanonicalVoucherType]) -> None:
+        self.by_name = {t.name: t for t in types}
+        self.index = NameIndex.build((name, name) for name in self.by_name)
+
+    def _inherit(self, record: CanonicalVoucherType, attribute: str) -> Any:
+        seen: set[str] = set()
+        current: CanonicalVoucherType | None = record
+        while current is not None and current.name not in seen:
+            seen.add(current.name)
+            value = getattr(current, attribute)
+            if value is not None:
+                return value
+            parent = self.index.get(current.parent_name)
+            current = self.by_name.get(parent) if parent is not None else None
+        return None
+
+    def info(self, record: CanonicalVoucherType) -> _TypeInfo:
+        base = self._inherit(record, "base_type")
+        accounting = self._inherit(record, "is_accounting")
+        return _TypeInfo(
+            base_type=base or "other",
+            is_accounting=True if accounting is None else bool(accounting),
+            standard_type=self._inherit(record, "standard_type"),
+        )
 
 
 def _fit(item: _Raw, model: type, row: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -553,7 +603,8 @@ class Transformer:
         result.entity_ids.add(entity_id)
         self.entity_id = entity_id
         self.books_from = self.session.get_one(A.Entity, entity_id).books_from
-        self.tree = _GroupTree(self._latest_groups(entity_key))
+        self.tree = _GroupTree(self._latest(entity_key, ("group", "ledger"), CanonicalGroup))
+        self.types = _TypeTree(self._latest(entity_key, ("voucher_type",), CanonicalVoucherType))
         self.dimensions = self._promoted_dimensions()
         self.dimension_values: dict[tuple[int, str], int] = {}
 
@@ -735,9 +786,10 @@ class Transformer:
         self.session.commit()
         return entity_id
 
-    def _latest_groups(self, entity_key: str) -> list[CanonicalGroup]:
-        """Every group of the entity as last received (any status), plus synthetic groups that
-        ledger records carry (e.g. Tally's Primary)."""
+    def _latest(self, entity_key: str, object_types: tuple[str, ...], kind: type) -> list[Any]:
+        """Every record of a kind as last received (any status), from the raw records of the
+        given object types: groups (plus synthetic groups that ledger records carry, e.g.
+        Tally's Primary), voucher types."""
         latest: dict[tuple[str, str], SourceRecord] = {}
         for row in self.session.execute(
             select(
@@ -750,7 +802,7 @@ class Transformer:
             .where(
                 RawRecord.connection_id == self.connection_id,
                 RawRecord.source_entity_key == entity_key,
-                RawRecord.object_type.in_(("group", "ledger")),
+                RawRecord.object_type.in_(object_types),
             )
             .order_by(RawRecord.id)
         ):
@@ -762,7 +814,7 @@ class Transformer:
                 payload_format=row.payload_format,
                 payload=row.payload,
             )
-        groups: dict[str, CanonicalGroup] = {}
+        found: dict[str, Any] = {}
         for record in latest.values():
             try:
                 records = self.connector.to_canonical(record)
@@ -772,35 +824,71 @@ class Transformer:
                 )
                 continue
             for canonical in records:
-                if isinstance(canonical, CanonicalGroup):
-                    groups[canonical.source_key] = canonical
-        return list(groups.values())
+                if isinstance(canonical, kind):
+                    found[canonical.source_key] = canonical
+        return list(found.values())
 
     # --- masters ----------------------------------------------------------------------
 
-    def _by_name(self, model: type, column: str = "name", *values: str) -> dict[str, Any]:
-        """name -> id (or (id, *values)) of the entity's rows. A name too long for its column
-        is in `extra`, and found there (ADR-025)."""
+    def _by_name(self, model: type, column: str = "name", *values: str) -> NameIndex:
+        """The entity's rows by name -> id (or (id, *values)), resolving by the rules of
+        core/names.py. A name too long for its column is in `extra`, and found there
+        (ADR-025); aliases are in `extra._aliases` (groups and ledgers)."""
         col = getattr(model, column)
         extra_cols = [getattr(model, v) for v in values]
-        found: dict[str, Any] = {}
-        for name, row_id, *rest in self.session.execute(
-            select(col, model.id, *extra_cols).where(model.entity_id == self.entity_id)
+        with_aliases = model in ALIASED
+        index = NameIndex()
+        placeholders = False
+        query = select(col, model.id, model.extra if with_aliases else col, *extra_cols)
+        for name, row_id, extra, *rest in self.session.execute(
+            query.where(model.entity_id == self.entity_id)
         ):
-            found[name] = (row_id, *rest) if values else row_id
-        if PLACEHOLDER in found:  # rare: read extra only for these rows
-            del found[PLACEHOLDER]
+            value = (row_id, *rest) if values else row_id
+            if name == PLACEHOLDER:
+                placeholders = True
+                continue
+            index.add(name, value)
+            if with_aliases:
+                for alias in (extra or {}).get(ALIASES) or []:
+                    index.add_alias(alias, value)
+        if placeholders:  # rare: read extra only for these rows
             for row_id, extra, *rest in self.session.execute(
                 select(model.id, model.extra, *extra_cols).where(
                     model.entity_id == self.entity_id, col == PLACEHOLDER
                 )
             ):
                 name = ((extra or {}).get(UNFIT) or {}).get(column, PLACEHOLDER)
-                found[name] = (row_id, *rest) if values else row_id
-        return found
+                index.add(name, (row_id, *rest) if values else row_id)
+        return index
 
-    def _names(self, model: type, column: str = "name") -> dict[str, int]:
+    def _names(self, model: type, column: str = "name") -> NameIndex:
         return self._by_name(model, column)
+
+    def _ref(
+        self, item: _Raw, index: NameIndex, name: str | None, what: str, required: bool = True
+    ) -> Any:
+        """A reference by name, resolved (core/names.py). Normalised and alias matches are
+        recorded as warnings, kinds only. An unresolved required reference fails the record:
+        `<source> refers to an unknown <target>`, or, when several targets fit,
+        `... matches several <target>s`."""
+        source, target = what.split(" -> ")
+        found = index.resolve(name)
+        if found.how == NORMALISED:
+            item.warnings.append(f"reference matched after normalisation: {what}")
+        elif found.how == ALIAS:
+            item.warnings.append(f"reference matched by alias: {what}")
+        if found.found:
+            return found.value
+        if found.ambiguous:
+            message = f"{source} refers to a {target} name that matches several {target}s"
+        elif not required:
+            return None
+        else:
+            message = f"{source} refers to an unknown {target}"
+        if required:
+            raise TransformError(message)
+        item.warnings.append(f"ambiguous reference left empty: {what}")
+        return None
 
     def _src(self, item: _Raw, record: Any) -> dict[str, Any]:
         return {
@@ -850,7 +938,7 @@ class Transformer:
                 if row is None:
                     good = False
                     break
-                rows.append(row)
+                rows.append(_with_aliases(row, g.aliases))
                 parents.append((g.source_key, g.parent_name))
             if good:
                 ok.append(item)
@@ -859,6 +947,8 @@ class Transformer:
         return ok
 
     def _link_parents(self, model: type, pairs: list[tuple[str, str | None]]) -> None:
+        """Parent links by name (exact, alias or normalised; an unresolved or ambiguous
+        parent leaves the link empty: the row itself is fine)."""
         names = self._names(model)
         ids = self.upsert.ids(model, [key for key, _ in pairs])
         updates = [
@@ -876,9 +966,10 @@ class Transformer:
         ok, ledger_rows, party_rows = [], [], []
         for item in items:
             ledger = next(r for r in item.records if isinstance(r, CanonicalLedger))
-            group_id = groups.get(ledger.group_name)
-            if group_id is None:
-                self._fail(item.row, TransformError("ledger refers to an unknown group"), result)
+            try:
+                group_id = self._ref(item, groups, ledger.group_name, "ledger -> group")
+            except TransformError as exc:
+                self._fail(item.row, exc, result)
                 continue
             info = self.tree.get(ledger.group_name)
             kind = (info.ledger_kind if info else None) or (
@@ -908,6 +999,7 @@ class Transformer:
             )
             if ledger_row is None:
                 continue
+            ledger_row = _with_aliases(ledger_row, ledger.aliases)
             party_row = None
             if kind == "party":
                 p = ledger.party
@@ -977,8 +1069,10 @@ class Transformer:
             A.VoucherType,
             lambda r: {
                 "name": r.name,
-                "base_type": r.base_type,
-                "is_accounting": r.is_accounting,
+                # Inherited through the voucher type tree when the source didn't say.
+                "base_type": self.types.info(r).base_type,
+                "is_accounting": self.types.info(r).is_accounting,
+                "standard_type": self.types.info(r).standard_type,
                 "is_inventory": r.is_inventory,
             },
             result,
@@ -1048,12 +1142,12 @@ class Transformer:
 
     # --- vouchers ---------------------------------------------------------------------
 
-    def _master_lookups(self) -> tuple[dict[str, Any], ...]:
+    def _master_lookups(self) -> tuple[NameIndex, ...]:
         """Masters by name, for vouchers: read once per object type (masters are written
         before vouchers and don't change meanwhile)."""
         if self._lookups is None:
             self._lookups = (
-                self._names(A.VoucherType),
+                self._by_name(A.VoucherType, "name", "is_accounting"),
                 self._by_name(A.Ledger, "name", "party_id", "tax_type"),
                 self._names(A.Item),
                 self._names(A.Godown),
@@ -1068,33 +1162,54 @@ class Transformer:
         prepared: list[_Prepared] = []
         for item in items:
             v = next(r for r in item.records if isinstance(r, CanonicalVoucher))
-            missing = (
-                ("voucher type" if v.voucher_type_name not in types else None)
-                or next(("ledger" for line in v.lines if line.ledger_name not in ledgers), None)
-                or next(
-                    ("stock item" for inv in v.inventory if inv.item_name not in items_by_name),
-                    None,
-                )
-                or next(
-                    (
-                        "cost centre"
+            try:
+                refs = _Refs(
+                    voucher_type=self._ref(
+                        item, types, v.voucher_type_name, "voucher -> voucher type"
+                    ),
+                    ledgers={
+                        line.ledger_name: self._ref(
+                            item, ledgers, line.ledger_name, "voucher -> ledger"
+                        )
+                        for line in v.lines
+                    },
+                    items={
+                        inv.item_name: self._ref(
+                            item, items_by_name, inv.item_name, "voucher -> stock item"
+                        )
+                        for inv in v.inventory
+                    },
+                    centres={
+                        name: self._ref(item, centres, name, "voucher -> cost centre")
                         for line in v.lines
                         for name, _ in line.cost_allocations
-                        if name not in centres
-                    ),
-                    None,
+                    },
+                    godowns={
+                        inv.godown_name: self._ref(
+                            item, godowns, inv.godown_name, "voucher -> godown", required=False
+                        )
+                        for inv in v.inventory
+                        if inv.godown_name
+                    },
+                    units={
+                        inv.unit_name: self._ref(
+                            item, units, inv.unit_name, "voucher -> unit", required=False
+                        )
+                        for inv in v.inventory
+                        if inv.unit_name
+                    },
+                    party=self._ref(
+                        item,
+                        ledgers,
+                        v.party_ledger_name,
+                        "voucher -> party ledger",
+                        required=False,
+                    )
+                    if v.party_ledger_name
+                    else None,
                 )
-            )
-            if missing:
-                self._fail(
-                    item.row, TransformError(f"voucher refers to an unknown {missing}"), result
-                )
-                continue
-            try:
-                prepared.append(
-                    self._prepare(item, v, types, ledgers, items_by_name, godowns, units, centres)
-                )
-            except UnfitValueError as exc:
+                prepared.append(self._prepare(item, v, refs))
+            except (TransformError, UnfitValueError) as exc:
                 self._fail(item.row, exc, result)
         if not prepared:
             return []
@@ -1158,12 +1273,7 @@ class Transformer:
         self,
         item: _Raw,
         v: CanonicalVoucher,
-        types: dict[str, int],
-        ledgers: dict[str, Any],
-        items_by_name: dict[str, int],
-        godowns: dict[str, int],
-        units: dict[str, int],
-        centres: dict[str, int],
+        refs: "_Refs",
     ) -> "_Prepared":
         """A voucher's rows, each fitted to its columns. Child values that don't fit are kept
         in the voucher's extra as `<table>[<n>].<column>`. Raises UnfitValueError if a
@@ -1176,10 +1286,13 @@ class Transformer:
             unfit.update({f"{table}[{n}].{column}": value for column, value in kept.items()})
             return fitted
 
+        type_id, posts = refs.voucher_type
+        # Lines count in balances only when the voucher posts to the books: not cancelled,
+        # not optional, and of a voucher type that posts (not e.g. an order or memorandum).
+        effective = not (v.is_cancelled or v.is_optional) and posts is not False
         lines = []
         for no, line in enumerate(v.lines, start=1):
-            lid, party_id, tax_type = ledgers[line.ledger_name]
-            effective = not (v.is_cancelled or v.is_optional)
+            lid, party_id, tax_type = refs.ledgers[line.ledger_name]
             lines.append(
                 _PreparedLine(
                     row=fit(
@@ -1212,7 +1325,7 @@ class Transformer:
                         fit(
                             A.LineCostAllocation,
                             no,
-                            {"cost_centre_id": centres[name], "amount": amount},
+                            {"cost_centre_id": refs.centres[name], "amount": amount},
                         )
                         for name, amount in line.cost_allocations
                     ],
@@ -1228,10 +1341,10 @@ class Transformer:
                 {
                     "voucher_date": v.voucher_date,
                     "line_no": no,
-                    "item_id": items_by_name[inv.item_name],
-                    "godown_id": godowns.get(inv.godown_name or ""),
+                    "item_id": refs.items[inv.item_name],
+                    "godown_id": refs.godowns.get(inv.godown_name or ""),
                     "quantity": inv.quantity,
-                    "unit_id": units.get(inv.unit_name or ""),
+                    "unit_id": refs.units.get(inv.unit_name or ""),
                     "rate": inv.rate,
                     "amount": inv.amount,
                     "discount_pct": inv.discount_pct,
@@ -1240,12 +1353,12 @@ class Transformer:
             )
             for no, inv in enumerate(v.inventory, start=1)
         ]
-        party = ledgers.get(v.party_ledger_name or "")
+        party = refs.party
         header, kept = _fit(
             item,
             A.Voucher,
             {
-                "voucher_type_id": types[v.voucher_type_name],
+                "voucher_type_id": type_id,
                 "voucher_number": v.voucher_number,
                 "voucher_date": v.voucher_date,
                 "reference_number": v.reference_number,
@@ -1305,6 +1418,31 @@ class Transformer:
                 .where(model.voucher_id.in_(voucher_ids))
                 .execution_options(synchronize_session=False)
             )
+
+
+@dataclass
+class _Refs:
+    """A voucher's references, resolved: name as written -> id (ledgers: (id, party_id,
+    tax_type); voucher type: (id, is_accounting))."""
+
+    voucher_type: tuple[int, bool | None]
+    ledgers: dict[str, Any]
+    items: dict[str, int]
+    centres: dict[str, int]
+    godowns: dict[str, int | None]
+    units: dict[str, int | None]
+    party: Any
+
+
+ALIASED: tuple[type, ...] = (A.AccountGroup, A.Ledger)  # rows that keep aliases in extra
+ALIASES = "_aliases"
+
+
+def _with_aliases(row: dict[str, Any], aliases: tuple[str, ...]) -> dict[str, Any]:
+    """Other names a master is known by (ADR-027), kept in its extra."""
+    if not aliases:
+        return row
+    return {**row, "extra": {**(row.get("extra") or {}), ALIASES: list(aliases)}}
 
 
 @dataclass

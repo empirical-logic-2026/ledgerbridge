@@ -26,6 +26,15 @@ and numbers. Behaviour can be made difficult:
   voucher number and a reference of 300 characters and a reference date in year 1, on the
   2nd its rate is out of range, and on 2026-05-03 its amounts are too large to store at
   all (only that voucher may fail). See BAD_VOUCHER.
+- `name_variants`: references that differ from the names they mean (ADR-027): the reserved
+  group "Indirect Expenses" is renamed "Overheads" (its ledgers still name it), customers
+  name their group as "sundry  debtors", the ledger "Capital" names a reserved group that
+  isn't fetched ("Suspense A/c" is left out), two ledgers are renamed ("Salary" to an
+  accented name, "Electricity" to one with "&"), and the first voucher of some April days
+  names a ledger differently: see NAME_VARIANTS. Two custom voucher types are added,
+  "Memo Base" under Tally's "Memorandum" and "Payment Memo" under "Memo Base"; the first
+  voucher of 12 April is a "Payment Memo" that doesn't balance (memorandum vouchers don't
+  post to the books, so it must not count).
 
 Keys-only listings never time out (they're small). Every voucher request is logged.
 """
@@ -50,6 +59,25 @@ BOOKS_START = date(2026, 4, 1)
 BOOKS_END = date(2026, 9, 30)
 BAD_VOUCHER = date(2026, 5, 3)  # with bad_values: amounts too large for DECIMAL(20,4)
 LONG = 300
+NFC_NAME = "Caf" + chr(0xE9) + " Salary"  # the ledger "Salary", renamed
+NFD_NAME = "Cafe" + chr(0x301) + " Salary"  # the same name, decomposed
+MEMO_DAY = 12
+CUSTOM_TYPES = (
+    '<VOUCHERTYPE NAME="Memo Base" RESERVEDNAME=""><GUID>vt-memo-base</GUID>'
+    "<ALTERID>9001</ALTERID><PARENT>Memorandum</PARENT></VOUCHERTYPE>"
+    '<VOUCHERTYPE NAME="Payment Memo" RESERVEDNAME=""><GUID>vt-payment-memo</GUID>'
+    "<ALTERID>9002</ALTERID><PARENT>Memo Base</PARENT></VOUCHERTYPE>"
+)
+# April day -> (ledger named in the voucher's first entry instead of "Rent", resolves?)
+NAME_VARIANTS = {
+    5: ("rent", True),  # case
+    6: ("Salary  Payable", True),  # double space
+    7: (NFD_NAME, True),  # Unicode normalisation
+    8: ("Power &amp;amp; Fuel", True),  # XML entity escaped twice
+    9: ("R" + chr(0x435) + "nt", False),  # a Cyrillic look-alike letter
+    10: ("Sales-Goods", False),  # punctuation ("Sales - Goods")
+    11: ("Nowhere Ledger", False),  # no close match
+}
 
 
 def _day(text: str) -> date:
@@ -74,6 +102,7 @@ class SimTally(FixtureTransport):
         busy_after_timeout: int = 0,
         udf: bool = False,
         bad_values: bool = False,
+        name_variants: bool = False,
     ) -> None:
         super().__init__(DEFAULT_DIR)
         self.per_day = per_day
@@ -91,6 +120,7 @@ class SimTally(FixtureTransport):
         self.busy = 0
         self.udf = udf
         self.bad_values = bad_values
+        self.name_variants = name_variants
         self.timeouts_seen: list[float | None] = []
         self.dead = False
         self.voucher_requests = 0
@@ -138,6 +168,8 @@ class SimTally(FixtureTransport):
         response = super().handle_request(request)
         if self.udf:
             response = httpx.Response(200, content=self._with_udf(response.content))
+        if self.name_variants:
+            response = httpx.Response(200, content=self._vary(collection, response.content))
         if self.bad_values:
             content = re.sub(
                 rb"(</LEDGER>)",
@@ -241,8 +273,20 @@ class SimTally(FixtureTransport):
             narration.text = "synthetic"
         if self.bad_values and number == 0:
             self._spoil(voucher, day)
+        variant = None
+        if self.name_variants and number == 0 and day.month == 4:
+            variant = NAME_VARIANTS.get(day.day)
         voucher.tail = None
         text = ET.tostring(voucher, encoding="unicode")
+        if self.name_variants and number == 0 and day == date(2026, 4, MEMO_DAY):
+            text = re.sub(r"(<VOUCHERTYPENAME[^>]*>)[^<]*", r"\g<1>Payment Memo", text, count=1)
+            text = text.replace(">1000.00</AMOUNT>", ">999.00</AMOUNT>", 1)  # unbalanced
+        if variant is not None:
+            # As raw XML text: an entity escaped twice must stay so in the response.
+            text = text.replace(">Rent</LEDGERNAME>", f">{variant[0]}</LEDGERNAME>", 1)
+            if variant[0] == "Sales-Goods":  # the punctuation case replaces "Cash"
+                text = text.replace(f">{variant[0]}</LEDGERNAME>", ">Rent</LEDGERNAME>", 1)
+                text = text.replace(">Cash</LEDGERNAME>", ">Sales-Goods</LEDGERNAME>", 1)
         if self.udf:
             text = text.replace(
                 "</VOUCHER>",
@@ -251,6 +295,30 @@ class SimTally(FixtureTransport):
                 '<TDL:FLAG.LIST TYPE="Logical"><TDL:FLAG>Yes</TDL:FLAG></TDL:FLAG.LIST></VOUCHER>',
             )
         return text
+
+    @staticmethod
+    def _vary(collection: str, content: bytes) -> bytes:
+        """Masters for `name_variants`."""
+        text = content.decode("utf-8")
+        if collection == envelopes.GROUPS.collection_id:
+            text = text.replace('GROUP NAME="Indirect Expenses"', 'GROUP NAME="Overheads"')
+            text = text.replace("<NAME>Indirect Expenses</NAME>", "<NAME>Overheads</NAME>")
+            text = re.sub(r'<GROUP NAME="Suspense A/c".*?</GROUP>', "", text, flags=re.S)
+        if collection == envelopes.VOUCHER_TYPES.collection_id:
+            text = text.replace("</COLLECTION>", CUSTOM_TYPES + "</COLLECTION>", 1)
+        if collection == envelopes.LEDGERS.collection_id:
+            text = text.replace(
+                '<PARENT TYPE="String">Sundry Debtors</PARENT>',
+                '<PARENT TYPE="String">sundry  debtors</PARENT>',
+            )
+            text = text.replace(
+                '<PARENT TYPE="String">Capital Account</PARENT>',
+                '<PARENT TYPE="String">Suspense A/c</PARENT>',
+            )
+            for old, new in (("Salary", NFC_NAME), ("Electricity", "Power &amp; Fuel")):
+                text = text.replace(f'LEDGER NAME="{old}"', f'LEDGER NAME="{new}"')
+                text = text.replace(f"<NAME>{old}</NAME>", f"<NAME>{new}</NAME>")
+        return text.encode("utf-8")
 
     @staticmethod
     def _spoil(voucher: ET.Element, day: date) -> None:

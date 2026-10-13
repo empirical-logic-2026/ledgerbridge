@@ -38,7 +38,7 @@ Every canonical table populated from a source carries these columns (abbreviated
 | `import_batch_id` | BIGINT UNSIGNED NULL | Batch for backup/file imports. |
 | `raw_record_id` | BIGINT UNSIGNED NULL | Link to the raw record it was built from (lineage). |
 | `is_deleted` | BOOLEAN DEFAULT FALSE | Soft delete when removed in source. |
-| `extra` | JSON NULL | Fields the source sent that have no column (e.g. Tally UDFs), by path, and under `_unfit` values that didn't fit their column, in full (ADR-025, migration `0010`). |
+| `extra` | JSON NULL | Fields the source sent that have no column (e.g. Tally UDFs), by path; under `_unfit` values that didn't fit their column, in full (ADR-025, migration `0010`); under `_aliases` other names references may use (groups and ledgers, ADR-027). |
 
 Unique key on `(connection_id, source_key)` makes every sync an idempotent upsert.
 
@@ -105,6 +105,7 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 | `0007` | Pilot | `ledgerbridge_system.sync_checkpoints`, `ledgerbridge_system.sync_slow_periods` (Section 5.1, ADR-022) |
 | `0008` | Pilot | `ledgerbridge_system.sync_unverified_ranges` (Section 5.1, ADR-023) |
 | `0009` | Pilot | `ledgerbridge_system.sync_runs`: status `interrupted`, `heartbeat_at`, `pid`, `host`; `ledgerbridge_system.sync_logs` (Section 5.1, ADR-024) |
+| `0011` | Pilot | `ledgerbridge_accounting.voucher_types.standard_type` (ADR-027) |
 | `0010` | Pilot | `extra` JSON on [SRC] tables and `entities`; `ledgerbridge_accounting.source_fields`; `dimensions.source_object_type`, `source_field`; wider `voucher_number`, `reference_number`, `gstin`, `pan`, `phone`, `units.symbol`, `items.code`, `hsn_code`, `cost_centres.category`; `raw_records.process_warning`; `sync_runs.run_type` `transform` (ADR-025) |
 
 `ledgerbridge_reporting` exists from M2 but stays empty until M6 (Section 6). The per-call AI model log (AI-018) is designed in M8. Type and key choices for tables documented here only as column lists are in Section 9.
@@ -268,7 +269,7 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 
 | Table | Key columns |
 | --- | --- |
-| `ledgerbridge_accounting.voucher_types` | `entity_id, name, base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory` |
+| `ledgerbridge_accounting.voucher_types` | `entity_id, name, standard_type VARCHAR(64) NULL (the source's predefined type it derives from, e.g. Tally's "Sales Order"; from a fixed list of the source's names only), base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory` |
 | `ledgerbridge_accounting.item_groups` | `entity_id, parent_id, name` |
 | `ledgerbridge_accounting.items` | `entity_id, item_group_id, name, code VARCHAR(255), unit_id, hsn_code VARCHAR(32), gst_rate, opening_qty, opening_value` |
 | `ledgerbridge_accounting.units` | `entity_id, symbol VARCHAR(255), name, decimal_places` |
@@ -332,7 +333,7 @@ The double-entry lines. For every voucher, `SUM(amount) = 0` (VAL-001).
 | amount | DECIMAL(20,4) | Base currency, debit +, credit −. |
 | amount_fc | DECIMAL(20,4) NULL | Foreign-currency amount. |
 | is_party_line | BOOLEAN | |
-| is_effective | BOOLEAN | FALSE when the voucher is cancelled, optional or deleted; reports use only effective lines. |
+| is_effective | BOOLEAN | FALSE when the voucher is cancelled, optional or deleted, or its voucher type doesn't post to the books (`voucher_types.is_accounting` false: orders, memorandum, delivery notes, ...; ADR-027); reports use only effective lines. |
 
 Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 
@@ -568,9 +569,9 @@ All amounts: canonical = −(Tally amount). Masters are referred to by name with
 | Tally object | Fields used → canonical |
 | --- | --- |
 | Company | `NAME` → `entities.name`; `BASICCOMPANYFORMALNAME` → `legal_name`; `BOOKSFROM` → `books_from`; month of `STARTINGFROM` → `fy_start_month`; `STATENAME` → `state_code` (GST state code); `GSTREGISTRATIONNUMBER`, `INCOMETAXNUMBER` → `gstin`, `pan`. The entity (code from the name, e.g. `LEDGERBRIDGE_TEST_CO`) and its `entity_sources` row (company GUID) are created on the first sync. |
-| Group | `NAME`, `PARENT` (empty or *Primary* means a primary group). The nature of a primary group comes from `ISREVENUE` and `ISDEEMEDPOSITIVE` (revenue: expense or income; otherwise asset or liability), except *Capital Account* and *Reserves & Surplus*, which are equity. Sub-groups inherit. `AFFECTSGROSSPROFIT` → `affects_gross_profit`. |
+| Group | `NAME`, `PARENT` (empty or *Primary* means a primary group; Tally writes it as `&#4; Primary`, which is read as *Primary*). A predefined group the user renamed keeps its `RESERVEDNAME` as an alias (`extra._aliases`), so references by the reserved name still find it; alias names (`LANGUAGENAME.LIST`) are aliases too (ADR-027). The nature of a primary group comes from `ISREVENUE` and `ISDEEMEDPOSITIVE` (revenue: expense or income; otherwise asset or liability), except *Capital Account* and *Reserves & Surplus*, which are equity. Sub-groups inherit. `AFFECTSGROSSPROFIT` → `affects_gross_profit`. |
 | Ledger | `NAME`, `PARENT` → `group_id`; `OPENINGBALANCE` → `opening_balance`, as at the entity's `books_from`; `ISBILLWISEON`, `ISCOSTCENTRESON`; GSTIN from `PARTYGSTIN` or `LEDGSTREGDETAILS.GSTIN`; state from `LEDSTATENAME` or `LEDMAILINGDETAILS.STATE`; `INCOMETAXNUMBER` (PAN), `EMAIL`, `LEDGERMOBILE`/`LEDGERPHONE`, `BILLCREDITPERIOD` (credit days) and `CREDITLIMIT` go to the party. `TAXTYPE` and `GSTDUTYHEAD` → `tax_type`: Central → cgst, State or UT → sgst, Integrated → igst, Cess → cess, TDS/TCS/VAT. **Assumption, to verify on client data:** an empty duty head on a ledger whose `TAXTYPE` is GST means Central Tax, because Tally leaves default values out of the export (the test company's Central Tax ledgers come back empty). It applies to GST ledgers only, and every use is reported as a warning in the sync output. |
-| Voucher type | `NAME`; `base_type` from the reserved name or `PARENT` (Sales, Purchase, Payment, Receipt, Journal, Contra, Debit/Credit Note, Stock Journal, Delivery/Receipt Note; anything else → other). Order, memo and stock-only types are not accounting types. `AFFECTSSTOCK` → `is_inventory`. |
+| Voucher type | `NAME`; `standard_type` is the predefined Tally type it derives from: its `RESERVEDNAME` or `PARENT` if that is one of Tally's predefined voucher types, otherwise inherited from the parent type (a type under a custom type), resolved through the voucher type tree (ADR-027). `base_type` follows from it (Sales, Purchase, Payment, Receipt, Journal, Contra, Debit/Credit Note, Stock Journal, Delivery/Receipt Note; anything else → other). Order, memorandum, reversing journal, attendance and stock-only types are not accounting types (`is_accounting` false), so their vouchers' lines aren't effective. `AFFECTSSTOCK` → `is_inventory`. |
 | Unit / Stock group / Godown / Stock item / Cost centre | Name, parent (*Primary* → none). Item: `BASEUNITS`, `OPENINGBALANCE` (quantity), `OPENINGVALUE`. Unit: `ORIGINALNAME`, `DECIMALPLACES`. Cost centre: `CATEGORY`. |
 | Voucher | `GUID`, `ALTERID`, `DATE`, `VOUCHERTYPENAME`, `VOUCHERNUMBER`, `REFERENCE`, `REFERENCEDATE`, `PARTYLEDGERNAME` → `party_id`, `NARRATION`, `ISCANCELLED`, `ISOPTIONAL`, `ISPOSTDATED`. |
 | Ledger entries | Postings per 7.2 → `voucher_lines` (`ISPARTYLEDGER` → `is_party_line`). `is_effective` is false for cancelled, optional and deleted vouchers. |
@@ -674,6 +675,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-13 | 0.18 | Migration `0011`: `voucher_types.standard_type`; `extra._aliases`; lines of non-posting voucher types not effective; voucher type and group mapping (ADR-027). |
 | 2026-10-13 | 0.17 | Proposed budget design for M7b: Section 4.7 (`budgets`, `budget_lines`, `budget_line_months`, `budget_line_dimensions`, `budget_changes`), `budget_alert_rules` (5.5), budget permissions (5.3), budget-vs-actual reporting views (6). ADR-026. |
 | 2026-10-13 | 0.16 | `raw_records.process_status` `skipped` used for superseded versions; `transform rebuild` (no schema change). |
 | 2026-10-13 | 0.15 | Migration `0010` (ADR-025): `extra` JSON, `source_fields`, promoted dimensions, wider source text columns, `raw_records.process_warning`, run type `transform`; validation checks VAL-005 to VAL-009. |

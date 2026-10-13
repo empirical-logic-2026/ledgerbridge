@@ -79,6 +79,7 @@ npm run build
 ./dev.ps1 sync abandon                               # mark runs whose process is gone interrupted (asks to type "abandon")
 ./dev.ps1 transform retry                            # transform failed/pending records again (no Tally), then validate
 ./dev.ps1 transform rebuild                          # transform every stored record again (no Tally), then validate
+./dev.ps1 transform explain [-CheckSource]           # why references didn't resolve (counts and kinds only)
 ./dev.ps1 validate -Quick                            # skip voucher counts, stock, bills and year-end checks
 ./dev.ps1 fields                                     # field catalogue (fields with no column, e.g. UDFs)
 ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"   # catalogued voucher field -> dimension
