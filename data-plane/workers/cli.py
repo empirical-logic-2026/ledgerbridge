@@ -16,6 +16,7 @@
     python -m workers.cli transform-rebuild --connection tally-pilot [--entity NAME]
     python -m workers.cli transform-explain --connection tally-pilot [--check-source]
     python -m workers.cli fields [--entity-id 3]
+    python -m workers.cli validate-analyse --connection tally-pilot [--entity NAME]
     python -m workers.cli promote-field --field-id 12 --code SALESMAN --name "Salesman"
 
 `extract` only stores raw records (M1); `sync` also transforms them (M3); `check-deletions`
@@ -77,12 +78,14 @@ from core.models.system import (
 )
 from core.transform import trial_balance
 from core.validation import ValidationReport
-from workers.entities import Labels, by_names, configured, to_config
+from workers.analyse import analyse
+from workers.entities import Labels, by_names, configured, select_entities, to_config
 from workers.extract import connector_for, get_or_create_connection, run_extract
 from workers.failures import failure_breakdown, format_group, warning_breakdown
 from workers.fields import PromoteError, catalogue, catalogue_counts, promote_field
 from workers.references import completeness, explain_entity, failed_reference_counts, lines
 from workers.runs import (
+    ALIVE,
     FINISHED,
     JobLog,
     Tee,
@@ -105,7 +108,13 @@ from workers.sync import (
     run_transform,
     running_run,
 )
-from workers.validate import AfterRun, alert_for_run, entity_validator, run_validation
+from workers.validate import (
+    AfterRun,
+    alert_for_run,
+    entity_validator,
+    run_validation,
+    tolerance_for,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -197,6 +206,16 @@ def _parser() -> argparse.ArgumentParser:
         )
         retry.add_argument("--no-validate", action="store_true", help="skip validation afterwards")
         retry.add_argument("--job", help="job id: also write the output to sync_logs, for `watch`")
+
+    analyse = sub.add_parser(
+        "validate-analyse",
+        help="test explanations for each validation mismatch (counts and patterns only); "
+        "reads the source's figures",
+    )
+    connection_args(analyse)
+    analyse.add_argument("--entity", action="append", help="entity name (repeatable)")
+    analyse.add_argument("--as-of", type=date.fromisoformat, help="as of this date (default today)")
+    analyse.add_argument("--job", help="job id: also write the output to sync_logs, for `watch`")
 
     explain = sub.add_parser(
         "transform-explain",
@@ -364,6 +383,7 @@ JOB_COMMANDS = (
     "transform-retry",
     "transform-rebuild",
     "transform-explain",
+    "validate-analyse",
 )
 
 
@@ -380,7 +400,7 @@ def _start_job_log(session: Session, args: argparse.Namespace) -> JobLog | None:
         return None
     connection = get_or_create_connection(session, args.connection, args.source)
     session.commit()
-    job = JobLog(session.get_bind(), connection.id, args.job)  # type: ignore[arg-type]
+    job = JobLog(session.get_bind(), connection.id, args.job).start_heartbeat()  # type: ignore[arg-type]
     install_tee(job)
     return job
 
@@ -409,6 +429,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _transform_retry(session, args)
     if args.command == "transform-explain":
         return _transform_explain(session, args)
+    if args.command == "validate-analyse":
+        return _validate_analyse(session, args)
     if args.command == "summary":
         return _summary(session)
     if args.command == "trial-balance":
@@ -598,6 +620,8 @@ def _watch(session: Session, args: argparse.Namespace) -> int:
             ).all()
             for row_id, line in rows:
                 last = row_id
+                if line == ALIVE:  # the job is busy, not gone
+                    continue
                 if line.startswith(FINISHED):
                     code = int(line[len(FINISHED) :].rstrip("]") or 1)
                     print(f"Sync job finished (exit {code}).")
@@ -609,9 +633,9 @@ def _watch(session: Session, args: argparse.Namespace) -> int:
                 quiet += args.poll_sec
                 if quiet >= args.grace_sec and running_run(session, connection.id) is None:
                     print(
-                        "The sync job stopped without finishing: its process is gone. Its run is "
-                        "marked interrupted and its progress is kept; run the sync again to "
-                        "continue.",
+                        f"The job stopped without finishing: no sign of life for "
+                        f"{args.grace_sec:g} s, so its process is gone. A sync's run is marked "
+                        "interrupted and its progress is kept; run it again to continue.",
                         file=sys.stderr,
                     )
                     return 1
@@ -1270,6 +1294,37 @@ def _transform_retry(session: Session, args: argparse.Namespace) -> int:
     kind = "rebuild" if args.command == "transform-rebuild" else "transform"
     print(f"Result: {kind} {result.status}; validation {validation}")
     return code
+
+
+def _validate_analyse(session: Session, args: argparse.Namespace) -> int:
+    """Explanations for each validation mismatch, entity by entity (counts and patterns
+    only). Reads the source's own figures, read-only."""
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    connector = connector_for(session, connection)
+    entities = select_entities(connector, connection, args.entity)
+    ids = entity_ids_for(session, connection.id, [e.key for e in entities])
+    labels = Labels(session, connection)
+    as_of = args.as_of or date.today()
+    for entity in entities:
+        if entity.key not in ids:
+            print(f"{labels.for_key(entity.key)}: not transformed yet, nothing to analyse")
+            continue
+        label = labels.for_key(entity.key, ids[entity.key])
+        for line in analyse(
+            session,
+            connection,
+            connector,  # type: ignore[arg-type]
+            [(entity, ids[entity.key], label)],
+            as_of,
+            tolerance_for(connection),
+            _progress,
+        ):
+            print(line, flush=True)
+    print("Result: analyse finished")
+    return 0
 
 
 def _transform_explain(session: Session, args: argparse.Namespace) -> int:

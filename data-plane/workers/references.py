@@ -220,7 +220,7 @@ def explain_entity(
     seen = 0
     for row in _raw(session, connection.id, entity_key, failed):
         seen += 1
-        if seen % 50_000 == 0:
+        if seen % 10_000 == 0:
             progress(f"{label}: read {seen:,} failed records")
         records = _map(connector, _source_record(row, entity_key))
         for relation in RELATIONS:

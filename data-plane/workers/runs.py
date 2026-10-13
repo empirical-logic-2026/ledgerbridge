@@ -29,6 +29,9 @@ from core.models.base import utcnow
 from core.models.system import SyncLog
 
 FINISHED = "[job finished: exit "
+# Written every SYNC_HEARTBEAT_SEC while a background job runs, so `watch` can tell a job that
+# is busy without printing from one whose process is gone; never shown.
+ALIVE = "[job alive]"
 INTERRUPTED_BY_SIGNAL = "interrupted (Ctrl+C or termination); checkpoints kept"
 INTERRUPTED_STALE = "interrupted: its process is gone (no heartbeat); checkpoints kept"
 INTERRUPTED_BY_HAND = "abandoned by hand (sync abandon); checkpoints kept"
@@ -146,6 +149,14 @@ class JobLog:
         self.engine = engine
         self.connection_id = connection_id
         self.job_id = job_id
+        self._heartbeat: RunHeartbeat | None = None
+
+    def start_heartbeat(self) -> "JobLog":
+        """Signs of life for `watch`, also for jobs without a sync run (e.g. explain)."""
+        self._heartbeat = RunHeartbeat(
+            lambda: self.write(ALIVE), get_settings().sync_heartbeat_sec
+        ).start()
+        return self
 
     def write(self, line: str) -> None:
         with Session(self.engine) as session:
@@ -160,6 +171,8 @@ class JobLog:
             session.commit()
 
     def finish(self, code: int) -> None:
+        if self._heartbeat is not None:
+            self._heartbeat.stop()
         self.write(f"{FINISHED}{code}]")
 
 
