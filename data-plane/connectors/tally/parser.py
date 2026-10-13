@@ -60,6 +60,11 @@ def _rename(name: str) -> str:
     return f"{prefix}{_MARK}{local}"
 
 
+def restore_name(name: str) -> str:
+    """A parsed element's name as the source wrote it (UDF:FIELD, not the internal form)."""
+    return _restore(name)
+
+
 def _restore(name: str) -> str:
     return name.replace(_MARK, ":", 1) if _MARK in name else name
 
@@ -73,9 +78,15 @@ def _rewrite_tags(text: str, rename: Callable[[str], str]) -> str:
     return _TAG.sub(tag, text)
 
 
+_PREFIXED_ATTRIBUTE = re.compile(r"\s[A-Za-z_][\w.-]*:[\w.-]+\s*=\s*[\"']")
+
+
 def neutralise_prefixes(text: str) -> str:
-    """Undeclared prefixed names (e.g. UDF:FIELD) made parseable; see _MARK."""
-    return _rewrite_tags(text, _rename) if ":" in text else text
+    """Undeclared prefixed names (e.g. UDF:FIELD) made parseable; see _MARK. Responses
+    without any prefixed name (most) are returned as they are, without rewriting."""
+    if ":" not in text or not (_PREFIXED_ELEMENT.search(text) or _PREFIXED_ATTRIBUTE.search(text)):
+        return text
+    return _rewrite_tags(text, _rename)
 
 
 def parse_response(body: bytes) -> ET.Element:

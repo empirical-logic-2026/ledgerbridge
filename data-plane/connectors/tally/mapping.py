@@ -6,7 +6,9 @@ Postings: connectors.tally.signs.postings implements the rules of schema.md 7.2.
 
 import re
 import xml.etree.ElementTree as ET  # noqa: N817
+from dataclasses import replace
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from connectors.base import SourceRecord
 from connectors.tally import parser
@@ -159,6 +161,11 @@ def _flag(element: ET.Element, path: str) -> bool:
 def _canonical(value: Decimal | None) -> Decimal:
     """Tally sign → canonical sign (schema.md 7.1)."""
     return -value if value else Decimal(0)
+
+
+def quantity(text: str | None) -> tuple[Decimal, str | None]:
+    """A Tally quantity: (number, unit)."""
+    return _quantity(text)
 
 
 def _quantity(text: str | None) -> tuple[Decimal, str | None]:
@@ -422,6 +429,91 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
     )
 
 
+# --- fields the mapping doesn't use (ADR-025) ---------------------------------------------
+
+_IDENTITY = (
+    "GUID", "ALTERID", "MASTERID", "NAME",
+    "LANGUAGENAME.LIST/NAME.LIST/NAME", "LANGUAGENAME.LIST/LANGUAGEID",
+)  # fmt: skip
+_MASTER = (*_IDENTITY, "PARENT")
+_LEDGER_ENTRY = (
+    "LEDGERNAME", "AMOUNT", "ISDEEMEDPOSITIVE", "ISPARTYLEDGER",
+    "BILLALLOCATIONS.LIST/NAME", "BILLALLOCATIONS.LIST/BILLTYPE", "BILLALLOCATIONS.LIST/AMOUNT",
+    "CATEGORYALLOCATIONS.LIST/CATEGORY",
+    "CATEGORYALLOCATIONS.LIST/COSTCENTREALLOCATIONS.LIST/NAME",
+    "CATEGORYALLOCATIONS.LIST/COSTCENTREALLOCATIONS.LIST/AMOUNT",
+)  # fmt: skip
+_INVENTORY_ENTRY = (
+    "STOCKITEMNAME", "ACTUALQTY", "BILLEDQTY", "RATE", "AMOUNT", "ISDEEMEDPOSITIVE",
+    "DISCOUNT", "BATCHALLOCATIONS.LIST/GODOWNNAME", "BATCHALLOCATIONS.LIST/BATCHNAME",
+    *(f"ACCOUNTINGALLOCATIONS.LIST/{path}" for path in _LEDGER_ENTRY),
+)  # fmt: skip
+# Paths (below the object; list levels included) each object type's mapping reads.
+USED_FIELDS: dict[str, frozenset[str]] = {
+    "company": frozenset((
+        *_IDENTITY, "BOOKSFROM", "STARTINGFROM", "BASICCOMPANYFORMALNAME", "STATENAME",
+        "GSTREGISTRATIONNUMBER", "INCOMETAXNUMBER",
+    )),
+    "group": frozenset((*_MASTER, "ISREVENUE", "ISDEEMEDPOSITIVE", "AFFECTSGROSSPROFIT")),
+    "ledger": frozenset((
+        *_MASTER, "OPENINGBALANCE", "ISBILLWISEON", "ISCOSTCENTRESON", "TAXTYPE",
+        "GSTDUTYHEAD", "PARTYGSTIN", "LEDGSTREGDETAILS.LIST/GSTIN", "INCOMETAXNUMBER",
+        "LEDSTATENAME", "LEDMAILINGDETAILS.LIST/STATE", "COUNTRYNAME", "EMAIL",
+        "LEDGERPHONE", "LEDGERMOBILE", "BILLCREDITPERIOD", "CREDITLIMIT",
+    )),
+    "voucher_type": frozenset((*_MASTER, "AFFECTSSTOCK")),
+    "unit": frozenset((*_IDENTITY, "ORIGINALNAME", "DECIMALPLACES")),
+    "stock_group": frozenset(_MASTER),
+    "godown": frozenset(_MASTER),
+    "stock_item": frozenset((*_MASTER, "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE")),
+    "cost_centre": frozenset((*_MASTER, "CATEGORY")),
+    "voucher": frozenset((
+        *_IDENTITY, "DATE", "VOUCHERTYPENAME", "VOUCHERNUMBER", "REFERENCE", "REFERENCEDATE",
+        "PARTYLEDGERNAME", "NARRATION", "ISCANCELLED", "ISOPTIONAL", "ISPOSTDATED",
+        *(f"{lst}/{path}" for lst in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST")
+          for path in _LEDGER_ENTRY),
+        *(f"{lst}/{path}" for lst in ("ALLINVENTORYENTRIES.LIST", "INVENTORYENTRIES.LIST")
+          for path in _INVENTORY_ENTRY),
+    )),
+}  # fmt: skip
+
+
+# Tally's own bookkeeping, with no meaning in the books: left out of `extra` (still in the raw
+# record). A ledger entry's INVENTORYALLOCATIONS repeat the voucher's inventory entries.
+_TALLY_INTERNAL = frozenset((
+    "VOUCHERKEY", "VOUCHERRETAINKEY", "REUSEHOLEID", "PERSISTEDVIEW", "NUMBERINGSTYLE",
+    "ASORIGINAL", "ASPAYSLIP", "ISNEGISPOSSET", "ISDELETEDVCHRETAINED", "ISLASTDEEMEDPOSITIVE",
+    "ISDELETED",
+))  # fmt: skip
+_DUPLICATES = frozenset(
+    f"{lst}/INVENTORYALLOCATIONS.LIST" for lst in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST")
+)
+
+
+def unmapped_fields(element: ET.Element, object_type: str) -> dict[str, Any] | None:
+    """Every field with a value that the mapping doesn't read, by path below the object,
+    with prefixed names as the source wrote them (e.g. UDF:REFNO.LIST/UDF:REFNO). A path
+    that repeats (e.g. one per ledger entry) holds a list. Attributes aren't fields."""
+    used = USED_FIELDS.get(object_type, frozenset())
+    found: dict[str, list[str]] = {}
+
+    def walk(node: ET.Element, prefix: str) -> None:
+        for child in node:
+            tag = parser.restore_name(child.tag)
+            path = f"{prefix}/{tag}" if prefix else tag
+            if tag in _TALLY_INTERNAL or path in _DUPLICATES:
+                continue
+            if len(child):
+                walk(child, path)
+                continue
+            value = (child.text or "").strip()
+            if value and path not in used:
+                found.setdefault(path, []).append(value)
+
+    walk(element, "")
+    return {path: v[0] if len(v) == 1 else v for path, v in found.items()} or None
+
+
 # --- entry point -----------------------------------------------------------------------
 
 
@@ -432,6 +524,15 @@ def to_canonical(record: SourceRecord) -> list[CanonicalRecord]:
         element = ET.fromstring(parser.neutralise_prefixes(record.payload))  # noqa: S314
     except ET.ParseError as exc:
         raise MappingError(f"{record.object_type} payload is not valid XML") from exc
+    records = _records(record, element)
+    extra = unmapped_fields(element, record.object_type)
+    if extra is None:
+        return records
+    # The object's own record carries them (not e.g. the synthetic Primary group).
+    return [replace(r, extra=extra) if r.source_key == record.source_key else r for r in records]
+
+
+def _records(record: SourceRecord, element: ET.Element) -> list[CanonicalRecord]:
     key = record.source_key
     match record.object_type:
         case "company":
