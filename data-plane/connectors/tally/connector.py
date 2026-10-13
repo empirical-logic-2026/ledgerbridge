@@ -3,6 +3,7 @@
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Self
@@ -46,6 +47,13 @@ class TallyConnector:
         *(spec.object_type for spec in envelopes.MASTER_SPECS),
         envelopes.VOUCHERS.object_type,
     )
+
+    # The source's own predefined names per object type (Tally's reserved groups and voucher
+    # types): the reference diagnostic says when a missing name is one of them.
+    reserved_names = {
+        "group": mapping.RESERVED_GROUPS,
+        "voucher_type": mapping.STANDARD_VOUCHER_TYPES,
+    }
 
     def __init__(self, client: TallyClient) -> None:
         self.client = client
@@ -248,6 +256,41 @@ class TallyConnector:
                 for bill in bills:
                     opening[name] += _canonical(bill.findtext("OPENINGBALANCE"))
         return dict(outstanding), dict(opening)
+
+    # --- diagnostics: what the source lists now (read-only) -----------------------------
+
+    master_types = tuple(spec.object_type for spec in envelopes.MASTER_SPECS)
+
+    def master_keys(self, entity: SourceEntity, object_type: str) -> set[str]:
+        """GUIDs of every master of a type that Tally lists now (are our requests
+        complete?)."""
+        spec = envelopes.SPEC_BY_OBJECT_TYPE[object_type]
+        body = self._company_post(
+            entity,
+            lambda name: envelopes.collection_request(envelopes.keys_only(spec), company=name),
+        )
+        return {
+            parser.source_key(element)
+            for element in parser.objects(parser.parse_response(body), spec.object_tag)
+        }
+
+    def master_names(self, entity: SourceEntity, object_type: str) -> set[str]:
+        """Names (and alias names) of every master of a type that Tally lists now."""
+        spec = envelopes.SPEC_BY_OBJECT_TYPE[object_type]
+        listing = replace(spec, collection_id=f"{spec.collection_id}Names", fetch=("GUID", "NAME"))
+        body = self._company_post(
+            entity, lambda name: envelopes.collection_request(listing, company=name)
+        )
+        names: set[str] = set()
+        for element in parser.objects(parser.parse_response(body), spec.object_tag):
+            names.add(parser.object_name(element) or "")
+            names.update(
+                (n.text or "").strip() for n in element.findall("LANGUAGENAME.LIST/NAME.LIST/NAME")
+            )
+            reserved = (element.get("RESERVEDNAME") or "").strip()
+            if reserved:
+                names.add(reserved)
+        return names - {""}
 
     def ledger_elements(self, entity: SourceEntity) -> list[ET.Element]:
         body = self._company_post(

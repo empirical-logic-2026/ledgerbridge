@@ -52,6 +52,9 @@ class CanonicalGroup:
     standard_account_code: str | None = None
     ledger_kind: str | None = None  # bank/cash/tax/party/stock
     party_type: str | None = None  # customer/vendor
+    # Other names the source may refer to it by (e.g. the reserved name of a Tally group the
+    # user renamed): references resolve to it by these if no other group has them (ADR-027).
+    aliases: tuple[str, ...] = ()
     extra: Mapping[str, Any] | None = _extra()
 
 
@@ -85,6 +88,7 @@ class CanonicalLedger:
     default_standard_account_code: str | None = None
     # Assumptions the connector made for this record; reported in the sync output.
     warnings: tuple[str, ...] = ()
+    aliases: tuple[str, ...] = ()  # other names references may use (ADR-027)
     extra: Mapping[str, Any] | None = _extra()
 
 
@@ -92,9 +96,14 @@ class CanonicalLedger:
 class CanonicalVoucherType:
     source_key: str
     name: str
-    base_type: str
-    is_accounting: bool = True
+    # None: inherited from the parent type (the transform walks the voucher type tree).
+    base_type: str | None
+    is_accounting: bool | None = True
     is_inventory: bool = False
+    parent_name: str | None = None
+    # The source's own standard type this one derives from (e.g. Tally's "Sales Order"),
+    # from a fixed list of the source's standard names; None for custom names.
+    standard_type: str | None = None
     extra: Mapping[str, Any] | None = _extra()
 
 
