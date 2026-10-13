@@ -409,6 +409,22 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 ./deploy/stack.ps1 -Env test down -v   # also DELETE volumes: the test database is wiped
 ```
 
+### Drawing the diagrams: `./dev.ps1 diagrams`
+
+The diagrams in `docs/diagrams/` are drawn by **mermaid-cli** running in a throwaway container, so nothing has to be installed on your PC:
+
+```powershell
+docker run --rm -v "C:/ledgerbridge/docs/diagrams:/data" ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.4.2 `
+    -i /data/er-overview.mmd -o /data/er-overview.svg -b white -c /data/mermaid-config.json
+```
+
+- `docker run` starts a new container from an image (downloaded once, then kept); `--rm` deletes the container when it finishes. It is not part of the LedgerBridge stack: it starts and stops nothing else.
+- `-v <folder on your PC>:/data` is a **bind mount**: the container sees `docs/diagrams` as `/data`, reads the `.mmd` file there and writes the image back into the same folder on your PC.
+- The image is pinned to a version (`11.4.2`) so the pictures look the same on every machine.
+- `./dev.ps1 diagrams` runs this twice per diagram (SVG and PNG), after generating the ER sources with Python on your PC.
+
+See which images you have: `docker image ls ghcr.io/mermaid-js/mermaid-cli/mermaid-cli`.
+
 ## 10. Problems we actually hit
 
 | Symptom | Cause | Fix |
@@ -434,6 +450,7 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
 | 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |
+| 2026-10-13 | `./dev.ps1 diagrams` draws the diagrams with the mermaid-cli image in throwaway containers (`docker run --rm` with a bind mount; section 9). |
 | 2026-10-13 | `./dev.ps1 transform explain` runs detached and is followed, like `transform retry`. |
 | 2026-10-13 | `./dev.ps1 transform rebuild` runs detached and is followed, like `transform retry`. |
 | 2026-10-13 | `./dev.ps1 transform retry` runs detached (`exec -d`) and is followed like a sync; `fields` and `promote-field` run with `exec -T` (section 3). |

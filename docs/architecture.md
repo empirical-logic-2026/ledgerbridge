@@ -66,6 +66,12 @@ flowchart LR
     CLOUD --> W
 ```
 
+The data flow as built, with planned parts dashed ([diagrams/README.md](diagrams/README.md) explains all diagrams; regenerate with `./dev.ps1 diagrams`):
+
+[![Data flow level 0](diagrams/dataflow-context.png)](diagrams/dataflow-context.svg)
+
+[![Data flow level 1](diagrams/dataflow-level1.png)](diagrams/dataflow-level1.svg)
+
 ## 3. Control plane
 
 **Responsibilities:** user accounts, password hashing, MFA, login, token issuance, licence status, client registry (client ID → deployment URL), platform admin console, hosting the signed frontend bundle.
@@ -107,6 +113,14 @@ flowchart LR
 | **Canonical** | `ledgerbridge_accounting` | Standard, source-independent accounting model, and the client's own planning data (budgets, ADR-026) in separate tables. | ledgers, vouchers, voucher lines, parties; budgets, budget lines |
 | **Reporting** | `ledgerbridge_reporting` | Views and aggregates used by dashboards and AI (the semantic layer). The only database the AI user can read. | `v_trial_balance`, `v_pnl_monthly`, `v_receivables_ageing` |
 | **System** | `ledgerbridge_system` | Connections, sync runs, validation, users and roles, audit, settings. | `connections`, `sync_runs`, `audit_log` |
+
+The databases with their tables, and the database users with their access (generated from the models):
+
+[![Databases and users](diagrams/schema-databases.png)](diagrams/schema-databases.svg)
+
+The main tables (ER overview; the areas and the planned budget tables are in [diagrams/README.md](diagrams/README.md)):
+
+[![ER overview](diagrams/er-overview.png)](diagrams/er-overview.svg)
 
 ### 4.3 Canonical model (initial outline)
 
@@ -411,6 +425,7 @@ The pilot runs the data plane on the developer's Windows machine.
 | 2026-10-12 | 0.9 | ADR-020: short sync transactions, connections paused until activated, read-only company listing, safe error text (pilot run fixes). |
 | 2026-10-12 | 0.10 | ADR-021: entities identified by source key; exact names; one shared lookup. |
 | 2026-10-12 | 0.11 | ADR-022: chunked, resumable, entity-by-entity syncs; timeouts lead to a source check and splitting, not a resend. |
+| 2026-10-13 | 0.18 | Diagrams embedded in Sections 2 and 4.2 (docs/diagrams, generated ER and database diagrams, data flow levels 0 and 1). |
 | 2026-10-13 | 0.17 | ADR-027: reference resolution rules, `transform explain`, voucher type tree and effective lines of non-posting voucher types. |
 | 2026-10-13 | 0.16 | Budget planning and analysis: Section 4.7, data layers note, ADR-026 (user-entered data alongside source data). |
 | 2026-10-13 | 0.15 | Section 4.4: `transform rebuild` re-transforms every stored object (DAT-008); retries and rebuilds only queue an object's latest raw record. |

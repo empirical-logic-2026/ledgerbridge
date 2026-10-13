@@ -84,6 +84,7 @@ npm run build
 ./dev.ps1 validate -Quick                            # skip voucher counts, stock, bills and year-end checks
 ./dev.ps1 fields                                     # field catalogue (fields with no column, e.g. UDFs)
 ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"   # catalogued voucher field -> dimension
+./dev.ps1 diagrams                                   # regenerate docs/diagrams from the models and render SVG/PNG (mermaid-cli image)
 ./dev.ps1 connect -Origin live -Company "LedgerBridge Test Co" -TimeoutSec 600 -PauseSec 0 -PartMonth auto
 # Pilot commands (init-env, connect -Origin backup, sync full, summary with -Env pilot) are in
 # docs/pilot-runbook.md: the developer runs them. Claude Code never does.
@@ -119,6 +120,7 @@ Claude Code only ever uses `-Env test` (with both `dev.ps1` and `deploy/stack.ps
 4. Reference requirement IDs in commit messages and PR descriptions, e.g. `CON-002: Tally ledger sync`.
 5. Write or update tests with every change.
 6. Keep `docs/codebase-guide.md` accurate: whenever a folder or an important file is added, moved, renamed or removed (or its purpose changes), update the guide in the same change (its tree, its tables, the flows and "Where to look" if affected), with a change log entry.
+7. Keep the diagrams current: whenever the database models, the databases or users, or the data flows change, run `./dev.ps1 diagrams` and commit the regenerated `docs/diagrams/` (the ER and database diagrams are generated from the models; a test fails if they are stale). Edit the hand-written sources (`dataflow-*.mmd`, `er-budgets-planned.mmd`) when the flows or plans change, and update `docs/diagrams/README.md`.
 
 ## Docker changes (developer is learning Docker)
 

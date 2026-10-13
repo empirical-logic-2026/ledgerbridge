@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.1 |
+| Version | 0.2 |
 | Date | 2026-10-13 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
@@ -30,6 +30,24 @@ LedgerBridge reads a company's accounting data from its accounting software (Tal
 
 **How they fit together.** A developer types a command such as `./dev.ps1 sync full`. `dev.ps1` asks Docker to run the matching Python command inside the **api** container. That command uses a **connector** to read from Tally, stores what it receives in the database **unchanged** (the raw layer), then **transforms** it into standard accounting tables, then **validates** the result against Tally's own figures. A separate **worker** container does the same on a schedule. Later, the **API** serves the results to the **dashboard**, and the AI answers questions from a read-only reporting layer of the database. The four MySQL databases and why they are separate are described in [schema.md](schema.md) Section 2 and [architecture.md](architecture.md) Section 4.2.
 
+**In pictures** ([diagrams/README.md](diagrams/README.md) explains each one and has the rest: the ER diagrams per area and the planned budget tables). Click an image to open it at full size.
+
+LedgerBridge and the outside world (dashed = planned):
+
+[![Data flow level 0](diagrams/dataflow-context.png)](diagrams/dataflow-context.svg)
+
+Inside the data plane:
+
+[![Data flow level 1](diagrams/dataflow-level1.png)](diagrams/dataflow-level1.svg)
+
+The four databases and who may read them:
+
+[![Databases and users](diagrams/schema-databases.png)](diagrams/schema-databases.svg)
+
+The main tables:
+
+[![ER overview](diagrams/er-overview.png)](diagrams/er-overview.svg)
+
 ## 2. Folder by folder
 
 ### 2.1 The tree
@@ -51,13 +69,14 @@ ledgerbridge/
 │   │   └── tally/              everything that knows about Tally
 │   ├── core/
 │   │   └── models/             the database tables, as Python classes
-│   ├── devtools/
+│   ├── devtools/               developer tools, never in the product
+│   │   ├── diagrams.py         generates the diagrams from the models
 │   │   └── tally_seed/         fills the test company in TallyPrime (test only)
 │   ├── migrations/
 │   │   └── versions/           one file per database change, 0001 to 0011
 │   ├── tests/
 │   │   ├── connectors/tally/   tests of the Tally connector
-│   │   ├── devtools/           tests of the seeder
+│   │   ├── devtools/           tests of the seeder and the diagrams
 │   │   └── fixtures/tally/     recorded Tally answers from the test company
 │   └── workers/                the commands and background jobs
 ├── deploy/
@@ -65,6 +84,7 @@ ledgerbridge/
 │   └── mysql/init/             the database's first-start script
 ├── docs/
 │   ├── design/                 dashboard design and mockup
+│   ├── diagrams/               ER, database and data flow diagrams (source and images)
 │   └── learning/               the Docker guide
 └── frontend/
     ├── index.html, package.json, vite.config.ts, tsconfig*.json, .oxlintrc.json
@@ -162,6 +182,8 @@ ledgerbridge/
 | `env.py`, `script.py.mako` | Alembic's setup and the template for new migration files. |
 | `versions/0001_...py` to `versions/0011_...py` | One file per change to the database, applied in order: 0001 raw records and sync runs, 0002 the accounting and system tables, 0003 the standard chart of accounts, then later additions (tax types, deletion checks, validation dates and alerts, sync checkpoints, unverified ranges, run liveness and job logs, the `extra` fields and field catalogue, voucher types' standard type). An applied migration is never edited; a change is always a new file. [schema.md](schema.md) Section 3 lists them. |
 
+**`devtools/diagrams.py`: the diagrams.** Writes the Mermaid sources of the ER diagrams and the database diagram in `docs/diagrams/` from the database models, so they always match the code (`./dev.ps1 diagrams`, which also draws the images). Development only.
+
 **`devtools/tally_seed/`: filling the test company.** Development only, never part of the product, and it may only write to the company "LedgerBridge Test Co" (it checks this before doing anything). `data.py` holds the synthetic ledgers and vouchers; `requests.py` builds Tally's import requests; `seed.py` works out what is missing and imports it; `__main__.py` is the command (`./dev.ps1 seed-test-data`).
 
 **`tests/`: automatic checks.**
@@ -172,7 +194,7 @@ ledgerbridge/
 | `sim_tally.py` | A simulated Tally for tests: large companies, slow months, timeouts, custom fields, values that don't fit, names written differently. |
 | `fixtures/tally/` | Real answers recorded from the test company (`*.xml`) and `manifest.json`, which says which request each file answers. Test company data only. |
 | `connectors/tally/test_*.py` | The Tally connector: requests, parser, mapping, signs, recorded fixtures. |
-| `devtools/test_tally_seed.py` | The seeder and its safety checks. |
+| `devtools/test_tally_seed.py`, `devtools/test_diagrams.py` | The seeder and its safety checks; that the diagrams match the models and are drawn. |
 | `test_sync.py`, `test_large_sync.py`, `test_extract.py`, `test_raw_store.py`, `test_entity_lookup.py` | Syncing: small and large, resuming, finding companies, storing raw records. |
 | `test_validation.py`, `test_standard_accounts.py` | Validation checks and the standard chart of accounts. |
 | `test_retransform.py`, `test_references.py`, `test_pilot_robustness.py` | Problems found during the pilot: transform retry and rebuild, safe error messages, values that don't fit, names that differ, custom fields, background jobs and interrupted runs. |
@@ -202,6 +224,8 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | [pilot-runbook.md](pilot-runbook.md) | Step by step for running the pilot on client data (the developer runs it, never Claude Code), and how to read the output. |
 | [design/dashboard.md](design/dashboard.md), `design/dashboard-mockup.png` | The dashboard design: the approved home page and the proposed Budget page. |
 | [learning/docker.md](learning/docker.md) | Docker explained for this project, file by file. |
+| [diagrams/README.md](diagrams/README.md), `diagrams/*.mmd`, `*.svg`, `*.png` | The diagrams: ER diagrams (generated from the models), the databases and users, the data flow, the planned budget tables; each as Mermaid source and as images. |
+| `diagrams/mermaid-config.json` | How the images are drawn. |
 | `codebase-guide.md` | This guide. |
 
 ### 2.6 `frontend/`: the dashboard
@@ -280,6 +304,7 @@ Short commands (`status`, `summary`, `validate`, `fields`) run the same way, but
 | Where are the Docker containers defined? | `deploy/compose.yaml` and `data-plane/Dockerfile`; explained in [learning/docker.md](learning/docker.md). |
 | What may be printed outside the test environment? | `data-plane/workers/cli.py` (`_show_names`) and `data-plane/core/errors.py`. |
 | Where is the test company's data? | `data-plane/devtools/tally_seed/data.py`. |
+| Is there a picture of the tables or the flow? | [diagrams/README.md](diagrams/README.md); regenerate with `./dev.ps1 diagrams`. |
 | Where is a design decision explained? | [architecture.md](architecture.md) Section 11 (the ADRs). |
 | What is planned next? | [roadmap.md](roadmap.md). |
 
@@ -300,6 +325,7 @@ Short commands (`status`, `summary`, `validate`, `fields`) run the same way, but
 | **Control plane / data plane** | The provider-hosted login and licence service (never sees client data) and the client-hosted system that holds and processes all data. |
 | **Deletion check** | A run that lists what still exists in Tally and marks as deleted what has gone. |
 | **Docker / Docker Compose** | The tool that runs the containers, and its file listing which containers to run together. |
+| **ER diagram** | Entity-relationship diagram: a picture of the tables, their keys and how they refer to each other. |
 | **Entity** | One company in LedgerBridge (one Tally company), with an id. |
 | **Environment** | A separate set of containers, settings and data: `test` (the test company) and `pilot` (client data). |
 | **`extra`** | A field on accounting rows holding everything the source sent that has no column of its own, and values that didn't fit their column. |
@@ -318,4 +344,5 @@ Short commands (`status`, `summary`, `validate`, `fields`) run the same way, but
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-13 | 0.2 | Diagrams embedded (Section 1); `devtools/diagrams.py`, `docs/diagrams/` and their test. |
 | 2026-10-13 | 0.1 | First version, from the repository as of migration 0011. |
