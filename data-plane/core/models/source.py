@@ -43,3 +43,6 @@ class RawRecord(TimestampMixin, Base):
         Enum(*PROCESS_STATUSES, name="process_status"), default="pending"
     )
     process_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Processed, but something was kept aside (e.g. a value too long for its column, kept in
+    # full in `extra`): kinds and column names only, never values (ADR-025).
+    process_warning: Mapped[str | None] = mapped_column(Text, nullable=True)
