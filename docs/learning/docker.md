@@ -51,7 +51,7 @@ Note that the API is `8001` on your PC but `8000` inside its container. The host
 | `./dev.ps1 tally-companies` | `stack.ps1 exec -T api python -m workers.cli entities ...`: runs our CLI inside the API container, which reaches TallyPrime on your PC through `host.docker.internal:9000`. |
 | `./dev.ps1 extract -Company "..."` | The same pattern with `workers.cli extract` (raw records only). |
 | `./dev.ps1 sync -Company "..."` | `stack.ps1 exec -d api python -m workers.cli sync ... --job <id>`: starts the sync **detached** (`-d`) inside the api container, so it keeps running whatever happens to your terminal. The sync writes its output to the database under the job id. `dev.ps1` then runs `exec -T api python -m workers.cli watch --job <id>` to print that output as it arrives. The worker container also runs syncs on a schedule (section 6.7). |
-| `./dev.ps1 transform retry` | Like `sync`: `exec -d api python -m workers.cli transform-retry ... --job <id>` starts it detached, then `exec -T ... watch` follows it. It reads only the database, never Tally. |
+| `./dev.ps1 transform retry` / `transform rebuild` | Like `sync`: `exec -d api python -m workers.cli transform-retry ... --job <id>` starts it detached, then `exec -T ... watch` follows it. It reads only the database, never Tally. |
 | `./dev.ps1 fields`, `./dev.ps1 promote-field ...` | `exec -T api python -m workers.cli fields` / `promote-field ...`: short commands, run attached. |
 | `./dev.ps1 sync watch` | `stack.ps1 exec -T api python -m workers.cli watch ...`: follows the latest background sync from any terminal. Ctrl+C stops only the watching. |
 | `./dev.ps1 sync abandon` | After you type `abandon`: `exec -T api python -m workers.cli abandon ... --yes`, which marks runs whose process is gone as `interrupted`. |
@@ -434,6 +434,7 @@ docker inspect ledgerbridge-test-mysql-1 --format '{{json .State.Health.Status}}
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
 | 2026-10-09 | `.dockerignore` excludes `devtools/` (ADR-014); `seed-test-data` runs on the host. |
 | 2026-10-09 | M2: databases renamed `ledgerbridge_*` (ADR-016); init script creates the `migrator`, `report_ro` and `ai_ro` users with grants; new one-off `migrate` service (section 6.6); `api` and `worker` get blanked root and migrator passwords; shared image name `ledgerbridge-data-plane:dev`. |
+| 2026-10-13 | `./dev.ps1 transform rebuild` runs detached and is followed, like `transform retry`. |
 | 2026-10-13 | `./dev.ps1 transform retry` runs detached (`exec -d`) and is followed like a sync; `fields` and `promote-field` run with `exec -T` (section 3). |
 | 2026-10-13 | `./dev.ps1 sync` runs the sync detached (`exec -d`) in the api container and follows its output with `exec -T ... watch`; `sync watch` and `sync abandon` (section 3). |
 | 2026-10-13 | `TALLY_TIMEOUT_SEC` applies to connections without their own timeout; `status` shows the effective one. Env changes reach the containers on the next `./dev.ps1 up`. |

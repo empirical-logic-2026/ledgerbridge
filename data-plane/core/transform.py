@@ -16,7 +16,11 @@
 - Fields the mapping doesn't use (e.g. Tally UDFs) go to each row's `extra` and are counted
   in the field catalogue (`source_fields`); promoted fields become dimension values on the
   voucher's lines.
-- `retry_failed` re-transforms records that failed before, with the current code.
+- `retry_failed` re-transforms records that failed before, with the current code; `rebuild`
+  re-transforms every object of the entity (processed, failed and pending) from its latest
+  raw record. Only the latest raw record of an object is ever queued again: an older
+  version must never overwrite a newer one (older failed versions become `skipped`). Rows
+  soft-deleted because their object was deleted in the source stay deleted.
 - Errors are recorded per raw record as type + field and column names; never values.
 """
 
@@ -83,7 +87,7 @@ class TransformError(ValueError):
 class TransformResult:
     processed: int = 0
     failed: int = 0
-    retried: int = 0  # failed records set back to pending by retry_failed
+    retried: int = 0  # records queued again by retry_failed or rebuild
     by_object_type: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     failed_by_object_type: Counter[str] = field(default_factory=Counter)
     entity_ids: set[int] = field(default_factory=set)
@@ -374,14 +378,22 @@ class Transformer:
     # --- driver -----------------------------------------------------------------------
 
     def run(
-        self, entity_keys: Iterable[str] | None = None, retry_failed: bool = False
+        self,
+        entity_keys: Iterable[str] | None = None,
+        retry_failed: bool = False,
+        rebuild: bool = False,
     ) -> TransformResult:
-        """Transforms the pending raw records (and, with retry_failed, those that failed
-        before) of the given entities (default: all of the connection's)."""
+        """Transforms the pending raw records of the given entities (default: all of the
+        connection's); with retry_failed also those that failed before; with rebuild every
+        object again (see the module docstring)."""
         result = TransformResult()
         keys = list(entity_keys) if entity_keys is not None else None
-        if retry_failed:
-            result.retried = self._reset_failed(keys)
+        deleted: dict[type, list[int]] = {}
+        if rebuild:
+            deleted = self._deleted_rows(keys)
+            result.retried = self._requeue(keys, ("processed", "failed", "skipped", "pending"))
+        elif retry_failed:
+            result.retried = self._requeue(keys, ("failed",))
         query = select(RawRecord.source_entity_key).where(
             RawRecord.connection_id == self.connection_id, RawRecord.process_status == "pending"
         )
@@ -389,23 +401,88 @@ class Transformer:
             query = query.where(RawRecord.source_entity_key.in_(keys))
         for entity_key in sorted(set(self.session.scalars(query.distinct()))):
             self._run_entity(entity_key, result)
+        self._keep_deleted(deleted)
         return result
 
-    def _reset_failed(self, keys: list[str] | None) -> int:
-        statement = (
-            update(RawRecord)
-            .where(
-                RawRecord.connection_id == self.connection_id,
-                RawRecord.process_status == "failed",
+    def _scope(self, query: Any, keys: list[str] | None) -> Any:
+        query = query.where(RawRecord.connection_id == self.connection_id)
+        return query.where(RawRecord.source_entity_key.in_(keys)) if keys is not None else query
+
+    def _requeue(self, keys: list[str] | None, statuses: tuple[str, ...]) -> int:
+        """Marks the latest raw record of each object pending if its status is one of
+        `statuses`. Older versions that failed are marked skipped: superseded, they must
+        never be applied after a newer version. Returns how many were queued."""
+        latest = list(
+            self.session.scalars(
+                self._scope(select(func.max(RawRecord.id)), keys).group_by(
+                    RawRecord.object_type, RawRecord.source_key
+                )
             )
-            .values(process_status="pending", process_error=None, process_warning=None)
+        )
+        queued = 0
+        for start in range(0, len(latest), 5_000):
+            queued += (
+                self.session.execute(
+                    update(RawRecord)
+                    .where(
+                        RawRecord.id.in_(latest[start : start + 5_000]),
+                        RawRecord.process_status.in_(statuses),
+                    )
+                    .values(process_status="pending", process_error=None, process_warning=None)
+                    .execution_options(synchronize_session=False)
+                ).rowcount
+                or 0
+            )
+            self.session.commit()
+        # Every latest failed record is pending now: those still failed are older versions.
+        self.session.execute(
+            self._scope(update(RawRecord), keys)
+            .where(RawRecord.process_status == "failed")
+            .values(process_status="skipped", process_error="superseded by a newer version")
             .execution_options(synchronize_session=False)
         )
-        if keys is not None:
-            statement = statement.where(RawRecord.source_entity_key.in_(keys))
-        count = self.session.execute(statement).rowcount or 0
         self.session.commit()
-        return count
+        return queued
+
+    def _deleted_rows(self, keys: list[str] | None) -> dict[type, list[int]]:
+        """Rows soft-deleted because their object was deleted in the source (to keep them
+        deleted through a rebuild: upserts mark rows as existing)."""
+        from core.models.accounting import EntitySource
+
+        entities = select(EntitySource.entity_id).where(
+            EntitySource.connection_id == self.connection_id
+        )
+        if keys is not None:
+            entities = entities.where(EntitySource.source_entity_key.in_(keys))
+        models = dict.fromkeys(m for ms in MODELS_BY_KIND.values() for m in ms)
+        return {
+            model: list(
+                self.session.scalars(
+                    select(model.id).where(
+                        model.connection_id == self.connection_id,
+                        model.entity_id.in_(entities),
+                        model.is_deleted.is_(True),
+                    )
+                )
+            )
+            for model in models
+        }
+
+    def _keep_deleted(self, deleted: dict[type, list[int]]) -> None:
+        now = utcnow()
+        for model, ids in deleted.items():
+            for start in range(0, len(ids), 5_000):
+                chunk = ids[start : start + 5_000]
+                self.session.execute(
+                    update(model).where(model.id.in_(chunk)).values(is_deleted=True, updated_at=now)
+                )
+                if model is A.Voucher:
+                    self.session.execute(
+                        update(A.VoucherLine)
+                        .where(A.VoucherLine.voucher_id.in_(chunk))
+                        .values(is_effective=False, updated_at=now)
+                    )
+        self.session.commit()
 
     def _say(self, message: str) -> None:
         if self.progress is not None:

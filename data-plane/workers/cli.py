@@ -13,6 +13,7 @@
     python -m workers.cli summary
     python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
     python -m workers.cli transform-retry --connection tally-pilot [--entity NAME]
+    python -m workers.cli transform-rebuild --connection tally-pilot [--entity NAME]
     python -m workers.cli fields [--entity-id 3]
     python -m workers.cli promote-field --field-id 12 --code SALESMAN --name "Salesman"
 
@@ -20,6 +21,8 @@
 soft-deletes what no longer exists in the source (also run by `sync --check-deletions`).
 `sync` and `check-deletions` validate afterwards (VAL-001, VAL-002, VAL-005 to VAL-009), like
 the worker does.
+`transform-rebuild` does the same for every stored object (processed ones too), so all of it
+gets the current mapping, `extra` fields and the field catalogue.
 `transform-retry` transforms stored records again (failed ones and any left pending) with
 the current code, without contacting the source, then validates the entities it touched.
 Companies appear as `entity <id> (company <n>)` everywhere (workers.entities.Labels).
@@ -173,17 +176,25 @@ def _parser() -> argparse.ArgumentParser:
         help="skip the source's controls (voucher counts, stock, bills, year ends)",
     )
 
-    retry = sub.add_parser(
-        "transform-retry",
-        help="transform stored records again (failed and pending) without contacting the "
-        "source, then validate",
-    )
-    connection_args(retry)
-    retry.add_argument(
-        "--entity", action="append", help="entity name as stored (repeatable); default: all"
-    )
-    retry.add_argument("--no-validate", action="store_true", help="skip validation afterwards")
-    retry.add_argument("--job", help="job id: also write the output to sync_logs, for `watch`")
+    for command, help_text in (
+        (
+            "transform-retry",
+            "transform stored records again (failed and pending) without contacting the "
+            "source, then validate",
+        ),
+        (
+            "transform-rebuild",
+            "transform every stored object again (processed, failed and pending) without "
+            "contacting the source, then validate",
+        ),
+    ):
+        retry = sub.add_parser(command, help=help_text)
+        connection_args(retry)
+        retry.add_argument(
+            "--entity", action="append", help="entity name as stored (repeatable); default: all"
+        )
+        retry.add_argument("--no-validate", action="store_true", help="skip validation afterwards")
+        retry.add_argument("--job", help="job id: also write the output to sync_logs, for `watch`")
 
     fields = sub.add_parser(
         "fields", help="the field catalogue: fields with no column (e.g. custom fields)"
@@ -327,6 +338,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _finish_job_log(job, code)
 
 
+# Commands that can run as a background job, their output written to sync_logs (ADR-024).
+JOB_COMMANDS = ("sync", "check-deletions", "transform-retry", "transform-rebuild")
+
+
 def _terminate_raises_system_exit() -> None:
     """`docker stop` and kill send SIGTERM: end like Ctrl+C, so the run is marked
     interrupted instead of being left 'running'."""
@@ -336,7 +351,7 @@ def _terminate_raises_system_exit() -> None:
 
 def _start_job_log(session: Session, args: argparse.Namespace) -> JobLog | None:
     # Only the jobs themselves: `watch --job` reads that job's log, it must never write to it.
-    if args.command not in ("sync", "check-deletions", "transform-retry") or not args.job:
+    if args.command not in JOB_COMMANDS or not args.job:
         return None
     connection = get_or_create_connection(session, args.connection, args.source)
     session.commit()
@@ -365,7 +380,7 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _fields(session, args)
     if args.command == "promote-field":
         return _promote(session, args)
-    if args.command == "transform-retry":
+    if args.command in ("transform-retry", "transform-rebuild"):
         return _transform_retry(session, args)
     if args.command == "summary":
         return _summary(session)
@@ -809,7 +824,7 @@ def _print_sync(r: SyncResult) -> int:
         if r.failed_by_object_type:
             print(f"  failed by type: {dict(sorted(r.failed_by_object_type.items()))}")
         if r.retried:
-            print(f"  failed records retried: {r.retried:,}")
+            print(f"  records queued again (retry or rebuild): {r.retried:,}")
         for e in r.entity_results:
             print(f"  {_entity_line(e)}")
     labels = {e.name: e.label for e in r.entity_results}
@@ -1202,7 +1217,13 @@ def _transform_retry(session: Session, args: argparse.Namespace) -> int:
         )
     try:
         result = run_transform(
-            session, connection, connector, keys, progress=_progress, after_entity=hook
+            session,
+            connection,
+            connector,
+            keys,
+            progress=_progress,
+            after_entity=hook,
+            rebuild=args.command == "transform-rebuild",
         )
     except SyncBusyError as exc:
         print(str(exc), file=sys.stderr)
@@ -1216,7 +1237,8 @@ def _transform_retry(session: Session, args: argparse.Namespace) -> int:
             code |= 1
     _print_breakdowns(session, connection.id)
     validation = after.validation_status if not args.no_validate else "skipped"
-    print(f"Result: transform {result.status}; validation {validation}")
+    kind = "rebuild" if args.command == "transform-rebuild" else "transform"
+    print(f"Result: {kind} {result.status}; validation {validation}")
     return code
 
 

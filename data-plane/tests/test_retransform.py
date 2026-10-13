@@ -2,6 +2,7 @@
 root causes in validation, values that don't fit their column, and the flexible accounting
 layer (extra, field catalogue, promoted fields). ADR-025."""
 
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -516,3 +517,121 @@ def test_bills_compared_only_as_of_today(db: Session, sim) -> None:  # noqa: ANN
     validator, _ = _validator(db, sim, date.today() - timedelta(days=30))
     report = validator.run(None, controls=SourceControls(bill_outstanding={}, opening_bills={}))
     assert any(f.check_code == "bills_not_compared" for f in report.findings)
+
+
+# --- transform rebuild -----------------------------------------------------------------------
+
+
+def test_rebuild_transforms_every_record_again_without_the_source(
+    db: Session, sim, monkeypatch: pytest.MonkeyPatch
+) -> None:  # noqa: ANN001
+    connection, connector = sim
+    transport = SimTally(per_day=1, udf=True)
+    # "Old code": no extra fields were kept.
+    monkeypatch.setattr("connectors.tally.mapping.unmapped_fields", lambda element, kind: None)
+    _sync(db, connection, connector, transport)
+    monkeypatch.undo()
+    assert db.scalar(select(A.Voucher.extra).limit(1)) is None
+    assert _count(db, A.SourceField) == 0
+    vouchers, lines = _count(db, A.Voucher), _count(db, A.VoucherLine)
+
+    requests = len(transport.requests)
+    out: list[str] = []
+    result = run_transform(db, connection, connector(transport), progress=out.append, rebuild=True)
+    assert len(transport.requests) == requests  # the source wasn't contacted
+    assert result.status == "succeeded" and result.failed == 0
+    raw = _count(db, RawRecord)
+    assert result.retried == raw  # every object, from its latest (here only) raw record
+    assert any("records rebuilt; transformed" in line for line in out)
+    # Idempotent: same rows, children replaced, extra and catalogue filled.
+    assert (_count(db, A.Voucher), _count(db, A.VoucherLine)) == (vouchers, lines)
+    db.expire_all()
+    assert db.scalar(select(A.Voucher.extra).limit(1))["UDF:REFNO.LIST/UDF:REFNO"] == "R0"
+    field = db.scalar(
+        select(A.SourceField).where(A.SourceField.field_path == "UDF:REFNO.LIST/UDF:REFNO")
+    )
+    assert field.record_count == transport.total_vouchers
+    # Twice is the same as once.
+    run_transform(db, connection, connector(transport), rebuild=True)
+    db.refresh(field)
+    assert field.record_count == transport.total_vouchers
+    assert (_count(db, A.Voucher), _count(db, A.VoucherLine)) == (vouchers, lines)
+
+
+def _newer_version(db: Session, key: str, narration: str) -> RawRecord:
+    """A second raw record of the same voucher (it changed in the source)."""
+    old = db.scalar(select(RawRecord).where(RawRecord.source_key == key))
+    payload = re.sub(r"(<NARRATION[^>]*>)[^<]*", r"\g<1>" + narration, old.payload)
+    assert payload != old.payload
+    new = RawRecord(
+        connection_id=old.connection_id, source_entity_key=old.source_entity_key,
+        object_type=old.object_type, source_key=key, source_alter_id=(old.source_alter_id or 0) + 1,
+        payload_format="xml", payload=payload, payload_hash="n" * 64, received_at=old.received_at,
+        process_status="pending",
+    )  # fmt: skip
+    db.add(new)
+    db.commit()
+    return new
+
+
+def test_older_versions_never_overwrite_newer_ones(db: Session, sim) -> None:  # noqa: ANN001
+    connection, connector = sim
+    transport = SimTally(per_day=1)
+    _sync(db, connection, connector, transport)
+    key = "sim0-20260410-0000"
+    newer = _newer_version(db, key, "changed")
+    run_transform(db, connection, connector(transport), retry_failed=False)
+    voucher = db.scalar(select(A.Voucher).where(A.Voucher.source_key == key))
+    assert voucher.narration == "changed"
+    # The older version had failed before: retrying must not apply it over the newer one.
+    db.execute(
+        RawRecord.__table__.update()
+        .where(RawRecord.source_key == key, RawRecord.id != newer.id)
+        .values(process_status="failed", process_error="TransformError: old")
+    )
+    db.commit()
+    result = run_transform(db, connection, connector(transport))
+    assert result.retried == 0
+    statuses = dict(
+        db.execute(
+            select(RawRecord.id, RawRecord.process_status).where(RawRecord.source_key == key)
+        ).all()
+    )
+    assert statuses[newer.id] == "processed"
+    assert sorted(statuses.values()) == ["processed", "skipped"]
+    run_transform(db, connection, connector(transport), rebuild=True)  # latest version only
+    db.refresh(voucher)
+    assert voucher.narration == "changed"
+
+
+def test_rebuild_keeps_objects_deleted_in_the_source_deleted(db: Session, sim) -> None:  # noqa: ANN001
+    from core.transform import mark_deleted
+
+    connection, connector = sim
+    transport = SimTally(per_day=1)
+    _sync(db, connection, connector, transport)
+    gone = "sim0-20260411-0000"
+    entity_id = db.scalar(select(A.Entity.id))
+    existing = {"voucher": set(db.scalars(select(A.Voucher.source_key))) - {gone}}
+    mark_deleted(db, connection.id, entity_id, existing)
+    run_transform(db, connection, connector(transport), rebuild=True)
+    voucher = db.scalar(select(A.Voucher).where(A.Voucher.source_key == gone))
+    db.refresh(voucher)
+    assert voucher.is_deleted
+    effective = db.scalars(
+        select(A.VoucherLine.is_effective).where(A.VoucherLine.voucher_id == voucher.id)
+    ).all()
+    assert effective and not any(effective)
+
+
+def test_transform_rebuild_command(db: Session, run_cli) -> None:  # noqa: ANN001
+    run_cli("connect", "--connection", "tally-pilot", "--source", "tally", "--origin", "backup",
+            "--all")  # fmt: skip
+    run_cli("sync", "--connection", "tally-pilot", "--full", "--no-validate")
+    requests = len(run_cli.transport.requests)
+    code, out = run_cli("transform-rebuild", "--connection", "tally-pilot", "--no-validate")
+    assert len(run_cli.transport.requests) == requests
+    assert "entity 1 (company 1): transforming every stored record again" in out
+    assert "records rebuilt; transformed" in out and ", 1 failed" in out  # the bad voucher
+    assert "Result: rebuild succeeded; validation skipped" in out
+    assert "Sim Co" not in out

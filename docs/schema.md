@@ -84,7 +84,7 @@ The users and the four databases are created when MySQL first initialises its vo
 | payload | LONGTEXT | Original record, unchanged. |
 | payload_hash | CHAR(64) | SHA-256, skips unchanged re-deliveries. |
 | received_at | DATETIME(6) | |
-| process_status | ENUM('pending','processed','failed','skipped') | |
+| process_status | ENUM('pending','processed','failed','skipped') | `skipped`: an older version of an object, superseded by a newer raw record (never transformed again). `transform retry` and `transform rebuild` only ever queue an object's latest raw record. |
 | process_error | TEXT NULL | Why it failed: error type and a short message naming fields, tables and columns, never values. MySQL data errors as `MySQL <code> <kind>: <table>.<column> (<size>)`. |
 | process_warning | TEXT NULL | Processed, but values were kept aside (`<kind> (<size>): <table>.<column>`; migration `0010`). |
 
@@ -598,6 +598,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-13 | 0.16 | `raw_records.process_status` `skipped` used for superseded versions; `transform rebuild` (no schema change). |
 | 2026-10-13 | 0.15 | Migration `0010` (ADR-025): `extra` JSON, `source_fields`, promoted dimensions, wider source text columns, `raw_records.process_warning`, run type `transform`; validation checks VAL-005 to VAL-009. |
 | 2026-10-13 | 0.14 | `sync_runs` status `interrupted`, `heartbeat_at`, `pid`, `host`; `sync_logs`; `connections.config.xml_prefixes_seen` (migration `0009`, ADR-024). |
 | 2026-10-13 | 0.13 | `sync_unverified_ranges` (migration `0008`); `connections.config` `pause_sec`, `part_month_requests`; `timeout_sec` optional (ADR-023). |

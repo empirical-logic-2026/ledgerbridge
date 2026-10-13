@@ -174,7 +174,14 @@ Raw records are kept exactly as Tally sent them, so records that failed to trans
 ./dev.ps1 transform retry -Env pilot -Company "<exact name>" # one company
 ```
 
-It runs in the background like a sync (follow it again with `./dev.ps1 sync watch -Env pilot`), prints progress per object type every 10,000 records, and ends with a `Result:` line. Afterwards it **validates** the companies it touched, which reads Tally's own figures: have TallyPrime running with the companies loaded, or add `-NoValidate` and run `./dev.ps1 validate -Env pilot` later.
+To transform **every** stored record again with the current code (records transformed by older code then get the new `extra` fields and field catalogue too), use `rebuild`, also without Tally:
+
+```powershell
+./dev.ps1 transform rebuild -Env pilot                         # every company
+./dev.ps1 transform rebuild -Env pilot -Company "<exact name>" # one company
+```
+
+Each object is rebuilt from its latest raw record, rows are updated in place (no duplicates), a voucher's lines are replaced, and objects deleted in Tally stay deleted. `retry` and `rebuild` both run in the background like a sync (follow them again with `./dev.ps1 sync watch -Env pilot`), prints progress per object type every 10,000 records, and ends with a `Result:` line. Afterwards it **validates** the companies it touched, which reads Tally's own figures: have TallyPrime running with the companies loaded, or add `-NoValidate` and run `./dev.ps1 validate -Env pilot` later.
 
 **One bad value no longer fails a batch:** a value too long for its column (or out of range, an invalid date, invalid characters) is kept in full in the record's `extra` and reported as a warning in `summary`. Only a record whose amounts, quantities or date can't be stored at all fails, alone, and `summary` says why.
 
@@ -236,6 +243,7 @@ Fix the root cause first (share the `summary` breakdown), then run `transform re
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-13 | 0.8 | `transform rebuild` (every stored record again, without Tally); `retry` and `rebuild` never apply an older version of an object over a newer one. |
 | 2026-10-13 | 0.7 | After the fifth attempt (2,170 ledgers and 238,392 vouchers failed, "Transform batch failed: DataError"): `transform retry` (step 7); one way to name companies (`entity <id> (company <n>)`); failure and warning breakdowns in `summary`; values that don't fit kept in `extra`; field catalogue (`fields`, `promote-field`); validation compares voucher counts, stock quantities, bills and year-end balances, and names the root cause. |
 | 2026-10-13 | 0.6 | Fifth attempt (unbound `UDF:` prefix; Tally still busy after a timeout; terminal lost mid-run; Ctrl+C left a run running): custom-field prefixes parsed and shown in `summary`; source checks wait up to the timeout; syncs run in the background, `sync watch`; `interrupted` runs, stale-run detection, `sync abandon`. |
 | 2026-10-13 | 0.5 | Fourth attempt (Educational mode, part-month requests empty, unverified month carried on): timeout in effect and its source in `status`/`summary`; `connect -TimeoutSec/-PauseSec/-PartMonth`; whole-month retries; unverified months stop the sync and are re-fetched; `sync full -From`. |
