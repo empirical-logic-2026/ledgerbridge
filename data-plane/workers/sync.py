@@ -368,10 +368,12 @@ def run_transform(
     progress: Progress | None = None,
     retry_failed: bool = True,
     after_entity: AfterEntity | None = None,
+    rebuild: bool = False,
 ) -> SyncResult:
-    """Transforms the stored raw records again, without contacting the source: those that
-    failed before (with retry_failed) and any left pending, entity by entity, with the
-    current code. Runs as a `transform` run, so it never overlaps a sync. `after_entity`
+    """Transforms the stored raw records again, without contacting the source, entity by
+    entity, with the current code: those that failed before (retry_failed) and any left
+    pending; with `rebuild` every object of the entities (processed too), from its latest
+    raw record. Runs as a `transform` run, so it never overlaps a sync. `after_entity`
     (validation) runs after each entity."""
     from core.models.accounting import EntitySource
     from core.models.source import RawRecord
@@ -379,7 +381,10 @@ def run_transform(
     say = progress or _quiet
     run, result = _open_run(session, connection, TRANSFORM)
     try:
-        statuses = ("failed", "pending") if retry_failed else ("pending",)
+        if rebuild:
+            statuses: tuple[str, ...] = ("processed", "failed", "pending", "skipped")
+        else:
+            statuses = ("failed", "pending") if retry_failed else ("pending",)
         waiting = select(RawRecord.source_entity_key).where(
             RawRecord.connection_id == connection.id, RawRecord.process_status.in_(statuses)
         )
@@ -402,14 +407,16 @@ def run_transform(
         else:
             say("Nothing to transform: no failed or pending records.")
         for outcome in outcomes:
-            say(f"{outcome.label}: transforming stored records again (the source isn't contacted)")
+            what = "every stored record" if rebuild else "stored records"
+            say(f"{outcome.label}: transforming {what} again (the source isn't contacted)")
             transformed = transformer(session, connection, connector, say).run(
-                [outcome.key], retry_failed=retry_failed
+                [outcome.key], retry_failed=retry_failed, rebuild=rebuild
             )
             _add_transformed(result, outcome, transformed)
             outcome.status = "succeeded"
+            queued = "records rebuilt" if rebuild else "failed records retried"
             say(
-                f"{outcome.label}: {transformed.retried:,} failed records retried; transformed "
+                f"{outcome.label}: {transformed.retried:,} {queued}; transformed "
                 f"{transformed.processed:,}, {transformed.failed:,} failed"
             )
             result.entity_keys.append(outcome.key)

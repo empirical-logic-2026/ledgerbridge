@@ -18,6 +18,7 @@
     ./dev.ps1 sync deletions
     ./dev.ps1 validate
     ./dev.ps1 transform retry                   (transform failed records again; no Tally)
+    ./dev.ps1 transform rebuild                 (transform every stored record again; no Tally)
     ./dev.ps1 fields
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
@@ -36,6 +37,7 @@
     ./dev.ps1 sync watch -Env pilot             (follow a running sync again)
     ./dev.ps1 sync abandon -Env pilot           (mark runs whose process is gone interrupted)
     ./dev.ps1 transform retry -Env pilot        (failed records again with the current code)
+    ./dev.ps1 transform rebuild -Env pilot      (every stored record again with the current code)
     ./dev.ps1 summary -Env pilot
     ./dev.ps1 reset -Env pilot
 #>
@@ -344,12 +346,13 @@ switch ($Command) {
         # `transform retry`: transform the stored raw records again (those that failed, and
         # any left pending) with the current code, without contacting Tally, then validate
         # the companies it touched (validation reads Tally's own figures; -NoValidate skips
-        # it). Runs in the background like a sync and is followed here (ADR-024).
-        if ($Service -ne 'retry') { throw 'Usage: ./dev.ps1 transform retry [-Company "<name>"] [-NoValidate]' }
+        # it). `transform rebuild`: the same for every stored object, processed ones too.
+        # Runs in the background like a sync and is followed here (ADR-024).
+        if ($Service -notin @('retry', 'rebuild')) { throw 'Usage: ./dev.ps1 transform retry|rebuild [-Company "<name>"] [-NoValidate]' }
         Assert-EnvFile
         Assert-ApiRunning
         $job = [guid]::NewGuid().ToString()
-        $retryArgs = @('python', '-m', 'workers.cli', 'transform-retry', '--connection', $connection, '--job', $job)
+        $retryArgs = @('python', '-m', 'workers.cli', "transform-$Service", '--connection', $connection, '--job', $job)
         foreach ($name in $Company) { $retryArgs += @('--entity', $name) }
         if ($NoValidate) { $retryArgs += '--no-validate' }
         Invoke-Stack exec -d api @retryArgs
