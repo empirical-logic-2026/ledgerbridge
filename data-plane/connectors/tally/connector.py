@@ -1,5 +1,6 @@
 """Tally connector: implements connectors.base.Connector over Tally's XML interface."""
 
+import re
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping
@@ -261,6 +262,44 @@ class TallyConnector:
 
     master_types = tuple(spec.object_type for spec in envelopes.MASTER_SPECS)
 
+    # Lists the mapping reads in a voucher; others are reported by `validate analyse`.
+    _READ_LISTS = frozenset((
+        "ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST", "ALLINVENTORYENTRIES.LIST",
+        "INVENTORYENTRIES.LIST", "INVENTORYENTRIESIN.LIST", "INVENTORYENTRIESOUT.LIST",
+        "BILLALLOCATIONS.LIST", "CATEGORYALLOCATIONS.LIST", "COSTCENTREALLOCATIONS.LIST",
+        "BATCHALLOCATIONS.LIST", "ACCOUNTINGALLOCATIONS.LIST", "LANGUAGENAME.LIST",
+        "NAME.LIST",
+        # A ledger entry's copy of the inventory entries: read from ALLINVENTORYENTRIES.
+        "INVENTORYALLOCATIONS.LIST",
+    ))  # fmt: skip
+
+    @classmethod
+    def payload_hints(cls, object_type: str, payload: str) -> set[str]:
+        """Patterns in a stored record that can explain a mismatch (kinds only, never
+        values): foreign currency amounts, alternate or compound units, several godowns or
+        batches, and lists of Tally's own that the mapping doesn't read (Tally's tag names;
+        custom, prefixed ones are counted, not named)."""
+        hints: set[str] = set()
+        if object_type != envelopes.VOUCHERS.object_type:
+            return hints
+        if _FOREX.search(payload):
+            hints.add("foreign currency amounts")
+        for quantity in _QUANTITY.findall(payload):
+            if "=" in quantity:
+                hints.add("alternate units")
+            elif len(_NUMBERS.findall(quantity)) > 1:
+                hints.add("compound units")
+        if len(set(_GODOWN.findall(payload))) > 1 or len(set(_BATCH.findall(payload))) > 1:
+            hints.add("several godowns or batches")
+        if "INVENTORYENTRIESIN.LIST" in payload or "INVENTORYENTRIESOUT.LIST" in payload:
+            hints.add("stock journal in/out entries")
+        for tag in set(_LIST_TAG.findall(payload)):  # lists with content only
+            if ":" in tag:
+                hints.add("unread list: a custom (prefixed) list")
+            elif tag not in cls._READ_LISTS:
+                hints.add(f"unread list: {tag}")
+        return hints
+
     def master_keys(self, entity: SourceEntity, object_type: str) -> set[str]:
         """GUIDs of every master of a type that Tally lists now (are our requests
         complete?)."""
@@ -438,6 +477,15 @@ class TallyConnector:
             return body  # parsing it raises Tally's own error
         self._names[entity.key] = current
         return self._post(build(current), timeout)
+
+
+_FOREX = re.compile(r"<AMOUNT[^>]*>[^<]*=")
+_QUANTITY = re.compile(r"<(?:ACTUALQTY|BILLEDQTY)[^>]*>([^<]*)<")
+_NUMBERS = re.compile(r"\d+(?:\.\d+)?")
+_GODOWN = re.compile(r"<GODOWNNAME[^>]*>([^<]*)<")
+_BATCH = re.compile(r"<BATCHNAME[^>]*>([^<]*)<")
+# A list element with content (Tally writes some lists empty in every voucher).
+_LIST_TAG = re.compile(r"<([A-Za-z][\w.:]*\.LIST)(?:\s[^>]*)?>\s*<(?!/)")
 
 
 def _canonical(text: str | None) -> Decimal:

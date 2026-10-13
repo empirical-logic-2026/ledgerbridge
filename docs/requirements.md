@@ -152,6 +152,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | VAL-006 | Each stock item's closing quantity matches the source's. | P1 |
 | VAL-007 | Each party's bill-wise outstanding matches the source's. | P1 |
 | VAL-008 | Ledger closing balances match the source at every financial year end, not only the validation date. | P1 |
+| VAL-010 | An analysis of validation mismatches tests explanations that can be checked automatically (opening balances, signs, voucher types counted differently, cancelled, optional and post-dated vouchers, financial year boundaries, units, stock journals, rounding, foreign currency, bills) and reports how many mismatches each explains, with counts and the source's standard names only. | P1 |
 | VAL-009 | Validation results name the root cause: records that failed to transform, and how many other failures are likely their consequences. | P1 |
 
 ### 4.8 Reporting and dashboards
@@ -344,6 +345,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
+| 2026-10-14 | 0.9 | VAL-010: analysis of validation mismatches (`validate analyse`). |
 | 2026-10-13 | 0.8 | DAT-011: rules for resolving references by name, and a diagnostic for those that don't resolve (ADR-027). |
 | 2026-10-13 | 0.7 | Budget planning and analysis (Section 4.12): BUD-001 to BUD-016; default budget permissions per role (Section 3); RPT-008 points to budgets; phase 1a includes budgets (milestone M7b). ADR-026. |
 | 2026-10-13 | 0.6 | DAT-009 and DAT-010 (custom fields kept and catalogued; values that don't fit never fail other records), VAL-005 to VAL-009 (voucher counts, stock quantities, bill-wise outstanding, year-end balances, root causes). ADR-025. |

@@ -20,6 +20,7 @@
     ./dev.ps1 transform retry                   (transform failed records again; no Tally)
     ./dev.ps1 transform rebuild                 (transform every stored record again; no Tally)
     ./dev.ps1 transform explain [-CheckSource]  (why references didn't resolve; counts only)
+    ./dev.ps1 validate analyse                  (test explanations for validation mismatches)
     ./dev.ps1 fields
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
@@ -41,6 +42,7 @@
     ./dev.ps1 transform retry -Env pilot        (failed records again with the current code)
     ./dev.ps1 transform rebuild -Env pilot      (every stored record again with the current code)
     ./dev.ps1 transform explain -Env pilot      (why references didn't resolve; -CheckSource asks Tally)
+    ./dev.ps1 validate analyse -Env pilot       (why validation mismatches; reads Tally's figures)
     ./dev.ps1 summary -Env pilot
     ./dev.ps1 reset -Env pilot
 #>
@@ -343,6 +345,18 @@ switch ($Command) {
         # on their own; this runs it on demand.
         Assert-EnvFile
         Assert-ApiRunning
+        if ($Service -eq 'analyse') {
+            # `validate analyse`: tests explanations for every validation mismatch (counts,
+            # patterns and Tally's standard names only). Reads Tally's own figures (read-only),
+            # in the background like a sync, followed here.
+            $job = [guid]::NewGuid().ToString()
+            $analyseArgs = @('python', '-m', 'workers.cli', 'validate-analyse', '--connection', $connection, '--job', $job)
+            foreach ($name in $Company) { $analyseArgs += @('--entity', $name) }
+            Invoke-Stack exec -d api @analyseArgs
+            Write-Host "Started analysis job $job in the background. Following it; closing this window doesn't stop it (follow again with: ./dev.ps1 sync watch -Env $Env)."
+            Invoke-Checked exec -T api python -m workers.cli watch --connection $connection --job $job
+            return
+        }
         $validateArgs = @('python', '-m', 'workers.cli', 'validate', '--connection', $connection, '--source', 'tally')
         foreach ($name in $Company) { $validateArgs += @('--entity', $name) }
         if ($Quick) { $validateArgs += '--quick' }

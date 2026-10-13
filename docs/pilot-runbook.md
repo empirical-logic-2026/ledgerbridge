@@ -212,6 +212,23 @@ When records failed to transform, the validation output starts the explanation w
 
 Fix the root cause first (share the `summary` breakdown), then run `transform retry`.
 
+### 8. Why validation still differs: `validate analyse`
+
+When every record transformed but validation still finds mismatches, analyse them (reads Tally's own figures, read-only: have the companies loaded):
+
+```powershell
+./dev.ps1 validate analyse -Env pilot                          # every company
+./dev.ps1 validate analyse -Env pilot -Company "<exact name>"  # one company
+```
+
+It runs in the background like a sync (follow it again with `./dev.ps1 sync watch -Env pilot`) and prints, per company, counts and patterns only:
+- **ledgers that differ today**, and how many each explanation fits: the opening balance missing or counted twice, a reversed sign, one voucher type's lines counted here but not by Tally (or the other way round, for cancelled, optional, deleted or non-posting vouchers), post-dated vouchers, Tally restarting income and expense ledgers each financial year, and the first year end where each ledger differs; unexplained ones by primary group (Tally's reserved names only);
+- **each year end**: how many ledgers differ and what explains them;
+- **the profit carrier**, **unbalanced vouchers** (by voucher type and pattern: rounding, foreign currency, a reversed sign, a single line, on-account bills, inventory lines), **trial balance** dates, **bills** and **stock quantities** (each voucher type, opening quantity, physical stock, alternate or compound units, several godowns or batches);
+- **stored vouchers by type**: how many, whether stock vouchers have inventory lines here, and what their content holds that isn't read yet (Tally's tag names).
+
+Share the output as it is.
+
 ## Reading the results
 
 | Line | Meaning | What to do |
@@ -259,6 +276,7 @@ Fix the root cause first (share the `summary` breakdown), then run `transform re
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-14 | 0.10 | `validate analyse` (step 8); stock journal entries read; orders and memorandum don't move stock; foreign currency amounts in the base currency; `watch` follows jobs that are busy without printing. |
 | 2026-10-13 | 0.9 | `transform explain` (step 7) for references that don't resolve; references resolve by alias and normalisation; vouchers of types that don't post to the books no longer count in balances; unbalanced vouchers by Tally's predefined type. |
 | 2026-10-13 | 0.8 | `transform rebuild` (every stored record again, without Tally); `retry` and `rebuild` never apply an older version of an object over a newer one. |
 | 2026-10-13 | 0.7 | After the fifth attempt (2,170 ledgers and 238,392 vouchers failed, "Transform batch failed: DataError"): `transform retry` (step 7); one way to name companies (`entity <id> (company <n>)`); failure and warning breakdowns in `summary`; values that don't fit kept in `extra`; field catalogue (`fields`, `promote-field`); validation compares voucher counts, stock quantities, bills and year-end balances, and names the root cause. |

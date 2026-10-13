@@ -11,21 +11,28 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
-_NUMBER = re.compile(r"^\s*(-?\d+(?:\.\d+)?)")
+_DIGITS = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 _INVENTORY_LISTS = ("ALLINVENTORYENTRIES.LIST", "INVENTORYENTRIES.LIST")
 
 
 def tally_amount(text: str | None) -> Decimal | None:
+    """A Tally amount in the company's base currency. A foreign currency amount comes as
+    `-$100.00 @ ₹82.00/$ = -₹8200.00`: the base amount is the part after the last `=`.
+    Currency symbols and thousands separators around the number are ignored."""
     if not text:
         return None
-    match = _NUMBER.match(text)
+    if "=" in text:
+        text = text.rsplit("=", 1)[1]
+    match = _DIGITS.search(text)
     if not match:
         return None
+    negative = "-" in text[: match.start()]
     try:
-        return Decimal(match.group(1))
+        value = Decimal(match.group(0).replace(",", ""))
     except InvalidOperation:
         return None
+    return -value if negative else value
 
 
 def _first_present(voucher: ET.Element, tags: Iterable[str]) -> list[ET.Element]:

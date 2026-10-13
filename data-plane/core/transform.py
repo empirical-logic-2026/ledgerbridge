@@ -352,6 +352,7 @@ class _TypeInfo:
     base_type: str
     is_accounting: bool
     standard_type: str | None
+    moves_stock: bool
 
 
 class _TypeTree:
@@ -377,10 +378,12 @@ class _TypeTree:
     def info(self, record: CanonicalVoucherType) -> _TypeInfo:
         base = self._inherit(record, "base_type")
         accounting = self._inherit(record, "is_accounting")
+        stock = self._inherit(record, "moves_stock")
         return _TypeInfo(
             base_type=base or "other",
             is_accounting=True if accounting is None else bool(accounting),
             standard_type=self._inherit(record, "standard_type"),
+            moves_stock=True if stock is None else bool(stock),
         )
 
 
@@ -1073,6 +1076,7 @@ class Transformer:
                 "base_type": self.types.info(r).base_type,
                 "is_accounting": self.types.info(r).is_accounting,
                 "standard_type": self.types.info(r).standard_type,
+                "moves_stock": self.types.info(r).moves_stock,
                 "is_inventory": r.is_inventory,
             },
             result,

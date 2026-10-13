@@ -112,6 +112,11 @@ NON_ACCOUNTING_VOUCHER_TYPES = {
     "Material Out", "Rejections In", "Rejections Out", "Memorandum", "Reversing Journal",
     "Attendance",
 }  # fmt: skip
+# Voucher types whose inventory entries don't move stock (orders record what is ordered;
+# memorandum vouchers aren't in the books).
+NON_STOCK_VOUCHER_TYPES = {
+    "Sales Order", "Purchase Order", "Job Work In Order", "Job Work Out Order", "Memorandum",
+}  # fmt: skip
 # Tally's predefined voucher types: every voucher type derives from one of them. Only these
 # names are ever shown outside the test environment (they are Tally's, not the client's).
 STANDARD_VOUCHER_TYPES = frozenset((
@@ -364,6 +369,7 @@ def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
             is_accounting=None,
             is_inventory=_flag(element, "AFFECTSSTOCK"),
             parent_name=parent,
+            moves_stock=None,
         )
     return CanonicalVoucherType(
         source_key=key,
@@ -373,6 +379,7 @@ def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
         is_inventory=_flag(element, "AFFECTSSTOCK"),
         parent_name=parent,
         standard_type=standard,
+        moves_stock=standard not in NON_STOCK_VOUCHER_TYPES,
     )
 
 
@@ -427,12 +434,15 @@ def _line(entry: ET.Element) -> CanonicalLine:
     )
 
 
-def _inventory(entry: ET.Element) -> CanonicalInventoryLine | None:
+def _inventory(entry: ET.Element, inward: bool | None = None) -> CanonicalInventoryLine | None:
+    """One inventory entry. `inward` is given for stock journal entries (in: produced or
+    received; out: consumed or sent), otherwise ISDEEMEDPOSITIVE decides."""
     item = _text(entry, "STOCKITEMNAME")
     if not item:
         return None
     quantity, unit_name = _quantity(_text(entry, "ACTUALQTY") or _text(entry, "BILLEDQTY"))
-    inward = _flag(entry, "ISDEEMEDPOSITIVE")
+    if inward is None:
+        inward = _flag(entry, "ISDEEMEDPOSITIVE")
     batch = entry.find("BATCHALLOCATIONS.LIST")
     discount = _rate(_text(entry, "DISCOUNT"))
     return CanonicalInventoryLine(
@@ -454,16 +464,23 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
     voucher_type_name = _text(element, "VOUCHERTYPENAME")
     if not voucher_type_name:
         raise MappingError("voucher without VOUCHERTYPENAME")
-    inventory_entries = element.findall("ALLINVENTORYENTRIES.LIST") or element.findall(
-        "INVENTORYENTRIES.LIST"
-    )
+    inventory_entries: list[tuple[ET.Element, bool | None]] = [
+        (e, None)
+        for e in element.findall("ALLINVENTORYENTRIES.LIST")
+        or element.findall("INVENTORYENTRIES.LIST")
+    ]
+    # Stock journals (and manufacturing journals) list consumed and produced items apart.
+    inventory_entries += [(e, True) for e in element.findall("INVENTORYENTRIESIN.LIST")]
+    inventory_entries += [(e, False) for e in element.findall("INVENTORYENTRIESOUT.LIST")]
     return CanonicalVoucher(
         source_key=key,
         voucher_type_name=voucher_type_name,
         voucher_number=_text(element, "VOUCHERNUMBER") or "",
         voucher_date=voucher_date,
         lines=tuple(_line(entry) for entry in postings(element)),
-        inventory=tuple(line for e in inventory_entries if (line := _inventory(e)) is not None),
+        inventory=tuple(
+            line for e, inward in inventory_entries if (line := _inventory(e, inward)) is not None
+        ),
         reference_number=_text(element, "REFERENCE"),
         reference_date=parser.tally_date(_text(element, "REFERENCEDATE")),
         party_ledger_name=_text(element, "PARTYLEDGERNAME"),
@@ -517,8 +534,10 @@ USED_FIELDS: dict[str, frozenset[str]] = {
         "PARTYLEDGERNAME", "NARRATION", "ISCANCELLED", "ISOPTIONAL", "ISPOSTDATED",
         *(f"{lst}/{path}" for lst in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST")
           for path in _LEDGER_ENTRY),
-        *(f"{lst}/{path}" for lst in ("ALLINVENTORYENTRIES.LIST", "INVENTORYENTRIES.LIST")
-          for path in _INVENTORY_ENTRY),
+        *(f"{lst}/{path}" for lst in (
+            "ALLINVENTORYENTRIES.LIST", "INVENTORYENTRIES.LIST", "INVENTORYENTRIESIN.LIST",
+            "INVENTORYENTRIESOUT.LIST",
+        ) for path in _INVENTORY_ENTRY),
     )),
 }  # fmt: skip
 

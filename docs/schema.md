@@ -105,6 +105,7 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 | `0007` | Pilot | `ledgerbridge_system.sync_checkpoints`, `ledgerbridge_system.sync_slow_periods` (Section 5.1, ADR-022) |
 | `0008` | Pilot | `ledgerbridge_system.sync_unverified_ranges` (Section 5.1, ADR-023) |
 | `0009` | Pilot | `ledgerbridge_system.sync_runs`: status `interrupted`, `heartbeat_at`, `pid`, `host`; `ledgerbridge_system.sync_logs` (Section 5.1, ADR-024) |
+| `0012` | Pilot | `ledgerbridge_accounting.voucher_types.moves_stock` |
 | `0011` | Pilot | `ledgerbridge_accounting.voucher_types.standard_type` (ADR-027) |
 | `0010` | Pilot | `extra` JSON on [SRC] tables and `entities`; `ledgerbridge_accounting.source_fields`; `dimensions.source_object_type`, `source_field`; wider `voucher_number`, `reference_number`, `gstin`, `pan`, `phone`, `units.symbol`, `items.code`, `hsn_code`, `cost_centres.category`; `raw_records.process_warning`; `sync_runs.run_type` `transform` (ADR-025) |
 
@@ -269,7 +270,7 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 
 | Table | Key columns |
 | --- | --- |
-| `ledgerbridge_accounting.voucher_types` | `entity_id, name, standard_type VARCHAR(64) NULL (the source's predefined type it derives from, e.g. Tally's "Sales Order"; from a fixed list of the source's names only), base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory` |
+| `ledgerbridge_accounting.voucher_types` | `entity_id, name, moves_stock BOOLEAN (false for orders and memorandum: their inventory lines don't move stock; migration 0012), standard_type VARCHAR(64) NULL (the source's predefined type it derives from, e.g. Tally's "Sales Order"; from a fixed list of the source's names only), base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory` |
 | `ledgerbridge_accounting.item_groups` | `entity_id, parent_id, name` |
 | `ledgerbridge_accounting.items` | `entity_id, item_group_id, name, code VARCHAR(255), unit_id, hsn_code VARCHAR(32), gst_rate, opening_qty, opening_value` |
 | `ledgerbridge_accounting.units` | `entity_id, symbol VARCHAR(255), name, decimal_places` |
@@ -542,6 +543,8 @@ All budget views get entries in `semantic_catalog` so the AI can answer budget q
 
 **Result:** in Tally's XML, a **debit is negative** and a **credit is positive**, for voucher ledger entries (`AMOUNT`, with `ISDEEMEDPOSITIVE=Yes` meaning debit) and for ledger `OPENINGBALANCE` and `CLOSINGBALANCE`. Canonical amount = −(Tally amount), giving debit positive and credit negative (Section 1).
 
+**Foreign currency:** an amount in a foreign currency comes as `-$100.00 @ ₹82.00/$ = -₹8200.00`; the base-currency amount after the last `=` is used (`connectors/tally/signs.py`, `tally_amount`).
+
 **How it was confirmed**, on LedgerBridge Test Co (TallyPrime, Educational mode), seeded by `./dev.ps1 seed-test-data` (ADR-014). Check: `python -m connectors.tally.tools sign-check`.
 
 | Check | Result |
@@ -577,7 +580,7 @@ All amounts: canonical = −(Tally amount). Masters are referred to by name with
 | Ledger entries | Postings per 7.2 → `voucher_lines` (`ISPARTYLEDGER` → `is_party_line`). `is_effective` is false for cancelled, optional and deleted vouchers. |
 | Bill allocations | `NAME`, `BILLTYPE` (New Ref → new_ref, Agst Ref → against_ref, Advance, On Account), `AMOUNT` → `bill_allocations`, party from the line's ledger. |
 | Cost centre allocations | `CATEGORYALLOCATIONS.COSTCENTREALLOCATIONS` `NAME`, `AMOUNT` → `line_cost_allocations`. |
-| Inventory entries | `STOCKITEMNAME`, `ACTUALQTY` (number and unit), `RATE`, `AMOUNT`, `DISCOUNT`, first batch allocation's `GODOWNNAME`, `BATCHNAME`. Quantity is positive when `ISDEEMEDPOSITIVE=Yes` (inward) and negative otherwise. |
+| Inventory entries | `STOCKITEMNAME`, `ACTUALQTY` (number and unit), `RATE`, `AMOUNT`, `DISCOUNT`, first batch allocation's `GODOWNNAME`, `BATCHNAME`, from `ALLINVENTORYENTRIES.LIST` (or `INVENTORYENTRIES.LIST`), and for stock and manufacturing journals from `INVENTORYENTRIESIN.LIST` (produced or received: positive) and `INVENTORYENTRIESOUT.LIST` (consumed or sent: negative). Otherwise quantity is positive when `ISDEEMEDPOSITIVE=Yes` (inward) and negative otherwise. Inventory lines of vouchers whose type doesn't move stock (orders, memorandum) don't count in stock (`voucher_types.moves_stock`). |
 | Tax lines | Every voucher line posted to a ledger with a `tax_type` → `tax_lines` (`tax_amount` = the line amount). |
 
 **Standard-account mapping** (approved for M3), by Tally reserved group; user sub-groups and ledgers inherit from the nearest ancestor that has one:
@@ -675,6 +678,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-14 | 0.19 | Migration `0012`: `voucher_types.moves_stock`; stock journal inventory lists mapped; foreign currency amounts read in the base currency. |
 | 2026-10-13 | 0.18 | Migration `0011`: `voucher_types.standard_type`; `extra._aliases`; lines of non-posting voucher types not effective; voucher type and group mapping (ADR-027). |
 | 2026-10-13 | 0.17 | Proposed budget design for M7b: Section 4.7 (`budgets`, `budget_lines`, `budget_line_months`, `budget_line_dimensions`, `budget_changes`), `budget_alert_rules` (5.5), budget permissions (5.3), budget-vs-actual reporting views (6). ADR-026. |
 | 2026-10-13 | 0.16 | `raw_records.process_status` `skipped` used for superseded versions; `transform rebuild` (no schema change). |

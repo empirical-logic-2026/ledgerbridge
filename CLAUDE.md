@@ -82,6 +82,7 @@ npm run build
 ./dev.ps1 transform rebuild                          # transform every stored record again (no Tally), then validate
 ./dev.ps1 transform explain [-CheckSource]           # why references didn't resolve (counts and kinds only)
 ./dev.ps1 validate -Quick                            # skip voucher counts, stock, bills and year-end checks
+./dev.ps1 validate analyse                           # test explanations for validation mismatches (counts only)
 ./dev.ps1 fields                                     # field catalogue (fields with no column, e.g. UDFs)
 ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"   # catalogued voucher field -> dimension
 ./dev.ps1 diagrams                                   # regenerate docs/diagrams from the models and render SVG/PNG (mermaid-cli image)

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.2 |
+| Version | 0.3 |
 | Date | 2026-10-13 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
@@ -73,7 +73,7 @@ ledgerbridge/
 │   │   ├── diagrams.py         generates the diagrams from the models
 │   │   └── tally_seed/         fills the test company in TallyPrime (test only)
 │   ├── migrations/
-│   │   └── versions/           one file per database change, 0001 to 0011
+│   │   └── versions/           one file per database change, 0001 to 0012
 │   ├── tests/
 │   │   ├── connectors/tally/   tests of the Tally connector
 │   │   ├── devtools/           tests of the seeder and the diagrams
@@ -174,13 +174,14 @@ ledgerbridge/
 | `failures.py` | Groups the reasons records failed, for `summary`, without values. |
 | `fields.py` | The catalogue of extra fields (e.g. Tally custom fields) and turning one into a reporting dimension. |
 | `references.py` | The `transform explain` diagnostic: why names didn't resolve, in counts and kinds only. |
+| `analyse.py` | The `validate analyse` diagnostic: tests explanations for every validation mismatch (ledgers, year ends, profit carrier, unbalanced vouchers, trial balance, bills, stock) and counts which fit. |
 
 **`migrations/`: database changes.**
 
 | File | What it is and what it's for |
 | --- | --- |
 | `env.py`, `script.py.mako` | Alembic's setup and the template for new migration files. |
-| `versions/0001_...py` to `versions/0011_...py` | One file per change to the database, applied in order: 0001 raw records and sync runs, 0002 the accounting and system tables, 0003 the standard chart of accounts, then later additions (tax types, deletion checks, validation dates and alerts, sync checkpoints, unverified ranges, run liveness and job logs, the `extra` fields and field catalogue, voucher types' standard type). An applied migration is never edited; a change is always a new file. [schema.md](schema.md) Section 3 lists them. |
+| `versions/0001_...py` to `versions/0012_...py` | One file per change to the database, applied in order: 0001 raw records and sync runs, 0002 the accounting and system tables, 0003 the standard chart of accounts, then later additions (tax types, deletion checks, validation dates and alerts, sync checkpoints, unverified ranges, run liveness and job logs, the `extra` fields and field catalogue, voucher types' standard type and whether they move stock). An applied migration is never edited; a change is always a new file. [schema.md](schema.md) Section 3 lists them. |
 
 **`devtools/diagrams.py`: the diagrams.** Writes the Mermaid sources of the ER diagrams and the database diagram in `docs/diagrams/` from the database models, so they always match the code (`./dev.ps1 diagrams`, which also draws the images). Development only.
 
@@ -295,7 +296,7 @@ Short commands (`status`, `summary`, `validate`, `fields`) run the same way, but
 | --- | --- |
 | Where is the Tally connection code? | `data-plane/connectors/tally/`: `client.py` (talking to Tally), `envelopes.py` (requests), `parser.py` (answers), `connector.py` (putting it together), `mapping.py` (what Tally's data means). |
 | Where are the database tables defined? | `data-plane/core/models/` in code; [schema.md](schema.md) for people; `data-plane/migrations/versions/` for the changes that create them. |
-| Where are the validation checks? | `data-plane/core/validation.py`; run by `data-plane/workers/validate.py`; described in [schema.md](schema.md) Section 5.2. |
+| Where are the validation checks? | `data-plane/core/validation.py`; run by `data-plane/workers/validate.py`; described in [schema.md](schema.md) Section 5.2. Why they differ: `data-plane/workers/analyse.py` (`./dev.ps1 validate analyse`). |
 | Where are the environment settings? | `.env.test` / `.env.pilot` (not in git; templates `.env.*.example`), read by `data-plane/core/config.py`. |
 | Where are the tests? | `data-plane/tests/` (Python) and `frontend/src/App.test.tsx`; recorded Tally answers in `data-plane/tests/fixtures/tally/`. |
 | Where is a `dev.ps1` command implemented? | The command's block in `dev.ps1`, which calls `python -m workers.cli <command>`, implemented in `data-plane/workers/cli.py`. |
@@ -344,5 +345,6 @@ Short commands (`status`, `summary`, `validate`, `fields`) run the same way, but
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-14 | 0.3 | `workers/analyse.py` (`validate analyse`); migration 0012. |
 | 2026-10-13 | 0.2 | Diagrams embedded (Section 1); `devtools/diagrams.py`, `docs/diagrams/` and their test. |
 | 2026-10-13 | 0.1 | First version, from the repository as of migration 0011. |
