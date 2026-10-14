@@ -543,7 +543,7 @@ class Validator:
             self._unavailable("stock_quantities", theirs)
             return
         movements = (
-            select(A.InventoryLine.item_id, func.sum(A.InventoryLine.quantity).label("moved"))
+            select(A.InventoryLine.item_id, func.sum(A.InventoryLine.stock_quantity).label("moved"))
             .join(A.Voucher, A.Voucher.id == A.InventoryLine.voucher_id)
             .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
             .where(

@@ -272,3 +272,54 @@ def test_watch_keeps_following_a_busy_job(db: Session, engine: Engine, monkeypat
     out = capsys.readouterr().out
     assert code == 0 and "explaining ..." in out and ALIVE not in out
     assert db.scalar(select(S.SyncLog.id).where(S.SyncLog.line == ALIVE).limit(1))
+
+
+class Monthly(Source):
+    """The source's balances on any date: ours, plus a difference from a month on."""
+
+    ours: object  # callable: date -> {source key: balance}
+    shifted: dict[str, tuple[date, Decimal]]
+
+    def closing_balances(self, entity, as_of):  # noqa: ANN001, ANN201
+        if as_of in self.balances:
+            return SourceBalances(as_of, dict(self.balances[as_of]))
+        balances = dict(self.ours(as_of))  # type: ignore[operator]
+        for key, (since, extra) in self.shifted.items():
+            if as_of >= since:
+                balances[key] += extra
+        return SourceBalances(as_of, balances)
+
+
+def test_pairs_groups_and_first_month(synced) -> None:  # noqa: ANN001
+    db, connection, connector, entity, entity_id, ours = synced
+    connector.__class__ = Monthly
+    validator = Validator(db, entity_id, AS_OF, Decimal(0), connection.id)
+    connector.ours = lambda d: {lb.source_key: lb.balance for lb in validator.ledger_balances(d)}
+    cash, rent = _key(db, "Cash"), _key(db, "Rent")
+    # Cash: the source leaves out its opening and one voucher type's lines (together only).
+    analyser = Analyser(db, connection, connector, entity, entity_id, AS_OF, Decimal(0), print)
+    analyser._prepare_lines()
+    cash_id, opening = ours[AS_OF][cash].id, ours[AS_OF][cash].opening
+    (kind, total), *_ = analyser.counted[cash_id].items()
+    assert opening and total
+    connector.balances[AS_OF][cash] -= opening + total
+    # Rent differs by an amount nothing explains, from June 2026 on.
+    extra = Decimal("123.45")
+    connector.shifted = {rent: (date(2026, 6, 1), extra)}
+    connector.balances[AS_OF][rent] += extra
+    connector.balances[date(2027, 3, 31)][rent] += extra
+    out = "\n".join(_analyse(synced))
+    assert "2 ledgers differ; 0 have at least one explanation that fits; 1 more are" in out
+    pair = sorted(
+        (
+            "the opening balance is counted twice here, or the source leaves it out",
+            f"{kind} vouchers counted here but not by the source",
+        )
+    )
+    assert f"{' + '.join(pair)}: 1" in out
+    assert "by primary group (opening explains it / stored opening non-zero / zero):" in out
+    assert "Current Assets: 0 / 1 / 0" in out  # Cash has an opening that doesn't explain it
+    assert "unexplained, by primary group: Indirect Expenses 1" in out
+    assert "first month end where they differ (first financial year):" in out
+    assert "    2026-06: 1" in out.splitlines()
+    assert "voucher types with lines in that month: Payment 1" in out

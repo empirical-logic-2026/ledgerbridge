@@ -74,7 +74,7 @@ ledgerbridge/
 │   │   ├── error_catalogue.py  generates docs/error-catalogue.md from the problem registry
 │   │   └── tally_seed/         fills the test company in TallyPrime (test only)
 │   ├── migrations/
-│   │   └── versions/           one file per database change, 0001 to 0013
+│   │   └── versions/           one file per database change, 0001 to 0014
 │   ├── tests/
 │   │   ├── connectors/tally/   tests of the Tally connector
 │   │   ├── devtools/           tests of the seeder and the diagrams
@@ -193,7 +193,7 @@ ledgerbridge/
 
 **`devtools/diagrams.py`: the diagrams.** Writes the Mermaid sources of the ER diagrams and the database diagram in `docs/diagrams/` from the database models, so they always match the code (`./dev.ps1 diagrams`, which also draws the images). Development only.
 
-**`devtools/tally_seed/`: filling the test company.** Development only, never part of the product, and it may only write to the company "LedgerBridge Test Co" (it checks this before doing anything). `data.py` holds the synthetic ledgers and vouchers; `requests.py` builds Tally's import requests; `seed.py` works out what is missing and imports it; `__main__.py` is the command (`./dev.ps1 seed-test-data`).
+**`devtools/tally_seed/`: filling the test company.** Development only, never part of the product, and it may only write to the company "LedgerBridge Test Co" (it checks this before doing anything). `data.py` holds the synthetic ledgers and vouchers, including the cases that reproduce Tally's counting rules (openings, delivery and receipt notes with tracked invoices, optional, memorandum, reversing and post-dated vouchers; schema.md 7.5); `requests.py` builds Tally's import requests; `seed.py` works out what is missing and imports it; `__main__.py` is the command (`./dev.ps1 seed-test-data`).
 
 **`tests/`: automatic checks.**
 
@@ -202,6 +202,8 @@ ledgerbridge/
 | `conftest.py` | Shared test setup: an in-memory database standing in for MySQL, the recorded Tally answers, the test company's name. |
 | `sim_tally.py` | A simulated Tally for tests: large companies, slow months, timeouts, custom fields, values that don't fit, names written differently. |
 | `fixtures/tally/` | Real answers recorded from the test company (`*.xml`) and `manifest.json`, which says which request each file answers. Test company data only. |
+| `fixtures/tally/rules/` | Answers recorded from the test company that prove Tally's counting rules: ledger and stock item openings fetched for different periods, and tracked notes and invoices. |
+| `test_counting_rules.py` | Tally's counting rules (schema.md 7.5): openings fetched at the books' beginning, stock moved once for tracked invoices, and the seed matching Tally's own figures. |
 | `connectors/tally/test_*.py` | The Tally connector: requests, parser, mapping, signs, recorded fixtures. |
 | `devtools/test_tally_seed.py`, `devtools/test_diagrams.py` | The seeder and its safety checks; that the diagrams match the models and are drawn. |
 | `test_sync.py`, `test_large_sync.py`, `test_extract.py`, `test_raw_store.py`, `test_entity_lookup.py` | Syncing: small and large, resuming, finding companies, storing raw records. |
@@ -356,6 +358,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-14 | 0.5 | Migration 0014; the seed reproduces Tally's counting rules; `tests/test_counting_rules.py` and `tests/fixtures/tally/rules/`. |
 | 2026-10-14 | 0.4 | `core/problems.py`, `workers/report.py`, `workers/style.py`, `devtools/error_catalogue.py`, `docs/error-catalogue.md`, `reports/`; migration 0013. |
 | 2026-10-14 | 0.3 | `workers/analyse.py` (`validate analyse`); migration 0012. |
 | 2026-10-13 | 0.2 | Diagrams embedded (Section 1); `devtools/diagrams.py`, `docs/diagrams/` and their test. |

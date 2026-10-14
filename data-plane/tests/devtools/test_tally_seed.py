@@ -43,8 +43,10 @@ def test_validate_rejects_non_educational_dates_and_imbalance() -> None:
 
 def test_expected_trial_balance_for_anchors() -> None:
     balances = expected_balances(SEED)
-    assert balances["Rent"] == (Decimal("1000"), "Dr")  # cancelled 500 excluded
-    assert balances["Cash"] == (Decimal("27500"), "Dr")  # contra, receipts, payments, altered 1,500
+    # cancelled 500 and the reversing journal's 125 excluded; adjustment 300, post-dated 75
+    assert balances["Rent"] == (Decimal("1375"), "Dr")
+    # contra, receipts, payments, altered 1,500, post-dated 75; the memorandum's 250 excluded
+    assert balances["Cash"] == (Decimal("27425"), "Dr")
     assert balances["Capital"] == (Decimal("50000"), "Cr")
     # 19,360 before ALTER-2 (receipt altered from 3,000 to 5,900); DEL-1 is deleted.
     assert balances["Test Bank Current A/c"] == (Decimal("25260"), "Dr")
@@ -133,6 +135,8 @@ class FakeTally:
                 self.state.stock_items.add(obj.get("NAME"))
             elif obj.tag == "COSTCENTRE":
                 self.state.cost_centres.add(obj.get("NAME"))
+            elif obj.tag == "VOUCHERTYPE":
+                self.state.voucher_types.add(obj.get("NAME"))
             elif obj.tag == "LEDGER":
                 self.state.ledgers[obj.get("NAME")] = tally_amount(obj.findtext("OPENINGBALANCE"))
             elif obj.tag == "VOUCHER" and action == "Delete":

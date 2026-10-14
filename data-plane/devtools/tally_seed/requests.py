@@ -9,7 +9,7 @@ from datetime import date
 from decimal import Decimal
 from xml.sax.saxutils import escape, quoteattr
 
-from devtools.tally_seed.data import Entry, Ledger, Side, Voucher
+from devtools.tally_seed.data import Entry, ItemLine, Ledger, Side, StockItem, Voucher
 
 GODOWN = "Main Location"
 BATCH = "Primary Batch"
@@ -82,10 +82,31 @@ def stock_group_create(name: str) -> str:
     return f'<STOCKGROUP NAME={quoteattr(name)} ACTION="Create">{_names(name)}</STOCKGROUP>'
 
 
-def stock_item_create(name: str, unit: str) -> str:
+def stock_item_create(item: StockItem) -> str:
+    opening = ""
+    if item.opening_qty:
+        # An opening stock is an asset (debit): its value is negative in Tally's XML.
+        value = f"{-item.opening_qty * item.opening_rate:.2f}"
+        fields = (
+            f"<OPENINGBALANCE> {item.opening_qty:.0f} {escape(item.unit)}</OPENINGBALANCE>"
+            f"<OPENINGVALUE>{value}</OPENINGVALUE>"
+            f"<OPENINGRATE>{item.opening_rate:.2f}/{escape(item.unit)}</OPENINGRATE>"
+        )
+        opening = (
+            f"{fields}<BATCHALLOCATIONS.LIST><GODOWNNAME>{GODOWN}</GODOWNNAME>"
+            f"<BATCHNAME>{BATCH}</BATCHNAME>{fields}</BATCHALLOCATIONS.LIST>"
+        )
     return (
-        f'<STOCKITEM NAME={quoteattr(name)} ACTION="Create">{_names(name)}'
-        f"<BASEUNITS>{escape(unit)}</BASEUNITS></STOCKITEM>"
+        f'<STOCKITEM NAME={quoteattr(item.name)} ACTION="Create">{_names(item.name)}'
+        f"<BASEUNITS>{escape(item.unit)}</BASEUNITS>{opening}</STOCKITEM>"
+    )
+
+
+def voucher_type_create(name: str, parent: str) -> str:
+    return (
+        f'<VOUCHERTYPE NAME={quoteattr(name)} ACTION="Create">{_names(name)}'
+        f"<PARENT>{escape(parent)}</PARENT><NUMBERINGMETHOD>Automatic</NUMBERINGMETHOD>"
+        "<ISACTIVE>Yes</ISACTIVE></VOUCHERTYPE>"
     )
 
 
@@ -128,38 +149,52 @@ def _entry(entry: Entry, list_tag: str, party: bool = False) -> str:
     )
 
 
+def _inventory(line: ItemLine) -> str:
+    """One inventory entry: sent out is a credit (positive amount), received a debit."""
+    side: Side = "Dr" if line.inward else "Cr"
+    amount = _amount(side, line.amount)
+    quantity = f"<ACTUALQTY> {line.quantity:.0f} Nos</ACTUALQTY><BILLEDQTY> {line.quantity:.0f} Nos</BILLEDQTY>"  # noqa: E501
+    tracking = f"<TRACKINGNUMBER>{escape(line.tracking)}</TRACKINGNUMBER>" if line.tracking else ""
+    return (
+        "<ALLINVENTORYENTRIES.LIST>"
+        f"<STOCKITEMNAME>{escape(line.item)}</STOCKITEMNAME>"
+        f"<ISDEEMEDPOSITIVE>{_deemed(side)}</ISDEEMEDPOSITIVE>"
+        f"<RATE>{line.rate:.2f}/Nos</RATE><AMOUNT>{amount}</AMOUNT>{quantity}"
+        "<BATCHALLOCATIONS.LIST>"
+        f"<GODOWNNAME>{GODOWN}</GODOWNNAME><BATCHNAME>{BATCH}</BATCHNAME>{tracking}"
+        f"<AMOUNT>{amount}</AMOUNT>{quantity}"
+        "</BATCHALLOCATIONS.LIST>"
+        "<ACCOUNTINGALLOCATIONS.LIST>"
+        f"<LEDGERNAME>{escape(line.sales_ledger)}</LEDGERNAME>"
+        f"<ISDEEMEDPOSITIVE>{_deemed(side)}</ISDEEMEDPOSITIVE><AMOUNT>{amount}</AMOUNT>"
+        "</ACCOUNTINGALLOCATIONS.LIST>"
+        "</ALLINVENTORYENTRIES.LIST>"
+    )
+
+
 def _voucher_body(voucher: Voucher, entries: tuple[Entry, ...]) -> str:
     head = (
         f"<DATE>{_date(voucher.on)}</DATE><EFFECTIVEDATE>{_date(voucher.on)}</EFFECTIVEDATE>"
         f"<VOUCHERTYPENAME>{escape(voucher.voucher_type)}</VOUCHERTYPENAME>"
-        f"<NARRATION>{escape(voucher.tagged_narration)}</NARRATION>"
     )
+    if voucher.number:
+        head += f"<VOUCHERNUMBER>{escape(voucher.number)}</VOUCHERNUMBER>"
+    if voucher.reference:
+        head += f"<REFERENCE>{escape(voucher.reference)}</REFERENCE>"
+    head += f"<NARRATION>{escape(voucher.tagged_narration)}</NARRATION>"
+    if voucher.optional:
+        head += "<ISOPTIONAL>Yes</ISOPTIONAL>"
+    if voucher.post_dated:
+        head += "<ISPOSTDATED>Yes</ISPOSTDATED>"
     if not voucher.items:
         return head + "".join(_entry(e, "ALLLEDGERENTRIES.LIST") for e in entries)
-    party = next(e for e in entries if e.bills)
-    inventory = "".join(
-        "<ALLINVENTORYENTRIES.LIST>"
-        f"<STOCKITEMNAME>{escape(i.item)}</STOCKITEMNAME><ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>"
-        f"<RATE>{i.rate:.2f}/Nos</RATE><AMOUNT>{i.amount:.2f}</AMOUNT>"
-        f"<ACTUALQTY> {i.quantity:.0f} Nos</ACTUALQTY><BILLEDQTY> {i.quantity:.0f} Nos</BILLEDQTY>"
-        "<BATCHALLOCATIONS.LIST>"
-        f"<GODOWNNAME>{GODOWN}</GODOWNNAME><BATCHNAME>{BATCH}</BATCHNAME>"
-        f"<AMOUNT>{i.amount:.2f}</AMOUNT>"
-        f"<ACTUALQTY> {i.quantity:.0f} Nos</ACTUALQTY><BILLEDQTY> {i.quantity:.0f} Nos</BILLEDQTY>"
-        "</BATCHALLOCATIONS.LIST>"
-        "<ACCOUNTINGALLOCATIONS.LIST>"
-        f"<LEDGERNAME>{escape(i.sales_ledger)}</LEDGERNAME><ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>"
-        f"<AMOUNT>{i.amount:.2f}</AMOUNT>"
-        "</ACCOUNTINGALLOCATIONS.LIST>"
-        "</ALLINVENTORYENTRIES.LIST>"
-        for i in voucher.items
-    )
+    party_name = voucher.party or next(e for e in entries if e.bills).ledger
     return (
         head
-        + f"<PARTYLEDGERNAME>{escape(party.ledger)}</PARTYLEDGERNAME>"
+        + f"<PARTYLEDGERNAME>{escape(party_name)}</PARTYLEDGERNAME>"
         + "<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW><ISINVOICE>Yes</ISINVOICE>"
-        + inventory
-        + "".join(_entry(e, "LEDGERENTRIES.LIST", party=e is party) for e in entries)
+        + "".join(_inventory(line) for line in voucher.items)
+        + "".join(_entry(e, "LEDGERENTRIES.LIST", party=e.ledger == party_name) for e in entries)
     )
 
 

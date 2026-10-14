@@ -10,8 +10,11 @@ party or item names, and never amounts.
   missing or counted twice; the sign flipped; the lines of one voucher type counted here
   but not by the source, or the other way round (cancelled, optional, deleted vouchers and
   voucher types that don't post); post-dated vouchers; the source restarting income and
-  expense ledgers each financial year; the first year end where the ledger differs.
-  Unexplained ledgers are counted by primary group.
+  expense ledgers each financial year; the first year end where the ledger differs; and
+  pairs of these together. Differing ledgers are broken down by primary group and whether
+  the opening explains them; unexplained ones get the first month of the first financial
+  year where they differ (from the source's own monthly balances) and the voucher types
+  with lines in that month.
 - **Profit carrier**: differences of the income and expense ledgers, prior years' profit,
   the opening difference, the stock change.
 - **Unbalanced vouchers and trial balance**: rounding, foreign currency, a reversed sign, a
@@ -19,14 +22,15 @@ party or item names, and never amounts.
   vouchers and lines posted to ledgers deleted in the source.
 - **Bills**: opening bills, on-account amounts, vouchers not counted here, post-dated ones.
 - **Stock**: each voucher type counted here but not by the source and the other way round,
-  the opening quantity, physical stock vouchers, alternate or compound units, several
+  lines tracked to a delivery or receipt note, the opening quantity, physical stock
+  vouchers, alternate or compound units, several
   godowns or batches; and, per voucher type, what the stored vouchers contain that the
   mapping doesn't read.
 """
 
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -245,31 +249,53 @@ class Analyser:
 
     # --- ledgers ------------------------------------------------------------------------
 
-    def _explain(self, ledger: Any, theirs: Decimal, ours: Decimal, start: date) -> list[str]:
-        diff = theirs - ours
-        fits = []
-        if ledger.opening and self.close(diff, ledger.opening):
-            fits.append("the opening balance is missing here")
-        if ledger.opening and self.close(diff, -ledger.opening):
-            fits.append("the opening balance is counted twice here, or the source leaves it out")
-        if ours and self.close(theirs, -ours):
-            fits.append("the sign is reversed")
+    def _candidates(self, ledger: Any, start: date) -> list[tuple[str, Decimal]]:
+        """Each explanation with the difference (theirs - ours) it would make."""
+        out = []
+        if ledger.opening:
+            out.append(("the opening balance is missing here", ledger.opening))
+            out.append(
+                (
+                    "the opening balance is counted twice here, or the source leaves it out",
+                    -ledger.opening,
+                )
+            )
         for kind, total in self.counted.get(ledger.id, {}).items():
-            if total and self.close(diff, -total):
-                fits.append(f"{kind} vouchers counted here but not by the source")
+            if total:
+                out.append((f"{kind} vouchers counted here but not by the source", -total))
         for kind, total in self.excluded.get(ledger.id, {}).items():
-            if total and self.close(diff, total):
-                fits.append(f"{kind} vouchers counted by the source but not here")
+            if total:
+                out.append((f"{kind} vouchers counted by the source but not here", total))
         post_dated = self.post_dated.get(ledger.id, ZERO)
-        if post_dated and self.close(diff, -post_dated):
-            fits.append("post-dated vouchers counted here but not by the source")
+        if post_dated:
+            out.append(("post-dated vouchers counted here but not by the source", -post_dated))
         if ledger.nature in PROFIT_NATURES:
             prior = self._before(ledger.id, start)
-            if (prior or ledger.opening) and (
-                self.close(diff, -prior) or self.close(diff, -(prior + ledger.opening))
-            ):
-                fits.append("the source restarts income and expense ledgers each financial year")
-        return fits
+            restarts = "the source restarts income and expense ledgers each financial year"
+            if prior:
+                out.append((restarts, -prior))
+            if prior + ledger.opening and ledger.opening:
+                out.append((restarts, -(prior + ledger.opening)))
+        return out
+
+    def _explain(self, ledger: Any, theirs: Decimal, ours: Decimal, start: date) -> list[str]:
+        diff = theirs - ours
+        fits = [
+            label for label, value in self._candidates(ledger, start) if self.close(diff, value)
+        ]
+        if ours and self.close(theirs, -ours):
+            fits.append("the sign is reversed")
+        return list(dict.fromkeys(fits))
+
+    def _pairs(self, ledger: Any, diff: Decimal, start: date) -> list[str]:
+        """Two explanations that together make the difference (none fits alone)."""
+        found = self._candidates(ledger, start)
+        fits = []
+        for i, (first, a) in enumerate(found):
+            for second, b in found[i + 1 :]:
+                if first != second and self.close(diff, a + b):
+                    fits.append(" + ".join(sorted((first, second))))
+        return list(dict.fromkeys(fits))
 
     def _ledgers(self) -> None:
         self.out("Ledger closing balances as of the validation date:")
@@ -283,31 +309,131 @@ class Analyser:
         start = fy_start(self.as_of, self.row.fy_start_month)
         fits: Counter[str] = Counter()
         unexplained: Counter[str] = Counter()
+        pairs: Counter[str] = Counter()
+        by_group: dict[str, Counter[str]] = defaultdict(Counter)
         primary = self._primary_groups()
         self.mismatched = {}
-        explained = 0
+        self.unexplained_keys: list[str] = []
+        explained = by_pair = 0
+        twice = "the opening balance is counted twice here, or the source leaves it out"
         for key, lb in ours.items():
             theirs = self.source.ledgers.get(key)
             if theirs is None or key in carriers or self.close(theirs, lb.balance):
                 continue
-            self.mismatched[key] = theirs - lb.balance
+            diff = theirs - lb.balance
+            self.mismatched[key] = diff
             found = self._explain(lb, theirs, lb.balance, start)
             first = self._first_year_end(key)
             fits[first] += 1
+            group = primary.get(lb.id, "unknown group")
+            opening = bool({"the opening balance is missing here", twice} & set(found))
+            by_group[group][
+                "the opening explains it"
+                if opening
+                else ("stored opening non-zero" if lb.opening else "stored opening zero")
+            ] += 1
             if found:
                 explained += 1
                 fits.update(found)
-            else:
-                unexplained[primary.get(lb.id, "unknown group")] += 1
+                continue
+            combined = self._pairs(lb, diff, start)
+            if combined:
+                by_pair += 1
+                pairs.update(combined)
+                continue
+            unexplained[group] += 1
+            self.unexplained_keys.append(key)
         self.out(
             f"  {len(self.mismatched):,} ledgers differ; {explained:,} have at least one "
-            "explanation that fits"
+            f"explanation that fits; {by_pair:,} more are explained by two together"
         )
         for reason, n in fits.most_common():
             self.out(f"    {reason}: {n:,}")
+        if pairs:
+            self.out("  two explanations together:")
+            for reason, n in pairs.most_common(12):
+                self.out(f"    {reason}: {n:,}")
+        if by_group:
+            self.out("  by primary group (opening explains it / stored opening non-zero / zero):")
+            for group, counts in sorted(by_group.items(), key=lambda g: -sum(g[1].values())):
+                self.out(
+                    f"    {group}: {counts['the opening explains it']:,} / "
+                    f"{counts['stored opening non-zero']:,} / {counts['stored opening zero']:,}"
+                )
         if unexplained:
             listed = ", ".join(f"{group} {n:,}" for group, n in unexplained.most_common())
             self.out(f"  unexplained, by primary group: {listed}")
+            self._first_month(ours)
+
+    def _first_month(self, ours: dict[str, Any]) -> None:
+        """For unexplained ledgers: the first month end of the first financial year where
+        the balance differs from the source's, and the voucher types with lines in that
+        month (counts of ledgers; the source's standard type names only)."""
+        books_from = self.row.books_from
+        if books_from is None or not self.unexplained_keys:
+            return
+        first_year = fy_start(books_from, self.row.fy_start_month)
+        month_ends = []
+        current = books_from.replace(day=1)
+        while True:
+            following = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
+            end = following - timedelta(days=1)
+            if end > self.as_of or following > first_year.replace(year=first_year.year + 1):
+                break
+            month_ends.append(end)
+            current = following
+        if not month_ends:
+            return
+        self.say("reading the source's balances at each month end of the first financial year")
+        pending = set(self.unexplained_keys)
+        first: dict[str, date] = {}
+        for end in month_ends:
+            source = self._read("closing_balances", self.entity, end)
+            if not hasattr(source, "ledgers"):
+                self.out(f"  first month: the source's balances at {end} couldn't be read")
+                return
+            here = {lb.source_key: lb for lb in self.validator.ledger_balances(end)}
+            for key in list(pending):
+                theirs, lb = source.ledgers.get(key), here.get(key)
+                if theirs is not None and lb is not None and not self.close(theirs, lb.balance):
+                    first[key] = end
+                    pending.discard(key)
+            if not pending:
+                break
+        months = Counter(f"{end:%Y-%m}" for end in first.values())
+        if pending:
+            months["matches every month end of the first financial year"] = len(pending)
+        self.out("  unexplained ledgers, first month end where they differ (first financial year):")
+        for month, n in sorted(months.items()):
+            self.out(f"    {month}: {n:,}")
+        types: Counter[str] = Counter()
+        no_lines = 0
+        L, V, T = A.VoucherLine, A.Voucher, A.VoucherType  # noqa: N806
+        for key, end in first.items():
+            lb = ours.get(key)
+            if lb is None:
+                continue
+            kinds = {
+                _type(standard, base)
+                for standard, base in self.session.execute(
+                    select(T.standard_type, T.base_type)
+                    .join(V, V.voucher_type_id == T.id)
+                    .join(L, L.voucher_id == V.id)
+                    .where(
+                        L.ledger_id == lb.id,
+                        L.voucher_date >= end.replace(day=1),
+                        L.voucher_date <= end,
+                    )
+                    .distinct()
+                )
+            }
+            if not kinds:
+                no_lines += 1
+            types.update(kinds)
+        if types or no_lines:
+            listed = ", ".join(f"{k} {n:,}" for k, n in types.most_common())
+            extra = f"; no lines that month (the opening differs) {no_lines:,}" if no_lines else ""
+            self.out(f"    voucher types with lines in that month: {listed or 'none'}{extra}")
 
     def _first_year_end(self, key: str) -> str:
         for year_end in self.year_ends:
@@ -590,6 +716,7 @@ class Analyser:
             optional,
             moves,
             total,
+            tracked,
         ) in self.session.execute(
             select(
                 Inv.item_id,
@@ -599,7 +726,8 @@ class Analyser:
                 V.is_cancelled,
                 V.is_optional,
                 T.moves_stock,
-                func.sum(Inv.quantity),
+                func.sum(Inv.stock_quantity),
+                func.sum(Inv.quantity - Inv.stock_quantity),
             )
             .join(V, V.id == Inv.voucher_id)
             .join(T, T.id == V.voucher_type_id)
@@ -620,6 +748,9 @@ class Analyser:
             why = _category(deleted, cancelled, optional) or (None if moves else "not moving stock")
             if why is None:
                 counted[item_id][kind] += Decimal(total or 0)
+                if tracked:
+                    # Lines tracked to a delivery or receipt note: the note moves the stock.
+                    excluded[item_id][f"tracked {kind} lines"] += Decimal(tracked)
             else:
                 excluded[item_id][f"{why} {kind}"] += Decimal(total or 0)
         fits: Counter[str] = Counter()

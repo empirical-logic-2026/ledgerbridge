@@ -181,6 +181,10 @@ class CanonicalInventoryLine:
     godown_name: str | None = None
     batch_name: str | None = None
     discount_pct: Decimal | None = None
+    # The part of the quantity tied to another voucher that moves the stock (Tally: a
+    # tracking number to a delivery or receipt note), signed like quantity. On vouchers
+    # that post to the books it doesn't move stock (core.transform: stock_quantity).
+    tracked_quantity: Decimal = Decimal(0)
 
 
 @dataclass(frozen=True)

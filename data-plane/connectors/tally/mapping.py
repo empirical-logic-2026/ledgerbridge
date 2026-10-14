@@ -90,6 +90,8 @@ PARTY_TYPE_BY_GROUP = {"Sundry Debtors": "customer", "Sundry Creditors": "vendor
 # Tally's "Primary" pseudo-parent. The Profit & Loss A/c ledger hangs directly under it, so a
 # synthetic group per company carries it (mapped to Reserves and surplus).
 PRIMARY = "Primary"
+# What Tally writes where a reference (tracking number, order number) is empty.
+NOT_APPLICABLE = "Not Applicable"
 PRIMARY_GROUP_STANDARD_ACCOUNT = "2200"
 
 VOUCHER_BASE_TYPES = {
@@ -445,9 +447,11 @@ def _inventory(entry: ET.Element, inward: bool | None = None) -> CanonicalInvent
         inward = _flag(entry, "ISDEEMEDPOSITIVE")
     batch = entry.find("BATCHALLOCATIONS.LIST")
     discount = _rate(_text(entry, "DISCOUNT"))
+    tracked = _tracked(entry, abs(quantity))
     return CanonicalInventoryLine(
         item_name=item,
         quantity=abs(quantity) if inward else -abs(quantity),
+        tracked_quantity=tracked if inward else -tracked,
         amount=_canonical(tally_amount(_text(entry, "AMOUNT"))),
         unit_name=unit_name,
         rate=_rate(_text(entry, "RATE")),
@@ -455,6 +459,30 @@ def _inventory(entry: ET.Element, inward: bool | None = None) -> CanonicalInvent
         batch_name=_text(batch, "BATCHNAME") if batch is not None else None,
         discount_pct=discount if discount else None,
     )
+
+
+def _tracking(batch: ET.Element) -> str | None:
+    number = _text(batch, "TRACKINGNUMBER")
+    return None if number in (None, "", NOT_APPLICABLE) else number
+
+
+def _tracked(entry: ET.Element, quantity: Decimal) -> Decimal:
+    """How much of an inventory entry is tied to a tracking number (a delivery or receipt
+    note, or a rejection), unsigned. Checked on the test company (2026-10-14): a sales,
+    purchase, debit or credit note line with a tracking number never moves stock, whether
+    the note came before or after it; the note does. The transform applies this to
+    vouchers that post to the books only: a note's own lines carry its own number."""
+    batches = entry.findall("BATCHALLOCATIONS.LIST")
+    tracked = [b for b in batches if _tracking(b)]
+    if not tracked:
+        return Decimal(0)
+    if len(tracked) == len(batches):
+        return quantity
+    total = Decimal(0)
+    for batch in tracked:
+        part, _ = _quantity(_text(batch, "ACTUALQTY") or _text(batch, "BILLEDQTY"))
+        total += abs(part)
+    return min(total, quantity)
 
 
 def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
@@ -508,6 +536,7 @@ _LEDGER_ENTRY = (
 _INVENTORY_ENTRY = (
     "STOCKITEMNAME", "ACTUALQTY", "BILLEDQTY", "RATE", "AMOUNT", "ISDEEMEDPOSITIVE",
     "DISCOUNT", "BATCHALLOCATIONS.LIST/GODOWNNAME", "BATCHALLOCATIONS.LIST/BATCHNAME",
+    "BATCHALLOCATIONS.LIST/TRACKINGNUMBER", "BATCHALLOCATIONS.LIST/ACTUALQTY",
     *(f"ACCOUNTINGALLOCATIONS.LIST/{path}" for path in _LEDGER_ENTRY),
 )  # fmt: skip
 # Paths (below the object; list levels included) each object type's mapping reads.

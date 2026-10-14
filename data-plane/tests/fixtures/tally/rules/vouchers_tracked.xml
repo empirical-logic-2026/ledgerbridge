@@ -1,0 +1,1164 @@
+<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <VOUCHER REMOTEID="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000002" VCHKEY="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000b421:00000008" VCHTYPE="Sales" OBJVIEW="Invoice Voucher View">
+          <DATE TYPE="Date">20260402</DATE>
+          <REFERENCEDATE TYPE="Date" />
+          <GUID>fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000002</GUID>
+          <NARRATION TYPE="String">Item invoice SI-1 [lb-seed:SAL-ITEM]</NARRATION>
+          <REQUESTORRULE />
+          <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+          <PARTYLEDGERNAME TYPE="String">Customer Alpha Traders</PARTYLEDGERNAME>
+          <VOUCHERNUMBER>1</VOUCHERNUMBER>
+          <REFERENCE TYPE="String" />
+          <SERIALMASTER TYPE="String" />
+          <ARESERIALMASTER TYPE="String" />
+          <NUMBERINGSTYLE>Auto Retain</NUMBERINGSTYLE>
+          <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+          <ISDELETED>No</ISDELETED>
+          <ASORIGINAL>No</ASORIGINAL>
+          <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+          <ISOPTIONAL TYPE="Logical">No</ISOPTIONAL>
+          <EFFECTIVEDATE TYPE="Date">20260402</EFFECTIVEDATE>
+          <ISCANCELLED TYPE="Logical">No</ISCANCELLED>
+          <ISPOSTDATED TYPE="Logical">No</ISPOSTDATED>
+          <ISINVOICE>Yes</ISINVOICE>
+          <ASPAYSLIP>No</ASPAYSLIP>
+          <ISDELETEDVCHRETAINED>No</ISDELETEDVCHRETAINED>
+          <ISNEGISPOSSET TYPE="Logical">Yes</ISNEGISPOSSET>
+          <ALTERID TYPE="Number"> 2</ALTERID>
+          <MASTERID TYPE="Number"> 2</MASTERID>
+          <VOUCHERKEY TYPE="Number">198053826920456</VOUCHERKEY>
+          <VOUCHERRETAINKEY TYPE="Number">1</VOUCHERRETAINKEY>
+          <REUSEHOLEID TYPE="Number">0</REUSEHOLEID>
+          <VOUCHERNUMBERSERIES TYPE="String">Default</VOUCHERNUMBERSERIES>
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+            <ADDLAMOUNT TYPE="Amount" />
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <RATE TYPE="Rate">200.00/Nos</RATE>
+            <DISCOUNT TYPE="Number">0</DISCOUNT>
+            <AMOUNT TYPE="Amount">2000.00</AMOUNT>
+            <ACTUALQTY TYPE="Quantity"> 10 Nos</ACTUALQTY>
+            <BILLEDQTY TYPE="Quantity"> 10 Nos</BILLEDQTY>
+            <BATCHALLOCATIONS.LIST>
+              <GODOWNNAME TYPE="String">Main Location</GODOWNNAME>
+              <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+              <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+              <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+              <TRACKINGNUMBER TYPE="String"> Not Applicable</TRACKINGNUMBER>
+              <ADDLAMOUNT TYPE="Amount" />
+              <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+              <AMOUNT TYPE="Amount">2000.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 10 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 10 Nos</BILLEDQTY>
+              <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+            </BATCHALLOCATIONS.LIST>
+            <ACCOUNTINGALLOCATIONS.LIST>
+              <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+              <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+              <AMOUNT TYPE="Amount">2000.00</AMOUNT>
+              <BILLALLOCATIONS.LIST>       </BILLALLOCATIONS.LIST>
+              <TAXOBJECTALLOCATIONS.LIST>       </TAXOBJECTALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </ACCOUNTINGALLOCATIONS.LIST>
+          </ALLINVENTORYENTRIES.LIST>
+          <LEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-2360.00</AMOUNT>
+            <BILLALLOCATIONS.LIST>
+              <AMOUNT TYPE="Amount">-2360.00</AMOUNT>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </LEDGERENTRIES.LIST>
+          <LEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Output CGST</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">180.00</AMOUNT>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </LEDGERENTRIES.LIST>
+          <LEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Output SGST</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">180.00</AMOUNT>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </LEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">Yes</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-2360.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>
+              <NAME>SI-1</NAME>
+              <BILLTYPE>New Ref</BILLTYPE>
+              <AMOUNT TYPE="Amount">-2360.00</AMOUNT>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">No</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">2000.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <INVENTORYALLOCATIONS.LIST>
+              <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+              <ADDLAMOUNT TYPE="Amount" />
+              <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+              <RATE TYPE="Rate">200.00/Nos</RATE>
+              <DISCOUNT TYPE="Number">0</DISCOUNT>
+              <AMOUNT TYPE="Amount">2000.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 10 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 10 Nos</BILLEDQTY>
+              <BATCHALLOCATIONS.LIST>
+                <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+                <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+                <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+                <TRACKINGNUMBER TYPE="String"> Not Applicable</TRACKINGNUMBER>
+                <ADDLAMOUNT TYPE="Amount" />
+                <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+                <AMOUNT TYPE="Amount">2000.00</AMOUNT>
+                <ACTUALQTY TYPE="Quantity"> 10 Nos</ACTUALQTY>
+                <BILLEDQTY TYPE="Quantity"> 10 Nos</BILLEDQTY>
+                <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+              </BATCHALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </INVENTORYALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Output CGST</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">No</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">180.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Output SGST</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">No</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">180.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+        <VOUCHER REMOTEID="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000015" VCHKEY="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000b4b9:00000010" VCHTYPE="Receipt Note" OBJVIEW="Invoice Voucher View">
+          <DATE TYPE="Date">20260901</DATE>
+          <REFERENCEDATE TYPE="Date" />
+          <GUID>fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000015</GUID>
+          <NARRATION TYPE="String">Goods received GRN-1 [lb-seed:RN-1]</NARRATION>
+          <REQUESTORRULE />
+          <VOUCHERTYPENAME>Receipt Note</VOUCHERTYPENAME>
+          <PARTYLEDGERNAME TYPE="String">Vendor Delta Supplies</PARTYLEDGERNAME>
+          <VOUCHERNUMBER>1</VOUCHERNUMBER>
+          <REFERENCE TYPE="String" />
+          <SERIALMASTER TYPE="String" />
+          <ARESERIALMASTER TYPE="String" />
+          <NUMBERINGSTYLE>Auto Retain</NUMBERINGSTYLE>
+          <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+          <ISDELETED>No</ISDELETED>
+          <ASORIGINAL>No</ASORIGINAL>
+          <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+          <ISOPTIONAL TYPE="Logical">No</ISOPTIONAL>
+          <EFFECTIVEDATE TYPE="Date">20260901</EFFECTIVEDATE>
+          <ISCANCELLED TYPE="Logical">No</ISCANCELLED>
+          <ISPOSTDATED TYPE="Logical">No</ISPOSTDATED>
+          <ISINVOICE>No</ISINVOICE>
+          <ASPAYSLIP>No</ASPAYSLIP>
+          <ISDELETEDVCHRETAINED>No</ISDELETEDVCHRETAINED>
+          <ISNEGISPOSSET TYPE="Logical">Yes</ISNEGISPOSSET>
+          <ALTERID TYPE="Number"> 25</ALTERID>
+          <MASTERID TYPE="Number"> 21</MASTERID>
+          <VOUCHERKEY TYPE="Number">198706661949456</VOUCHERKEY>
+          <VOUCHERRETAINKEY TYPE="Number">1</VOUCHERRETAINKEY>
+          <REUSEHOLEID TYPE="Number">0</REUSEHOLEID>
+          <VOUCHERNUMBERSERIES TYPE="String">Default</VOUCHERNUMBERSERIES>
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME TYPE="String">Gadget</STOCKITEMNAME>
+            <ADDLAMOUNT TYPE="Amount" />
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <RATE TYPE="Rate">50.00/Nos</RATE>
+            <DISCOUNT TYPE="Number">0</DISCOUNT>
+            <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+            <ACTUALQTY TYPE="Quantity"> 30 Nos</ACTUALQTY>
+            <BILLEDQTY TYPE="Quantity"> 30 Nos</BILLEDQTY>
+            <BATCHALLOCATIONS.LIST>
+              <GODOWNNAME TYPE="String">Main Location</GODOWNNAME>
+              <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+              <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+              <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+              <TRACKINGNUMBER TYPE="String">RN-1</TRACKINGNUMBER>
+              <ADDLAMOUNT TYPE="Amount" />
+              <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+              <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 30 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 30 Nos</BILLEDQTY>
+              <BATCHRATE TYPE="Rate">50.00/Nos</BATCHRATE>
+            </BATCHALLOCATIONS.LIST>
+            <ACCOUNTINGALLOCATIONS.LIST>
+              <LEDGERNAME TYPE="String">Purchases</LEDGERNAME>
+              <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+              <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+              <BILLALLOCATIONS.LIST>       </BILLALLOCATIONS.LIST>
+              <TAXOBJECTALLOCATIONS.LIST>       </TAXOBJECTALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </ACCOUNTINGALLOCATIONS.LIST>
+          </ALLINVENTORYENTRIES.LIST>
+          <LEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Vendor Delta Supplies</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">1500.00</AMOUNT>
+            <BILLALLOCATIONS.LIST>
+              <YEAREND />
+              <NAME />
+              <BILLCREDITPERIOD />
+              <TDSDEDUCTEESECTIONNUMBER />
+              <TDSLEDGERNC />
+              <SERVICETAXLEDGER />
+              <BILLTYPE TYPE="String">On Account</BILLTYPE>
+              <SUMNAME />
+              <TDSDEDUCTEEISSPECIALRATE>No</TDSDEDUCTEEISSPECIALRATE>
+              <TDSDEDUCTEESPECIALRATE>0</TDSDEDUCTEESPECIALRATE>
+              <AMOUNT>1500.00</AMOUNT>
+              <INTERESTCOLLECTION.LIST>       </INTERESTCOLLECTION.LIST>
+              <STBILLCATEGORIES.LIST>       </STBILLCATEGORIES.LIST>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </LEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Vendor Delta Supplies</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">Yes</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">1500.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>
+              <YEAREND />
+              <NAME />
+              <BILLCREDITPERIOD />
+              <TDSDEDUCTEESECTIONNUMBER />
+              <TDSLEDGERNC />
+              <SERVICETAXLEDGER />
+              <BILLTYPE TYPE="String">On Account</BILLTYPE>
+              <SUMNAME />
+              <TDSDEDUCTEEISSPECIALRATE>No</TDSDEDUCTEEISSPECIALRATE>
+              <TDSDEDUCTEESPECIALRATE>0</TDSDEDUCTEESPECIALRATE>
+              <AMOUNT>1500.00</AMOUNT>
+              <INTERESTCOLLECTION.LIST>       </INTERESTCOLLECTION.LIST>
+              <STBILLCATEGORIES.LIST>       </STBILLCATEGORIES.LIST>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Purchases</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">No</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <INVENTORYALLOCATIONS.LIST>
+              <STOCKITEMNAME TYPE="String">Gadget</STOCKITEMNAME>
+              <ADDLAMOUNT TYPE="Amount" />
+              <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+              <RATE TYPE="Rate">50.00/Nos</RATE>
+              <DISCOUNT TYPE="Number">0</DISCOUNT>
+              <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 30 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 30 Nos</BILLEDQTY>
+              <BATCHALLOCATIONS.LIST>
+                <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+                <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+                <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+                <TRACKINGNUMBER TYPE="String">RN-1</TRACKINGNUMBER>
+                <ADDLAMOUNT TYPE="Amount" />
+                <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+                <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+                <ACTUALQTY TYPE="Quantity"> 30 Nos</ACTUALQTY>
+                <BILLEDQTY TYPE="Quantity"> 30 Nos</BILLEDQTY>
+                <BATCHRATE TYPE="Rate">50.00/Nos</BATCHRATE>
+              </BATCHALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </INVENTORYALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+        <VOUCHER REMOTEID="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000017" VCHKEY="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000b4b9:00000018" VCHTYPE="Delivery Note" OBJVIEW="Invoice Voucher View">
+          <DATE TYPE="Date">20260901</DATE>
+          <REFERENCEDATE TYPE="Date" />
+          <GUID>fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000017</GUID>
+          <NARRATION TYPE="String">Delivery Note DN-1 [lb-seed:DN-1]</NARRATION>
+          <REQUESTORRULE />
+          <VOUCHERTYPENAME>Delivery Note</VOUCHERTYPENAME>
+          <PARTYLEDGERNAME TYPE="String">Customer Alpha Traders</PARTYLEDGERNAME>
+          <VOUCHERNUMBER>1</VOUCHERNUMBER>
+          <REFERENCE TYPE="String" />
+          <SERIALMASTER TYPE="String" />
+          <ARESERIALMASTER TYPE="String" />
+          <NUMBERINGSTYLE>Auto Retain</NUMBERINGSTYLE>
+          <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+          <ISDELETED>No</ISDELETED>
+          <ASORIGINAL>No</ASORIGINAL>
+          <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+          <ISOPTIONAL TYPE="Logical">No</ISOPTIONAL>
+          <EFFECTIVEDATE TYPE="Date">20260901</EFFECTIVEDATE>
+          <ISCANCELLED TYPE="Logical">No</ISCANCELLED>
+          <ISPOSTDATED TYPE="Logical">No</ISPOSTDATED>
+          <ISINVOICE>No</ISINVOICE>
+          <ASPAYSLIP>No</ASPAYSLIP>
+          <ISDELETEDVCHRETAINED>No</ISDELETEDVCHRETAINED>
+          <ISNEGISPOSSET TYPE="Logical">Yes</ISNEGISPOSSET>
+          <ALTERID TYPE="Number"> 27</ALTERID>
+          <MASTERID TYPE="Number"> 23</MASTERID>
+          <VOUCHERKEY TYPE="Number">198706661949464</VOUCHERKEY>
+          <VOUCHERRETAINKEY TYPE="Number">1</VOUCHERRETAINKEY>
+          <REUSEHOLEID TYPE="Number">0</REUSEHOLEID>
+          <VOUCHERNUMBERSERIES TYPE="String">Default</VOUCHERNUMBERSERIES>
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+            <ADDLAMOUNT TYPE="Amount" />
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <RATE TYPE="Rate">200.00/Nos</RATE>
+            <DISCOUNT TYPE="Number">0</DISCOUNT>
+            <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+            <ACTUALQTY TYPE="Quantity"> 5 Nos</ACTUALQTY>
+            <BILLEDQTY TYPE="Quantity"> 5 Nos</BILLEDQTY>
+            <BATCHALLOCATIONS.LIST>
+              <GODOWNNAME TYPE="String">Main Location</GODOWNNAME>
+              <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+              <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+              <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+              <TRACKINGNUMBER TYPE="String">DN-1</TRACKINGNUMBER>
+              <ADDLAMOUNT TYPE="Amount" />
+              <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+              <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 5 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 5 Nos</BILLEDQTY>
+              <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+            </BATCHALLOCATIONS.LIST>
+            <ACCOUNTINGALLOCATIONS.LIST>
+              <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+              <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+              <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+              <BILLALLOCATIONS.LIST>       </BILLALLOCATIONS.LIST>
+              <TAXOBJECTALLOCATIONS.LIST>       </TAXOBJECTALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </ACCOUNTINGALLOCATIONS.LIST>
+          </ALLINVENTORYENTRIES.LIST>
+          <LEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-1000.00</AMOUNT>
+            <BILLALLOCATIONS.LIST>
+              <YEAREND />
+              <NAME />
+              <BILLCREDITPERIOD />
+              <TDSDEDUCTEESECTIONNUMBER />
+              <TDSLEDGERNC />
+              <SERVICETAXLEDGER />
+              <BILLTYPE TYPE="String">On Account</BILLTYPE>
+              <SUMNAME />
+              <TDSDEDUCTEEISSPECIALRATE>No</TDSDEDUCTEEISSPECIALRATE>
+              <TDSDEDUCTEESPECIALRATE>0</TDSDEDUCTEESPECIALRATE>
+              <AMOUNT>-1000.00</AMOUNT>
+              <INTERESTCOLLECTION.LIST>       </INTERESTCOLLECTION.LIST>
+              <STBILLCATEGORIES.LIST>       </STBILLCATEGORIES.LIST>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </LEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">Yes</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-1000.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>
+              <YEAREND />
+              <NAME />
+              <BILLCREDITPERIOD />
+              <TDSDEDUCTEESECTIONNUMBER />
+              <TDSLEDGERNC />
+              <SERVICETAXLEDGER />
+              <BILLTYPE TYPE="String">On Account</BILLTYPE>
+              <SUMNAME />
+              <TDSDEDUCTEEISSPECIALRATE>No</TDSDEDUCTEEISSPECIALRATE>
+              <TDSDEDUCTEESPECIALRATE>0</TDSDEDUCTEESPECIALRATE>
+              <AMOUNT>-1000.00</AMOUNT>
+              <INTERESTCOLLECTION.LIST>       </INTERESTCOLLECTION.LIST>
+              <STBILLCATEGORIES.LIST>       </STBILLCATEGORIES.LIST>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">No</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <INVENTORYALLOCATIONS.LIST>
+              <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+              <ADDLAMOUNT TYPE="Amount" />
+              <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+              <RATE TYPE="Rate">200.00/Nos</RATE>
+              <DISCOUNT TYPE="Number">0</DISCOUNT>
+              <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 5 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 5 Nos</BILLEDQTY>
+              <BATCHALLOCATIONS.LIST>
+                <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+                <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+                <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+                <TRACKINGNUMBER TYPE="String">DN-1</TRACKINGNUMBER>
+                <ADDLAMOUNT TYPE="Amount" />
+                <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+                <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+                <ACTUALQTY TYPE="Quantity"> 5 Nos</ACTUALQTY>
+                <BILLEDQTY TYPE="Quantity"> 5 Nos</BILLEDQTY>
+                <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+              </BATCHALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </INVENTORYALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+        <VOUCHER REMOTEID="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000016" VCHKEY="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000b4ba:00000010" VCHTYPE="Purchase" OBJVIEW="Invoice Voucher View">
+          <DATE TYPE="Date">20260902</DATE>
+          <REFERENCEDATE TYPE="Date" />
+          <GUID>fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000016</GUID>
+          <NARRATION TYPE="String">Invoice for GRN-1 [lb-seed:PUR-RN-1]</NARRATION>
+          <REQUESTORRULE />
+          <VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
+          <PARTYLEDGERNAME TYPE="String">Vendor Delta Supplies</PARTYLEDGERNAME>
+          <VOUCHERNUMBER>4</VOUCHERNUMBER>
+          <REFERENCE TYPE="String">PI-4</REFERENCE>
+          <SERIALMASTER TYPE="String" />
+          <ARESERIALMASTER TYPE="String" />
+          <NUMBERINGSTYLE>Auto Retain</NUMBERINGSTYLE>
+          <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+          <ISDELETED>No</ISDELETED>
+          <ASORIGINAL>No</ASORIGINAL>
+          <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+          <ISOPTIONAL TYPE="Logical">No</ISOPTIONAL>
+          <EFFECTIVEDATE TYPE="Date">20260902</EFFECTIVEDATE>
+          <ISCANCELLED TYPE="Logical">No</ISCANCELLED>
+          <ISPOSTDATED TYPE="Logical">No</ISPOSTDATED>
+          <ISINVOICE>Yes</ISINVOICE>
+          <ASPAYSLIP>No</ASPAYSLIP>
+          <ISDELETEDVCHRETAINED>No</ISDELETEDVCHRETAINED>
+          <ISNEGISPOSSET TYPE="Logical">Yes</ISNEGISPOSSET>
+          <ALTERID TYPE="Number"> 26</ALTERID>
+          <MASTERID TYPE="Number"> 22</MASTERID>
+          <VOUCHERKEY TYPE="Number">198710956916752</VOUCHERKEY>
+          <VOUCHERRETAINKEY TYPE="Number">13</VOUCHERRETAINKEY>
+          <REUSEHOLEID TYPE="Number">0</REUSEHOLEID>
+          <VOUCHERNUMBERSERIES TYPE="String">Default</VOUCHERNUMBERSERIES>
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME TYPE="String">Gadget</STOCKITEMNAME>
+            <ADDLAMOUNT TYPE="Amount" />
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <RATE TYPE="Rate">50.00/Nos</RATE>
+            <DISCOUNT TYPE="Number">0</DISCOUNT>
+            <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+            <ACTUALQTY TYPE="Quantity"> 30 Nos</ACTUALQTY>
+            <BILLEDQTY TYPE="Quantity"> 30 Nos</BILLEDQTY>
+            <BATCHALLOCATIONS.LIST>
+              <GODOWNNAME TYPE="String">Main Location</GODOWNNAME>
+              <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+              <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+              <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+              <TRACKINGNUMBER TYPE="String">RN-1</TRACKINGNUMBER>
+              <ADDLAMOUNT TYPE="Amount" />
+              <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+              <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 30 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 30 Nos</BILLEDQTY>
+              <BATCHRATE TYPE="Rate">50.00/Nos</BATCHRATE>
+            </BATCHALLOCATIONS.LIST>
+            <ACCOUNTINGALLOCATIONS.LIST>
+              <LEDGERNAME TYPE="String">Purchases</LEDGERNAME>
+              <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+              <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+              <BILLALLOCATIONS.LIST>       </BILLALLOCATIONS.LIST>
+              <TAXOBJECTALLOCATIONS.LIST>       </TAXOBJECTALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </ACCOUNTINGALLOCATIONS.LIST>
+          </ALLINVENTORYENTRIES.LIST>
+          <LEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Vendor Delta Supplies</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">1500.00</AMOUNT>
+            <BILLALLOCATIONS.LIST>
+              <AMOUNT TYPE="Amount">1500.00</AMOUNT>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </LEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Vendor Delta Supplies</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">Yes</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">1500.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>
+              <NAME>PI-4</NAME>
+              <BILLTYPE>New Ref</BILLTYPE>
+              <AMOUNT TYPE="Amount">1500.00</AMOUNT>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Purchases</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">No</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <INVENTORYALLOCATIONS.LIST>
+              <STOCKITEMNAME TYPE="String">Gadget</STOCKITEMNAME>
+              <ADDLAMOUNT TYPE="Amount" />
+              <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+              <RATE TYPE="Rate">50.00/Nos</RATE>
+              <DISCOUNT TYPE="Number">0</DISCOUNT>
+              <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 30 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 30 Nos</BILLEDQTY>
+              <BATCHALLOCATIONS.LIST>
+                <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+                <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+                <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+                <TRACKINGNUMBER TYPE="String">RN-1</TRACKINGNUMBER>
+                <ADDLAMOUNT TYPE="Amount" />
+                <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+                <AMOUNT TYPE="Amount">-1500.00</AMOUNT>
+                <ACTUALQTY TYPE="Quantity"> 30 Nos</ACTUALQTY>
+                <BILLEDQTY TYPE="Quantity"> 30 Nos</BILLEDQTY>
+                <BATCHRATE TYPE="Rate">50.00/Nos</BATCHRATE>
+              </BATCHALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </INVENTORYALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+        <VOUCHER REMOTEID="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000018" VCHKEY="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000b4ba:00000018" VCHTYPE="Sales" OBJVIEW="Invoice Voucher View">
+          <DATE TYPE="Date">20260902</DATE>
+          <REFERENCEDATE TYPE="Date" />
+          <GUID>fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000018</GUID>
+          <NARRATION TYPE="String">Sales SI-5 [lb-seed:SAL-DN-1]</NARRATION>
+          <REQUESTORRULE />
+          <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+          <PARTYLEDGERNAME TYPE="String">Customer Alpha Traders</PARTYLEDGERNAME>
+          <VOUCHERNUMBER>5</VOUCHERNUMBER>
+          <REFERENCE TYPE="String" />
+          <SERIALMASTER TYPE="String" />
+          <ARESERIALMASTER TYPE="String" />
+          <NUMBERINGSTYLE>Auto Retain</NUMBERINGSTYLE>
+          <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+          <ISDELETED>No</ISDELETED>
+          <ASORIGINAL>No</ASORIGINAL>
+          <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+          <ISOPTIONAL TYPE="Logical">No</ISOPTIONAL>
+          <EFFECTIVEDATE TYPE="Date">20260902</EFFECTIVEDATE>
+          <ISCANCELLED TYPE="Logical">No</ISCANCELLED>
+          <ISPOSTDATED TYPE="Logical">No</ISPOSTDATED>
+          <ISINVOICE>Yes</ISINVOICE>
+          <ASPAYSLIP>No</ASPAYSLIP>
+          <ISDELETEDVCHRETAINED>No</ISDELETEDVCHRETAINED>
+          <ISNEGISPOSSET TYPE="Logical">Yes</ISNEGISPOSSET>
+          <ALTERID TYPE="Number"> 28</ALTERID>
+          <MASTERID TYPE="Number"> 24</MASTERID>
+          <VOUCHERKEY TYPE="Number">198710956916760</VOUCHERKEY>
+          <VOUCHERRETAINKEY TYPE="Number">17</VOUCHERRETAINKEY>
+          <REUSEHOLEID TYPE="Number">0</REUSEHOLEID>
+          <VOUCHERNUMBERSERIES TYPE="String">Default</VOUCHERNUMBERSERIES>
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+            <ADDLAMOUNT TYPE="Amount" />
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <RATE TYPE="Rate">200.00/Nos</RATE>
+            <DISCOUNT TYPE="Number">0</DISCOUNT>
+            <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+            <ACTUALQTY TYPE="Quantity"> 5 Nos</ACTUALQTY>
+            <BILLEDQTY TYPE="Quantity"> 5 Nos</BILLEDQTY>
+            <BATCHALLOCATIONS.LIST>
+              <GODOWNNAME TYPE="String">Main Location</GODOWNNAME>
+              <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+              <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+              <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+              <TRACKINGNUMBER TYPE="String">DN-1</TRACKINGNUMBER>
+              <ADDLAMOUNT TYPE="Amount" />
+              <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+              <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 5 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 5 Nos</BILLEDQTY>
+              <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+            </BATCHALLOCATIONS.LIST>
+            <ACCOUNTINGALLOCATIONS.LIST>
+              <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+              <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+              <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+              <BILLALLOCATIONS.LIST>       </BILLALLOCATIONS.LIST>
+              <TAXOBJECTALLOCATIONS.LIST>       </TAXOBJECTALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </ACCOUNTINGALLOCATIONS.LIST>
+          </ALLINVENTORYENTRIES.LIST>
+          <LEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-1000.00</AMOUNT>
+            <BILLALLOCATIONS.LIST>
+              <AMOUNT TYPE="Amount">-1000.00</AMOUNT>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </LEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">Yes</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-1000.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>
+              <NAME>SI-5</NAME>
+              <BILLTYPE>New Ref</BILLTYPE>
+              <AMOUNT TYPE="Amount">-1000.00</AMOUNT>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">No</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <INVENTORYALLOCATIONS.LIST>
+              <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+              <ADDLAMOUNT TYPE="Amount" />
+              <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+              <RATE TYPE="Rate">200.00/Nos</RATE>
+              <DISCOUNT TYPE="Number">0</DISCOUNT>
+              <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 5 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 5 Nos</BILLEDQTY>
+              <BATCHALLOCATIONS.LIST>
+                <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+                <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+                <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+                <TRACKINGNUMBER TYPE="String">DN-1</TRACKINGNUMBER>
+                <ADDLAMOUNT TYPE="Amount" />
+                <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+                <AMOUNT TYPE="Amount">1000.00</AMOUNT>
+                <ACTUALQTY TYPE="Quantity"> 5 Nos</ACTUALQTY>
+                <BILLEDQTY TYPE="Quantity"> 5 Nos</BILLEDQTY>
+                <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+              </BATCHALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </INVENTORYALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+        <VOUCHER REMOTEID="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000019" VCHKEY="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000b4d7:00000008" VCHTYPE="Sales" OBJVIEW="Invoice Voucher View">
+          <DATE TYPE="Date">20261001</DATE>
+          <REFERENCEDATE TYPE="Date" />
+          <GUID>fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000019</GUID>
+          <NARRATION TYPE="String">Sales SI-6 [lb-seed:SAL-TRK-2]</NARRATION>
+          <REQUESTORRULE />
+          <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+          <PARTYLEDGERNAME TYPE="String">Customer Alpha Traders</PARTYLEDGERNAME>
+          <VOUCHERNUMBER>6</VOUCHERNUMBER>
+          <REFERENCE TYPE="String" />
+          <SERIALMASTER TYPE="String" />
+          <ARESERIALMASTER TYPE="String" />
+          <NUMBERINGSTYLE>Auto Retain</NUMBERINGSTYLE>
+          <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+          <ISDELETED>No</ISDELETED>
+          <ASORIGINAL>No</ASORIGINAL>
+          <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+          <ISOPTIONAL TYPE="Logical">No</ISOPTIONAL>
+          <EFFECTIVEDATE TYPE="Date">20261001</EFFECTIVEDATE>
+          <ISCANCELLED TYPE="Logical">No</ISCANCELLED>
+          <ISPOSTDATED TYPE="Logical">No</ISPOSTDATED>
+          <ISINVOICE>Yes</ISINVOICE>
+          <ASPAYSLIP>No</ASPAYSLIP>
+          <ISDELETEDVCHRETAINED>No</ISDELETEDVCHRETAINED>
+          <ISNEGISPOSSET TYPE="Logical">Yes</ISNEGISPOSSET>
+          <ALTERID TYPE="Number"> 29</ALTERID>
+          <MASTERID TYPE="Number"> 25</MASTERID>
+          <VOUCHERKEY TYPE="Number">198835510968328</VOUCHERKEY>
+          <VOUCHERRETAINKEY TYPE="Number">21</VOUCHERRETAINKEY>
+          <REUSEHOLEID TYPE="Number">0</REUSEHOLEID>
+          <VOUCHERNUMBERSERIES TYPE="String">Default</VOUCHERNUMBERSERIES>
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+            <ADDLAMOUNT TYPE="Amount" />
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <RATE TYPE="Rate">200.00/Nos</RATE>
+            <DISCOUNT TYPE="Number">0</DISCOUNT>
+            <AMOUNT TYPE="Amount">600.00</AMOUNT>
+            <ACTUALQTY TYPE="Quantity"> 3 Nos</ACTUALQTY>
+            <BILLEDQTY TYPE="Quantity"> 3 Nos</BILLEDQTY>
+            <BATCHALLOCATIONS.LIST>
+              <GODOWNNAME TYPE="String">Main Location</GODOWNNAME>
+              <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+              <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+              <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+              <TRACKINGNUMBER TYPE="String">DN-2</TRACKINGNUMBER>
+              <ADDLAMOUNT TYPE="Amount" />
+              <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+              <AMOUNT TYPE="Amount">600.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 3 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 3 Nos</BILLEDQTY>
+              <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+            </BATCHALLOCATIONS.LIST>
+            <ACCOUNTINGALLOCATIONS.LIST>
+              <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+              <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+              <AMOUNT TYPE="Amount">600.00</AMOUNT>
+              <BILLALLOCATIONS.LIST>       </BILLALLOCATIONS.LIST>
+              <TAXOBJECTALLOCATIONS.LIST>       </TAXOBJECTALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </ACCOUNTINGALLOCATIONS.LIST>
+          </ALLINVENTORYENTRIES.LIST>
+          <LEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-600.00</AMOUNT>
+            <BILLALLOCATIONS.LIST>
+              <AMOUNT TYPE="Amount">-600.00</AMOUNT>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </LEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">Yes</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-600.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>
+              <NAME>SI-6</NAME>
+              <BILLTYPE>New Ref</BILLTYPE>
+              <AMOUNT TYPE="Amount">-600.00</AMOUNT>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">No</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">600.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <INVENTORYALLOCATIONS.LIST>
+              <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+              <ADDLAMOUNT TYPE="Amount" />
+              <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+              <RATE TYPE="Rate">200.00/Nos</RATE>
+              <DISCOUNT TYPE="Number">0</DISCOUNT>
+              <AMOUNT TYPE="Amount">600.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 3 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 3 Nos</BILLEDQTY>
+              <BATCHALLOCATIONS.LIST>
+                <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+                <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+                <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+                <TRACKINGNUMBER TYPE="String">DN-2</TRACKINGNUMBER>
+                <ADDLAMOUNT TYPE="Amount" />
+                <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+                <AMOUNT TYPE="Amount">600.00</AMOUNT>
+                <ACTUALQTY TYPE="Quantity"> 3 Nos</ACTUALQTY>
+                <BILLEDQTY TYPE="Quantity"> 3 Nos</BILLEDQTY>
+                <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+              </BATCHALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </INVENTORYALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+        <VOUCHER REMOTEID="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000001a" VCHKEY="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000b4d8:00000008" VCHTYPE="Delivery Note" OBJVIEW="Invoice Voucher View">
+          <DATE TYPE="Date">20261002</DATE>
+          <REFERENCEDATE TYPE="Date" />
+          <GUID>fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000001a</GUID>
+          <NARRATION TYPE="String">Delivery Note DN-2 [lb-seed:DN-2]</NARRATION>
+          <REQUESTORRULE />
+          <VOUCHERTYPENAME>Delivery Note</VOUCHERTYPENAME>
+          <PARTYLEDGERNAME TYPE="String">Customer Alpha Traders</PARTYLEDGERNAME>
+          <VOUCHERNUMBER>2</VOUCHERNUMBER>
+          <REFERENCE TYPE="String" />
+          <SERIALMASTER TYPE="String" />
+          <ARESERIALMASTER TYPE="String" />
+          <NUMBERINGSTYLE>Auto Retain</NUMBERINGSTYLE>
+          <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+          <ISDELETED>No</ISDELETED>
+          <ASORIGINAL>No</ASORIGINAL>
+          <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+          <ISOPTIONAL TYPE="Logical">No</ISOPTIONAL>
+          <EFFECTIVEDATE TYPE="Date">20261002</EFFECTIVEDATE>
+          <ISCANCELLED TYPE="Logical">No</ISCANCELLED>
+          <ISPOSTDATED TYPE="Logical">No</ISPOSTDATED>
+          <ISINVOICE>No</ISINVOICE>
+          <ASPAYSLIP>No</ASPAYSLIP>
+          <ISDELETEDVCHRETAINED>No</ISDELETEDVCHRETAINED>
+          <ISNEGISPOSSET TYPE="Logical">Yes</ISNEGISPOSSET>
+          <ALTERID TYPE="Number"> 30</ALTERID>
+          <MASTERID TYPE="Number"> 26</MASTERID>
+          <VOUCHERKEY TYPE="Number">198839805935624</VOUCHERKEY>
+          <VOUCHERRETAINKEY TYPE="Number">5</VOUCHERRETAINKEY>
+          <REUSEHOLEID TYPE="Number">0</REUSEHOLEID>
+          <VOUCHERNUMBERSERIES TYPE="String">Default</VOUCHERNUMBERSERIES>
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+            <ADDLAMOUNT TYPE="Amount" />
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <RATE TYPE="Rate">200.00/Nos</RATE>
+            <DISCOUNT TYPE="Number">0</DISCOUNT>
+            <AMOUNT TYPE="Amount">600.00</AMOUNT>
+            <ACTUALQTY TYPE="Quantity"> 3 Nos</ACTUALQTY>
+            <BILLEDQTY TYPE="Quantity"> 3 Nos</BILLEDQTY>
+            <BATCHALLOCATIONS.LIST>
+              <GODOWNNAME TYPE="String">Main Location</GODOWNNAME>
+              <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+              <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+              <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+              <TRACKINGNUMBER TYPE="String">DN-2</TRACKINGNUMBER>
+              <ADDLAMOUNT TYPE="Amount" />
+              <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+              <AMOUNT TYPE="Amount">600.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 3 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 3 Nos</BILLEDQTY>
+              <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+            </BATCHALLOCATIONS.LIST>
+            <ACCOUNTINGALLOCATIONS.LIST>
+              <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+              <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+              <AMOUNT TYPE="Amount">600.00</AMOUNT>
+              <BILLALLOCATIONS.LIST>       </BILLALLOCATIONS.LIST>
+              <TAXOBJECTALLOCATIONS.LIST>       </TAXOBJECTALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </ACCOUNTINGALLOCATIONS.LIST>
+          </ALLINVENTORYENTRIES.LIST>
+          <LEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-600.00</AMOUNT>
+            <BILLALLOCATIONS.LIST>
+              <YEAREND />
+              <NAME />
+              <BILLCREDITPERIOD />
+              <TDSDEDUCTEESECTIONNUMBER />
+              <TDSLEDGERNC />
+              <SERVICETAXLEDGER />
+              <BILLTYPE TYPE="String">On Account</BILLTYPE>
+              <SUMNAME />
+              <TDSDEDUCTEEISSPECIALRATE>No</TDSDEDUCTEEISSPECIALRATE>
+              <TDSDEDUCTEESPECIALRATE>0</TDSDEDUCTEESPECIALRATE>
+              <AMOUNT>-600.00</AMOUNT>
+              <INTERESTCOLLECTION.LIST>       </INTERESTCOLLECTION.LIST>
+              <STBILLCATEGORIES.LIST>       </STBILLCATEGORIES.LIST>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </LEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">Yes</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-600.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>
+              <YEAREND />
+              <NAME />
+              <BILLCREDITPERIOD />
+              <TDSDEDUCTEESECTIONNUMBER />
+              <TDSLEDGERNC />
+              <SERVICETAXLEDGER />
+              <BILLTYPE TYPE="String">On Account</BILLTYPE>
+              <SUMNAME />
+              <TDSDEDUCTEEISSPECIALRATE>No</TDSDEDUCTEEISSPECIALRATE>
+              <TDSDEDUCTEESPECIALRATE>0</TDSDEDUCTEESPECIALRATE>
+              <AMOUNT>-600.00</AMOUNT>
+              <INTERESTCOLLECTION.LIST>       </INTERESTCOLLECTION.LIST>
+              <STBILLCATEGORIES.LIST>       </STBILLCATEGORIES.LIST>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">No</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">600.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <INVENTORYALLOCATIONS.LIST>
+              <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+              <ADDLAMOUNT TYPE="Amount" />
+              <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+              <RATE TYPE="Rate">200.00/Nos</RATE>
+              <DISCOUNT TYPE="Number">0</DISCOUNT>
+              <AMOUNT TYPE="Amount">600.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 3 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 3 Nos</BILLEDQTY>
+              <BATCHALLOCATIONS.LIST>
+                <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+                <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+                <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+                <TRACKINGNUMBER TYPE="String">DN-2</TRACKINGNUMBER>
+                <ADDLAMOUNT TYPE="Amount" />
+                <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+                <AMOUNT TYPE="Amount">600.00</AMOUNT>
+                <ACTUALQTY TYPE="Quantity"> 3 Nos</ACTUALQTY>
+                <BILLEDQTY TYPE="Quantity"> 3 Nos</BILLEDQTY>
+                <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+              </BATCHALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </INVENTORYALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+        <VOUCHER REMOTEID="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000001b" VCHKEY="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000b4d8:00000010" VCHTYPE="Credit Note" OBJVIEW="Invoice Voucher View">
+          <DATE TYPE="Date">20261002</DATE>
+          <REFERENCEDATE TYPE="Date" />
+          <GUID>fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000001b</GUID>
+          <NARRATION TYPE="String">Return tracked RI-1 [lb-seed:CN-TRK-1]</NARRATION>
+          <REQUESTORRULE />
+          <VOUCHERTYPENAME>Credit Note</VOUCHERTYPENAME>
+          <PARTYLEDGERNAME TYPE="String">Customer Alpha Traders</PARTYLEDGERNAME>
+          <VOUCHERNUMBER>1</VOUCHERNUMBER>
+          <REFERENCE TYPE="String" />
+          <SERIALMASTER TYPE="String" />
+          <ARESERIALMASTER TYPE="String" />
+          <NUMBERINGSTYLE>Auto Retain</NUMBERINGSTYLE>
+          <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+          <ISDELETED>No</ISDELETED>
+          <ASORIGINAL>No</ASORIGINAL>
+          <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+          <ISOPTIONAL TYPE="Logical">No</ISOPTIONAL>
+          <EFFECTIVEDATE TYPE="Date">20261002</EFFECTIVEDATE>
+          <ISCANCELLED TYPE="Logical">No</ISCANCELLED>
+          <ISPOSTDATED TYPE="Logical">No</ISPOSTDATED>
+          <ISINVOICE>Yes</ISINVOICE>
+          <ASPAYSLIP>No</ASPAYSLIP>
+          <ISDELETEDVCHRETAINED>No</ISDELETEDVCHRETAINED>
+          <ISNEGISPOSSET TYPE="Logical">Yes</ISNEGISPOSSET>
+          <ALTERID TYPE="Number"> 31</ALTERID>
+          <MASTERID TYPE="Number"> 27</MASTERID>
+          <VOUCHERKEY TYPE="Number">198839805935632</VOUCHERKEY>
+          <VOUCHERRETAINKEY TYPE="Number">1</VOUCHERRETAINKEY>
+          <REUSEHOLEID TYPE="Number">0</REUSEHOLEID>
+          <VOUCHERNUMBERSERIES TYPE="String">Default</VOUCHERNUMBERSERIES>
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+            <ADDLAMOUNT TYPE="Amount" />
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <RATE TYPE="Rate">200.00/Nos</RATE>
+            <DISCOUNT TYPE="Number">0</DISCOUNT>
+            <AMOUNT TYPE="Amount">-400.00</AMOUNT>
+            <ACTUALQTY TYPE="Quantity"> 2 Nos</ACTUALQTY>
+            <BILLEDQTY TYPE="Quantity"> 2 Nos</BILLEDQTY>
+            <BATCHALLOCATIONS.LIST>
+              <GODOWNNAME TYPE="String">Main Location</GODOWNNAME>
+              <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+              <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+              <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+              <TRACKINGNUMBER TYPE="String">RI-1</TRACKINGNUMBER>
+              <ADDLAMOUNT TYPE="Amount" />
+              <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+              <AMOUNT TYPE="Amount">-400.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 2 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 2 Nos</BILLEDQTY>
+              <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+            </BATCHALLOCATIONS.LIST>
+            <ACCOUNTINGALLOCATIONS.LIST>
+              <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+              <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+              <AMOUNT TYPE="Amount">-400.00</AMOUNT>
+              <BILLALLOCATIONS.LIST>       </BILLALLOCATIONS.LIST>
+              <TAXOBJECTALLOCATIONS.LIST>       </TAXOBJECTALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </ACCOUNTINGALLOCATIONS.LIST>
+          </ALLINVENTORYENTRIES.LIST>
+          <LEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">400.00</AMOUNT>
+            <BILLALLOCATIONS.LIST>
+              <AMOUNT TYPE="Amount">400.00</AMOUNT>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </LEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Customer Alpha Traders</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">No</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">Yes</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">No</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">400.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>
+              <NAME>SI-6</NAME>
+              <BILLTYPE>Agst Ref</BILLTYPE>
+              <AMOUNT TYPE="Amount">400.00</AMOUNT>
+            </BILLALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME TYPE="String">Sales - Goods</LEDGERNAME>
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISPARTYLEDGER TYPE="Logical">No</ISPARTYLEDGER>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <AMOUNT TYPE="Amount">-400.00</AMOUNT>
+            <VATASSESSABLEVALUE TYPE="Amount" />
+            <CATEGORYALLOCATIONS.LIST>      </CATEGORYALLOCATIONS.LIST>
+            <BILLALLOCATIONS.LIST>      </BILLALLOCATIONS.LIST>
+            <INVENTORYALLOCATIONS.LIST>
+              <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+              <ADDLAMOUNT TYPE="Amount" />
+              <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+              <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+              <RATE TYPE="Rate">200.00/Nos</RATE>
+              <DISCOUNT TYPE="Number">0</DISCOUNT>
+              <AMOUNT TYPE="Amount">-400.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 2 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 2 Nos</BILLEDQTY>
+              <BATCHALLOCATIONS.LIST>
+                <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+                <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+                <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+                <TRACKINGNUMBER TYPE="String">RI-1</TRACKINGNUMBER>
+                <ADDLAMOUNT TYPE="Amount" />
+                <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+                <AMOUNT TYPE="Amount">-400.00</AMOUNT>
+                <ACTUALQTY TYPE="Quantity"> 2 Nos</ACTUALQTY>
+                <BILLEDQTY TYPE="Quantity"> 2 Nos</BILLEDQTY>
+                <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+              </BATCHALLOCATIONS.LIST>
+              <COSTTRACKALLOCATIONS.LIST>       </COSTTRACKALLOCATIONS.LIST>
+            </INVENTORYALLOCATIONS.LIST>
+          </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+        <VOUCHER REMOTEID="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000021" VCHKEY="fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000b4d8:00000020" VCHTYPE="Rejections In" OBJVIEW="Invoice Voucher View">
+          <DATE TYPE="Date">20261002</DATE>
+          <REFERENCEDATE TYPE="Date" />
+          <GUID>fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000021</GUID>
+          <NARRATION TYPE="String">Goods returned RI-1 [lb-seed:RI-1]</NARRATION>
+          <REQUESTORRULE />
+          <VOUCHERTYPENAME>Rejections In</VOUCHERTYPENAME>
+          <PARTYLEDGERNAME TYPE="String">Customer Alpha Traders</PARTYLEDGERNAME>
+          <VOUCHERNUMBER>1</VOUCHERNUMBER>
+          <REFERENCE TYPE="String" />
+          <SERIALMASTER TYPE="String" />
+          <ARESERIALMASTER TYPE="String" />
+          <NUMBERINGSTYLE>Auto Retain</NUMBERINGSTYLE>
+          <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+          <ISDELETED>No</ISDELETED>
+          <ASORIGINAL>No</ASORIGINAL>
+          <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+          <ISOPTIONAL TYPE="Logical">No</ISOPTIONAL>
+          <EFFECTIVEDATE TYPE="Date">20261002</EFFECTIVEDATE>
+          <ISCANCELLED TYPE="Logical">No</ISCANCELLED>
+          <ISPOSTDATED TYPE="Logical">No</ISPOSTDATED>
+          <ISINVOICE>No</ISINVOICE>
+          <ASPAYSLIP>No</ASPAYSLIP>
+          <ISDELETEDVCHRETAINED>No</ISDELETEDVCHRETAINED>
+          <ISNEGISPOSSET TYPE="Logical">Yes</ISNEGISPOSSET>
+          <ALTERID TYPE="Number"> 37</ALTERID>
+          <MASTERID TYPE="Number"> 33</MASTERID>
+          <VOUCHERKEY TYPE="Number">198839805935648</VOUCHERKEY>
+          <VOUCHERRETAINKEY TYPE="Number">1</VOUCHERRETAINKEY>
+          <REUSEHOLEID TYPE="Number">0</REUSEHOLEID>
+          <VOUCHERNUMBERSERIES TYPE="String">Default</VOUCHERNUMBERSERIES>
+          <ALLINVENTORYENTRIES.LIST>
+            <STOCKITEMNAME TYPE="String">Widget</STOCKITEMNAME>
+            <ADDLAMOUNT TYPE="Amount" />
+            <ISDEEMEDPOSITIVE TYPE="Logical">Yes</ISDEEMEDPOSITIVE>
+            <ISLASTDEEMEDPOSITIVE TYPE="Logical">Yes</ISLASTDEEMEDPOSITIVE>
+            <RATE TYPE="Rate">200.00/Nos</RATE>
+            <DISCOUNT TYPE="Number">0</DISCOUNT>
+            <AMOUNT TYPE="Amount">-400.00</AMOUNT>
+            <ACTUALQTY TYPE="Quantity"> 2 Nos</ACTUALQTY>
+            <BILLEDQTY TYPE="Quantity"> 2 Nos</BILLEDQTY>
+            <BATCHALLOCATIONS.LIST>
+              <GODOWNNAME TYPE="String">Main Location</GODOWNNAME>
+              <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+              <INDENTNO TYPE="String"> Not Applicable</INDENTNO>
+              <ORDERNO TYPE="String"> Not Applicable</ORDERNO>
+              <TRACKINGNUMBER TYPE="String">RI-1</TRACKINGNUMBER>
+              <ADDLAMOUNT TYPE="Amount" />
+              <BATCHDISCOUNT TYPE="Number">0</BATCHDISCOUNT>
+              <AMOUNT TYPE="Amount">-400.00</AMOUNT>
+              <ACTUALQTY TYPE="Quantity"> 2 Nos</ACTUALQTY>
+              <BILLEDQTY TYPE="Quantity"> 2 Nos</BILLEDQTY>
+              <BATCHRATE TYPE="Rate">200.00/Nos</BATCHRATE>
+            </BATCHALLOCATIONS.LIST>
+            <ACCOUNTINGALLOCATIONS.LIST>      </ACCOUNTINGALLOCATIONS.LIST>
+            <COSTTRACKALLOCATIONS.LIST>      </COSTTRACKALLOCATIONS.LIST>
+          </ALLINVENTORYENTRIES.LIST>
+          <LEDGERENTRIES.LIST>     </LEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>     </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>
