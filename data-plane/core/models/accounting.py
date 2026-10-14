@@ -489,6 +489,11 @@ class BillAllocation(TimestampMixin, Base):
     amount: Mapped[Decimal] = mapped_column(Money)
 
 
+def _same_quantity(context: Any) -> Decimal:
+    """Default stock_quantity: the line's quantity (untracked lines move all of it)."""
+    return context.get_current_parameters()["quantity"]
+
+
 class InventoryLine(TimestampMixin, Base):
     """Stock movement; quantity signed: in +, out −."""
 
@@ -503,6 +508,9 @@ class InventoryLine(TimestampMixin, Base):
     item_id: Mapped[int] = mapped_column(Id, _fk("items"))
     godown_id: Mapped[int | None] = mapped_column(Id, _fk("godowns"), nullable=True)
     quantity: Mapped[Decimal] = mapped_column(Rate)
+    # The quantity this line moves in stock: the quantity, less the part tracked to a
+    # delivery or receipt note on a voucher that posts to the books (the note moves it).
+    stock_quantity: Mapped[Decimal] = mapped_column(Rate, default=_same_quantity)
     unit_id: Mapped[int | None] = mapped_column(Id, _fk("units"), nullable=True)
     rate: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
     amount: Mapped[Decimal] = mapped_column(Money)

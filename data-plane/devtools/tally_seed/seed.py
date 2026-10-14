@@ -33,6 +33,9 @@ STOCK_ITEMS = CollectionSpec("LBSeedItems", "StockItem", "STOCKITEM", "stock_ite
 COST_CENTRES = CollectionSpec(
     "LBSeedCostCentres", "CostCentre", "COSTCENTRE", "cost_centre", ("NAME",)
 )
+VOUCHER_TYPES = CollectionSpec(
+    "LBSeedVoucherTypes", "VoucherType", "VOUCHERTYPE", "voucher_type", ("NAME",)
+)
 _MARKER = re.compile(r"\[lb-seed:([A-Z0-9-]+)\]")
 
 
@@ -117,6 +120,7 @@ class TallyState:
     cost_centres: set[str]
     cost_centres_enabled: bool
     vouchers: dict[str, VoucherState]  # marker -> state
+    voucher_types: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -195,6 +199,7 @@ def read_state(client: TallyClient, company: str) -> TallyState:
         cost_centres=_names(export(COST_CENTRES), "COSTCENTRE"),
         cost_centres_enabled=cc_enabled,
         vouchers=vouchers,
+        voucher_types=_names(export(VOUCHER_TYPES), "VOUCHERTYPE"),
     )
 
 
@@ -229,10 +234,14 @@ def seed(
         if unit not in state.units:
             run(unit, "unit", "All Masters", rq.unit_create(unit))
             report.add("units")
-    for name, unit in seed_data.stock_items:
-        if name not in state.stock_items:
-            run(name, "stock item", "All Masters", rq.stock_item_create(name, unit))
+    for item in seed_data.stock_items:
+        if item.name not in state.stock_items:
+            run(item.name, "stock item", "All Masters", rq.stock_item_create(item))
             report.add("stock items")
+    for name, parent in seed_data.voucher_types:
+        if name not in state.voucher_types:
+            run(name, "voucher type", "All Masters", rq.voucher_type_create(name, parent))
+            report.add("voucher types")
     if state.cost_centres_enabled:
         for centre in seed_data.cost_centres:
             if centre not in state.cost_centres:

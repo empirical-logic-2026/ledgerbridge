@@ -3,6 +3,15 @@
 Amounts are positive here; Dr/Cr is explicit. The XML builder turns them into Tally's
 signed form. Voucher dates use only the 1st, 2nd or 31st of a month (TallyPrime
 Educational mode).
+
+Besides everyday vouchers, the set reproduces Tally's counting rules (checked against
+Tally's own balances, 2026-10-14; schema.md 7.4):
+- openings: ledgers and a stock item with non-zero opening balances;
+- stock moved once: delivery and receipt notes and a rejection, and the sales, purchase
+  and credit note lines tracked to them (before and after the note): the note moves the
+  stock, the tracked invoice line doesn't;
+- what counts in the books: an optional voucher, a memorandum, a reversing journal (none
+  count), a voucher of a custom type under Journal and a post-dated voucher (both count).
 """
 
 from dataclasses import dataclass, field
@@ -48,7 +57,9 @@ class ItemLine:
     item: str
     quantity: Decimal
     rate: Decimal
-    sales_ledger: str
+    sales_ledger: str  # the ledger the line's amount posts to (sales, purchases)
+    inward: bool = False  # received (purchase, receipt note, credit note) or sent out
+    tracking: str | None = None  # tracking number: ties an invoice line to a note
 
     @property
     def amount(self) -> Decimal:
@@ -67,6 +78,11 @@ class Voucher:
     alter_to: tuple[Entry, ...] | None = None  # entries after the post-creation alteration
     needs_cost_centres: bool = False
     delete: bool = False  # deleted after creation (tests deletion detection)
+    number: str | None = None  # voucher number (Tally may renumber automatic types)
+    reference: str | None = None
+    party: str | None = None  # the party ledger of an item voucher; else the entry with bills
+    optional: bool = False
+    post_dated: bool = False
 
     @property
     def tombstone(self) -> str:
@@ -83,12 +99,30 @@ class Voucher:
 
 
 @dataclass(frozen=True)
+class StockItem:
+    name: str
+    unit: str
+    opening_qty: Decimal = Decimal(0)
+    opening_rate: Decimal = Decimal(0)
+
+
+@dataclass(frozen=True)
 class SeedData:
     ledgers: tuple[Ledger, ...]
     units: tuple[str, ...]
-    stock_items: tuple[tuple[str, str], ...]  # (name, unit)
+    stock_items: tuple[StockItem, ...]
     cost_centres: tuple[str, ...]
     vouchers: tuple[Voucher, ...] = field(default=())
+    voucher_types: tuple[tuple[str, str], ...] = field(default=())  # (name, parent)
+
+
+# Voucher types whose vouchers don't post to the books (Tally leaves them out of every
+# balance), and those whose inventory lines don't move stock.
+NON_POSTING_TYPES = frozenset((
+    "Delivery Note", "Receipt Note", "Rejections In", "Rejections Out", "Memorandum",
+    "Reversing Journal",
+))  # fmt: skip
+NON_STOCK_TYPES = frozenset(("Memorandum", "Sales Order", "Purchase Order"))
 
 
 def _d(value: str) -> Decimal:
@@ -122,6 +156,9 @@ LEDGERS: tuple[Ledger, ...] = (
     Ledger("Input SGST", "Duties & Taxes", gst_duty_head="State Tax"),
     *(Ledger(name, "Sundry Debtors", bill_wise=True) for name in CUSTOMERS),
     *(Ledger(name, "Sundry Creditors", bill_wise=True) for name in VENDORS),
+    # Openings on balance sheet ledgers other than cash and capital (they balance).
+    Ledger("Security Deposit", "Deposits (Asset)", _d("12000"), "Dr"),
+    Ledger("Term Loan", "Loans (Liability)", _d("12000"), "Cr"),
 )
 
 
@@ -156,6 +193,40 @@ def _purchase(marker: str, on: date, party: str, bill: str, net: str, tax: str) 
         ),
     )
 
+
+def _goods(
+    marker: str,
+    voucher_type: str,
+    on: date,
+    narration: str,
+    party: str,
+    line: ItemLine,
+    number: str,
+    bill: Bill | None = None,
+    reference: str | None = None,
+) -> Voucher:
+    """A voucher of one inventory line and its party: an invoice (with a bill) or a note."""
+    side: Side = "Cr" if line.inward else "Dr"
+    entry = Entry(party, side, line.amount, (bill,) if bill else ())
+    return Voucher(
+        marker, voucher_type, on, narration, (entry,), items=(line,), number=number,
+        reference=reference, party=party,
+    )  # fmt: skip
+
+
+def _journal(marker: str, voucher_type: str, on: date, dr: str, cr: str, amount: str,
+             **flags: bool) -> Voucher:  # fmt: skip
+    return Voucher(
+        marker,
+        voucher_type,
+        on,
+        f"{voucher_type} test",
+        (Entry(dr, "Dr", _d(amount)), Entry(cr, "Cr", _d(amount))),
+        **flags,
+    )
+
+
+GADGET_IN = ItemLine("Gadget", _d("30"), _d("50"), "Purchases", inward=True, tracking="RN-1")
 
 VOUCHERS: tuple[Voucher, ...] = (
     Voucher(
@@ -292,14 +363,55 @@ VOUCHERS: tuple[Voucher, ...] = (
         (Entry("Salary", "Dr", _d("700")), Entry(BANK, "Cr", _d("700"))),
         delete=True,
     ),
-)
+    # --- stock moved once: notes and the invoice lines tracked to them -----------------
+    # A receipt note, then the purchase invoice tracked to it: only the note moves stock.
+    _goods("RN-1", "Receipt Note", date(2026, 9, 1), "Goods received GRN-1", VENDORS[0],
+           GADGET_IN, "RN-1"),
+    _goods("PUR-RN-1", "Purchase", date(2026, 9, 2), "Invoice for GRN-1", VENDORS[0],
+           GADGET_IN, "PUR-RN-1", _bill("PI-4", "1500"), "PI-4"),
+    # A delivery note, then the sales invoice tracked to it.
+    _goods("DN-1", "Delivery Note", date(2026, 9, 1), "Delivery Note DN-1", CUSTOMERS[0],
+           ItemLine("Widget", _d("5"), _d("200"), "Sales - Goods", tracking="DN-1"), "DN-1"),
+    _goods("SAL-DN-1", "Sales", date(2026, 9, 2), "Sales SI-5", CUSTOMERS[0],
+           ItemLine("Widget", _d("5"), _d("200"), "Sales - Goods", tracking="DN-1"), "SI-5",
+           _bill("SI-5", "1000")),
+    # The sales invoice first (a new tracking number), the delivery note afterwards.
+    _goods("SAL-TRK-2", "Sales", date(2026, 10, 1), "Sales SI-6", CUSTOMERS[0],
+           ItemLine("Widget", _d("3"), _d("200"), "Sales - Goods", tracking="DN-2"), "SI-6",
+           _bill("SI-6", "600")),
+    _goods("DN-2", "Delivery Note", date(2026, 10, 2), "Delivery Note DN-2", CUSTOMERS[0],
+           ItemLine("Widget", _d("3"), _d("200"), "Sales - Goods", tracking="DN-2"), "DN-2"),
+    # A return: the credit note is tracked to the rejection, which moves the stock. (With
+    # the rejection missing, Tally's P&L counted the credit note's value inconsistently.)
+    _goods("CN-TRK-1", "Credit Note", date(2026, 10, 2), "Return tracked RI-1", CUSTOMERS[0],
+           ItemLine("Widget", _d("2"), _d("200"), "Sales - Goods", inward=True,
+                    tracking="RI-1"),
+           "CN-1", _bill("SI-6", "400", "Agst Ref")),
+    _goods("RI-1", "Rejections In", date(2026, 10, 2), "Goods returned RI-1", CUSTOMERS[0],
+           ItemLine("Widget", _d("2"), _d("200"), "Sales - Goods", inward=True,
+                    tracking="RI-1"),
+           "RI-1"),
+    # --- what counts in the books ------------------------------------------------------
+    _journal("OPT-JNL-1", "Journal", date(2026, 10, 1), "Salary", "Salary Payable", "400",
+             optional=True),
+    _journal("MEMO-1", "Memorandum", date(2026, 10, 1), "Electricity", "Cash", "250"),
+    _journal("REV-JNL-1", "Reversing Journal", date(2026, 10, 1), "Rent", "Salary Payable",
+             "125"),
+    _journal("ADJ-JNL-1", "Adjustment Journal", date(2026, 10, 2), "Rent", "Salary Payable",
+             "300"),
+    _journal("PDC-1", "Payment", date(2027, 1, 1), "Rent", "Cash", "75", post_dated=True),
+)  # fmt: skip
 
 SEED = SeedData(
     ledgers=LEDGERS,
     units=("Nos",),
-    stock_items=(("Widget", "Nos"),),
+    stock_items=(
+        StockItem("Widget", "Nos"),
+        StockItem("Gadget", "Nos", _d("20"), _d("50")),  # an opening quantity and value
+    ),
     cost_centres=("Head Office", "Branch"),
     vouchers=VOUCHERS,
+    voucher_types=(("Adjustment Journal", "Journal"),),  # a custom type under Journal
 )
 
 
@@ -307,6 +419,7 @@ def validate(seed: SeedData) -> list[str]:
     """Problems with the data set itself; empty when it is safe to import."""
     problems: list[str] = []
     known = {ledger.name for ledger in seed.ledgers}
+    items = {item.name for item in seed.stock_items}
     for v in seed.vouchers:
         if v.on.day not in EDUCATIONAL_DAYS:
             problems.append(f"{v.marker}: day {v.on.day} not allowed in Educational mode")
@@ -315,7 +428,8 @@ def validate(seed: SeedData) -> list[str]:
         for entries in (v.entries, *((v.alter_to,) if v.alter_to else ())):
             dr = sum((e.amount for e in entries if e.side == "Dr"), Decimal(0))
             cr = sum((e.amount for e in entries if e.side == "Cr"), Decimal(0))
-            cr += sum((i.amount for i in v.items), Decimal(0))
+            dr += sum((i.amount for i in v.items if i.inward), Decimal(0))
+            cr += sum((i.amount for i in v.items if not i.inward), Decimal(0))
             if dr != cr:
                 problems.append(f"{v.marker}: debits {dr} != credits {cr}")
             for e in entries:
@@ -328,27 +442,54 @@ def validate(seed: SeedData) -> list[str]:
         for item in v.items:
             if item.sales_ledger not in known:
                 problems.append(f"{v.marker}: unknown ledger {item.sales_ledger}")
+            if item.item not in items:
+                problems.append(f"{v.marker}: unknown stock item {item.item}")
     markers = [v.marker for v in seed.vouchers]
     if len(set(markers)) != len(markers):
         problems.append("duplicate voucher markers")
     return problems
 
 
+def _counts(v: Voucher) -> bool:
+    """Whether a voucher is in the books (Tally): not cancelled, deleted or optional, and
+    of a type that posts. Post-dated vouchers count from their date."""
+    return not (v.cancel or v.delete or v.optional) and v.voucher_type not in NON_POSTING_TYPES
+
+
 def expected_balances(seed: SeedData) -> dict[str, tuple[Decimal, Side]]:
-    """Closing balance per ledger after seeding: openings plus all vouchers that are neither
-    cancelled nor deleted, using altered amounts. Returned as (amount, side) the way Tally's
-    Trial Balance shows it."""
+    """Closing balance per ledger at the financial year end after seeding: openings plus
+    the vouchers in the books, using altered amounts. Returned as (amount, side) the way
+    Tally's Trial Balance shows it."""
     net: dict[str, Decimal] = {}  # debit positive
     for ledger in seed.ledgers:
         sign = 1 if ledger.opening_side == "Dr" else -1
         net[ledger.name] = sign * ledger.opening
     for v in seed.vouchers:
-        if v.cancel or v.delete:
+        if not _counts(v):
             continue
         for e in v.final_entries():
             net[e.ledger] = net.get(e.ledger, Decimal(0)) + (
                 e.amount if e.side == "Dr" else -e.amount
             )
         for item in v.items:
-            net[item.sales_ledger] = net.get(item.sales_ledger, Decimal(0)) - item.amount
+            signed = item.amount if item.inward else -item.amount
+            net[item.sales_ledger] = net.get(item.sales_ledger, Decimal(0)) + signed
     return {name: (abs(value), "Dr" if value >= 0 else "Cr") for name, value in net.items()}
+
+
+def expected_stock(seed: SeedData) -> dict[str, Decimal]:
+    """Closing quantity per stock item at the financial year end, the way Tally counts it:
+    the opening, plus lines of vouchers that move stock. A line tracked to a delivery or
+    receipt note moves stock only on the note itself, never on an invoice or credit note
+    (checked against Tally, 2026-10-14)."""
+    quantities = {item.name: item.opening_qty for item in seed.stock_items}
+    for v in seed.vouchers:
+        if v.cancel or v.delete or v.optional or v.voucher_type in NON_STOCK_TYPES:
+            continue
+        posts = v.voucher_type not in NON_POSTING_TYPES
+        for line in v.items:
+            if posts and line.tracking:
+                continue  # the note moves it
+            signed = line.quantity if line.inward else -line.quantity
+            quantities[line.item] = quantities.get(line.item, Decimal(0)) + signed
+    return quantities

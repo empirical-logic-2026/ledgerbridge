@@ -1348,6 +1348,11 @@ class Transformer:
                     "item_id": refs.items[inv.item_name],
                     "godown_id": refs.godowns.get(inv.godown_name or ""),
                     "quantity": inv.quantity,
+                    # A line tracked to a delivery or receipt note doesn't move stock on a
+                    # voucher that posts to the books: the note moves it (counted once).
+                    "stock_quantity": inv.quantity - inv.tracked_quantity
+                    if posts is not False
+                    else inv.quantity,
                     "unit_id": refs.units.get(inv.unit_name or ""),
                     "rate": inv.rate,
                     "amount": inv.amount,

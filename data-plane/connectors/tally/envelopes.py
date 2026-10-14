@@ -103,6 +103,10 @@ VOUCHERS = CollectionSpec(
         "AllInventoryEntries.Discount",
         "AllInventoryEntries.BatchAllocations.GodownName",
         "AllInventoryEntries.BatchAllocations.BatchName",
+        # A tracking number ties an invoice line to a delivery or receipt note: the note
+        # moves the stock, the invoice line doesn't (mapping._tracked).
+        "AllInventoryEntries.BatchAllocations.TrackingNumber",
+        "AllInventoryEntries.BatchAllocations.ActualQty",
         "AllInventoryEntries.AccountingAllocations.LedgerName",
         "AllInventoryEntries.AccountingAllocations.Amount",
         "AllInventoryEntries.AccountingAllocations.IsDeemedPositive",
@@ -159,6 +163,14 @@ LEDGER_OPENING_BILLS = CollectionSpec(
     "ledger_opening_bills",
     ("GUID", "NAME", "BILLALLOCATIONS.NAME", "BILLALLOCATIONS.OPENINGBALANCE"),
 )
+
+# Masters whose OPENINGBALANCE (and OPENINGVALUE) Tally computes for the requested period:
+# it is the balance at the period's start, not the master's opening. Without a period Tally
+# uses its current period, so a company whose current period starts after the books begin
+# reports the balance at that later date (checked on the test company, 2026-10-14). These
+# are always fetched for a period starting on the books-beginning date
+# (connector._period_for).
+OPENING_SPECS = frozenset(("LBLedgers", "LBStockItems", "LBLedgerOpeningBills"))
 
 # Masters in the order they must be transformed (each may refer to the ones before it).
 MASTER_SPECS = (

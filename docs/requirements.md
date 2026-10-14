@@ -138,6 +138,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | DAT-008 | Raw data can be reprocessed into the canonical layer when mapping rules change, without re-fetching from the source. | P1 |
 | DAT-009 | Fields a source sends that have no column in the canonical model (e.g. Tally user-defined fields from TDL customisations) are kept per record, catalogued per entity and object type, and can be promoted to reporting dimensions by an explicit command, without schema changes at run time. | P1 |
 | DAT-011 | References by name (a ledger's group, a voucher's ledgers, cost centres, stock items, voucher types) resolve by defined rules: exact name first, then a known alias (e.g. a renamed reserved group's reserved name), then a defined normalisation applied to both sides (XML entities, Unicode NFC, spaces, case), each accepted only if exactly one candidate fits; otherwise the record fails with a clear reason. Normalised matches are reported as warnings (counts only), and a diagnostic explains references that don't resolve without showing names or values. | P1 |
+| DAT-012 | Figures follow the source's own counting rules, verified against the source's own reports on the test company: opening balances and opening quantities are the masters' openings at the books' beginning (never a balance at a later period's start); a stock movement recorded twice (a delivery or receipt note and the invoice tracked to it) moves stock once, where the source moves it; vouchers that the source keeps out of the books (optional, memorandum, reversing journals) don't count, while custom types derive their behaviour from the source's standard type. | P1 |
 | DAT-010 | A value that doesn't fit its column (too long, out of range, invalid date or characters) never fails other records: it is kept in full, never truncated, and flagged. Problems are reported by kind, table, column and size, never the value. | P1 |
 
 ### 4.7 Validation and reconciliation
@@ -152,7 +153,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | VAL-006 | Each stock item's closing quantity matches the source's. | P1 |
 | VAL-007 | Each party's bill-wise outstanding matches the source's. | P1 |
 | VAL-008 | Ledger closing balances match the source at every financial year end, not only the validation date. | P1 |
-| VAL-010 | An analysis of validation mismatches tests explanations that can be checked automatically (opening balances, signs, voucher types counted differently, cancelled, optional and post-dated vouchers, financial year boundaries, units, stock journals, rounding, foreign currency, bills) and reports how many mismatches each explains, with counts and the source's standard names only. | P1 |
+| VAL-010 | An analysis of validation mismatches tests explanations that can be checked automatically (opening balances, signs, voucher types counted differently, cancelled, optional and post-dated vouchers, financial year boundaries, units, stock journals, tracked notes, rounding, foreign currency, bills), alone and in pairs, and reports how many mismatches each explains; differing ledgers are broken down by primary group and whether the opening explains them, and unexplained ones by the first month (of the first financial year) where they differ and the voucher types that month. Counts and the source's standard names only. | P1 |
 | VAL-009 | Validation results name the root cause: records that failed to transform, and how many other failures are likely their consequences. | P1 |
 
 ### 4.8 Reporting and dashboards
@@ -346,6 +347,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
+| 2026-10-14 | 0.11 | DAT-012: the source's counting rules (openings at the books' beginning, stock moved once, what counts in the books); VAL-010 extended (pairs, primary groups, first month). |
 | 2026-10-14 | 0.10 | OPS-005: readable health report, stable error codes and error catalogue, shared output layout. |
 | 2026-10-14 | 0.9 | VAL-010: analysis of validation mismatches (`validate analyse`). |
 | 2026-10-13 | 0.8 | DAT-011: rules for resolving references by name, and a diagnostic for those that don't resolve (ADR-027). |

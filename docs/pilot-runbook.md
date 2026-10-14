@@ -235,7 +235,11 @@ It runs in the background like a sync (follow it again with `./dev.ps1 sync watc
 - **the profit carrier**, **unbalanced vouchers** (by voucher type and pattern: rounding, foreign currency, a reversed sign, a single line, on-account bills, inventory lines), **trial balance** dates, **bills** and **stock quantities** (each voucher type, opening quantity, physical stock, alternate or compound units, several godowns or batches);
 - **stored vouchers by type**: how many, whether stock vouchers have inventory lines here, and what their content holds that isn't read yet (Tally's tag names).
 
-Share the output as it is.
+Share the output as it is. It also shows: pairs of explanations that fit only together; the differing ledgers by primary group, split into those the opening explains, those with a non-zero stored opening and those with none; and, for ledgers nothing explains, the first month end of the first financial year where they differ (it reads Tally's balance at each month end of that year) with the voucher types that have lines that month.
+
+### 9. After a change to how data is fetched: `sync full -Restart`
+
+`transform rebuild` re-applies changed rules to what is stored. When a fix needs fields that weren't fetched before (for example opening balances as at the books' beginning, or tracking numbers on inventory lines; schema.md 7.5), the stored records don't have them: fetch everything again with `./dev.ps1 sync full -Env pilot -Restart`. It takes as long as the first full sync, resumes if interrupted, transforms with the current rules and validates thoroughly; no rebuild is needed afterwards.
 
 ## Reading the results
 
@@ -287,6 +291,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-14 | 0.12 | Step 9: `sync full -Restart` after a fix that needs fields not fetched before (openings at the books' beginning, tracking numbers); step 8: pairs, primary groups, first month. |
 | 2026-10-14 | 0.11 | `report` (step 6): verdict, sections, problems with meaning, cause and next step, saved as Markdown; plain names and stable codes everywhere ([error-catalogue.md](error-catalogue.md)); validation compared with the previous run. |
 | 2026-10-14 | 0.10 | `validate analyse` (step 8); stock journal entries read; orders and memorandum don't move stock; foreign currency amounts in the base currency; `watch` follows jobs that are busy without printing. |
 | 2026-10-13 | 0.9 | `transform explain` (step 7) for references that don't resolve; references resolve by alias and normalisation; vouchers of types that don't post to the books no longer count in balances; unbalanced vouchers by Tally's predefined type. |

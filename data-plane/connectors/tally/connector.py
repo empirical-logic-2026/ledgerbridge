@@ -114,7 +114,10 @@ class TallyConnector:
             body = self._company_post(
                 entity,
                 lambda name, spec=spec, since=since: envelopes.collection_request(
-                    spec, company=name, since_alter_id=since
+                    spec,
+                    company=name,
+                    since_alter_id=since,
+                    balances_period=_period_for(spec, entity),
                 ),
             )
             yield from parser.parse_records(body, spec, entity.key)
@@ -248,7 +251,11 @@ class TallyConnector:
         opening: Counter[str] = Counter()
         body = self._company_post(
             entity,
-            lambda name: envelopes.collection_request(envelopes.LEDGER_OPENING_BILLS, company=name),
+            lambda name: envelopes.collection_request(
+                envelopes.LEDGER_OPENING_BILLS,
+                company=name,
+                balances_period=_period_for(envelopes.LEDGER_OPENING_BILLS, entity),
+            ),
         )
         for ledger in parser.objects(parser.parse_response(body), "LEDGER"):
             bills = ledger.findall("BILLALLOCATIONS.LIST")
@@ -333,7 +340,12 @@ class TallyConnector:
 
     def ledger_elements(self, entity: SourceEntity) -> list[ET.Element]:
         body = self._company_post(
-            entity, lambda name: envelopes.collection_request(envelopes.LEDGERS, company=name)
+            entity,
+            lambda name: envelopes.collection_request(
+                envelopes.LEDGERS,
+                company=name,
+                balances_period=_period_for(envelopes.LEDGERS, entity),
+            ),
         )
         return parser.objects(parser.parse_response(body), envelopes.LEDGERS.object_tag)
 
@@ -394,7 +406,11 @@ class TallyConnector:
         body = self._company_post(
             entity,
             lambda name: envelopes.collection_request(
-                spec, company=name, period=period, since_alter_id=since
+                spec,
+                company=name,
+                period=period,
+                since_alter_id=since,
+                balances_period=_period_for(spec, entity),
             ),
             timeout,
         )
@@ -486,6 +502,15 @@ _GODOWN = re.compile(r"<GODOWNNAME[^>]*>([^<]*)<")
 _BATCH = re.compile(r"<BATCHNAME[^>]*>([^<]*)<")
 # A list element with content (Tally writes some lists empty in every voucher).
 _LIST_TAG = re.compile(r"<([A-Za-z][\w.:]*\.LIST)(?:\s[^>]*)?>\s*<(?!/)")
+
+
+def _period_for(spec: envelopes.CollectionSpec, entity: SourceEntity) -> tuple[date, date] | None:
+    """For masters with openings: a period starting on the books-beginning date, so
+    OPENINGBALANCE is the master's own opening, not the balance at the start of Tally's
+    current period (envelopes.OPENING_SPECS). One day is enough: only the start matters."""
+    if spec.collection_id not in envelopes.OPENING_SPECS or entity.books_from is None:
+        return None
+    return (entity.books_from, entity.books_from)
 
 
 def _canonical(text: str | None) -> Decimal:
