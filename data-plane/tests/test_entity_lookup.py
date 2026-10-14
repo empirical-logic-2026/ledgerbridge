@@ -234,8 +234,8 @@ def test_sync_prints_progress_and_a_result(pilot_cli) -> None:  # noqa: ANN001
         f"{known}: validating as of",  # right after its transform
         f"{known}: checking for deletions",
         f"{known}: SUCCEEDED: fetched",
-        f"Validation run 1 of {known} as of",
-        "Result: full succeeded; deletion_check succeeded; validation passed",
+        f"Validation of {known} as of",
+        "Result: full succeeded; deletion_check succeeded; validation passed. Overall: OK",
     ]
     positions = [out.index(step) for step in steps]
     assert positions == sorted(positions), out

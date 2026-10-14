@@ -71,9 +71,10 @@ ledgerbridge/
 │   │   └── models/             the database tables, as Python classes
 │   ├── devtools/               developer tools, never in the product
 │   │   ├── diagrams.py         generates the diagrams from the models
+│   │   ├── error_catalogue.py  generates docs/error-catalogue.md from the problem registry
 │   │   └── tally_seed/         fills the test company in TallyPrime (test only)
 │   ├── migrations/
-│   │   └── versions/           one file per database change, 0001 to 0012
+│   │   └── versions/           one file per database change, 0001 to 0013
 │   ├── tests/
 │   │   ├── connectors/tally/   tests of the Tally connector
 │   │   ├── devtools/           tests of the seeder and the diagrams
@@ -83,9 +84,11 @@ ledgerbridge/
 │   ├── compose.yaml, stack.ps1, new-env.ps1
 │   └── mysql/init/             the database's first-start script
 ├── docs/
+│   ├── error-catalogue.md      every error and warning code (generated)
 │   ├── design/                 dashboard design and mockup
 │   ├── diagrams/               ER, database and data flow diagrams (source and images)
 │   └── learning/               the Docker guide
+├── reports/                    saved health reports, per environment (git-ignored)
 └── frontend/
     ├── index.html, package.json, vite.config.ts, tsconfig*.json, .oxlintrc.json
     ├── public/
@@ -158,6 +161,7 @@ ledgerbridge/
 | `validation.py` | The checks: every voucher balances, the trial balance balances, every ledger matches Tally's closing balance, plus voucher counts, stock quantities, bills and year-end balances; and the "root cause" explanation. |
 | `alerts.py` | Raises and resolves alerts when syncs or checks fail. |
 | `errors.py` | Writes errors briefly and safely, never with SQL statements or values from the books. |
+| `problems.py` | Every error and warning the system reports, with its plain name, stable code (LB-SYNC, LB-TRF, LB-VAL, LB-CON, LB-SYS), meaning, causes, how to investigate and fix it, and the next command. All output and the error catalogue come from it. |
 
 **`workers/`: commands and background jobs.**
 
@@ -174,6 +178,8 @@ ledgerbridge/
 | `failures.py` | Groups the reasons records failed, for `summary`, without values. |
 | `fields.py` | The catalogue of extra fields (e.g. Tally custom fields) and turning one into a reporting dimension. |
 | `references.py` | The `transform explain` diagnostic: why names didn't resolve, in counts and kinds only. |
+| `report.py` | The health report (`./dev.ps1 report`): overall verdict, sections, problems with meaning, likely cause and next step; and the validation layout every command shares, compared with the previous run. Counts and codes only. |
+| `style.py` | Colours status words (green, yellow, red) when `dev.ps1` says the terminal supports it; plain text otherwise. |
 | `analyse.py` | The `validate analyse` diagnostic: tests explanations for every validation mismatch (ledgers, year ends, profit carrier, unbalanced vouchers, trial balance, bills, stock) and counts which fit. |
 
 **`migrations/`: database changes.**
@@ -182,6 +188,8 @@ ledgerbridge/
 | --- | --- |
 | `env.py`, `script.py.mako` | Alembic's setup and the template for new migration files. |
 | `versions/0001_...py` to `versions/0012_...py` | One file per change to the database, applied in order: 0001 raw records and sync runs, 0002 the accounting and system tables, 0003 the standard chart of accounts, then later additions (tax types, deletion checks, validation dates and alerts, sync checkpoints, unverified ranges, run liveness and job logs, the `extra` fields and field catalogue, voucher types' standard type and whether they move stock). An applied migration is never edited; a change is always a new file. [schema.md](schema.md) Section 3 lists them. |
+
+**`devtools/error_catalogue.py`: the error catalogue.** Writes `docs/error-catalogue.md` from `core/problems.py`, so the documented codes always match what the commands print (also run by `./dev.ps1 diagrams`; a test fails when it is stale). Development only.
 
 **`devtools/diagrams.py`: the diagrams.** Writes the Mermaid sources of the ER diagrams and the database diagram in `docs/diagrams/` from the database models, so they always match the code (`./dev.ps1 diagrams`, which also draws the images). Development only.
 
@@ -222,6 +230,7 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | [architecture.md](architecture.md) | How it is built, and the decision log (ADR-001 onwards: why each important choice was made). |
 | [schema.md](schema.md) | The database design: every table, the Tally mapping, the processing rules, the migrations. |
 | [roadmap.md](roadmap.md) | The milestones (M0 to M9, plus M7b), each with "done when" and the prompt that starts it. |
+| [error-catalogue.md](error-catalogue.md) | Every error and warning code: what it means, common causes, how to investigate, how to fix (generated from `core/problems.py`). |
 | [pilot-runbook.md](pilot-runbook.md) | Step by step for running the pilot on client data (the developer runs it, never Claude Code), and how to read the output. |
 | [design/dashboard.md](design/dashboard.md), `design/dashboard-mockup.png` | The dashboard design: the approved home page and the proposed Budget page. |
 | [learning/docker.md](learning/docker.md) | Docker explained for this project, file by file. |
@@ -282,7 +291,7 @@ Take `./dev.ps1 sync full`:
 3. `workers/cli.py` runs the sync (flows a to c) and writes its output to the database (`workers/runs.py`).
 4. `dev.ps1` then runs `python -m workers.cli watch` to show that output as it arrives.
 
-Short commands (`status`, `summary`, `validate`, `fields`) run the same way, but in the foreground. `./dev.ps1 test` runs the tests on the computer itself, not in a container.
+Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the same way, but in the foreground. `report` runs twice: once as Markdown, which `dev.ps1` saves under `reports/<env>/`, then as text for the screen. When the terminal shows colours, `dev.ps1` adds `-e LB_COLOR=1` and the status words are coloured. `./dev.ps1 test` runs the tests on the computer itself, not in a container.
 
 ### (f) Database migrations
 
@@ -296,6 +305,8 @@ Short commands (`status`, `summary`, `validate`, `fields`) run the same way, but
 | --- | --- |
 | Where is the Tally connection code? | `data-plane/connectors/tally/`: `client.py` (talking to Tally), `envelopes.py` (requests), `parser.py` (answers), `connector.py` (putting it together), `mapping.py` (what Tally's data means). |
 | Where are the database tables defined? | `data-plane/core/models/` in code; [schema.md](schema.md) for people; `data-plane/migrations/versions/` for the changes that create them. |
+| What does an error or warning code mean? | [error-catalogue.md](error-catalogue.md); the codes live in `data-plane/core/problems.py`. |
+| Where is the health report? | `data-plane/workers/report.py` (`./dev.ps1 report`). |
 | Where are the validation checks? | `data-plane/core/validation.py`; run by `data-plane/workers/validate.py`; described in [schema.md](schema.md) Section 5.2. Why they differ: `data-plane/workers/analyse.py` (`./dev.ps1 validate analyse`). |
 | Where are the environment settings? | `.env.test` / `.env.pilot` (not in git; templates `.env.*.example`), read by `data-plane/core/config.py`. |
 | Where are the tests? | `data-plane/tests/` (Python) and `frontend/src/App.test.tsx`; recorded Tally answers in `data-plane/tests/fixtures/tally/`. |
@@ -345,6 +356,7 @@ Short commands (`status`, `summary`, `validate`, `fields`) run the same way, but
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-14 | 0.4 | `core/problems.py`, `workers/report.py`, `workers/style.py`, `devtools/error_catalogue.py`, `docs/error-catalogue.md`, `reports/`; migration 0013. |
 | 2026-10-14 | 0.3 | `workers/analyse.py` (`validate analyse`); migration 0012. |
 | 2026-10-13 | 0.2 | Diagrams embedded (Section 1); `devtools/diagrams.py`, `docs/diagrams/` and their test. |
 | 2026-10-13 | 0.1 | First version, from the repository as of migration 0011. |

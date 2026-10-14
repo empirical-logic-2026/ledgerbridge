@@ -10,6 +10,7 @@
 .EXAMPLE
     ./dev.ps1 up
     ./dev.ps1 status
+    ./dev.ps1 report [-Details]                 (health report: verdict, problems, next steps; saved under reports/)
     ./dev.ps1 logs api
     ./dev.ps1 tally-companies
     ./dev.ps1 extract -Company "LedgerBridge Test Co"
@@ -44,11 +45,12 @@
     ./dev.ps1 transform explain -Env pilot      (why references didn't resolve; -CheckSource asks Tally)
     ./dev.ps1 validate analyse -Env pilot       (why validation mismatches; reads Tally's figures)
     ./dev.ps1 summary -Env pilot
+    ./dev.ps1 report -Env pilot [-Details]      (saved as reports/pilot/report-<date>.md, safe to share)
     ./dev.ps1 reset -Env pilot
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'help')]
+    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -101,6 +103,12 @@ param(
     # For `transform explain`: also ask Tally (read-only) what it lists now.
     [switch]$CheckSource,
 
+    # For `report`: expand every section (failure breakdowns, notes, fixed checks).
+    [switch]$Details,
+
+    # Plain output without colours (also when NO_COLOR is set or the output is redirected).
+    [switch]$NoColor,
+
     # For `promote-field`: the catalogued field's id (from `fields`), and the dimension's
     # code and name.
     [int]$FieldId = 0,
@@ -120,9 +128,27 @@ $stack = Join-Path (Join-Path $PSScriptRoot 'deploy') 'stack.ps1'
 $envFile = Join-Path $root ".env.$Env"
 $connection = "tally-$Env"
 
+function Get-ColorArgs {
+    # Colours for status words (green / yellow / red), only when this terminal shows them:
+    # not with -NoColor or NO_COLOR, not when the output is redirected to a file or pipe.
+    # The command inside the container can't tell (its output is a pipe), so it is told.
+    if ($NoColor -or $env:NO_COLOR -or [Console]::IsOutputRedirected) { return @() }
+    try { if (-not $Host.UI.SupportsVirtualTerminal) { return @() } } catch { return @() }
+    return @('-e', 'LB_COLOR=1')
+}
+
+function Add-ColorArgs([object[]]$Arguments) {
+    # `exec -T api ...` becomes `exec -T -e LB_COLOR=1 api ...` when colours are on.
+    if ($Arguments.Count -ge 2 -and $Arguments[0] -eq 'exec' -and $Arguments[1] -eq '-T') {
+        return @('exec', '-T') + @(Get-ColorArgs) + @($Arguments | Select-Object -Skip 2)
+    }
+    return $Arguments
+}
+
 function Invoke-Stack {
     # All Docker calls go through deploy/stack.ps1 (project name, env file, env_file path).
-    & $stack -Env $Env @args
+    $stackArgs = Add-ColorArgs $args
+    & $stack -Env $Env @stackArgs
     if ($LASTEXITCODE -ne 0) { throw "docker compose failed (exit $LASTEXITCODE)" }
 }
 
@@ -130,12 +156,13 @@ function Invoke-Checked {
     # For workers.cli commands whose exit codes mean "ran, but": 1 = checks or the sync
     # failed, 2 = refused or not found, 3 = a sync is already running. Reported plainly
     # instead of as a Docker failure.
-    & $stack -Env $Env @args
+    $stackArgs = Add-ColorArgs $args
+    & $stack -Env $Env @stackArgs
     switch ($LASTEXITCODE) {
         0 { }
-        1 { Write-Host 'Finished with problems: see the FAILED / error lines above.' -ForegroundColor Yellow }
+        1 { Write-Host "Finished with problems: see the FAILED / error lines above, or: ./dev.ps1 report -Env $Env" -ForegroundColor Yellow }
         2 { Write-Host 'Refused or not found: see the message above.' -ForegroundColor Yellow }
-        3 { Write-Host "A sync of this connection is already running (the worker may have started it). Wait, then: ./dev.ps1 status -Env $Env" -ForegroundColor Yellow }
+        3 { Write-Host "A sync of this connection is already running (the worker may have started it) [LB-SYNC-008]. Wait, then: ./dev.ps1 sync watch -Env $Env" -ForegroundColor Yellow }
         default { throw "docker compose failed (exit $LASTEXITCODE)" }
     }
 }
@@ -265,6 +292,38 @@ switch ($Command) {
         Assert-EnvFile
         Assert-ApiRunning
         Invoke-Stack exec -T api python -m workers.cli summary
+    }
+    'report' {
+        # One health report: overall verdict, connection, data loaded, work in progress (with
+        # the resume command), validation per company (compared with the previous run),
+        # warnings, and each problem's meaning, likely cause and next step. Reads only the
+        # database. Counts, dates and codes only (never names, values or amounts), so the
+        # Markdown copy saved under reports/<env>/ (git-ignored) can be shared as it is.
+        Assert-EnvFile
+        Assert-ApiRunning
+        $reportArgs = @('python', '-m', 'workers.cli', 'report')
+        foreach ($name in $Company) { $reportArgs += @('--entity', $name) }
+        $folder = Join-Path (Join-Path $root 'reports') $Env
+        New-Item -ItemType Directory -Force -Path $folder | Out-Null
+        $file = Join-Path $folder ('report-{0:yyyy-MM-dd-HHmmss}.md' -f (Get-Date))
+        # The full report (with details) as Markdown, read as UTF-8 and saved without a BOM.
+        $encoding = [Console]::OutputEncoding
+        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+        try {
+            $ErrorActionPreference = 'Continue'
+            $markdown = & $stack -Env $Env exec -T api @reportArgs --format markdown
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = 'Stop'
+        }
+        finally { [Console]::OutputEncoding = $encoding }
+        if ($code -gt 1) { throw "The report failed (exit $code): see the message above." }
+        [System.IO.File]::WriteAllText($file, (($markdown -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
+        if ($Details) { $reportArgs += '--details' }
+        $stackArgs = Add-ColorArgs (@('exec', '-T', 'api') + $reportArgs)
+        & $stack -Env $Env @stackArgs
+        if ($LASTEXITCODE -gt 1) { throw "The report failed (exit $LASTEXITCODE)." }
+        Write-Host ''
+        Write-Host "Saved (Markdown, no names or amounts): $file"
     }
     'up' {
         Assert-EnvFile
@@ -419,7 +478,11 @@ switch ($Command) {
         $mermaidImage = 'ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.4.2'
         $diagrams = Join-Path (Join-Path $root 'docs') 'diagrams'
         Push-Location (Join-Path $root 'data-plane')
-        try { Invoke-Uv run python -m devtools.diagrams }
+        try {
+            Invoke-Uv run python -m devtools.diagrams
+            # The error catalogue is generated from the code too (core/problems.py).
+            Invoke-Uv run python -m devtools.error_catalogue
+        }
         finally { Pop-Location }
         # Remove renders of sources that no longer exist (e.g. a diagram split in two).
         foreach ($render in Get-ChildItem -Path $diagrams -Include '*.svg', '*.png' -Recurse) {

@@ -50,7 +50,7 @@ def test_pilot_sync_status_and_summary_print_no_names(db: Session, run_cli) -> N
     code, out = run_cli("sync", "--connection", "tally-pilot", "--full", "--check-deletions")
     assert code == 0, out
     assert "entities: 1 entities" in out
-    assert "warnings (mapping assumptions): 2" in out
+    assert "Mapping assumptions [mapping_assumptions, LB-TRF-007]: 2" in out
     assert "PASSED" in out
     _no_names(out)
 
@@ -58,7 +58,7 @@ def test_pilot_sync_status_and_summary_print_no_names(db: Session, run_cli) -> N
         code, out = run_cli(command)
         assert code == 0
         _no_names(out)
-    assert "vouchers 18" in out and "validation: run" in out and "open alerts: none" in out
+    assert "vouchers 18" in out and "Validation of entity" in out and "open alerts: none" in out
 
     connection = db.scalars(select(S.Connection)).one()
     assert (connection.status, connection.config["origin"]) == ("paused", "backup")
