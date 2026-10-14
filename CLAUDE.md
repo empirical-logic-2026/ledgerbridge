@@ -71,6 +71,7 @@ npm run build
 ./dev.ps1 sync deletions                             # deletion check only (the worker runs it hourly)
 ./dev.ps1 validate                                   # validation as of today (M4); syncs also validate
 ./dev.ps1 summary                                    # counts and pass/fail only
+./dev.ps1 report [-Details]                          # health report: verdict, problems, next steps; saved in reports/<env>/
 ./dev.ps1 connect -Origin live -Company "LedgerBridge Test Co" -Activate   # origin, companies; new connections are paused until -Activate
 ./dev.ps1 reset -Env test -Force                     # delete the test volumes (asks to type "delete test"); keeps .env.test
 ./dev.ps1 entity-check                               # are the configured companies in Tally? kinds of difference, never names
@@ -122,6 +123,7 @@ Claude Code only ever uses `-Env test` (with both `dev.ps1` and `deploy/stack.ps
 5. Write or update tests with every change.
 6. Keep `docs/codebase-guide.md` accurate: whenever a folder or an important file is added, moved, renamed or removed (or its purpose changes), update the guide in the same change (its tree, its tables, the flows and "Where to look" if affected), with a change log entry.
 7. Keep the diagrams current: whenever the database models, the databases or users, or the data flows change, run `./dev.ps1 diagrams` and commit the regenerated `docs/diagrams/` (the ER and database diagrams are generated from the models; a test fails if they are stale). Edit the hand-written sources (`dataflow-*.mmd`, `er-budgets-planned.mmd`) when the flows or plans change, and update `docs/diagrams/README.md`.
+8. Every new error or warning gets an entry in `data-plane/core/problems.py` (a new stable code; never reuse or renumber one) and is printed with `title()`/the shared layout; run `./dev.ps1 diagrams` (or `python -m devtools.error_catalogue`) to regenerate `docs/error-catalogue.md`.
 
 ## Docker changes (developer is learning Docker)
 

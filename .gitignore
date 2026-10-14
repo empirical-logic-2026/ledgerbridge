@@ -14,3 +14,6 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# Health reports saved by ./dev.ps1 report (pilot-safe, but local)
+reports/

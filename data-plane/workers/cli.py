@@ -11,6 +11,7 @@
     python -m workers.cli entity-check --connection tally-pilot
     python -m workers.cli status
     python -m workers.cli summary
+    python -m workers.cli report [--entity NAME] [--details] [--format markdown]
     python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
     python -m workers.cli transform-retry --connection tally-pilot [--entity NAME]
     python -m workers.cli transform-rebuild --connection tally-pilot [--entity NAME]
@@ -28,6 +29,10 @@ gets the current mapping, `extra` fields and the field catalogue.
 `transform-retry` transforms stored records again (failed ones and any left pending) with
 the current code, without contacting the source, then validates the entities it touched.
 Companies appear as `entity <id> (company <n>)` everywhere (workers.entities.Labels).
+Every problem is named the same way everywhere: its plain title with the technical key and
+its stable code in brackets, e.g. `Balances at year ends [year_end_mismatch, LB-VAL-006]`
+(core/problems.py, docs/error-catalogue.md); validation counts are compared with the
+previous run (workers/report.py). Status words are coloured when LB_COLOR=1 (workers/style.py).
 
 Output shows names, keys, counts, check codes and pass/fail only, except `trial-balance`,
 which prints balances for the developer's own use. Validation results with amounts are in
@@ -50,6 +55,7 @@ import signal
 import sys
 import threading
 import time
+from collections import Counter
 from collections.abc import Sequence
 from datetime import date, datetime
 
@@ -73,17 +79,30 @@ from core.models.system import (
     SyncCheckpoint,
     SyncLog,
     SyncUnverifiedRange,
-    ValidationIssue,
     ValidationRun,
 )
+from core.problems import BY_CODE, for_error, title
 from core.transform import trial_balance
 from core.validation import ValidationReport
+from workers import style
 from workers.analyse import analyse
 from workers.entities import Labels, by_names, configured, select_entities, to_config
 from workers.extract import connector_for, get_or_create_connection, run_extract
 from workers.failures import failure_breakdown, format_group, warning_breakdown
 from workers.fields import PromoteError, catalogue, catalogue_counts, promote_field
 from workers.references import completeness, explain_entity, failed_reference_counts, lines
+from workers.report import (
+    FAILED,
+    OK,
+    build,
+    latest_validation,
+    next_step,
+    note_code,
+    render_markdown,
+    render_text,
+    validation_lines,
+    validation_occurrences,
+)
 from workers.runs import (
     ALIVE,
     FINISHED,
@@ -325,6 +344,16 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status", help="each connection's last sync and when the next is due")
     sub.add_parser("summary", help="counts and pass/fail per entity (safe to share)")
+    report = sub.add_parser(
+        "report",
+        help="one health report: overall verdict, sections, problems and next steps (counts "
+        "and codes only, safe to share)",
+    )
+    report.add_argument(
+        "--entity", action="append", help="entity name as stored (repeatable); default: all"
+    )
+    report.add_argument("--details", action="store_true", help="expand every section")
+    report.add_argument("--format", choices=("text", "markdown"), default="text")
 
     tb = sub.add_parser("trial-balance", help="trial balance computed from voucher lines")
     tb.add_argument("--entity-code", required=True)
@@ -350,6 +379,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(line_buffering=True)
     args = _parser().parse_args(argv)
+    if not (args.command in JOB_COMMANDS and getattr(args, "job", None)):
+        style.install()  # jobs write plain lines to sync_logs; `watch` colours them
     _terminate_raises_system_exit()
     with Session(get_engine()) as session:
         job = _start_job_log(session, args)
@@ -369,7 +400,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             if _show_names():
                 raise  # test environment: the full traceback helps
             # Elsewhere: never SQL statements or their parameters, nor quoted values.
-            print(f"error: {short_error(exc, redact=True)}", file=sys.stderr)
+            kind = "LB-SYS-003" if isinstance(exc, OperationalError) else "LB-SYS-001"
+            print(f"error: {short_error(exc, redact=True)} [{kind}]", file=sys.stderr)
             return 1
         finally:
             if job is not None:
@@ -433,6 +465,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _validate_analyse(session, args)
     if args.command == "summary":
         return _summary(session)
+    if args.command == "report":
+        return _report(session, args)
     if args.command == "trial-balance":
         if not _show_names():
             print("trial-balance prints amounts: test environment only.", file=sys.stderr)
@@ -571,7 +605,7 @@ def _sync(
                 )
             )
     except SyncBusyError as exc:
-        print(str(exc), file=sys.stderr)
+        print(f"{exc} [LB-SYNC-008]", file=sys.stderr)
         return 3
     code = 0
     for run in runs:
@@ -580,12 +614,29 @@ def _sync(
     if validate:
         code |= _print_validation(after.latest, Labels(session, connection))
         if after.validation_error:
-            print(f"Validation couldn't run: {_error(after.validation_error)}", file=sys.stderr)
+            print(
+                f"Validation couldn't run: {_error(after.validation_error)} [LB-VAL-020]",
+                file=sys.stderr,
+            )
             code |= 1
     parts = [f"{run.run_type} {run.status}" for run in runs]
     validation = after.validation_status if validate else "skipped"
-    print(f"Result: {'; '.join(parts)}; validation {validation}")
+    print(f"Result: {'; '.join(parts)}; validation {validation}. {_overall(runs, validation)}")
     return code
+
+
+def _overall(runs: Sequence[SyncResult], validation: str) -> str:
+    """`Overall: OK / ATTENTION NEEDED / FAILED` for a run's result line."""
+    failed = any(r.status == "failed" or r.failed for r in runs)  # or records failed to convert
+    if failed or validation in ("failed", "error"):
+        verdict = FAILED
+    elif any(r.status != "succeeded" for r in runs) or any(
+        e.unverified for r in runs for e in r.entity_results
+    ):
+        verdict = "ATTENTION NEEDED"
+    else:
+        verdict = OK
+    return f"Overall: {verdict} (details and next steps: report)"
 
 
 def _sleep(seconds: float) -> None:
@@ -635,7 +686,8 @@ def _watch(session: Session, args: argparse.Namespace) -> int:
                     print(
                         f"The job stopped without finishing: no sign of life for "
                         f"{args.grace_sec:g} s, so its process is gone. A sync's run is marked "
-                        "interrupted and its progress is kept; run it again to continue.",
+                        "interrupted and its progress is kept; run it again to continue. "
+                        "[LB-SYS-002]",
                         file=sys.stderr,
                     )
                     return 1
@@ -883,23 +935,26 @@ def _print_sync(r: SyncResult) -> int:
         label = labels.get(entity, "an entity")
         if _show_names():
             print(
-                f"  unmapped ledgers in {label} ({entity}) ({len(names)}): "
+                f"  {title('unmapped_ledgers')} in {label} ({entity}) ({len(names)}): "
                 f"{', '.join(names) or 'none'}"
             )
         else:
-            print(f"  unmapped ledgers in {label}: {len(names)}")
+            print(f"  {title('unmapped_ledgers')} in {label}: {len(names)}")
     if r.data_warnings:
-        print(
-            f"  values kept in extra (didn't fit their column): {sum(r.data_warnings.values()):,}"
-            " (summary groups them)"
-        )
+        kinds: Counter[str] = Counter()
+        for message, n in r.data_warnings.items():
+            kinds[note_code(message)] += n
+        listed = "; ".join(f"{BY_CODE[c].label()} {n:,}" for c, n in sorted(kinds.items()))
+        print(f"  converted with a note: {listed} (report -Details groups them)")
     if _show_names():
         for warning in r.warnings:
-            print(f"  warning: {warning}")
+            print(f"  {title('mapping_assumptions')}: {warning}")
     elif r.warnings:
-        print(f"  warnings (mapping assumptions): {len(r.warnings)}")
+        print(f"  {title('mapping_assumptions')}: {len(r.warnings)}")
     if r.error:
-        print(f"  error: {_error(r.error)}", file=sys.stderr)
+        default = "LB-SYNC-003" if r.run_type == DELETION_CHECK else "LB-SYNC-001"
+        kind = for_error(r.error, default).code
+        print(f"  error: {_error(r.error)} [{kind}]", file=sys.stderr)
         return 1
     return 0
 
@@ -929,34 +984,32 @@ def _entity_line(e: EntityOutcome) -> str:
         f"transformed {e.transformed:,}, {e.transform_failed} failed"
     )
     if e.error:
-        line += f"; error: {_error(e.error)}"
+        line += f"; error: {_error(e.error)} [{for_error(e.error, 'LB-SYNC-001').code}]"
     return line
 
 
-def _print_validation(reports: list[ValidationReport], labels: Labels | None = None) -> int:
-    """Counts, codes and pass/fail only (safe for client data)."""
+def _print_validation(reports: list[ValidationReport], labels: Labels) -> int:
+    """The same layout as status, summary and report: plain names with codes, each count
+    compared with the previous run, then the next step (counts and codes only)."""
+    session = labels.session
     for r in reports:
-        label = labels.for_entity(r.entity_id) if labels else f"entity {r.entity_id}"
+        label = labels.for_entity(r.entity_id)
         name = f"{label} ({r.entity_name})" if _show_names() else label
-        print(
-            f"Validation run {r.validation_run_id} of {name} as of {r.as_of}: "
-            f"{r.status.upper()}  {r.checks_passed} checks passed, {r.checks_failed} failed"
-        )
-        for code, count in sorted(r.failed_by_code.items()):
-            print(f"  failed: {code} x{count}")
+        run = session.get_one(ValidationRun, r.validation_run_id)
+        for line in validation_lines(session, run, name):
+            print(line)
+        unbalanced = title("voucher_unbalanced")
         if r.unbalanced_details:
             listed = ", ".join(f"{k} {n:,}" for k, n in sorted(r.unbalanced_details.items()))
-            print(f"  voucher_unbalanced: {listed}")
+            print(f"    {unbalanced} by pattern: {listed}")
         if r.unbalanced_by_type:
             listed = ", ".join(f"{k} {n:,}" for k, n in sorted(r.unbalanced_by_type.items()))
-            print(f"  voucher_unbalanced by voucher type: {listed}")
+            print(f"    {unbalanced} by voucher type: {listed}")
         for line in r.root_cause.lines():
             print(f"  ROOT CAUSE: {line}")
-        if any(f.check_code == "opening_difference" for f in r.findings):
-            print("  WARNING: opening balances don't total zero (difference in opening balances)")
-        for f in r.findings:
-            if f.severity == "info":
-                print(f"  note: {f.check_code}")
+        step = next_step(validation_occurrences(session, run, label), get_settings().app_env)
+        if step:
+            print(f"  Next step: {step}")
     return 1 if any(r.status == "failed" for r in reports) else 0
 
 
@@ -1000,32 +1053,14 @@ def _print_validation_status(session: Session, connection: Connection) -> None:
         .where(EntitySource.connection_id == connection.id)
         .order_by(Entity.name)
     ):
-        run = session.scalar(
-            select(ValidationRun)
-            .where(ValidationRun.entity_id == entity.id)
-            .order_by(ValidationRun.id.desc())
-            .limit(1)
-        )
+        run = latest_validation(session, entity.id)
         label = labels.for_entity(entity.id)
         name = f"{label} ({entity.name})" if _show_names() else label
         if run is None:
-            print(f"  validation of {name}: never ran")
+            print(f"  Validation of {name}: NOT VALIDATED yet [never_validated, LB-VAL-019]")
             continue
-        print(
-            f"  validation of {name}: run {run.id} {run.status.upper()} as of {run.as_of}, "
-            f"{run.checks_passed} passed, {run.checks_failed} failed, "
-            f"at {run.started_at:%Y-%m-%d %H:%M:%S} UTC"
-        )
-        opening = session.scalar(
-            select(func.count())
-            .select_from(ValidationIssue)
-            .where(
-                ValidationIssue.validation_run_id == run.id,
-                ValidationIssue.check_code == "opening_difference",
-            )
-        )
-        if opening:
-            print("    WARNING: opening balances don't total zero (difference in opening balances)")
+        for line in validation_lines(session, run, name, indent="  "):
+            print(line)
     alerts = session.execute(
         select(Alert.kind, func.count())
         .where(Alert.connection_id == connection.id, Alert.resolved_at.is_(None))
@@ -1097,7 +1132,7 @@ def _summary(session: Session) -> int:
             RawRecord.connection_id == connection.id,
             RawRecord.process_status == "failed",
         )
-        print(f"  raw records that failed to transform: {failed_raw}")
+        print(f"  {title('records_failed')}: {failed_raw}")
         _print_breakdowns(session, connection.id)
         raw = session.execute(
             select(RawRecord.object_type, RawRecord.process_status, func.count())
@@ -1184,26 +1219,12 @@ def _summary(session: Session) -> int:
                     f"    fields with no column, kept in extra: {sum(fields.values())} "
                     f"(by prefix: {listed}; see `fields`)"
                 )
-            run = session.scalar(
-                select(ValidationRun)
-                .where(ValidationRun.entity_id == entity_id)
-                .order_by(ValidationRun.id.desc())
-                .limit(1)
-            )
+            run = latest_validation(session, entity_id)
             if run is None:
-                print("    validation: never ran")
+                print("    Validation: NOT VALIDATED yet [never_validated, LB-VAL-019]")
                 continue
-            print(
-                f"    validation: run {run.id} {run.status.upper()} as of {run.as_of}, "
-                f"{run.checks_passed} passed, {run.checks_failed} failed"
-            )
-            codes = session.execute(
-                select(ValidationIssue.check_code, ValidationIssue.severity, func.count())
-                .where(ValidationIssue.validation_run_id == run.id)
-                .group_by(ValidationIssue.check_code, ValidationIssue.severity)
-            ).all()
-            for code, severity, n in sorted(codes):
-                print(f"      {severity}: {code} x{n}")
+            for line in validation_lines(session, run, labels.for_entity(entity_id), indent="    "):
+                print(line)
         alerts = session.execute(
             select(Alert.kind, func.count())
             .where(Alert.connection_id == connection.id, Alert.resolved_at.is_(None))
@@ -1213,18 +1234,33 @@ def _summary(session: Session) -> int:
     return 0
 
 
+def _report(session: Session, args: argparse.Namespace) -> int:
+    """The health report (workers/report.py): no names, values or amounts in any
+    environment. Exit code 0 for OK, 1 when something needs attention or failed."""
+    report = build(session, get_settings().app_env, args.entity)
+    if args.format == "markdown":
+        print(render_markdown(report), end="")
+    else:
+        print(render_text(report, args.details))
+    return 0 if report.verdict == OK else 1
+
+
 def _print_breakdowns(session: Session, connection_id: int) -> None:
     """Failed raw records and values kept aside, grouped by object type and kind: counts
     and messages without values (safe to share)."""
     failures = failure_breakdown(session, connection_id)
     if failures:
-        print("  why raw records failed (object type, count, error; no values):")
+        print("  why records failed to convert [LB-TRF-001] (object type, count, error):")
         for group in failures:
             print(f"    {format_group(group)}")
-    warnings = warning_breakdown(session, connection_id)
-    if warnings:
-        print("  values kept in extra because they didn't fit their column (no values):")
-        for group in warnings:
+    # Records converted with a note: values kept aside because they didn't fit their column,
+    # references matched flexibly, or left empty as ambiguous: one heading per kind.
+    by_code: dict[str, list] = {}
+    for group in warning_breakdown(session, connection_id):
+        by_code.setdefault(note_code(group.message), []).append(group)
+    for code, groups in sorted(by_code.items()):
+        print(f"  {BY_CODE[code].label()} (object type, count, note; no values):")
+        for group in groups:
             print(f"    {format_group(group)}")
 
 
@@ -1280,19 +1316,23 @@ def _transform_retry(session: Session, args: argparse.Namespace) -> int:
             rebuild=args.command == "transform-rebuild",
         )
     except SyncBusyError as exc:
-        print(str(exc), file=sys.stderr)
+        print(f"{exc} [LB-SYNC-008]", file=sys.stderr)
         return 3
     code = _print_sync(result)
     alert_for_run(session, connection, result)
     if not args.no_validate:
         code |= _print_validation(after.latest, Labels(session, connection))
         if after.validation_error:
-            print(f"Validation couldn't run: {_error(after.validation_error)}", file=sys.stderr)
+            print(
+                f"Validation couldn't run: {_error(after.validation_error)} [LB-VAL-020]",
+                file=sys.stderr,
+            )
             code |= 1
     _print_breakdowns(session, connection.id)
     validation = after.validation_status if not args.no_validate else "skipped"
     kind = "rebuild" if args.command == "transform-rebuild" else "transform"
-    print(f"Result: {kind} {result.status}; validation {validation}")
+    overall = _overall([result], validation)
+    print(f"Result: {kind} {result.status}; validation {validation}. {overall}")
     return code
 
 

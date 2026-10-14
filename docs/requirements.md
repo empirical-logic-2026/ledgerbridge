@@ -279,6 +279,7 @@ Budgets are data the client enters or imports, kept alongside the data synced fr
 - **OPS-002** Automated daily database backups inside the client environment.
 - **OPS-003** Versioned releases with database migrations that run automatically on update.
 - **OPS-004** Health monitoring visible to the Client Admin locally.
+- **OPS-005** Operational output is easy to read and act on: one health report with an overall verdict (OK, ATTENTION NEEDED, FAILED), sections (connection, data loaded, work in progress with the exact resume command, validation per company, warnings) and, for every problem, what it means, its likely cause (root causes separated from their consequences) and the next step as an exact command. Every error and warning has a plain-language name and a stable code (LB-SYNC, LB-TRF, LB-VAL, LB-CON, LB-SYS) documented in an error catalogue; all commands use the same names, codes and layout; validation counts are compared with the previous run; status is coloured in the terminal with a plain fallback; each report is saved as a dated Markdown file that holds no names, values or amounts.
 
 ### 5.4 Maintainability
 
@@ -345,6 +346,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
+| 2026-10-14 | 0.10 | OPS-005: readable health report, stable error codes and error catalogue, shared output layout. |
 | 2026-10-14 | 0.9 | VAL-010: analysis of validation mismatches (`validate analyse`). |
 | 2026-10-13 | 0.8 | DAT-011: rules for resolving references by name, and a diagnostic for those that don't resolve (ADR-027). |
 | 2026-10-13 | 0.7 | Budget planning and analysis (Section 4.12): BUD-001 to BUD-016; default budget permissions per role (Section 3); RPT-008 points to budgets; phase 1a includes budgets (milestone M7b). ADR-026. |

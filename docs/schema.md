@@ -105,6 +105,7 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 | `0007` | Pilot | `ledgerbridge_system.sync_checkpoints`, `ledgerbridge_system.sync_slow_periods` (Section 5.1, ADR-022) |
 | `0008` | Pilot | `ledgerbridge_system.sync_unverified_ranges` (Section 5.1, ADR-023) |
 | `0009` | Pilot | `ledgerbridge_system.sync_runs`: status `interrupted`, `heartbeat_at`, `pid`, `host`; `ledgerbridge_system.sync_logs` (Section 5.1, ADR-024) |
+| `0013` | Pilot | `ledgerbridge_system.validation_runs.thorough` |
 | `0012` | Pilot | `ledgerbridge_accounting.voucher_types.moves_stock` |
 | `0011` | Pilot | `ledgerbridge_accounting.voucher_types.standard_type` (ADR-027) |
 | `0010` | Pilot | `extra` JSON on [SRC] tables and `entities`; `ledgerbridge_accounting.source_fields`; `dimensions.source_object_type`, `source_field`; wider `voucher_number`, `reference_number`, `gstin`, `pan`, `phone`, `units.symbol`, `items.code`, `hsn_code`, `cost_centres.category`; `raw_records.process_warning`; `sync_runs.run_type` `transform` (ADR-025) |
@@ -433,7 +434,7 @@ Append-only history of every change (BUD-006): `id, budget_id, budget_line_id NU
 
 | Table | Key columns |
 | --- | --- |
-| `ledgerbridge_system.validation_runs` | `id, sync_run_id NULL, import_batch_id NULL, entity_id, as_of DATE, started_at, status, checks_passed, checks_failed` (`as_of` added by migration `0006`) |
+| `ledgerbridge_system.validation_runs` | `id, sync_run_id NULL, import_batch_id NULL, entity_id, as_of DATE, started_at, status, checks_passed, checks_failed, thorough BOOLEAN NULL` (`as_of` added by migration `0006`; `thorough` by `0013`: whether the source's controls were compared (voucher counts, stock, bills, year ends), so counts are compared only with a run of the same kind; NULL for older runs) |
 | `ledgerbridge_system.validation_issues` | `id, validation_run_id, check_code ('voucher_unbalanced','tb_unbalanced','closing_mismatch',...), severity, object_type, object_id, expected_value, actual_value, message, resolved_at` |
 | `ledgerbridge_system.alerts` | `id, kind ENUM('sync_failed','deletion_check_failed','validation_failed'), severity ENUM('error','warning'), connection_id, entity_id NULL, sync_run_id NULL, validation_run_id NULL, message, resolved_at NULL, acknowledged_at NULL, acknowledged_by VARCHAR(36) NULL` (SYN-006, migration `0006`). Index `(connection_id, kind, resolved_at)`. `message` holds counts and check codes only. Proposed for M7b: kind `budget_variance` (BUD-011), with `entity_id` set and `connection_id` NULL, so `connection_id` becomes nullable. |
 
@@ -678,6 +679,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-14 | 0.20 | Migration `0013`: `validation_runs.thorough`. |
 | 2026-10-14 | 0.19 | Migration `0012`: `voucher_types.moves_stock`; stock journal inventory lists mapped; foreign currency amounts read in the base currency. |
 | 2026-10-13 | 0.18 | Migration `0011`: `voucher_types.standard_type`; `extra._aliases`; lines of non-posting voucher types not effective; voucher type and group mapping (ADR-027). |
 | 2026-10-13 | 0.17 | Proposed budget design for M7b: Section 4.7 (`budgets`, `budget_lines`, `budget_line_months`, `budget_line_dimensions`, `budget_changes`), `budget_alert_rules` (5.5), budget permissions (5.3), budget-vs-actual reporting views (6). ADR-026. |

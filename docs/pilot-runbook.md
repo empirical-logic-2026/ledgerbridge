@@ -146,20 +146,28 @@ The sync and the validation are reported separately. A sync that fetched and tra
 ### 6. See the results
 
 ```powershell
+./dev.ps1 report -Env pilot            # verdict, sections, problems and next steps
+./dev.ps1 report -Env pilot -Details   # every section expanded
 ./dev.ps1 summary -Env pilot
 ./dev.ps1 status -Env pilot
 ```
 
+**`report` is the place to start.** At the top: **Overall: OK / ATTENTION NEEDED / FAILED** and the next step as an exact command. Then sections: connection, data loaded (records stored, converted, failed to convert), work in progress (a running job, an unfinished full sync or records waiting, each with its command), validation per company and warnings. Under *Problems and next steps* each problem shows where and how many, **What this means**, **Likely cause** (a root cause says how many other problems follow from it; a consequence names its root cause: fix that first) and **Next step**. Validation counts say whether they are better, worse or unchanged since the previous run. Status words are green, yellow or red when the terminal supports it (`-NoColor` turns colours off).
+
+Each `report` also saves the full report as Markdown under `reports/pilot/report-<date>-<time>.md` (git-ignored). It holds counts, dates and codes only, never names, values or amounts: **share that file.**
+
+**Every problem has a plain name and a stable code**, the same in every command, e.g. `Balances at year ends [year_end_mismatch, LB-VAL-006]`. [error-catalogue.md](error-catalogue.md) explains each code: what it means, common causes, how to investigate and how to fix it.
+
 **Companies are always named the same way:** `entity <id> (company <n>)`, in sync progress, transform, validation, `status` and `summary`. `entity <id>` is the company's id in the database; `company <n>` is its position in the connection's list of companies (as `connect` stored them). A company that hasn't been transformed yet shows as `company <n> (no entity yet)`, and the sync says when it becomes `entity <id> (company <n>)`.
 
 `summary` shows for the connection the last sync and deletion check, plus any raw records that failed to transform:
-- **why raw records failed**, grouped by object type and kind of error, with counts and a short message without values (e.g. `ledger x2,170: DataError: MySQL 1406 too long: parties.phone (values up to 61 characters)`);
-- **values kept in extra** because they didn't fit their column, grouped the same way (e.g. `voucher x12: too long: vouchers.voucher_number (length 300, column allows 255)`). These records were transformed; the full value is kept.
+- **why records failed to convert [LB-TRF-001]**, grouped by object type and kind of error, with counts and a short message without values (e.g. `ledger x2,170: DataError: MySQL 1406 too long: parties.phone (values up to 61 characters)`);
+- records **converted with a note**, under one heading per kind: **Values kept aside (didn't fit their column) [LB-TRF-003]** (e.g. `voucher x12: too long: vouchers.voucher_number (length 300, column allows 255)`; the full value is kept), **References matched flexibly [LB-TRF-004]** (after normalisation or by alias) and **Ambiguous references left empty [LB-TRF-005]**.
 
 For each company (`entity <id> (company <n>)`) it shows:
 - counts of ledgers (and how many are unmapped), parties, vouchers (cancelled, deleted in source) and effective voucher lines
 - how many fields with no column were found (e.g. Tally UDFs), by prefix (`fields with no column, kept in extra: 15 (by prefix: UDF 3, none 12)`)
-- the latest validation, PASSED or FAILED, with each failed check code and how often it occurred
+- the latest validation, PASSED or FAILED, with each problem's plain name, code and count, compared with the previous run
 
 It also lists open alerts. **This is the output to share.**
 
@@ -231,23 +239,26 @@ Share the output as it is.
 
 ## Reading the results
 
+Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was N | worse, was N | unchanged | fixed, was N | first result>)`. [error-catalogue.md](error-catalogue.md) lists every code. The table below covers other lines; validation lines are named by their key, e.g. `year_end_mismatch` is *Balances at year ends [LB-VAL-006]*.
+
 | Line | Meaning | What to do |
 | --- | --- | --- |
+| `Overall: FAILED` / `ATTENTION NEEDED` / `OK` (in `report` and every `Result:` line) | Whether anything failed, needs attention, or nothing. | Follow `Next step:`; share the saved report. |
 | `Sync run N (full): succeeded`, `failed: 0` | Everything was read and transformed. | – |
-| `raw records that failed to transform: N` (N > 0) | Some Tally objects couldn't be mapped or stored. | Share the `summary` lines under *why raw records failed* (counts and kinds, no values). After a fix: `./dev.ps1 transform retry -Env pilot`. |
-| `values kept in extra (didn't fit their column): N` | Records transformed, with some values kept aside in full (too long, out of range, invalid date). | Share the `summary` lines under *values kept in extra*. |
+| `Records that failed to convert [records_failed, LB-TRF-001]: N` (N > 0) | Some Tally objects couldn't be mapped or stored. | Share the `summary` lines under *why raw records failed* (counts and kinds, no values). After a fix: `./dev.ps1 transform retry -Env pilot`. |
+| `converted with a note: Values kept aside (didn't fit their column) [values_kept_in_extra, LB-TRF-003] N` | Records transformed, with some values kept aside in full (too long, out of range, invalid date). | Share the `report` (its details group them). |
 | `ROOT CAUSE: ...` (validation) | Records failed to transform; the other failures counted there are likely their consequences. | Fix the root cause first, then `transform retry`. |
-| `voucher_unbalanced by voucher type: Sales N, custom (other) N` | Unbalanced vouchers by Tally's predefined voucher type they derive from (`custom (...)` when it can't be told). The line before says how many have inventory lines, a single line or are post-dated. | Share both lines. |
-| `values kept in extra ...: reference matched after normalisation: voucher -> ledger` | References that resolved only after normalisation (e.g. case or spaces). | Expected; share the count. |
+| `Vouchers that don't balance [voucher_unbalanced, LB-VAL-001] by voucher type: Sales N, custom (other) N` | Unbalanced vouchers by Tally's predefined voucher type they derive from (`custom (...)` when it can't be told). The line before says how many have inventory lines, a single line or are post-dated. | Share both lines. |
+| `References matched flexibly [reference_matched_flexibly, LB-TRF-004]`: `reference matched after normalisation: voucher -> ledger` | References that resolved only after normalisation (e.g. case or spaces). | Expected; share the count. |
 | `error: voucher_count_mismatch xN` | N (month, voucher type) pairs where the number of vouchers differs from Tally's. | Share the count. Usually follows vouchers that failed to transform. |
 | `error: stock_quantity_mismatch xN` | N stock items whose closing quantity differs from Tally's. | Share the count. |
 | `error: bills_mismatch xN` | N parties whose bill-wise outstanding differs from Tally's. | Share the count. |
 | `error: year_end_mismatch xN` | Ledger balances that differ from Tally's at a financial year end. | Share the count. |
 | `error: voucher_counts_unavailable` (or `stock_quantities_`, `bill_outstanding_`, `year_end_balances_`) | Tally couldn't provide those figures (e.g. timed out). | Share the line; `validate -Env pilot` again later. |
 | `note: stock_values_not_compared` | Stock values per item depend on Tally's valuation method and aren't compared item by item. | Expected. |
-| `unmapped ...: N` | Ledgers without a standard account (e.g. under *Indirect Expenses*), by design. Reports will place them under the nearest standard parent account (M6). | Expected. Share the count. |
-| `warnings (mapping assumptions): N` | GST ledgers whose duty head Tally left empty, assumed to be Central Tax (schema.md 7.3, an assumption to verify). | Check in TallyPrime that the company's Central Tax (CGST) ledgers number N. Report "matches" or "doesn't match". |
-| `validation: ... PASSED` | All checks passed. | – |
+| `Ledgers without a standard account [unmapped_ledgers, LB-TRF-008] ...: N` | Ledgers without a standard account (e.g. under *Indirect Expenses*), by design. Reports will place them under the nearest standard parent account (M6). | Expected. Share the count. |
+| `Mapping assumptions [mapping_assumptions, LB-TRF-007]: N` | GST ledgers whose duty head Tally left empty, assumed to be Central Tax (schema.md 7.3, an assumption to verify). | Check in TallyPrime that the company's Central Tax (CGST) ledgers number N. Report "matches" or "doesn't match". |
+| `Validation of entity N (company N) as of ...: PASSED` | All checks passed. | – |
 | `unfinished full sync of entity N: K chunks done` (in `summary`) | A full sync was interrupted. | Run `./dev.ps1 sync full -Env pilot` again to continue it. |
 | `raw records by type and status: voucher pending N` (in `summary`) | Records stored but not yet transformed, e.g. after an interrupted sync. | They're transformed when that company's sync completes. |
 | `UNVERIFIED voucher 2024-03-01..2024-03-31` (in `summary`), `UnverifiedChunkError` | A month couldn't be proven complete; the sync stopped rather than count it as done. | Run `./dev.ps1 sync full -Env pilot` again: it fetches that month again. If it keeps happening, raise the timeout (`connect -TimeoutSec`). |
@@ -259,7 +270,7 @@ Share the output as it is.
 | `error: closing_mismatch xN` | N ledgers whose balance differs from Tally's. | Share the count. |
 | `error: ledger_missing xN` | Ledgers in Tally but not synced, or the other way round. | Share the count; re-run step 5 once. |
 | `error: profit_carrier_mismatch x1` | *Profit & Loss A/c* doesn't reconcile with the computed profit. Known points to check: books spanning several financial years, and companies that keep stock without integrated inventory (schema.md 10). | Share it, plus how many financial years the books cover and whether inventory is maintained. |
-| `error: <ErrorType>: <short message>` from any command | Something failed unexpectedly. Outside the test environment you see only the error type and a short message (for database errors, the MySQL code), never SQL or values. | Share that line as it is. |
+| `error: <ErrorType>: <short message> [LB-SYS-001]` from any command | Something failed unexpectedly. Outside the test environment you see only the error type and a short message (for database errors, the MySQL code), never SQL or values. | Share that line as it is. |
 | `error: closing_unavailable` | Tally couldn't be reached for closing balances. | Check that TallyPrime is running with both companies loaded; run `./dev.ps1 validate -Env pilot`. |
 | `warning: opening_difference x1` | The company's opening balances don't total zero (Tally's "Difference in opening balances"). Not a sync error. | Note it. The fix belongs in the client's books. |
 
@@ -276,6 +287,7 @@ Share the output as it is.
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-14 | 0.11 | `report` (step 6): verdict, sections, problems with meaning, cause and next step, saved as Markdown; plain names and stable codes everywhere ([error-catalogue.md](error-catalogue.md)); validation compared with the previous run. |
 | 2026-10-14 | 0.10 | `validate analyse` (step 8); stock journal entries read; orders and memorandum don't move stock; foreign currency amounts in the base currency; `watch` follows jobs that are busy without printing. |
 | 2026-10-13 | 0.9 | `transform explain` (step 7) for references that don't resolve; references resolve by alias and normalisation; vouchers of types that don't post to the books no longer count in balances; unbalanced vouchers by Tally's predefined type. |
 | 2026-10-13 | 0.8 | `transform rebuild` (every stored record again, without Tally); `retry` and `rebuild` never apply an older version of an object over a newer one. |

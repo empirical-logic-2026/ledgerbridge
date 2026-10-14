@@ -271,14 +271,18 @@ def test_pilot_output_names_companies_one_way_and_breaks_failures_down(
     assert "company 1 (no entity yet) is now entity 1 (company 1)" in out
     assert "entity 1 (company 1): SUCCEEDED" in out
     assert "failed by type: {'voucher': 1}" in out
-    assert "values kept in extra (didn't fit their column):" in out
+    assert "converted with a note: Values kept aside (didn't fit their column) " in out
+    assert "Overall: FAILED" in out  # a record failed to convert
 
     code, out = run_cli("summary")
     assert code == 0
     assert "  entity 1 (company 1):" in out
-    assert "why raw records failed (object type, count, error; no values):" in out
+    assert "why records failed to convert [LB-TRF-001] (object type, count, error):" in out
     assert "voucher x1: UnfitValueError: out of range: voucher_lines.amount" in out
-    assert "values kept in extra because they didn't fit their column (no values):" in out
+    assert (
+        "Values kept aside (didn't fit their column) [values_kept_in_extra, LB-TRF-003] "
+        "(object type, count, note; no values):"
+    ) in out
     assert "voucher x6: too long: vouchers.voucher_number (length 300, column allows 255)" in out
     assert "fields with no column, kept in extra:" in out and "UDF " in out
     for secret in ("Sim Co", "N" * 20, "G" * 20, "999999", "UDF:REFNO"):
@@ -290,7 +294,18 @@ def test_pilot_output_names_companies_one_way_and_breaks_failures_down(
     assert "UDF:REFNO.LIST/UDF:REFNO" in out
 
     code, out = run_cli("status")
-    assert "validation of entity 1 (company 1): never ran" in out
+    assert "Validation of entity 1 (company 1): NOT VALIDATED yet" in out
+
+    # The health report: the same names and codes, no names or values in any environment.
+    for argv in (("report",), ("report", "--details"), ("report", "--format", "markdown")):
+        code, out = run_cli(*argv)
+        assert code == 1  # a record failed to convert
+        assert "Overall: FAILED" in out or "**Overall: FAILED**" in out
+        assert "Records that failed to convert [records_failed, LB-TRF-001]" in out
+        assert "Not validated yet [never_validated, LB-VAL-019]" in out
+        assert r".\dev.ps1 transform explain -Env pilot" in out
+        for secret in ("Sim Co", "N" * 20, "G" * 20, "999999", "UDF:REFNO"):
+            assert secret not in out, (argv, secret)
 
 
 def test_transform_retry_command(db: Session, run_cli, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
@@ -332,7 +347,7 @@ def test_validation_names_the_root_cause(db: Session, run_cli) -> None:  # noqa:
     db.execute(A.Ledger.__table__.delete().where(A.Ledger.id == rent.id))
     db.commit()
     code, out = run_cli("validate", "--connection", "tally-pilot")
-    assert "Validation run 1 of entity 1 (company 1) as of" in out
+    assert "Validation of entity 1 (company 1) as of" in out
     assert "ROOT CAUSE: 1 ledgers in the source are missing here (1 ledger records failed" in out
     assert "vouchers failed to transform because they refer to a ledger that is missing" in out
     assert "are likely consequences: fix the records that failed to transform first" in out

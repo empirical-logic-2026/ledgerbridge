@@ -34,6 +34,7 @@ from core.models import accounting as A  # noqa: N812
 from core.models.base import utcnow
 from core.models.source import RawRecord
 from core.models.system import ValidationIssue, ValidationRun
+from core.problems import title
 
 ZERO = Decimal(0)
 PROFIT_NATURES = ("income", "expense")
@@ -89,7 +90,9 @@ class RootCause:
             out.append(f"raw records that failed to transform: {listed}")
         total = sum(self.consequences.values())
         if total:
-            listed = ", ".join(f"{code} {n:,}" for code, n in sorted(self.consequences.items()))
+            listed = ", ".join(
+                f"{title(code)} {n:,}" for code, n in sorted(self.consequences.items())
+            )
             out.append(
                 f"{total:,} other failures ({listed}) are likely consequences: fix the records "
                 "that failed to transform first (summary shows why they failed), then run "
@@ -192,6 +195,7 @@ class Validator:
             as_of=self.as_of,
             started_at=utcnow(),
             status="running",
+            thorough=controls is not None,
         )
         self.session.add(run)
         self.session.flush()

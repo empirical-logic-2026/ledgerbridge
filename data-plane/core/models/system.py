@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     CHAR,
     JSON,
+    Boolean,
     Enum,
     ForeignKey,
     Index,
@@ -258,6 +259,9 @@ class ValidationRun(TimestampMixin, Base):
     )
     checks_passed: Mapped[int] = mapped_column(Integer, default=0)
     checks_failed: Mapped[int] = mapped_column(Integer, default=0)
+    # Whether the source's controls were compared (voucher counts, stock, bills, year ends);
+    # a quick run skips them. NULL: runs before migration 0013.
+    thorough: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class ValidationIssue(TimestampMixin, Base):
