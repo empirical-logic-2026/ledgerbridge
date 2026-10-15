@@ -1,0 +1,22 @@
+<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <BATCH NAME="Primary Batch" RESERVEDNAME="">
+          <NAME TYPE="String">Primary Batch</NAME>
+          <GODOWNNAME TYPE="String">Main Location</GODOWNNAME>
+          <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+          <CLOSINGBALANCE TYPE="Quantity"> 30 Nos</CLOSINGBALANCE>
+          <OPENINGBALANCE TYPE="Quantity"> 100 Nos</OPENINGBALANCE>
+        </BATCH>
+        <BATCH NAME="Primary Batch" RESERVEDNAME="">
+          <NAME TYPE="String">Primary Batch</NAME>
+          <GODOWNNAME TYPE="String">Job Worker Alpha</GODOWNNAME>
+          <BATCHNAME TYPE="String">Primary Batch</BATCHNAME>
+          <CLOSINGBALANCE TYPE="Quantity">-60 Nos</CLOSINGBALANCE>
+          <OPENINGBALANCE TYPE="Quantity">0 Nos</OPENINGBALANCE>
+        </BATCH>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>

@@ -1,0 +1,50 @@
+<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <GODOWN NAME="Job Worker Alpha" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000ed</GUID>
+          <PARENT TYPE="String"> Primary</PARENT>
+          <ISEXTERNAL TYPE="Logical">Yes</ISEXTERNAL>
+          <ISINTERNAL TYPE="Logical">No</ISINTERNAL>
+          <ALTERID TYPE="Number"> 244</ALTERID>
+          <MASTERID TYPE="Number"> 237</MASTERID>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Job Worker Alpha</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </GODOWN>
+        <GODOWN NAME="Main Location" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-00000063</GUID>
+          <PARENT TYPE="String"> Primary</PARENT>
+          <ISEXTERNAL TYPE="Logical">No</ISEXTERNAL>
+          <ISINTERNAL TYPE="Logical">No</ISINTERNAL>
+          <ALTERID TYPE="Number"> 100</ALTERID>
+          <MASTERID TYPE="Number"> 99</MASTERID>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Main Location</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </GODOWN>
+        <GODOWN NAME="Principal Stock" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000ee</GUID>
+          <PARENT TYPE="String"> Primary</PARENT>
+          <ISEXTERNAL TYPE="Logical">No</ISEXTERNAL>
+          <ISINTERNAL TYPE="Logical">Yes</ISINTERNAL>
+          <ALTERID TYPE="Number"> 245</ALTERID>
+          <MASTERID TYPE="Number"> 238</MASTERID>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Principal Stock</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </GODOWN>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>

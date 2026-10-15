@@ -1105,7 +1105,12 @@ class Transformer:
 
     def _godowns(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         done = self._simple(
-            items, CanonicalGodown, A.Godown, lambda r: {"name": r.name}, result, "godown"
+            items,
+            CanonicalGodown,
+            A.Godown,
+            lambda r: {"name": r.name, "holding": r.holding},
+            result,
+            "godown",
         )
         self._link_parents(
             A.Godown, [(r.source_key, r.parent_name) for i in done for r in i.records]

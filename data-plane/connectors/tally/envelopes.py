@@ -77,7 +77,11 @@ STOCK_ITEMS = CollectionSpec(
     "stock_item",
     (*_KEYS, "PARENT", "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE", "OPENINGRATE"),
 )
-GODOWNS = CollectionSpec("LBGodowns", "Godown", "GODOWN", "godown", (*_KEYS, "PARENT"))
+# ISEXTERNAL: "our stock with a third party" (a job worker's location; Tally leaves its stock
+# out of every stock balance); ISINTERNAL: "third-party stock with us" (counted by Tally).
+GODOWNS = CollectionSpec(
+    "LBGodowns", "Godown", "GODOWN", "godown", (*_KEYS, "PARENT", "ISEXTERNAL", "ISINTERNAL")
+)
 COST_CENTRES = CollectionSpec(
     "LBCostCentres", "CostCentre", "COSTCENTRE", "cost_centre", (*_KEYS, "PARENT", "CATEGORY")
 )
@@ -142,6 +146,14 @@ STOCK_VALUES = CollectionSpec(
     "stock_value",
     ("GUID", "NAME", "OPENINGVALUE", "CLOSINGVALUE", "CLOSINGBALANCE"),
 )
+
+# One stock item's stock by godown (and batch), with Tally's own opening and closing
+# quantities for the period: `validate analyse` compares stock godown by godown. Requested
+# per item (CHILDOF): Tally's Stock Summary leaves out godowns of items in stock groups.
+BATCHES = CollectionSpec(
+    "LBBatches", "Batch", "BATCH", "batch",
+    ("NAME", "GODOWNNAME", "BATCHNAME", "OPENINGBALANCE", "CLOSINGBALANCE"),
+)  # fmt: skip
 
 # Vouchers of a month with their type only, to count them (validation, VAL-005). Small,
 # like a keys-only listing.
@@ -208,6 +220,7 @@ def collection_request(
     period: tuple[date, date] | None = None,
     since_alter_id: int | None = None,
     balances_period: tuple[date, date] | None = None,
+    child_of: str | None = None,
 ) -> str:
     """Builds a collection export.
 
@@ -225,6 +238,8 @@ def collection_request(
     if company is not None:
         static.append(f"<SVCURRENTCOMPANY>{escape(company)}</SVCURRENTCOMPANY>")
     extra = "".join(f"<COMPUTE>{formula}</COMPUTE>" for formula in spec.compute)
+    if child_of is not None:  # e.g. one stock item's batches
+        extra = f"<CHILDOF>{escape(child_of)}</CHILDOF>{extra}"
     formulae = []
     if period is not None:
         end_exclusive = period[1] + timedelta(days=1)

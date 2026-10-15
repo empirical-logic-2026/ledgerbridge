@@ -1,0 +1,80 @@
+<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <STOCKITEM NAME="Bracket" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f0</GUID>
+          <CLOSINGBALANCE TYPE="Quantity"> 31 Nos</CLOSINGBALANCE>
+          <OPENINGVALUE TYPE="Amount">0.00</OPENINGVALUE>
+          <CLOSINGVALUE TYPE="Amount">-904.00</CLOSINGVALUE>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Bracket</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+        <STOCKITEM NAME="Client Fabric" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f1</GUID>
+          <CLOSINGBALANCE TYPE="Quantity"> 30 Nos</CLOSINGBALANCE>
+          <OPENINGVALUE TYPE="Amount">0.00</OPENINGVALUE>
+          <CLOSINGVALUE TYPE="Amount">-120.00</CLOSINGVALUE>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Client Fabric</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+        <STOCKITEM NAME="Gadget" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000e8</GUID>
+          <CLOSINGBALANCE TYPE="Quantity"> 85 Nos</CLOSINGBALANCE>
+          <OPENINGVALUE TYPE="Amount">-1000.00</OPENINGVALUE>
+          <CLOSINGVALUE TYPE="Amount">-4250.00</CLOSINGVALUE>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Gadget</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+        <STOCKITEM NAME="Hinge" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f3</GUID>
+          <CLOSINGBALANCE TYPE="Quantity"> 3 Nos</CLOSINGBALANCE>
+          <OPENINGVALUE TYPE="Amount">-10.00</OPENINGVALUE>
+          <CLOSINGVALUE TYPE="Amount">-6.00</CLOSINGVALUE>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Hinge</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+        <STOCKITEM NAME="Steel Sheet" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000ef</GUID>
+          <CLOSINGBALANCE TYPE="Quantity"> 30 Nos</CLOSINGBALANCE>
+          <OPENINGVALUE TYPE="Amount">-1000.00</OPENINGVALUE>
+          <CLOSINGVALUE TYPE="Amount">-300.00</CLOSINGVALUE>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Steel Sheet</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+        <STOCKITEM NAME="Widget" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000cf</GUID>
+          <CLOSINGBALANCE TYPE="Quantity">-22 Nos</CLOSINGBALANCE>
+          <OPENINGVALUE TYPE="Amount">0.00</OPENINGVALUE>
+          <CLOSINGVALUE TYPE="Amount" />
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Widget</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>

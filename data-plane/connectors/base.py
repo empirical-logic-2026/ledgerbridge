@@ -102,6 +102,9 @@ class SourceBalances:
     profit_carriers: frozenset[str] = frozenset()
     opening_stock: Decimal | None = None
     closing_stock: Decimal | None = None
+    # The source's ledger openings at the books' beginning, totalled (canonical sign). With
+    # the opening stock value it is the source's own difference in opening balances.
+    opening_ledgers: Decimal | None = None
 
 
 @dataclass(frozen=True)

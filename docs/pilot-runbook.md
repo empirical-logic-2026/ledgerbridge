@@ -292,6 +292,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-15 | 0.14 | Job work godowns, stock journals read once and the source's own opening difference: after this release run `sync full -Restart` (godown flags are new fields); `validate analyse` compares stock by godown and lists job work. |
 | 2026-10-15 | 0.13 | Refusals say whether a running run or only a run lock was found; the lock lapses after a shutdown and `sync abandon` clears it; `report`'s next step puts unfinished work first. |
 | 2026-10-14 | 0.12 | Step 9: `sync full -Restart` after a fix that needs fields not fetched before (openings at the books' beginning, tracking numbers); step 8: pairs, primary groups, first month. |
 | 2026-10-14 | 0.11 | `report` (step 6): verdict, sections, problems with meaning, cause and next step, saved as Markdown; plain names and stable codes everywhere ([error-catalogue.md](error-catalogue.md)); validation compared with the previous run. |

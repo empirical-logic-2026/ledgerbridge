@@ -142,6 +142,9 @@ class CanonicalGodown:
     source_key: str
     name: str
     parent_name: str | None
+    # Whose stock it holds: own; ours_with_third_party (e.g. a job worker's location: the
+    # source leaves it out of stock balances); third_party_with_us (counted by the source).
+    holding: str = "own"
     extra: Mapping[str, Any] | None = _extra()
 
 

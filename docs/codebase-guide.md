@@ -74,7 +74,7 @@ ledgerbridge/
 │   │   ├── error_catalogue.py  generates docs/error-catalogue.md from the problem registry
 │   │   └── tally_seed/         fills the test company in TallyPrime (test only)
 │   ├── migrations/
-│   │   └── versions/           one file per database change, 0001 to 0014
+│   │   └── versions/           one file per database change, 0001 to 0015
 │   ├── tests/
 │   │   ├── connectors/tally/   tests of the Tally connector
 │   │   ├── devtools/           tests of the seeder and the diagrams
@@ -205,6 +205,7 @@ ledgerbridge/
 | `fixtures/tally/` | Real answers recorded from the test company (`*.xml`) and `manifest.json`, which says which request each file answers. Test company data only. |
 | `fixtures/tally/rules/` | Answers recorded from the test company that prove Tally's counting rules: ledger and stock item openings fetched for different periods, and tracked notes and invoices. |
 | `test_counting_rules.py` | Tally's counting rules (schema.md 7.5): openings fetched at the books' beginning, stock moved once for tracked invoices, and the seed matching Tally's own figures. |
+| `test_job_work.py` | Job work and godowns as Tally counts them, stock journals read once, Tally's own opening difference; on fixtures recorded from the test company. |
 | `test_dev_script_args.py`, `test_run_lock.py` | The docker compose arguments each `dev.ps1` command builds (with a stand-in for `deploy/stack.ps1`); the run lock: released however a run ends, lapsing after a shutdown, cleared when orphaned, refusals that say what they found. |
 | `connectors/tally/test_*.py` | The Tally connector: requests, parser, mapping, signs, recorded fixtures. |
 | `devtools/test_tally_seed.py`, `devtools/test_diagrams.py` | The seeder and its safety checks; that the diagrams match the models and are drawn. |
@@ -360,6 +361,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-15 | 0.7 | Migration 0015; job work in the seed; `tests/test_job_work.py`. |
 | 2026-10-15 | 0.6 | `workers/locks.py`; `tests/test_dev_script_args.py` (each dev.ps1 command's docker arguments), `tests/test_run_lock.py`. |
 | 2026-10-14 | 0.5 | Migration 0014; the seed reproduces Tally's counting rules; `tests/test_counting_rules.py` and `tests/fixtures/tally/rules/`. |
 | 2026-10-14 | 0.4 | `core/problems.py`, `workers/report.py`, `workers/style.py`, `devtools/error_catalogue.py`, `docs/error-catalogue.md`, `reports/`; migration 0013. |

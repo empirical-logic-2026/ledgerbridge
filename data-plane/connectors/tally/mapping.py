@@ -461,6 +461,50 @@ def _inventory(entry: ET.Element, inward: bool | None = None) -> CanonicalInvent
     )
 
 
+def _holding(godown: ET.Element) -> str:
+    """Whose stock a godown holds (checked on the test company, 2026-10-15): Tally leaves
+    stock at an "our stock with third party" godown (ISEXTERNAL, e.g. a job worker's) out
+    of every item balance, the Stock Summary and the closing stock value; stock at a
+    "third-party stock with us" godown (ISINTERNAL) is counted."""
+    if _flag(godown, "ISEXTERNAL"):
+        return "ours_with_third_party"
+    if _flag(godown, "ISINTERNAL"):
+        return "third_party_with_us"
+    return "own"
+
+
+def _inventory_lines(entry: ET.Element, inward: bool | None) -> list[CanonicalInventoryLine]:
+    """An inventory entry as lines: one per batch allocation when its stock sits in more
+    than one godown (each with its own quantity, amount and tracking), so stock is known
+    per godown; otherwise one line. Tally keeps the stock at each batch's godown; a
+    batch's destination godown (Material In/Out) doesn't move stock in Tally's balances."""
+    line = _inventory(entry, inward)
+    if line is None:
+        return []
+    batches = entry.findall("BATCHALLOCATIONS.LIST")
+    godowns = {_text(b, "GODOWNNAME") for b in batches}
+    if len(batches) < 2 or len(godowns) < 2:
+        return [line]
+    lines = []
+    for batch in batches:
+        quantity, _ = _quantity(_text(batch, "ACTUALQTY") or _text(batch, "BILLEDQTY"))
+        if not quantity:
+            return [line]  # quantities not split by batch: keep the entry whole
+        signed = abs(quantity) if line.quantity >= 0 else -abs(quantity)
+        amount = _canonical(tally_amount(_text(batch, "AMOUNT")))
+        lines.append(
+            replace(
+                line,
+                quantity=signed,
+                amount=amount if _text(batch, "AMOUNT") else line.amount * signed / line.quantity,
+                godown_name=_text(batch, "GODOWNNAME"),
+                batch_name=_text(batch, "BATCHNAME"),
+                tracked_quantity=signed if _tracking(batch) else Decimal(0),
+            )
+        )
+    return lines
+
+
 def _tracking(batch: ET.Element) -> str | None:
     number = _text(batch, "TRACKINGNUMBER")
     return None if number in (None, "", NOT_APPLICABLE) else number
@@ -497,9 +541,13 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
         for e in element.findall("ALLINVENTORYENTRIES.LIST")
         or element.findall("INVENTORYENTRIES.LIST")
     ]
-    # Stock journals (and manufacturing journals) list consumed and produced items apart.
-    inventory_entries += [(e, True) for e in element.findall("INVENTORYENTRIESIN.LIST")]
-    inventory_entries += [(e, False) for e in element.findall("INVENTORYENTRIESOUT.LIST")]
+    if not inventory_entries:
+        # Stock journals (and manufacturing journals) also list produced (in) and consumed
+        # (out) items apart. TallyPrime repeats them in ALLINVENTORYENTRIES with the right
+        # ISDEEMEDPOSITIVE (checked on the test company, 2026-10-15), so these lists are read
+        # only when the full list is missing: reading both counted each entry twice.
+        inventory_entries += [(e, True) for e in element.findall("INVENTORYENTRIESIN.LIST")]
+        inventory_entries += [(e, False) for e in element.findall("INVENTORYENTRIESOUT.LIST")]
     return CanonicalVoucher(
         source_key=key,
         voucher_type_name=voucher_type_name,
@@ -507,7 +555,7 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
         voucher_date=voucher_date,
         lines=tuple(_line(entry) for entry in postings(element)),
         inventory=tuple(
-            line for e, inward in inventory_entries if (line := _inventory(e, inward)) is not None
+            line for e, inward in inventory_entries for line in _inventory_lines(e, inward)
         ),
         reference_number=_text(element, "REFERENCE"),
         reference_date=parser.tally_date(_text(element, "REFERENCEDATE")),
@@ -555,7 +603,7 @@ USED_FIELDS: dict[str, frozenset[str]] = {
     "voucher_type": frozenset((*_MASTER, "AFFECTSSTOCK")),
     "unit": frozenset((*_IDENTITY, "ORIGINALNAME", "DECIMALPLACES")),
     "stock_group": frozenset(_MASTER),
-    "godown": frozenset(_MASTER),
+    "godown": frozenset((*_MASTER, "ISEXTERNAL", "ISINTERNAL")),
     "stock_item": frozenset((*_MASTER, "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE")),
     "cost_centre": frozenset((*_MASTER, "CATEGORY")),
     "voucher": frozenset((
@@ -641,7 +689,7 @@ def _records(record: SourceRecord, element: ET.Element) -> list[CanonicalRecord]
         case "stock_group":
             return [CanonicalItemGroup(key, _name(element), _parent(element))]
         case "godown":
-            return [CanonicalGodown(key, _name(element), _parent(element))]
+            return [CanonicalGodown(key, _name(element), _parent(element), _holding(element))]
         case "stock_item":
             return [stock_item(element, key)]
         case "cost_centre":
