@@ -244,14 +244,18 @@ def test_seed_reproduces_tallys_figures() -> None:
     2026-10-14): only the note moves stock; optional, memorandum and reversing journal
     vouchers don't count; the custom journal type and the post-dated voucher do."""
     stock = expected_stock(SEED)
-    assert stock == {"Widget": Decimal(-16), "Gadget": Decimal(50)}  # RI-1 brings back 2
+    # Widget: -10 sold, -5 and -3 delivered, +2 returned (RI-1), -4 delivered (DN-3) and -2
+    # untracked of SAL-PART-1. Gadget: 20 + 30 (RN-1) + 30 (RN-3) + 10 untracked of
+    # PUR-PART-1 - 5 (RO-1). Job work items: tests/test_job_work.py.
+    assert (stock["Widget"], stock["Gadget"]) == (Decimal(-22), Decimal(85))
     balances = expected_balances(SEED)
     assert balances["Rent"] == (Decimal("1375"), "Dr")  # 1,000 + ADJ 300 + PDC 75; REV out
     assert balances["Salary"] == (Decimal("15000"), "Dr")  # optional 400 out
     assert balances["Salary Payable"] == (Decimal("15300"), "Cr")
     assert balances["Electricity"] == (Decimal("4500"), "Dr")  # memorandum 250 out
     assert balances["Cash"] == (Decimal("27425"), "Dr")
-    assert balances["Purchases"] == (Decimal("14500"), "Dr")  # the invoice posts, the note not
+    # The invoices post (+1,500, +2,000, debit note -250), the notes don't.
+    assert balances["Purchases"] == (Decimal("16250"), "Dr")
     assert balances["Security Deposit"] == (Decimal("12000"), "Dr")
 
 

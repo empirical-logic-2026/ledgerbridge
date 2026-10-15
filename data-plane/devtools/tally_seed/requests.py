@@ -9,7 +9,7 @@ from datetime import date
 from decimal import Decimal
 from xml.sax.saxutils import escape, quoteattr
 
-from devtools.tally_seed.data import Entry, ItemLine, Ledger, Side, StockItem, Voucher
+from devtools.tally_seed.data import Entry, Godown, ItemLine, Ledger, Side, StockItem, Voucher
 
 GODOWN = "Main Location"
 BATCH = "Primary Batch"
@@ -82,6 +82,14 @@ def stock_group_create(name: str) -> str:
     return f'<STOCKGROUP NAME={quoteattr(name)} ACTION="Create">{_names(name)}</STOCKGROUP>'
 
 
+def godown_create(godown: Godown) -> str:
+    return (
+        f'<GODOWN NAME={quoteattr(godown.name)} ACTION="Create">{_names(godown.name)}'
+        f"<ISEXTERNAL>{'Yes' if godown.external else 'No'}</ISEXTERNAL>"
+        f"<ISINTERNAL>{'Yes' if godown.internal else 'No'}</ISINTERNAL></GODOWN>"
+    )
+
+
 def stock_item_create(item: StockItem) -> str:
     opening = ""
     if item.opening_qty:
@@ -96,9 +104,10 @@ def stock_item_create(item: StockItem) -> str:
             f"{fields}<BATCHALLOCATIONS.LIST><GODOWNNAME>{GODOWN}</GODOWNNAME>"
             f"<BATCHNAME>{BATCH}</BATCHNAME>{fields}</BATCHALLOCATIONS.LIST>"
         )
+    parent = f"<PARENT>{escape(item.group)}</PARENT>" if item.group else ""
     return (
         f'<STOCKITEM NAME={quoteattr(item.name)} ACTION="Create">{_names(item.name)}'
-        f"<BASEUNITS>{escape(item.unit)}</BASEUNITS>{opening}</STOCKITEM>"
+        f"{parent}<BASEUNITS>{escape(item.unit)}</BASEUNITS>{opening}</STOCKITEM>"
     )
 
 
@@ -149,26 +158,44 @@ def _entry(entry: Entry, list_tag: str, party: bool = False) -> str:
     )
 
 
-def _inventory(line: ItemLine) -> str:
-    """One inventory entry: sent out is a credit (positive amount), received a debit."""
+def _qty(quantity: Decimal) -> str:
+    return f"<ACTUALQTY> {quantity:.0f} Nos</ACTUALQTY><BILLEDQTY> {quantity:.0f} Nos</BILLEDQTY>"
+
+
+def _inventory(line: ItemLine, tag: str = "ALLINVENTORYENTRIES.LIST") -> str:
+    """One inventory entry: sent out is a credit (positive amount), received a debit. One
+    batch allocation per (quantity, tracking number) of the line; a Material In/Out names
+    the job worker's godown as its destination."""
     side: Side = "Dr" if line.inward else "Cr"
     amount = _amount(side, line.amount)
-    quantity = f"<ACTUALQTY> {line.quantity:.0f} Nos</ACTUALQTY><BILLEDQTY> {line.quantity:.0f} Nos</BILLEDQTY>"  # noqa: E501
-    tracking = f"<TRACKINGNUMBER>{escape(line.tracking)}</TRACKINGNUMBER>" if line.tracking else ""
+    destination = (
+        f"<DESTINATIONGODOWNNAME>{escape(line.destination)}</DESTINATIONGODOWNNAME>"
+        if line.destination
+        else ""
+    )
+    batches = "".join(
+        "<BATCHALLOCATIONS.LIST>"
+        f"<GODOWNNAME>{escape(line.godown)}</GODOWNNAME>{destination}<BATCHNAME>{BATCH}</BATCHNAME>"
+        + (f"<TRACKINGNUMBER>{escape(tracking)}</TRACKINGNUMBER>" if tracking else "")
+        + f"<AMOUNT>{_amount(side, quantity * line.rate)}</AMOUNT>{_qty(quantity)}"
+        "</BATCHALLOCATIONS.LIST>"
+        for quantity, tracking in line.split()
+    )
+    accounting = ""
+    if line.sales_ledger:
+        accounting = (
+            "<ACCOUNTINGALLOCATIONS.LIST>"
+            f"<LEDGERNAME>{escape(line.sales_ledger)}</LEDGERNAME>"
+            f"<ISDEEMEDPOSITIVE>{_deemed(side)}</ISDEEMEDPOSITIVE><AMOUNT>{amount}</AMOUNT>"
+            "</ACCOUNTINGALLOCATIONS.LIST>"
+        )
     return (
-        "<ALLINVENTORYENTRIES.LIST>"
+        f"<{tag}>"
         f"<STOCKITEMNAME>{escape(line.item)}</STOCKITEMNAME>"
         f"<ISDEEMEDPOSITIVE>{_deemed(side)}</ISDEEMEDPOSITIVE>"
-        f"<RATE>{line.rate:.2f}/Nos</RATE><AMOUNT>{amount}</AMOUNT>{quantity}"
-        "<BATCHALLOCATIONS.LIST>"
-        f"<GODOWNNAME>{GODOWN}</GODOWNNAME><BATCHNAME>{BATCH}</BATCHNAME>{tracking}"
-        f"<AMOUNT>{amount}</AMOUNT>{quantity}"
-        "</BATCHALLOCATIONS.LIST>"
-        "<ACCOUNTINGALLOCATIONS.LIST>"
-        f"<LEDGERNAME>{escape(line.sales_ledger)}</LEDGERNAME>"
-        f"<ISDEEMEDPOSITIVE>{_deemed(side)}</ISDEEMEDPOSITIVE><AMOUNT>{amount}</AMOUNT>"
-        "</ACCOUNTINGALLOCATIONS.LIST>"
-        "</ALLINVENTORYENTRIES.LIST>"
+        f"<RATE>{line.rate:.2f}/Nos</RATE><AMOUNT>{amount}</AMOUNT>{_qty(line.quantity)}"
+        f"{batches}{accounting}"
+        f"</{tag}>"
     )
 
 
@@ -188,6 +215,13 @@ def _voucher_body(voucher: Voucher, entries: tuple[Entry, ...]) -> str:
         head += "<ISPOSTDATED>Yes</ISPOSTDATED>"
     if not voucher.items:
         return head + "".join(_entry(e, "ALLLEDGERENTRIES.LIST") for e in entries)
+    if voucher.stock_journal:
+        return head + "".join(
+            _inventory(
+                line, "INVENTORYENTRIESIN.LIST" if line.inward else "INVENTORYENTRIESOUT.LIST"
+            )
+            for line in voucher.items
+        )
     party_name = voucher.party or next(e for e in entries if e.bills).ledger
     return (
         head

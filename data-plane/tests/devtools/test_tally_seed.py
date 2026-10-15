@@ -50,9 +50,12 @@ def test_expected_trial_balance_for_anchors() -> None:
     assert balances["Capital"] == (Decimal("50000"), "Cr")
     # 19,360 before ALTER-2 (receipt altered from 3,000 to 5,900); DEL-1 is deleted.
     assert balances["Test Bank Current A/c"] == (Decimal("25260"), "Dr")
-    assert balances["Customer Gamma Stores"] == (Decimal("0"), "Dr")  # SI-3 settled in full
+    # SI-3 settled in full; SI-7 (the partly tracked sale) is open.
+    assert balances["Customer Gamma Stores"] == (Decimal("1200"), "Dr")
+    # The ledgers total minus the opening stock value (Gadget 1,000, Steel Sheet 1,000,
+    # Hinge 10): with it, Tally's openings total zero.
     total = sum(a if s == "Dr" else -a for a, s in balances.values())
-    assert total == 0
+    assert total == -sum(i.opening_qty * i.opening_rate for i in SEED.stock_items) == -2010
 
 
 @pytest.mark.parametrize(
@@ -129,6 +132,8 @@ class FakeTally:
             action = obj.get("ACTION")
             if obj.tag == "UNIT":
                 self.state.units.add(obj.get("NAME"))
+            elif obj.tag == "GODOWN":
+                self.state.godowns.add(obj.get("NAME"))
             elif obj.tag == "STOCKGROUP":
                 self.state.stock_groups.add(obj.get("NAME"))
             elif obj.tag == "STOCKITEM":

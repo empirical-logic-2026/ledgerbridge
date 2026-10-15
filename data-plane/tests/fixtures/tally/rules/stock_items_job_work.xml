@@ -1,0 +1,104 @@
+<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <STOCKITEM NAME="Bracket" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f0</GUID>
+          <PARENT TYPE="String"> Primary</PARENT>
+          <BASEUNITS TYPE="String">Nos</BASEUNITS>
+          <ALTERID TYPE="Number"> 247</ALTERID>
+          <MASTERID TYPE="Number"> 240</MASTERID>
+          <OPENINGBALANCE TYPE="Quantity" />
+          <OPENINGVALUE TYPE="Amount">0.00</OPENINGVALUE>
+          <OPENINGRATE TYPE="Rate" />
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Bracket</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+        <STOCKITEM NAME="Client Fabric" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f1</GUID>
+          <PARENT TYPE="String"> Primary</PARENT>
+          <BASEUNITS TYPE="String">Nos</BASEUNITS>
+          <ALTERID TYPE="Number"> 248</ALTERID>
+          <MASTERID TYPE="Number"> 241</MASTERID>
+          <OPENINGBALANCE TYPE="Quantity" />
+          <OPENINGVALUE TYPE="Amount">0.00</OPENINGVALUE>
+          <OPENINGRATE TYPE="Rate" />
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Client Fabric</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+        <STOCKITEM NAME="Gadget" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000e8</GUID>
+          <PARENT TYPE="String"> Primary</PARENT>
+          <BASEUNITS TYPE="String">Nos</BASEUNITS>
+          <ALTERID TYPE="Number"> 234</ALTERID>
+          <MASTERID TYPE="Number"> 232</MASTERID>
+          <OPENINGBALANCE TYPE="Quantity"> 20 Nos</OPENINGBALANCE>
+          <OPENINGVALUE TYPE="Amount">-1000.00</OPENINGVALUE>
+          <OPENINGRATE TYPE="Rate">50.00/Nos</OPENINGRATE>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Gadget</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+        <STOCKITEM NAME="Hinge" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f3</GUID>
+          <PARENT TYPE="String">Components</PARENT>
+          <BASEUNITS TYPE="String">Nos</BASEUNITS>
+          <ALTERID TYPE="Number"> 250</ALTERID>
+          <MASTERID TYPE="Number"> 243</MASTERID>
+          <OPENINGBALANCE TYPE="Quantity"> 5 Nos</OPENINGBALANCE>
+          <OPENINGVALUE TYPE="Amount">-10.00</OPENINGVALUE>
+          <OPENINGRATE TYPE="Rate">2.00/Nos</OPENINGRATE>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Hinge</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+        <STOCKITEM NAME="Steel Sheet" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000ef</GUID>
+          <PARENT TYPE="String"> Primary</PARENT>
+          <BASEUNITS TYPE="String">Nos</BASEUNITS>
+          <ALTERID TYPE="Number"> 246</ALTERID>
+          <MASTERID TYPE="Number"> 239</MASTERID>
+          <OPENINGBALANCE TYPE="Quantity"> 100 Nos</OPENINGBALANCE>
+          <OPENINGVALUE TYPE="Amount">-1000.00</OPENINGVALUE>
+          <OPENINGRATE TYPE="Rate">10.00/Nos</OPENINGRATE>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Steel Sheet</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+        <STOCKITEM NAME="Widget" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000cf</GUID>
+          <PARENT TYPE="String"> Primary</PARENT>
+          <BASEUNITS TYPE="String">Nos</BASEUNITS>
+          <ALTERID TYPE="Number"> 209</ALTERID>
+          <MASTERID TYPE="Number"> 207</MASTERID>
+          <OPENINGBALANCE TYPE="Quantity" />
+          <OPENINGVALUE TYPE="Amount">0.00</OPENINGVALUE>
+          <OPENINGRATE TYPE="Rate" />
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Widget</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </STOCKITEM>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>

@@ -22,7 +22,8 @@ party or item names, and never amounts.
   vouchers and lines posted to ledgers deleted in the source.
 - **Bills**: opening bills, on-account amounts, vouchers not counted here, post-dated ones.
 - **Stock**: each voucher type counted here but not by the source and the other way round,
-  lines tracked to a delivery or receipt note, the opening quantity, physical stock
+  lines tracked to a delivery or receipt note, lines at a job worker's godown (the source
+  leaves them out), the opening quantity, physical stock
   vouchers, alternate or compound units, several
   godowns or batches; and, per voucher type, what the stored vouchers contain that the
   mapping doesn't read.
@@ -46,6 +47,13 @@ from core.validation import PROFIT_NATURES, Validator, financial_year_ends
 Progress = Callable[[str], None]
 ZERO = Decimal(0)
 SAMPLE = 500  # stored vouchers read per voucher type for the content census
+GODOWN_ITEMS = 200  # differing items checked godown by godown (one source request each)
+GODOWN_KINDS = {
+    "own": "own godown",
+    "ours_with_third_party": "a job worker's godown",
+    "third_party_with_us": "a principal's godown (their stock with us)",
+}
+JOB_WORK_TYPES = ("Material In", "Material Out", "Job Work In Order", "Job Work Out Order")
 STOCK_TYPES = (
     "Stock Journal",
     "Physical Stock",
@@ -135,6 +143,7 @@ class Analyser:
         self._unbalanced()
         self._bills()
         self._stock()
+        self._job_work()
         self._census()
         return self.lines
 
@@ -717,6 +726,7 @@ class Analyser:
             moves,
             total,
             tracked,
+            holding,
         ) in self.session.execute(
             select(
                 Inv.item_id,
@@ -728,9 +738,11 @@ class Analyser:
                 T.moves_stock,
                 func.sum(Inv.stock_quantity),
                 func.sum(Inv.quantity - Inv.stock_quantity),
+                A.Godown.holding,
             )
             .join(V, V.id == Inv.voucher_id)
             .join(T, T.id == V.voucher_type_id)
+            .outerjoin(A.Godown, A.Godown.id == Inv.godown_id)
             .where(Inv.entity_id == self.entity_id, Inv.voucher_date <= self.as_of)
             .group_by(
                 Inv.item_id,
@@ -740,12 +752,16 @@ class Analyser:
                 V.is_cancelled,
                 V.is_optional,
                 T.moves_stock,
+                A.Godown.holding,
             )
         ):
             kind = _type(standard, base)
             if standard == "Physical Stock":
                 physical.add(item_id)
             why = _category(deleted, cancelled, optional) or (None if moves else "not moving stock")
+            if why is None and holding == "ours_with_third_party":
+                # Not in the source's stock balances: e.g. consumption at a job worker.
+                why = "at a job worker's godown:"
             if why is None:
                 counted[item_id][kind] += Decimal(total or 0)
                 if tracked:
@@ -806,6 +822,92 @@ class Analyser:
             self.out(
                 "    items whose vouchers have: "
                 + ", ".join(f"{k} {n:,}" for k, n in hints.most_common())
+            )
+        self._godowns(mismatched)
+
+    def _godowns(self, item_ids: list[int]) -> None:
+        """Godown by godown, for items that differ (at most GODOWN_ITEMS): each godown's
+        movement (closing minus opening) in the source's own figures against our lines at
+        that godown. Counts by kind of godown only."""
+        if not item_ids or not hasattr(self.connector, "stock_by_godown"):
+            return
+        Inv, V, T, G = A.InventoryLine, A.Voucher, A.VoucherType, A.Godown  # noqa: N806
+        chosen = item_ids[:GODOWN_ITEMS]
+        names = dict(
+            self.session.execute(select(A.Item.id, A.Item.name).where(A.Item.id.in_(chosen))).all()
+        )
+        theirs = self._read("stock_by_godown", self.entity, self.as_of, list(names.values()))
+        if not isinstance(theirs, dict):
+            self.out("    by godown: the source's figures couldn't be read")
+            return
+        holdings = {
+            name: holding
+            for name, holding in self.session.execute(
+                select(G.name, G.holding).where(G.entity_id == self.entity_id)
+            )
+        }
+        ours: Counter[tuple[str, str]] = Counter()
+        for item_id, godown, moved in self.session.execute(
+            select(Inv.item_id, G.name, func.sum(Inv.stock_quantity))
+            .join(V, V.id == Inv.voucher_id)
+            .join(T, T.id == V.voucher_type_id)
+            .outerjoin(G, G.id == Inv.godown_id)
+            .where(
+                Inv.item_id.in_(chosen),
+                Inv.voucher_date <= self.as_of,
+                V.is_deleted.is_(False),
+                V.is_cancelled.is_(False),
+                V.is_optional.is_(False),
+                T.moves_stock.is_(True),
+            )
+            .group_by(Inv.item_id, G.name)
+        ):
+            ours[(names[item_id], godown or "")] += Decimal(moved or 0)
+        differ: Counter[str] = Counter()
+        for key in set(ours) | set(theirs):
+            opening, closing = theirs.get(key, (ZERO, ZERO))
+            if ours.get(key, ZERO) != closing - opening:
+                differ[GODOWN_KINDS.get(holdings.get(key[1], "own"), "own godown")] += 1
+        checked = f"{len(chosen):,} of {len(item_ids):,} differing items checked"
+        if differ:
+            listed = ", ".join(f"{kind} {n:,}" for kind, n in differ.most_common())
+            self.out(f"    by godown ({checked}): (item, godown) movements that differ: {listed}")
+        else:
+            self.out(f"    by godown ({checked}): every godown's movement matches")
+
+    def _job_work(self) -> None:
+        """Job work vouchers and where their stock sits (counts and standard names only)."""
+        V, T, Inv, G = A.Voucher, A.VoucherType, A.InventoryLine, A.Godown  # noqa: N806
+        vouchers = dict(
+            self.session.execute(
+                select(T.standard_type, func.count())
+                .join(V, V.voucher_type_id == T.id)
+                .where(V.entity_id == self.entity_id, T.standard_type.in_(JOB_WORK_TYPES))
+                .group_by(T.standard_type)
+            ).all()
+        )
+        lines = dict(
+            self.session.execute(
+                select(G.holding, func.count())
+                .join(Inv, Inv.godown_id == G.id)
+                .where(Inv.entity_id == self.entity_id, G.holding != "own")
+                .group_by(G.holding)
+            ).all()
+        )
+        if not vouchers and not lines:
+            return
+        self.out("Job work:")
+        if vouchers:
+            listed = ", ".join(f"{k} {n:,}" for k, n in sorted(vouchers.items()))
+            self.out(f"  vouchers: {listed}")
+        for holding, n in sorted(lines.items()):
+            self.out(
+                f"  inventory lines at {GODOWN_KINDS[holding]}: {n:,}"
+                + (
+                    " (not in the source's stock balances)"
+                    if holding == "ours_with_third_party"
+                    else ""
+                )
             )
 
     def _census(self) -> None:

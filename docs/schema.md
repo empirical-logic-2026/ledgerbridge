@@ -105,6 +105,7 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 | `0007` | Pilot | `ledgerbridge_system.sync_checkpoints`, `ledgerbridge_system.sync_slow_periods` (Section 5.1, ADR-022) |
 | `0008` | Pilot | `ledgerbridge_system.sync_unverified_ranges` (Section 5.1, ADR-023) |
 | `0009` | Pilot | `ledgerbridge_system.sync_runs`: status `interrupted`, `heartbeat_at`, `pid`, `host`; `ledgerbridge_system.sync_logs` (Section 5.1, ADR-024) |
+| `0015` | Pilot | `ledgerbridge_accounting.godowns.holding` (ADR-031) |
 | `0014` | Pilot | `ledgerbridge_accounting.inventory_lines.stock_quantity` (ADR-029) |
 | `0013` | Pilot | `ledgerbridge_system.validation_runs.thorough` |
 | `0012` | Pilot | `ledgerbridge_accounting.voucher_types.moves_stock` |
@@ -276,7 +277,7 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 | `ledgerbridge_accounting.item_groups` | `entity_id, parent_id, name` |
 | `ledgerbridge_accounting.items` | `entity_id, item_group_id, name, code VARCHAR(255), unit_id, hsn_code VARCHAR(32), gst_rate, opening_qty, opening_value` |
 | `ledgerbridge_accounting.units` | `entity_id, symbol VARCHAR(255), name, decimal_places` |
-| `ledgerbridge_accounting.godowns` | `entity_id, parent_id, name` |
+| `ledgerbridge_accounting.godowns` | `entity_id, parent_id, name, holding ENUM(own, ours_with_third_party, third_party_with_us) DEFAULT own` (whose stock it holds: a job worker's location, "our stock with third party", is left out of stock balances; migration 0015) |
 | `ledgerbridge_accounting.cost_centres` | `entity_id, parent_id, category VARCHAR(255), name` |
 
 All of them also have `extra JSON NULL` ([SRC], ADR-025).
@@ -640,6 +641,9 @@ Checked against Tally's own balances and Stock Summary on LedgerBridge Test Co (
 | --- | --- | --- |
 | Openings | `OPENINGBALANCE` (ledgers, stock items, opening bills) and `OPENINGVALUE` are computed **for the requested period**: the balance at its start. For a period from 1 August, Cash showed its balance on 1 August, income and expense ledgers 0, and *Profit & Loss A/c* the profit so far; without a period Tally uses its current period. With a period starting on the books' beginning they are the master's own openings. | Ledgers, stock items and opening bills are fetched for a period starting on the company's books-from date (`envelopes.OPENING_SPECS`). |
 | Stock moved once | A delivery or receipt note, or a rejection (in or out), moves stock. A sales, purchase, debit or credit note line with a tracking number (`BATCHALLOCATIONS.LIST/TRACKINGNUMBER`, not `Not Applicable`) never moves stock, whether the note came before or after it; untracked invoice lines do. The note posts nothing to the books; the invoice does. A credit note tracked to a rejection that was never entered made Tally's P&L count the return's value inconsistently (its Sales Accounts group total differed from its ledgers); with the rejection entered, Tally is consistent. | `inventory_lines.stock_quantity` is the quantity less the tracked part on vouchers that post to the books; stock validation and stock reports use it. `quantity` stays the invoiced quantity. |
+| Job work and godowns | Stock at a godown marked "our stock with third party" (`ISEXTERNAL`, a job worker's location) is in no item balance, nor the Stock Summary, nor the closing stock value; stock at a "third-party stock with us" godown (`ISINTERNAL`, a principal's material) is counted. A Material Out / In moves stock at its line's godown (`GODOWNNAME`); its `DESTINATIONGODOWNNAME` (the job worker's) moves nothing in Tally's balances, whose batches at the job worker show only consumption there. | `godowns.holding` (`own`, `ours_with_third_party`, `third_party_with_us`); stock validation leaves out lines at `ours_with_third_party` godowns. An entry spread over several godowns becomes one inventory line per godown. |
+| Stock journals | Tally lists a stock journal's produced and consumed items in `ALLINVENTORYENTRIES.LIST` (with `ISDEEMEDPOSITIVE`) and again in `INVENTORYENTRIESIN/OUT.LIST`. | Read from `ALLINVENTORYENTRIES`; the in and out lists only when it is missing (reading both counted each entry twice, from PR #20). |
+| Opening difference | Tally's difference in opening balances is its ledger openings plus the opening stock value (stock not balanced by a ledger shows as a difference, in the Balance Sheet's totals). | `opening_difference` warns only when the source's own figures (ledger openings and opening stock at the books' beginning) don't total zero. |
 | In the books | Optional vouchers, memorandum vouchers and reversing journals are in no balance (nor in a period's opening). A custom type under Journal counts like Journal; a post-dated voucher counts from its date. | Their lines aren't effective (optional flag; voucher types that don't post, inherited by custom types); dates decide the rest. |
 
 ## 8. Processing rules
@@ -690,6 +694,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-15 | 0.22 | Migration `0015`: `godowns.holding`; Section 7.5: job work and godowns, stock journals, opening difference. |
 | 2026-10-14 | 0.21 | Migration `0014`: `inventory_lines.stock_quantity`; Section 7.5 Tally's counting rules (openings fetched at the books' beginning, stock moved once, what counts in the books). |
 | 2026-10-14 | 0.20 | Migration `0013`: `validation_runs.thorough`. |
 | 2026-10-14 | 0.19 | Migration `0012`: `voucher_types.moves_stock`; stock journal inventory lists mapped; foreign currency amounts read in the base currency. |

@@ -316,6 +316,9 @@ class Item(SourceTrackingMixin, TimestampMixin, Base):
     opening_value: Mapped[Decimal] = mapped_column(Money, default=0, server_default="0")
 
 
+GODOWN_HOLDINGS = ("own", "ours_with_third_party", "third_party_with_us")
+
+
 class Godown(SourceTrackingMixin, TimestampMixin, Base):
     __tablename__ = "godowns"
     __table_args__ = src_table_args("godowns", ACCOUNTING)
@@ -324,6 +327,11 @@ class Godown(SourceTrackingMixin, TimestampMixin, Base):
     entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
     parent_id: Mapped[int | None] = mapped_column(Id, _fk("godowns"), nullable=True)
     name: Mapped[str] = name_column()
+    # Whose stock it holds: stock at an `ours_with_third_party` godown (a job worker's
+    # location) isn't in the source's stock balances; `third_party_with_us` stock is.
+    holding: Mapped[str] = mapped_column(
+        Enum(*GODOWN_HOLDINGS, name="godown_holding"), default="own", server_default="own"
+    )
 
 
 class CostCentre(SourceTrackingMixin, TimestampMixin, Base):

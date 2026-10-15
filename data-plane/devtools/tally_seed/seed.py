@@ -36,6 +36,7 @@ COST_CENTRES = CollectionSpec(
 VOUCHER_TYPES = CollectionSpec(
     "LBSeedVoucherTypes", "VoucherType", "VOUCHERTYPE", "voucher_type", ("NAME",)
 )
+GODOWNS = CollectionSpec("LBSeedGodowns", "Godown", "GODOWN", "godown", ("NAME",))
 _MARKER = re.compile(r"\[lb-seed:([A-Z0-9-]+)\]")
 
 
@@ -121,6 +122,7 @@ class TallyState:
     cost_centres_enabled: bool
     vouchers: dict[str, VoucherState]  # marker -> state
     voucher_types: set[str] = field(default_factory=set)
+    godowns: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -200,6 +202,7 @@ def read_state(client: TallyClient, company: str) -> TallyState:
         cost_centres_enabled=cc_enabled,
         vouchers=vouchers,
         voucher_types=_names(export(VOUCHER_TYPES), "VOUCHERTYPE"),
+        godowns=_names(export(GODOWNS), "GODOWN"),
     )
 
 
@@ -234,6 +237,14 @@ def seed(
         if unit not in state.units:
             run(unit, "unit", "All Masters", rq.unit_create(unit))
             report.add("units")
+    for godown in seed_data.godowns:
+        if godown.name not in state.godowns:
+            run(godown.name, "godown", "All Masters", rq.godown_create(godown))
+            report.add("godowns")
+    for group in seed_data.stock_groups:
+        if group not in state.stock_groups:
+            run(group, "stock group", "All Masters", rq.stock_group_create(group))
+            report.add("stock groups")
     for item in seed_data.stock_items:
         if item.name not in state.stock_items:
             run(item.name, "stock item", "All Masters", rq.stock_item_create(item))

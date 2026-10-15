@@ -138,6 +138,15 @@ class ValidationReport:
         return Counter(f.check_code for f in self.findings if f.severity == "error")
 
 
+def counted_godown():  # noqa: ANN201 - a SQL condition
+    """Inventory lines whose godown counts in stock balances: no godown, or one that isn't
+    "our stock with a third party" (a job worker's location; ADR-031). Needs an outer join
+    of `godowns` on the line's godown."""
+    from sqlalchemy import or_
+
+    return or_(A.Godown.id.is_(None), A.Godown.holding != "ours_with_third_party")
+
+
 @dataclass
 class _LedgerBalance:
     id: int
@@ -203,7 +212,7 @@ class Validator:
 
         ledgers = self._ledger_balances(self.as_of)
         report.unbalanced_by_type, report.unbalanced_details = self._vouchers()
-        report.opening_difference = self._opening_difference(ledgers)
+        report.opening_difference = self._opening_difference(ledgers, source)
         self._trial_balance(report.opening_difference)
         self._closing(ledgers, source)
         if controls is not None:
@@ -319,9 +328,29 @@ class Validator:
             )
         return by_type, +details
 
-    def _opening_difference(self, ledgers: list[_LedgerBalance]) -> Decimal:
-        difference = sum((ledger.opening for ledger in ledgers), ZERO)
-        if difference == ZERO:
+    def _opening_difference(
+        self, ledgers: list[_LedgerBalance], source: SourceBalances | Exception | None
+    ) -> Decimal:
+        """The source's own difference in opening balances: its ledger openings and opening
+        stock value at the books' beginning (Tally shows the difference when they don't
+        total zero; checked on the test company, 2026-10-15). The warning fires only when
+        the source itself shows one; our openings are compared ledger by ledger through the
+        closing balances. Without the source's figures, ours (ledgers and opening stock) are
+        used. Returns our ledger openings' total: the trial balance must total exactly that."""
+        ours = sum((ledger.opening for ledger in ledgers), ZERO)
+        theirs = None
+        if isinstance(source, SourceBalances) and source.opening_ledgers is not None:
+            theirs = source.opening_ledgers + (source.opening_stock or ZERO)
+            where = "The source shows a difference in opening balances"
+        else:
+            stock = self.session.scalar(
+                select(func.coalesce(func.sum(A.Item.opening_value), 0)).where(
+                    A.Item.entity_id == self.entity.id, A.Item.is_deleted.is_(False)
+                )
+            )
+            theirs = ours + Decimal(stock or 0)
+            where = "Opening balances here don't total zero (the source's couldn't be read)"
+        if abs(theirs) <= self.tolerance:
             self.passed += 1
         else:
             self._fail(
@@ -331,12 +360,12 @@ class Validator:
                     "entity",
                     str(self.entity.id),
                     ZERO,
-                    difference,
-                    "Opening balances don't total zero (difference in opening balances). "
-                    "Correct the opening balances in the source books.",
+                    theirs,
+                    f"{where}: ledger openings and opening stock don't total zero. Correct "
+                    "the opening balances in the source books.",
                 )
             )
-        return difference
+        return ours
 
     def _trial_balance(self, opening_difference: Decimal) -> None:
         """The trial balance totals the opening difference at every year end and at as_of,
@@ -546,6 +575,7 @@ class Validator:
             select(A.InventoryLine.item_id, func.sum(A.InventoryLine.stock_quantity).label("moved"))
             .join(A.Voucher, A.Voucher.id == A.InventoryLine.voucher_id)
             .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
+            .outerjoin(A.Godown, A.Godown.id == A.InventoryLine.godown_id)
             .where(
                 A.InventoryLine.entity_id == self.entity.id,
                 A.InventoryLine.voucher_date <= self.as_of,
@@ -553,6 +583,7 @@ class Validator:
                 A.Voucher.is_cancelled.is_(False),
                 A.Voucher.is_optional.is_(False),
                 A.VoucherType.moves_stock.is_(True),  # orders and memorandum don't
+                counted_godown(),  # not at a job worker's location
             )
             .group_by(A.InventoryLine.item_id)
             .subquery()

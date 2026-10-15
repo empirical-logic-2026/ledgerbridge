@@ -3,7 +3,7 @@
 import re
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
@@ -169,6 +169,7 @@ class TallyConnector:
         period = (entity.books_from, as_of)
         ledgers: dict[str, Decimal] = {}
         carriers: set[str] = set()
+        openings = Decimal(0)  # at the books' beginning: the period starts there
         body = self._company_post(
             entity,
             lambda name: envelopes.collection_request(
@@ -178,6 +179,7 @@ class TallyConnector:
         for element in parser.objects(parser.parse_response(body), "LEDGER"):
             key = parser.source_key(element)
             ledgers[key] = _canonical(element.findtext("CLOSINGBALANCE"))
+            openings += _canonical(element.findtext("OPENINGBALANCE"))
             if (element.findtext("PARENT") or "").strip() in ("", mapping.PRIMARY):
                 carriers.add(key)
         body = self._company_post(
@@ -193,6 +195,7 @@ class TallyConnector:
             profit_carriers=frozenset(carriers),
             opening_stock=sum((_canonical(i.findtext("OPENINGVALUE")) for i in items), Decimal(0)),
             closing_stock=sum((_canonical(i.findtext("CLOSINGVALUE")) for i in items), Decimal(0)),
+            opening_ledgers=openings,
         )
 
     # --- figures that prove the books complete (VAL-005 to VAL-008) ---------------------
@@ -235,6 +238,33 @@ class TallyConnector:
             quantity, _ = mapping.quantity(parser.text_of(element, "CLOSINGBALANCE"))
             quantities[parser.source_key(element)] = quantity
         return quantities
+
+    def stock_by_godown(
+        self, entity: SourceEntity, as_of: date, items: Iterable[str]
+    ) -> dict[tuple[str, str], tuple[Decimal, Decimal]]:
+        """(stock item name, godown name) -> (opening, closing) quantity for books-from ..
+        as_of, from Tally's batches of each named item (one small request per item). Names
+        are only used to match our own records, never shown."""
+        if entity.books_from is None:
+            raise TallyError(f"Company '{entity.name}' has no books-from date")
+        out: dict[tuple[str, str], tuple[Decimal, Decimal]] = {}
+        for item in items:
+            body = self._company_post(
+                entity,
+                lambda name, item=item: envelopes.collection_request(
+                    envelopes.BATCHES,
+                    company=name,
+                    balances_period=(entity.books_from, as_of),
+                    child_of=item,
+                ),
+            )
+            for batch in parser.objects(parser.parse_response(body), envelopes.BATCHES.object_tag):
+                godown = parser.text_of(batch, "GODOWNNAME") or ""
+                opening, _ = mapping.quantity(parser.text_of(batch, "OPENINGBALANCE"))
+                closing, _ = mapping.quantity(parser.text_of(batch, "CLOSINGBALANCE"))
+                before = out.get((item, godown), (Decimal(0), Decimal(0)))
+                out[(item, godown)] = (before[0] + opening, before[1] + closing)
+        return out
 
     def bill_outstanding(
         self, entity: SourceEntity

@@ -129,15 +129,40 @@ def test_unbalanced_voucher_fails_raises_alert_and_resolves(
     assert unresolved == []
 
 
-def test_opening_difference_is_a_warning(
+def _source_difference(connector: TallyConnector, monkeypatch, amount: Decimal) -> None:  # noqa: ANN001
+    """The source's own openings at the books' beginning don't total zero by `amount`."""
+    read = connector.closing_balances
+
+    def closing_balances(entity, as_of):  # noqa: ANN001, ANN202
+        balances = read(entity, as_of)
+        return replace(balances, opening_ledgers=(balances.opening_ledgers or 0) + amount)
+
+    monkeypatch.setattr(connector, "closing_balances", closing_balances)
+
+
+def test_opening_difference_warns_only_when_the_source_shows_one(
+    db: Session, synced: S.Connection, connector: TallyConnector, monkeypatch
+) -> None:  # noqa: ANN001
+    """Pilot 2026-10-15: the warning compared our openings with zero. It now fires only
+    when the source's own openings (ledgers and opening stock at the books' beginning)
+    don't total zero."""
+    report = _validate(db, synced, connector)
+    assert "opening_difference" not in _codes(report)
+    _source_difference(connector, monkeypatch, Decimal("250"))
+    report = _validate(db, synced, connector)
+    opening = next(f for f in report.findings if f.check_code == "opening_difference")
+    assert (opening.severity, opening.actual) == ("warning", Decimal("250"))
+    assert "The source shows a difference" in opening.message
+
+
+def test_our_opening_differing_is_a_closing_mismatch_not_an_opening_warning(
     db: Session, synced: S.Connection, connector: TallyConnector
 ) -> None:
     cash = _ledger(db, "Cash")  # a balance-sheet ledger, so the profit is unchanged
     cash.opening_balance += Decimal("100")
     db.commit()
     report = _validate(db, synced, connector)
-    opening = next(f for f in report.findings if f.check_code == "opening_difference")
-    assert (opening.severity, opening.actual) == ("warning", Decimal("100"))
+    assert "opening_difference" not in _codes(report)  # the source shows none
     assert report.opening_difference == Decimal("100")
     # The trial balance totals exactly the opening difference, so it passes; Cash itself
     # no longer matches Tally.
@@ -253,10 +278,11 @@ def client(db: Session) -> Iterator[TestClient]:
 
 
 def test_api_status_runs_and_alerts(
-    db: Session, synced: S.Connection, connector: TallyConnector, client: TestClient
-) -> None:
+    db: Session, synced: S.Connection, connector: TallyConnector, client: TestClient, monkeypatch
+) -> None:  # noqa: ANN001
     _ledger(db, "Cash").opening_balance += Decimal("100")
     db.commit()
+    _source_difference(connector, monkeypatch, Decimal("100"))
     report = _validate(db, synced, connector)
 
     (status,) = client.get("/api/validation/status").json()

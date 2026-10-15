@@ -323,3 +323,45 @@ def test_pairs_groups_and_first_month(synced) -> None:  # noqa: ANN001
     assert "first month end where they differ (first financial year):" in out
     assert "    2026-06: 1" in out.splitlines()
     assert "voucher types with lines in that month: Payment 1" in out
+
+
+def test_stock_by_godown_and_job_work(synced, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    """Items that differ are compared godown by godown with the source's own movement
+    (closing minus opening); job work lines are counted by kind of godown."""
+    db, connection, connector, entity, entity_id, _ = synced
+    widget = db.scalar(select(A.Item))
+    worker = A.Godown(
+        entity_id=entity_id, connection_id=connection.id, source_key="gd-job-worker",
+        origin="live", name="Job Worker", holding="ours_with_third_party",
+    )  # fmt: skip
+    db.add(worker)
+    db.flush()
+    voucher = db.scalar(select(A.Voucher).where(A.Voucher.source_key == "sim0-20260412-0000"))
+    db.add(
+        A.InventoryLine(
+            voucher_id=voucher.id, entity_id=entity_id, voucher_date=voucher.voucher_date,
+            line_no=1, item_id=widget.id, quantity=Decimal(5), amount=Decimal(0),
+            godown_id=worker.id,
+        )
+    )  # fmt: skip
+    db.add(
+        A.InventoryLine(
+            voucher_id=voucher.id, entity_id=entity_id, voucher_date=voucher.voucher_date,
+            line_no=2, item_id=widget.id, quantity=Decimal(3), amount=Decimal(0),
+        )
+    )  # fmt: skip
+    db.commit()
+    connector.stock = {widget.source_key: Decimal(widget.opening_qty)}  # the source: no change
+    # The source moved 5 at the job worker's godown, nothing elsewhere.
+    monkeypatch.setattr(
+        connector,
+        "stock_by_godown",
+        lambda entity, as_of, items: {(widget.name, "Job Worker"): (Decimal(0), Decimal(5))},
+        raising=False,
+    )
+    out = "\n".join(_analyse(synced))
+    assert "Stock quantities: 1 items differ" in out  # the 3 at no godown
+    assert "by godown (1 of 1 differing items checked): (item, godown) movements that" in out
+    assert "differ: own godown 1" in out
+    assert "Job work:" in out
+    assert "inventory lines at a job worker's godown: 1 (not in the source's stock" in out
