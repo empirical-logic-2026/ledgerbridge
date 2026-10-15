@@ -267,6 +267,9 @@ class SimTally(FixtureTransport):
         voucher.find("GUID").text = guid
         voucher.find("ALTERID").text = str(alter)
         voucher.find("DATE").text = f"{day:%Y%m%d}"
+        effective = voucher.find("EFFECTIVEDATE")
+        if effective is not None:  # Tally's effective date: the voucher's own, as usual
+            effective.text = f"{day:%Y%m%d}"
         voucher.find("VOUCHERNUMBER").text = f"S{day:%m%d}-{number}"
         narration = voucher.find("NARRATION")
         if narration is not None:

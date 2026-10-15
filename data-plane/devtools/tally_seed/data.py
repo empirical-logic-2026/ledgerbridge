@@ -22,12 +22,15 @@ Tally's own balances, 2026-10-14; schema.md 7.4):
   ledger whose opening (1,500) differs from the items' opening stock (2,010). With
   accounts integrated with inventory, Tally's trial balance, balance sheet and profit use
   the items' values and leave the ledger out; the ledger itself keeps its own opening.
+  Tally refuses vouchers posting to it ("Ledger under Stock-in-Hand");
+- effective dates (2026-10-15): journals and sales dated on one side of a month end and
+  effective on the other, regular and optional: Tally counts them by their date.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 Side = Literal["Dr", "Cr"]
 EDUCATIONAL_DAYS = (1, 2, 31)
@@ -101,6 +104,7 @@ class Voucher:
     optional: bool = False
     post_dated: bool = False
     stock_journal: bool = False  # items go to the in (inward) and out lists of a journal
+    effective: date | None = None  # Tally's effective date, when not the voucher's date
 
     @property
     def tombstone(self) -> str:
@@ -250,7 +254,7 @@ def _goods(
 
 
 def _journal(marker: str, voucher_type: str, on: date, dr: str, cr: str, amount: str,
-             **flags: bool) -> Voucher:  # fmt: skip
+             **flags: Any) -> Voucher:  # fmt: skip
     return Voucher(
         marker,
         voucher_type,
@@ -492,6 +496,18 @@ VOUCHERS: tuple[Voucher, ...] = (
            "SAL-PART-1", _bill("SI-7", "1200")),
     _goods("RO-1", "Rejections Out", date(2026, 10, 1), "Rejections Out test", VENDORS[1],
            ItemLine("Gadget", _d("5"), _d("50"), "Purchases", tracking="RO-1"), "RO-1"),
+    # --- effective dates (2026-10-15): vouchers dated on one side of a month end and
+    # effective on the other, regular and optional, journals and sales.
+    _journal("EFF-JNL-1", "Journal", date(2026, 8, 31), "Rent", "Salary Payable", "11",
+             effective=date(2026, 9, 1)),
+    _journal("EFF-JNL-2", "Journal", date(2026, 9, 1), "Rent", "Salary Payable", "13",
+             effective=date(2026, 8, 31)),
+    _journal("EFF-OPT-1", "Journal", date(2026, 8, 31), "Rent", "Salary Payable", "17",
+             optional=True, effective=date(2026, 9, 1)),
+    replace(_sale("EFF-SAL-1", date(2026, 8, 31), CUSTOMERS[1], "SI-EFF-1", "100", "9"),
+            effective=date(2026, 9, 1)),
+    replace(_sale("EFF-SAL-2", date(2026, 9, 1), CUSTOMERS[1], "SI-EFF-2", "200", "18"),
+            optional=True, effective=date(2026, 8, 31)),
     _goods("DBN-TRK-1", "Debit Note", date(2026, 10, 2), "Debit Note test", VENDORS[1],
            ItemLine("Gadget", _d("5"), _d("50"), "Purchases", tracking="RO-1"), "DBN-TRK-1",
            _bill("PI-5", "250", "Agst Ref")),
@@ -523,8 +539,9 @@ def validate(seed: SeedData) -> list[str]:
     known = {ledger.name for ledger in seed.ledgers}
     items = {item.name for item in seed.stock_items}
     for v in seed.vouchers:
-        if v.on.day not in EDUCATIONAL_DAYS:
-            problems.append(f"{v.marker}: day {v.on.day} not allowed in Educational mode")
+        for on in (v.on, v.effective or v.on):
+            if on.day not in EDUCATIONAL_DAYS:
+                problems.append(f"{v.marker}: day {on.day} not allowed in Educational mode")
         if not FY_START <= v.on <= FY_END:
             problems.append(f"{v.marker}: date outside FY 2026-27")
         for entries in (v.entries, *((v.alter_to,) if v.alter_to else ())):

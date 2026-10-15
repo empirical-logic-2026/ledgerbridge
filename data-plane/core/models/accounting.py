@@ -426,6 +426,8 @@ class Voucher(SourceTrackingMixin, TimestampMixin, Base):
     voucher_date: Mapped[date]
     reference_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reference_date: Mapped[date | None] = mapped_column(nullable=True)
+    # The source's effective date (Tally's EFFECTIVEDATE); balances count by voucher_date.
+    effective_date: Mapped[date | None] = mapped_column(nullable=True)
     party_id: Mapped[int | None] = mapped_column(Id, _fk("parties"), nullable=True)
     narration: Mapped[str | None] = mapped_column(Text, nullable=True)
     currency_code: Mapped[str] = mapped_column(

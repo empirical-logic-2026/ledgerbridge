@@ -1377,6 +1377,7 @@ class Transformer:
                 "voucher_date": v.voucher_date,
                 "reference_number": v.reference_number,
                 "reference_date": v.reference_date,
+                "effective_date": v.effective_date,
                 "party_id": party[1] if party else None,
                 "narration": v.narration,
                 "currency_code": "INR",

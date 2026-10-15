@@ -1,0 +1,50 @@
+<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <LEDGER NAME="Customer Beta Retail" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000de</GUID>
+          <PARENT TYPE="String">Sundry Debtors</PARENT>
+          <CLOSINGBALANCE TYPE="Amount">-118.00</CLOSINGBALANCE>
+          <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+          <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+          <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Customer Beta Retail</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </LEDGER>
+        <LEDGER NAME="Rent" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d0</GUID>
+          <PARENT TYPE="String">Indirect Expenses</PARENT>
+          <CLOSINGBALANCE TYPE="Amount">-1024.00</CLOSINGBALANCE>
+          <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+          <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+          <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Rent</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </LEDGER>
+        <LEDGER NAME="Salary Payable" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d8</GUID>
+          <PARENT TYPE="String">Current Liabilities</PARENT>
+          <CLOSINGBALANCE TYPE="Amount">15024.00</CLOSINGBALANCE>
+          <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+          <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+          <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Salary Payable</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </LEDGER>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>
