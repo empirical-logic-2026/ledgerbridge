@@ -113,10 +113,10 @@ class Labels:
     summary): `entity <id> (company <n>)`.
 
     - `entity <id>` is the entity's id in ledgerbridge_accounting, the same everywhere.
-    - `company <n>` is the company's number on its connection: its position in the
-      connection's configured list (`connect`), then companies synced without being
-      configured, in the order they were first synced. It never depends on which companies
-      a particular run includes.
+    - `company <n>` is the company's number on its connection, given once and kept
+      (`connections.config.company_numbers`, stored by `connect`): synced companies in the
+      order they were first synced, then configured ones in the configured order. It never
+      depends on which companies a run includes, nor on the order `connect` lists them in.
 
     A company not transformed yet has no entity id: `company <n> (no entity yet)`. Names are
     never part of a label (callers add them in the test environment only).
@@ -135,12 +135,16 @@ class Labels:
             .order_by(EntitySource.id)
         ).all()
         self.entity_ids = {key: entity_id for key, entity_id in links}
-        self.numbers: dict[str, int] = {}
-        for entry in configured(connection):
-            if entry.key and entry.key not in self.numbers:
-                self.numbers[entry.key] = len(self.numbers) + 1
+        # Numbers already given (stored by `connect`) never change (pilot, 2026-10-15: after
+        # a reconnect listed the companies in another order, entity 1 became company 2).
+        # Others follow: synced companies in the order first synced, then configured ones.
+        stored = connection.config.get("company_numbers") or {}
+        self.numbers: dict[str, int] = {str(k): int(n) for k, n in stored.items()}
         for key, _ in links:
-            self.numbers.setdefault(key, len(self.numbers) + 1)
+            self.number(key)
+        for entry in configured(connection):
+            if entry.key:
+                self.number(entry.key)
         self.keys_by_id = {entity_id: key for key, entity_id in links}
 
     def refresh(self) -> "Labels":
@@ -148,7 +152,7 @@ class Labels:
 
     def number(self, key: str) -> int:
         if key not in self.numbers:
-            self.numbers[key] = len(self.numbers) + 1
+            self.numbers[key] = max(self.numbers.values(), default=0) + 1
         return self.numbers[key]
 
     def for_key(self, key: str, entity_id: int | None = None) -> str:

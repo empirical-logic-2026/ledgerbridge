@@ -790,7 +790,16 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
         # Fail fast instead of hanging if the row is locked after all.
         session.execute(text(f"SET SESSION innodb_lock_wait_timeout = {CONNECT_LOCK_WAIT_SEC}"))
     # Store the entities found by key (and their names); names not found are not stored.
-    connection.config = {**connection.config, "origin": args.origin, "entities": to_config(found)}
+    # Company numbers already given are kept; new companies get the next ones.
+    numbers = Labels(session, connection).numbers
+    for entity in found:
+        numbers.setdefault(entity.key, max(numbers.values(), default=0) + 1)
+    connection.config = {
+        **connection.config,
+        "origin": args.origin,
+        "entities": to_config(found),
+        "company_numbers": numbers,
+    }
     if args.timeout_sec:
         connection.config = {**connection.config, "timeout_sec": args.timeout_sec}
     if args.pause_sec is not None:

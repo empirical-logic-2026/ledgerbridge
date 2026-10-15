@@ -303,3 +303,26 @@ def test_entity_check_all_good(pilot_cli) -> None:  # noqa: ANN001
     assert code == 0, out
     assert out.count("FOUND as source entity") == 2 and "names unchanged" in out
     assert "Result: no problems found" in out
+
+
+# --- company numbers stay the same across connect (pilot, 2026-10-15) ---------------------
+
+
+def test_company_numbers_survive_connect_in_another_order(pilot_cli, db: Session) -> None:  # noqa: ANN001
+    """After a reconnect listed the companies in another order, entity 1 became company 2.
+    Numbers are given once and stored on the connection."""
+    from workers.entities import Labels
+
+    pilot_cli.use(TallyLikeTransport())
+    pilot_cli("connect", "--connection", "tally-pilot", "--source", "tally",
+              "--origin", "backup", "--entity", ALPHA, "--entity", BETA)  # fmt: skip
+    connection = db.scalars(select(S.Connection).where(S.Connection.name == "tally-pilot")).one()
+    keys = [e["key"] for e in connection.config["entities"]]
+    assert Labels(db, connection).numbers == {keys[0]: 1, keys[1]: 2}
+    pilot_cli("connect", "--connection", "tally-pilot", "--origin", "backup",
+              "--entity", BETA, "--entity", ALPHA)  # fmt: skip
+    db.expire_all()
+    connection = db.scalars(select(S.Connection).where(S.Connection.name == "tally-pilot")).one()
+    assert [e["key"] for e in connection.config["entities"]] == keys[::-1]
+    assert connection.config["company_numbers"] == {keys[0]: 1, keys[1]: 2}
+    assert Labels(db, connection).numbers == {keys[0]: 1, keys[1]: 2}
