@@ -29,6 +29,7 @@ party or item names, and never amounts.
   mapping doesn't read.
 """
 
+import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from datetime import date, timedelta
@@ -47,6 +48,10 @@ from core.validation import PROFIT_NATURES, Validator, financial_year_ends
 Progress = Callable[[str], None]
 ZERO = Decimal(0)
 SAMPLE = 500  # stored vouchers read per voucher type for the content census
+PROFILE_LEDGERS = 26  # differing ledgers profiled (ledger A to Z)
+EFFECTIVE_SAMPLE = 5_000  # vouchers per profiled ledger checked for their effective date
+_DATE = re.compile(r"<DATE[^>]*>\s*(\d{8})\s*</DATE>")
+_EFFECTIVE = re.compile(r"<EFFECTIVEDATE[^>]*>\s*(\d{8})\s*</EFFECTIVEDATE>")
 GODOWN_ITEMS = 200  # differing items checked godown by godown (one source request each)
 GODOWN_KINDS = {
     "own": "own godown",
@@ -81,6 +86,16 @@ def _category(deleted: bool, cancelled: bool, optional: bool) -> str | None:
     return None
 
 
+def _letter(n: int) -> str:
+    """A, B, ..., Z, AA, AB, ...: anonymous labels."""
+    out = ""
+    n += 1
+    while n:
+        n, rest = divmod(n - 1, 26)
+        out = chr(65 + rest) + out
+    return out
+
+
 def fy_start(on: date, fy_start_month: int) -> date:
     """First day of the financial year containing `on`."""
     year = on.year if on.month >= fy_start_month else on.year - 1
@@ -109,6 +124,8 @@ class Analyser:
         self.validator = Validator(session, entity_id, as_of, tolerance, connection.id)
         self.row = self.validator.entity
         self.lines: list[str] = []
+        self.year_end_diffs: dict[str, dict[date, Decimal]] = {}  # key -> year end -> diff
+        self.mismatched: dict[str, Decimal] = {}
 
     def close(self, a: Decimal, b: Decimal) -> bool:
         return abs(Decimal(a) - Decimal(b)) <= self.tolerance
@@ -144,6 +161,7 @@ class Analyser:
         self._bills()
         self._stock()
         self._job_work()
+        self._profiles()
         self._census()
         return self.lines
 
@@ -484,6 +502,7 @@ class Analyser:
                     continue
                 differ += 1
                 diff = theirs - lb.balance
+                self.year_end_diffs.setdefault(key, {})[year_end] = diff
                 if lb.opening and self.close(diff, -lb.opening):
                     fits["opening counted twice here, or left out by the source"] += 1
                 if lb.nature in PROFIT_NATURES:
@@ -874,6 +893,187 @@ class Analyser:
             self.out(f"    by godown ({checked}): (item, godown) movements that differ: {listed}")
         else:
             self.out(f"    by godown ({checked}): every godown's movement matches")
+
+    def _profiles(self) -> None:
+        """An anonymous profile of each ledger that differs today or at a year end (ledger A,
+        B, ...): where it sits (primary group, a renamed reserved group, directly under the
+        primary group), its kind and nature, its stored opening against the source's own,
+        the voucher types posting to it, when it differs and whether by the same amount, and
+        what the difference equals (its opening, the stock items' opening value). Kinds,
+        standard names and dates only: never names or amounts."""
+        keys = list(dict.fromkeys([*self.mismatched, *self.year_end_diffs]))
+        if not keys:
+            return
+        ours = getattr(self, "ours_today", {}) or {
+            lb.source_key: lb for lb in self.validator.ledger_balances(self.as_of)
+        }
+        rows = {
+            lid: (kind, currency, bill_wise, group_id)
+            for lid, kind, currency, bill_wise, group_id in self.session.execute(
+                select(
+                    A.Ledger.id,
+                    A.Ledger.ledger_kind,
+                    A.Ledger.currency_code,
+                    A.Ledger.is_bill_wise,
+                    A.Ledger.group_id,
+                ).where(A.Ledger.entity_id == self.entity_id)
+            )
+        }
+        stock_opening = Decimal(
+            self.session.scalar(
+                select(func.coalesce(func.sum(A.Item.opening_value), 0)).where(
+                    A.Item.entity_id == self.entity_id, A.Item.is_deleted.is_(False)
+                )
+            )
+            or 0
+        )
+        source_openings = getattr(self.source, "ledger_openings", {}) or {}
+        source_stock = getattr(self.source, "opening_stock", None)
+        primary = self._primary_groups()
+        tree = self._group_tree()
+        self.out(f"Ledger profiles (ledgers that differ today or at a year end: {len(keys):,}):")
+        for n, key in enumerate(keys[:PROFILE_LEDGERS]):
+            lb = ours.get(key)
+            if lb is None:
+                continue
+            kind, currency, bill_wise, group_id = rows.get(lb.id, (None, None, False, None))
+            where = [f"primary group {primary.get(lb.id, 'unknown group')}"]
+            renamed, direct = self._placement(tree, group_id)
+            if renamed:
+                where.append(f"under Tally's reserved group {renamed} (renamed)")
+            if direct:
+                where.append("directly under its primary group")
+            facts = [f"kind {kind or 'unknown'}", f"nature {lb.nature or 'unknown'}"]
+            if currency and currency != "INR":
+                facts.append("foreign currency")
+            if bill_wise:
+                facts.append("bill-wise")
+            opening = "zero" if not lb.opening else ("debit" if lb.opening > 0 else "credit")
+            theirs = source_openings.get(key)
+            if theirs is None:
+                compared = "the source's opening unknown"
+            elif self.close(theirs, lb.opening):
+                compared = "equal to the source's"
+            else:
+                compared = "different from the source's"
+            facts.append(f"stored opening {opening}, {compared}")
+            posted = sorted({*self.counted.get(lb.id, {}), *self.excluded.get(lb.id, {})})
+            facts.append("posted by: " + (", ".join(posted) if posted else "no vouchers"))
+            dated = dict(self.year_end_diffs.get(key, {}))
+            if key in self.mismatched:
+                dated[self.as_of] = self.mismatched[key]
+            amounts = set(dated.values())
+            ends = [d for d in self.year_ends if d in dated]
+            when = (
+                f"differs {'today and ' if self.as_of in dated else ''}at "
+                f"{len(ends)} of {len(self.year_ends)} year ends"
+                + (f" (first {ends[0]}, last {ends[-1]})" if ends else "")
+            )
+            if len(dated) > 1:
+                when += ", by the same amount" if len(amounts) == 1 else ", by changing amounts"
+            tests = (
+                ("its stored opening", lb.opening),
+                ("minus its stored opening", -lb.opening),
+                ("the stock items' opening value", stock_opening),
+                ("minus the stock items' opening value", -stock_opening),
+                ("the source's opening stock value", source_stock or ZERO),
+                ("minus the source's opening stock value", -(source_stock or ZERO)),
+                (
+                    "the source's opening minus ours",
+                    (theirs - lb.opening) if theirs is not None else ZERO,
+                ),
+            )
+            first = next(iter(dated.values()))
+            all_dates = len(self.year_ends) + 1
+            if len(dated) < all_dates and ends:
+                facts.append(self._around(lb.id, ends[0]))
+            effective = self._effective_dates(lb.id)
+            if effective:
+                facts.append(
+                    f"vouchers whose effective date differs from their date: {effective:,}"
+                )
+            equals = [label for label, value in tests if value and self.close(first, value)]
+            self.out(
+                f"  ledger {_letter(n)}: {'; '.join(where)}; {'; '.join(facts)}; {when}; "
+                f"the difference equals: {', '.join(equals) or 'none of the tested amounts'}"
+            )
+        if len(keys) > PROFILE_LEDGERS:
+            self.out(f"  ({len(keys) - PROFILE_LEDGERS:,} more not profiled)")
+
+    def _around(self, ledger_id: int, year_end: date) -> str:
+        """For a ledger that differs at some dates only: the voucher types with lines in the
+        last month up to that year end and the first month after it."""
+        L, V, T = A.VoucherLine, A.Voucher, A.VoucherType  # noqa: N806
+        start, after = year_end.replace(day=1), year_end + timedelta(days=31)
+        kinds = sorted(
+            {
+                _type(standard, base)
+                for standard, base in self.session.execute(
+                    select(T.standard_type, T.base_type)
+                    .join(V, V.voucher_type_id == T.id)
+                    .join(L, L.voucher_id == V.id)
+                    .where(
+                        L.ledger_id == ledger_id, L.voucher_date >= start, L.voucher_date <= after
+                    )
+                    .distinct()
+                )
+            }
+        )
+        return f"lines around the year end {year_end} (its last month and the next): " + (
+            ", ".join(kinds) if kinds else "none"
+        )
+
+    def _effective_dates(self, ledger_id: int) -> int:
+        """Vouchers posting to the ledger whose effective date (Tally's EFFECTIVEDATE) isn't
+        their date (sampled: at most EFFECTIVE_SAMPLE vouchers)."""
+        count = 0
+        for (payload,) in self.session.execute(
+            select(RawRecord.payload)
+            .join(A.Voucher, A.Voucher.raw_record_id == RawRecord.id)
+            .join(A.VoucherLine, A.VoucherLine.voucher_id == A.Voucher.id)
+            .where(A.VoucherLine.ledger_id == ledger_id)
+            .distinct()
+            .limit(EFFECTIVE_SAMPLE)
+        ):
+            dated = _DATE.search(payload or "")
+            effective = _EFFECTIVE.search(payload or "")
+            if dated and effective and dated.group(1) != effective.group(1):
+                count += 1
+        return count
+
+    def _group_tree(self) -> dict[int, tuple[int | None, str, list[str]]]:
+        return {
+            gid: (parent, name, list((extra or {}).get("_aliases") or []))
+            for gid, parent, name, extra in self.session.execute(
+                select(
+                    A.AccountGroup.id,
+                    A.AccountGroup.parent_id,
+                    A.AccountGroup.name,
+                    A.AccountGroup.extra,
+                ).where(A.AccountGroup.entity_id == self.entity_id)
+            )
+        }
+
+    def _placement(
+        self, tree: dict[int, tuple[int | None, str, list[str]]], group_id: int | None
+    ) -> tuple[str | None, bool]:
+        """(the reserved name of a renamed reserved group above the ledger, whether the
+        ledger sits directly under its primary group)."""
+        reserved = {
+            n.casefold(): n
+            for n in (getattr(self.connector, "reserved_names", None) or {}).get("group", ())
+        }
+        renamed, seen, gid = None, set(), group_id
+        direct = gid in tree and tree[gid][0] is None
+        while gid in tree and gid not in seen:
+            seen.add(gid)
+            parent, name, aliases = tree[gid]
+            if renamed is None and name.casefold() not in reserved:
+                renamed = next(
+                    (reserved[a.casefold()] for a in aliases if a.casefold() in reserved), None
+                )
+            gid = parent
+        return renamed, direct
 
     def _job_work(self) -> None:
         """Job work vouchers and where their stock sits (counts and standard names only)."""

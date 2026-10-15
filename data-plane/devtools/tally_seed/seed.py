@@ -37,6 +37,7 @@ VOUCHER_TYPES = CollectionSpec(
     "LBSeedVoucherTypes", "VoucherType", "VOUCHERTYPE", "voucher_type", ("NAME",)
 )
 GODOWNS = CollectionSpec("LBSeedGodowns", "Godown", "GODOWN", "godown", ("NAME",))
+GROUPS = CollectionSpec("LBSeedGroups", "Group", "GROUP", "group", ("NAME",))
 _MARKER = re.compile(r"\[lb-seed:([A-Z0-9-]+)\]")
 
 
@@ -123,6 +124,7 @@ class TallyState:
     vouchers: dict[str, VoucherState]  # marker -> state
     voucher_types: set[str] = field(default_factory=set)
     godowns: set[str] = field(default_factory=set)
+    reserved_groups: dict[str, str] = field(default_factory=dict)  # reserved -> current name
 
 
 @dataclass
@@ -203,6 +205,12 @@ def read_state(client: TallyClient, company: str) -> TallyState:
         vouchers=vouchers,
         voucher_types=_names(export(VOUCHER_TYPES), "VOUCHERTYPE"),
         godowns=_names(export(GODOWNS), "GODOWN"),
+        reserved_groups={
+            reserved: name
+            for g in parser.objects(export(GROUPS), "GROUP")
+            if (reserved := (g.get("RESERVEDNAME") or "").strip())
+            and (name := parser.object_name(g))
+        },
     )
 
 
@@ -237,6 +245,16 @@ def seed(
         if unit not in state.units:
             run(unit, "unit", "All Masters", rq.unit_create(unit))
             report.add("units")
+    for reserved, new in seed_data.renamed_groups:
+        current = state.reserved_groups.get(reserved)
+        if current is not None and current != new:
+            run(
+                f"{reserved} -> {new}",
+                "group renamed",
+                "All Masters",
+                rq.group_rename(current, new),
+            )
+            report.altered.append(f"group {reserved} renamed")
     for godown in seed_data.godowns:
         if godown.name not in state.godowns:
             run(godown.name, "godown", "All Masters", rq.godown_create(godown))

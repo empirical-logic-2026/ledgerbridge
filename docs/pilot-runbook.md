@@ -238,6 +238,8 @@ It runs in the background like a sync (follow it again with `./dev.ps1 sync watc
 
 Share the output as it is. It also shows: pairs of explanations that fit only together; the differing ledgers by primary group, split into those the opening explains, those with a non-zero stored opening and those with none; and, for ledgers nothing explains, the first month end of the first financial year where they differ (it reads Tally's balance at each month end of that year) with the voucher types that have lines that month.
 
+**Ledger profiles** (end of `validate analyse`): each ledger that differs today or at a year end, as ledger A, B, ...: its primary group, a renamed reserved group above it (e.g. Stock-in-Hand), whether it sits directly under its primary group, its kind and nature, whether our stored opening equals Tally's, the voucher types posting to it, at which year ends it differs and whether by the same amount, the voucher types around a year end where it differs only sometimes, vouchers whose effective date isn't their date, and what the difference equals (its opening, the stock items' opening value, Tally's opening minus ours). No names or amounts.
+
 ### 9. After a change to how data is fetched: `sync full -Restart`
 
 `transform rebuild` re-applies changed rules to what is stored. When a fix needs fields that weren't fetched before (for example opening balances as at the books' beginning, or tracking numbers on inventory lines; schema.md 7.5), the stored records don't have them: fetch everything again with `./dev.ps1 sync full -Env pilot -Restart`. It takes as long as the first full sync, resumes if interrupted, transforms with the current rules and validates thoroughly; no rebuild is needed afterwards.
@@ -292,6 +294,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-15 | 0.15 | Ledger profiles in `validate analyse`; the opening difference leaves out Stock-in-Hand ledgers in integrated companies. |
 | 2026-10-15 | 0.14 | Job work godowns, stock journals read once and the source's own opening difference: after this release run `sync full -Restart` (godown flags are new fields); `validate analyse` compares stock by godown and lists job work. |
 | 2026-10-15 | 0.13 | Refusals say whether a running run or only a run lock was found; the lock lapses after a shutdown and `sync abandon` clears it; `report`'s next step puts unfinished work first. |
 | 2026-10-14 | 0.12 | Step 9: `sync full -Restart` after a fix that needs fields not fetched before (openings at the books' beginning, tracking numbers); step 8: pairs, primary groups, first month. |

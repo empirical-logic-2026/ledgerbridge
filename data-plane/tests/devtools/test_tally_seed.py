@@ -52,10 +52,16 @@ def test_expected_trial_balance_for_anchors() -> None:
     assert balances["Test Bank Current A/c"] == (Decimal("25260"), "Dr")
     # SI-3 settled in full; SI-7 (the partly tracked sale) is open.
     assert balances["Customer Gamma Stores"] == (Decimal("1200"), "Dr")
-    # The ledgers total minus the opening stock value (Gadget 1,000, Steel Sheet 1,000,
-    # Hinge 10): with it, Tally's openings total zero.
-    total = sum(a if s == "Dr" else -a for a, s in balances.values())
-    assert total == -sum(i.opening_qty * i.opening_rate for i in SEED.stock_items) == -2010
+    # Tally's difference in opening balances, integrated with inventory: the ledgers'
+    # openings other than the Stock-in-Hand group's, plus the opening stock value (Gadget
+    # 1,000, Steel Sheet 1,000, Hinge 10). Zero: Tally shows no difference.
+    stock = sum(i.opening_qty * i.opening_rate for i in SEED.stock_items)
+    openings = sum(
+        (x.opening if x.opening_side == "Dr" else -x.opening)
+        for x in SEED.ledgers
+        if x.parent != "Inventories"
+    )
+    assert (openings, stock) == (-2010, 2010)
 
 
 @pytest.mark.parametrize(
@@ -119,6 +125,7 @@ class FakeTally:
             cost_centres=set(),
             cost_centres_enabled=cost_centres_enabled,
             vouchers={},
+            reserved_groups={"Stock-in-Hand": "Stock-in-Hand"},
         )
         self.requests = 0
         self.next_id = 100
@@ -132,6 +139,10 @@ class FakeTally:
             action = obj.get("ACTION")
             if obj.tag == "UNIT":
                 self.state.units.add(obj.get("NAME"))
+            elif obj.tag == "GROUP":
+                old = obj.get("NAME")
+                reserved = next(r for r, n in self.state.reserved_groups.items() if n == old)
+                self.state.reserved_groups[reserved] = obj.findtext("NAME.LIST/NAME")
             elif obj.tag == "GODOWN":
                 self.state.godowns.add(obj.get("NAME"))
             elif obj.tag == "STOCKGROUP":

@@ -17,7 +17,11 @@ Tally's own balances, 2026-10-14; schema.md 7.4):
   partial return, consumption at the job worker (moves nothing in Tally's totals), and a
   principal's material received and partly returned ("third-party stock with us":
   counted); partly tracked invoice lines and a purchase return tracked to a rejection;
-- openings that total zero in Tally: the opening stock is balanced by a capital ledger.
+- openings that total zero in Tally: the opening stock is balanced by a capital ledger;
+- a stock ledger (2026-10-15): Tally's reserved Stock-in-Hand group renamed, with one
+  ledger whose opening (1,500) differs from the items' opening stock (2,010). With
+  accounts integrated with inventory, Tally's trial balance, balance sheet and profit use
+  the items' values and leave the ledger out; the ledger itself keeps its own opening.
 """
 
 from dataclasses import dataclass, field
@@ -136,6 +140,7 @@ class SeedData:
     cost_centres: tuple[str, ...]
     vouchers: tuple[Voucher, ...] = field(default=())
     voucher_types: tuple[tuple[str, str], ...] = field(default=())  # (name, parent)
+    renamed_groups: tuple[tuple[str, str], ...] = field(default=())  # (reserved, new name)
     godowns: tuple[Godown, ...] = field(default=())
     stock_groups: tuple[str, ...] = field(default=())
 
@@ -186,7 +191,10 @@ LEDGERS: tuple[Ledger, ...] = (
     # Balances the opening stock (Gadget 1,000, Steel Sheet 1,000, Hinge 10): with it Tally
     # shows no difference in opening balances (without it, a difference of 2,010).
     Ledger("Capital - Stock", "Capital Account", _d("2010"), "Cr"),
+    # The one ledger in the renamed Stock-in-Hand group: Tally's books leave it out.
+    Ledger("Stock Ledger", "Inventories", _d("1500"), "Dr"),
 )
+STOCK_IN_HAND = ("Stock-in-Hand", "Inventories")  # Tally's reserved group, renamed
 
 
 def _sale(marker: str, on: date, party: str, bill: str, net: str, tax: str) -> Voucher:
@@ -500,6 +508,7 @@ SEED = SeedData(
     vouchers=VOUCHERS,
     voucher_types=(("Adjustment Journal", "Journal"),),  # a custom type under Journal
     godowns=(Godown(JOB_WORKER, external=True), Godown(PRINCIPAL, internal=True)),
+    renamed_groups=(STOCK_IN_HAND,),
     stock_groups=("Components",),
 )
 

@@ -135,7 +135,7 @@ def _source_difference(connector: TallyConnector, monkeypatch, amount: Decimal) 
 
     def closing_balances(entity, as_of):  # noqa: ANN001, ANN202
         balances = read(entity, as_of)
-        return replace(balances, opening_ledgers=(balances.opening_ledgers or 0) + amount)
+        return replace(balances, opening_difference=(balances.opening_difference or 0) + amount)
 
     monkeypatch.setattr(connector, "closing_balances", closing_balances)
 

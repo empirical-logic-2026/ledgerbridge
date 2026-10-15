@@ -365,3 +365,38 @@ def test_stock_by_godown_and_job_work(synced, monkeypatch: pytest.MonkeyPatch) -
     assert "differ: own godown 1" in out
     assert "Job work:" in out
     assert "inventory lines at a job worker's godown: 1 (not in the source's stock" in out
+
+
+class WithOpenings(Source):
+    """The source also reports each ledger's opening at the books' beginning."""
+
+    openings: dict[str, Decimal]
+
+    def closing_balances(self, entity, as_of):  # noqa: ANN001, ANN201
+        return SourceBalances(
+            as_of, dict(self.balances[as_of]), ledger_openings=dict(self.openings)
+        )
+
+
+def test_ledger_profiles(synced) -> None:  # noqa: ANN001
+    """Pilot 2026-10-15: two ledgers differed only by their opening; the profile says where
+    they sit, what they are, whether the source's opening equals ours, when they differ
+    and what the difference equals (anonymous: ledger A, B, ...)."""
+    db, _, connector, _, _, ours = synced
+    connector.__class__ = WithOpenings
+    cash = _key(db, "Cash")
+    opening = ours[AS_OF][cash].opening
+    connector.openings = {cash: Decimal(0)}  # the source has no opening for it
+    for when in (AS_OF, date(2027, 3, 31)):
+        connector.balances[when][cash] -= opening
+    out = "\n".join(_analyse(synced))
+    assert "Ledger profiles (ledgers that differ today or at a year end: 1):" in out
+    line = next(x for x in out.splitlines() if x.startswith("  ledger A: "))
+    assert "primary group Current Assets" in line
+    assert "kind cash" in line and "nature asset" in line
+    assert "stored opening debit, different from the source's" in line
+    assert "posted by: Payment" in line
+    assert "differs today and at 1 of 1 year ends (first 2027-03-31, last 2027-03-31)" in line
+    assert ", by the same amount" in line
+    assert "minus its stored opening" in line and "the source's opening minus ours" in line
+    assert "Cash" not in line  # anonymous

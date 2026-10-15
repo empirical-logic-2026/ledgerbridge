@@ -102,9 +102,11 @@ class SourceBalances:
     profit_carriers: frozenset[str] = frozenset()
     opening_stock: Decimal | None = None
     closing_stock: Decimal | None = None
-    # The source's ledger openings at the books' beginning, totalled (canonical sign). With
-    # the opening stock value it is the source's own difference in opening balances.
-    opening_ledgers: Decimal | None = None
+    # The source's own difference in opening balances at the books' beginning (canonical
+    # sign; zero when its trial balance from the books' beginning balances). None: unknown.
+    opening_difference: Decimal | None = None
+    # Each ledger's opening at the books' beginning in the source (canonical sign).
+    ledger_openings: Mapping[str, Decimal] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
