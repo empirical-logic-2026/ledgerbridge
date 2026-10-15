@@ -274,3 +274,21 @@ def test_seed_requests_carry_tracking_flags_and_openings() -> None:
     assert item.findtext("OPENINGVALUE") == "-1000.00"
     custom = ET.fromstring(rq.voucher_type_create("Adjustment Journal", "Journal"))
     assert custom.findtext("PARENT") == "Journal"
+
+
+def test_a_ledgers_balance_follows_its_opening_not_its_opening_bills() -> None:
+    """Recorded from the test company (2026-10-15): a bill-wise ledger with an opening of
+    1,000 Dr and opening bills totalling 1,200 Dr. Tally keeps the ledger's own opening, and
+    its balance is that opening; only the bill-wise outstanding uses the bills."""
+    from connectors.tally.connector import _canonical
+    from tests.conftest import FIXTURES
+
+    root = ET.parse(FIXTURES / "tally" / "rules" / "opening_bills_ledger.xml").getroot()
+    balances, bills = root.findall(".//LEDGER")
+    assert _canonical(balances.findtext("OPENINGBALANCE")) == Decimal(1000)
+    assert _canonical(balances.findtext("CLOSINGBALANCE")) == Decimal(1000)
+    total = sum(
+        (_canonical(b.findtext("OPENINGBALANCE")) for b in bills.findall("BILLALLOCATIONS.LIST")),
+        Decimal(0),
+    )
+    assert total == Decimal(1200)

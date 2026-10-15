@@ -1,0 +1,43 @@
+<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <LEDGER NAME="Customer Opening Bills" RESERVEDNAME="" SPEC="LBLedgerBalances">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f6</GUID>
+          <PARENT TYPE="String">Sundry Debtors</PARENT>
+          <CLOSINGBALANCE TYPE="Amount">-1000.00</CLOSINGBALANCE>
+          <OPENINGBALANCE TYPE="Amount">-1000.00</OPENINGBALANCE>
+          <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+          <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Customer Opening Bills</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </LEDGER>
+        <LEDGER NAME="Customer Opening Bills" RESERVEDNAME="" SPEC="LBLedgerOpeningBills">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f6</GUID>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Customer Opening Bills</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+          <BILLALLOCATIONS.LIST>
+            <BILLDATE TYPE="Date">20260301</BILLDATE>
+            <NAME TYPE="String">OB-1</NAME>
+            <OPENINGBALANCE TYPE="Amount">-700.00</OPENINGBALANCE>
+            <INTERESTCOLLECTION.LIST>      </INTERESTCOLLECTION.LIST>
+          </BILLALLOCATIONS.LIST>
+          <BILLALLOCATIONS.LIST>
+            <BILLDATE TYPE="Date">20260302</BILLDATE>
+            <NAME TYPE="String">OB-2</NAME>
+            <OPENINGBALANCE TYPE="Amount">-500.00</OPENINGBALANCE>
+            <INTERESTCOLLECTION.LIST>      </INTERESTCOLLECTION.LIST>
+          </BILLALLOCATIONS.LIST>
+        </LEDGER>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>

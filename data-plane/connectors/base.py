@@ -107,6 +107,8 @@ class SourceBalances:
     opening_difference: Decimal | None = None
     # Each ledger's opening at the books' beginning in the source (canonical sign).
     ledger_openings: Mapping[str, Decimal] = field(default_factory=dict)
+    # The openings of the source's stock ledgers (Tally: under Stock-in-Hand), totalled.
+    stock_ledger_openings: Decimal | None = None
 
 
 @dataclass(frozen=True)
