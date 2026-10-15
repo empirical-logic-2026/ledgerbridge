@@ -25,6 +25,58 @@ from workers.sync import run_sync
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+class MemoryLockStore:
+    """Stands in for Redis in the run lock (workers/locks.py), with expiry on `now`."""
+
+    def __init__(self) -> None:
+        self.values: dict[str, tuple[str, float]] = {}
+        self.now = 0.0
+
+    def _live(self, name: str) -> tuple[str, float] | None:
+        entry = self.values.get(name)
+        if entry is not None and entry[1] <= self.now:
+            del self.values[name]
+            return None
+        return entry
+
+    def set_if_absent(self, name: str, value: str, ttl: int) -> bool:
+        if self._live(name) is not None:
+            return False
+        self.values[name] = (value, self.now + ttl)
+        return True
+
+    def get(self, name: str) -> str | None:
+        entry = self._live(name)
+        return entry[0] if entry else None
+
+    def ttl(self, name: str) -> int | None:
+        entry = self._live(name)
+        return int(entry[1] - self.now) if entry else None
+
+    def replace_if(self, name: str, expected: str, value: str, ttl: int) -> bool:
+        if self.get(name) != expected:
+            return False
+        self.values[name] = (value, self.now + ttl)
+        return True
+
+    def delete_if(self, name: str, expected: str | None = None) -> bool:
+        if self.get(name) is None or (expected is not None and self.get(name) != expected):
+            return False
+        del self.values[name]
+        return True
+
+
+@pytest.fixture(autouse=True)
+def lock_store() -> Iterator[MemoryLockStore]:
+    """Run locks in memory: unit tests never reach Redis."""
+    from workers import locks
+
+    store = MemoryLockStore()
+    locks.use_store(store)
+    yield store
+    locks.use_store(None)
+
+
 @pytest.fixture
 def engine() -> Iterator[Engine]:
     """In-memory SQLite with the four databases (ADR-016) attached, standing in for MySQL."""
