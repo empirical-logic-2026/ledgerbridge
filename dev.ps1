@@ -83,6 +83,11 @@ param(
     # For `connect`: pause in seconds between Tally requests during a sync (eases the load).
     [int]$PauseSec = -1,
 
+    # For `connect`: whether Tally runs in Educational mode (reliable balances on the 1st,
+    # 2nd and 31st only; validation and analysis then use those dates). auto = ask Tally.
+    [ValidateSet('', 'auto', 'yes', 'no')]
+    [string]$Educational = '',
+
     # For `connect`: whether Tally answers requests for part of a month (auto = check once).
     [ValidateSet('', 'auto', 'supported', 'unsupported')]
     [string]$PartMonth = '',
@@ -257,6 +262,7 @@ switch ($Command) {
         if ($TimeoutSec -gt 0) { $connectArgs += @('--timeout-sec', "$TimeoutSec") }
         if ($PauseSec -ge 0) { $connectArgs += @('--pause-sec', "$PauseSec") }
         if ($PartMonth) { $connectArgs += @('--part-month', $PartMonth) }
+        if ($Educational) { $connectArgs += @('--educational', $Educational) }
         if ($Activate -and $Paused) { throw 'Use -Activate or -Paused, not both.' }
         if ($Activate) { $connectArgs += '--activate' }
         if ($Paused) { $connectArgs += '--pause' }

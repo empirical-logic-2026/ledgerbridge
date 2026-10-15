@@ -25,6 +25,7 @@ from connectors.tally.client import TallyClient, TallyError
 from connectors.tally.signs import tally_amount
 from core.canonical import CanonicalRecord
 from core.config import get_settings
+from core.dates import EDUCATIONAL, EVERY_DAY, DateRule
 
 
 def month_end(value: date) -> date:
@@ -56,10 +57,14 @@ class TallyConnector:
         "voucher_type": mapping.STANDARD_VOUCHER_TYPES,
     }
 
-    def __init__(self, client: TallyClient) -> None:
+    def __init__(self, client: TallyClient, educational: str = "auto") -> None:
         self.client = client
         self._names: dict[str, str] = {}  # company GUID -> name Tally accepted last
         self._prefixes: set[str] = set()  # undeclared XML prefixes met (names only)
+        # Educational mode (reliable balances on the 1st, 2nd and 31st only): "yes", "no",
+        # or "auto" (asked of Tally once); the connection's `educational` setting.
+        self.educational = educational
+        self._detected: bool | None = None
 
     @classmethod
     def from_config(
@@ -71,8 +76,34 @@ class TallyConnector:
                 # The connection's own timeout, else the TALLY_TIMEOUT_SEC setting (ADR-023).
                 timeout=float(config.get("timeout_sec") or get_settings().tally_timeout_sec),
                 transport=transport,
-            )
+            ),
+            educational=str(config.get("educational") or "auto"),
         )
+
+    def date_rule(self, entity: SourceEntity) -> DateRule:
+        """In Educational mode TallyPrime gives reliable balances on the 1st, 2nd and 31st
+        only (core/dates.py). The connection's `educational` setting decides; "auto" asks
+        Tally once (TDL $$LicenseInfo:IsEducationalMode); when Tally doesn't say, every
+        date is used, as before."""
+        if self.educational == "yes":
+            return EDUCATIONAL
+        if self.educational == "no":
+            return EVERY_DAY
+        if self._detected is None:
+            self._detected = self.is_educational()
+        return EDUCATIONAL if self._detected else EVERY_DAY
+
+    def is_educational(self) -> bool | None:
+        """Whether TallyPrime runs in Educational mode; None when it doesn't say."""
+        try:
+            body = self._post(envelopes.collection_request(envelopes.LICENSE))
+        except TallyError:
+            return None
+        for company in parser.objects(parser.parse_response(body), envelopes.LICENSE.object_tag):
+            value = (company.findtext("LBEDUCATIONAL") or "").strip().lower()
+            if value in ("yes", "no"):
+                return value == "yes"
+        return None
 
     @staticmethod
     def default_config() -> dict[str, Any]:

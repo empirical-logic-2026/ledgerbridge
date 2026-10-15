@@ -87,7 +87,7 @@ npm run build
 ./dev.ps1 fields                                     # field catalogue (fields with no column, e.g. UDFs)
 ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"   # catalogued voucher field -> dimension
 ./dev.ps1 diagrams                                   # regenerate docs/diagrams from the models and render SVG/PNG (mermaid-cli image)
-./dev.ps1 connect -Origin live -Company "LedgerBridge Test Co" -TimeoutSec 600 -PauseSec 0 -PartMonth auto
+./dev.ps1 connect -Origin live -Company "LedgerBridge Test Co" -TimeoutSec 600 -PauseSec 0 -PartMonth auto -Educational auto
 # Pilot commands (init-env, connect -Origin backup, sync full, summary with -Env pilot) are in
 # docs/pilot-runbook.md: the developer runs them. Claude Code never does.
 ./dev.ps1 seed-test-data create-only                 # create missing seed items, skip alterations and deletions

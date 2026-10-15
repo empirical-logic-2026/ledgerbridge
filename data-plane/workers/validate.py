@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from connectors.base import Connector, SourceBalances, SourceControls, SourceEntity
 from core.alerts import raise_alert, resolve_alert
 from core.config import get_settings
+from core.dates import EVERY_DAY, DateRule, date_rule
 from core.errors import short_error
 from core.models import Connection
 from core.models.accounting import Entity
@@ -54,8 +55,10 @@ def run_validation(
     per month and type, stock quantities, bill-wise outstanding and the balances at every
     year end. They take more requests to the source, so scheduled incremental syncs skip
     them; `validate`, full syncs and `transform retry` run them."""
-    as_of = as_of or date.today()
+    asked = as_of or date.today()
     entities = select_entities(connector, connection, entity_names, entity_keys)
+    rule = date_rule(connector, entities[0]) if entities else EVERY_DAY
+    as_of = rule.on_or_before(asked)  # Educational mode: a reliable date (core/dates.py)
     entity_ids = entity_ids_for(session, connection.id, [e.key for e in entities])
     labels = Labels(session, connection)
     reports = []
@@ -66,13 +69,20 @@ def run_validation(
         label = labels.for_key(entity.key)
         if progress:
             depth = " (thorough: counts, stock, bills, year ends)" if thorough else ""
-            progress(f"{label}: validating as of {as_of}{depth}")
+            dates = (
+                f"; {rule.describe()}, so as of {as_of} instead of {asked}"
+                if as_of != asked
+                else (f"; {rule.describe()}" if rule.restricted else "")
+            )
+            progress(f"{label}: validating as of {as_of}{depth}{dates}")
         source: SourceBalances | Exception | None = _read(
             connector, "closing_balances", entity, as_of
         )
         controls = None
         if thorough:
-            controls = source_controls(connector, entity, session.get_one(Entity, entity_id), as_of)
+            controls = source_controls(
+                connector, entity, session.get_one(Entity, entity_id), as_of, rule, progress
+            )
         report = Validator(session, entity_id, as_of, tolerance_for(connection), connection.id).run(
             source, sync_run_id, controls
         )
@@ -103,10 +113,16 @@ def _read(connector: Connector, method: str, *args: Any) -> Any:
 
 
 def source_controls(
-    connector: Connector, entity: SourceEntity, row: Entity, as_of: date
+    connector: Connector,
+    entity: SourceEntity,
+    row: Entity,
+    as_of: date,
+    rule: DateRule = EVERY_DAY,
+    progress: Progress | None = None,
 ) -> SourceControls:
     """The source's own figures for one entity (each read separately: one that fails or
-    isn't supported doesn't stop the others)."""
+    isn't supported doesn't stop the others). Year ends move to the source's next reliable
+    date (Educational mode: a 30 June year end is checked on 1 July)."""
     books_from = entity.books_from or row.books_from
     bills = _read(connector, "bill_outstanding", entity)
     outstanding, opening = (
@@ -115,7 +131,12 @@ def source_controls(
     year_ends = {}
     if hasattr(connector, "closing_balances"):
         for year_end in financial_year_ends(row.books_from, row.fy_start_month, as_of):
-            year_ends[year_end] = _read(connector, "closing_balances", entity, year_end)
+            used = rule.on_or_after(year_end)
+            if used > as_of:
+                continue
+            if used != year_end and progress:
+                progress(f"year end {year_end} checked as of {used} ({rule.describe()})")
+            year_ends[used] = _read(connector, "closing_balances", entity, used)
     return SourceControls(
         voucher_counts=_read(connector, "voucher_counts", entity, books_from, as_of)
         if books_from

@@ -154,6 +154,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | VAL-007 | Each party's bill-wise outstanding matches the source's. | P1 |
 | VAL-008 | Ledger closing balances match the source at every financial year end, not only the validation date. | P1 |
 | VAL-010 | An analysis of validation mismatches tests explanations that can be checked automatically (opening balances, signs, voucher types counted differently, cancelled, optional and post-dated vouchers, financial year boundaries, units, stock journals, tracked notes, rounding, foreign currency, bills), alone and in pairs, and reports how many mismatches each explains; differing ledgers are broken down by primary group and whether the opening explains them, and unexplained ones by the first month (of the first financial year) where they differ and the voucher types that month; each differing ledger gets an anonymous profile (where it sits, kind, nature, renamed reserved group, stored opening against the source's, voucher types posting to it, when and whether by a constant amount, what the difference equals). Counts and the source's standard names only. | P1 |
+| VAL-011 | Validation and its analysis compare figures only on dates the source answers reliably (Tally in Educational mode: the 1st, 2nd and 31st of a month): "as of" moves back to the latest reliable date, month and year ends forward to the next one; the output shows the dates used. The mode is detected where the source says, or set on the connection. | P1 |
 | VAL-009 | Validation results name the root cause: records that failed to transform, and how many other failures are likely their consequences. | P1 |
 
 ### 4.8 Reporting and dashboards
@@ -347,6 +348,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
+| 2026-10-15 | 0.15 | VAL-011: reliable dates (Educational mode). |
 | 2026-10-15 | 0.14 | VAL-010: ledger profiles test the books' first day, special vouchers, lines around a year end, opening bills and closing stock values; the opening difference is explained. |
 | 2026-10-15 | 0.13 | VAL-010: anonymous ledger profiles; DAT-012: stock ledgers with integrated inventory. |
 | 2026-10-15 | 0.12 | DAT-012: job work godowns and the source's own opening difference; VAL-010: godown-level stock and job work in the analysis. |
