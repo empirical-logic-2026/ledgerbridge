@@ -42,12 +42,14 @@ from core.models.base import utcnow
 from core.models.system import SyncMarker
 from core.raw_store import RawStore
 from core.transform import Transformer, TransformResult, mark_deleted
+from workers import locks
 from workers.entities import Labels, select_entities
 from workers.fetch import AUTO, ChunkFetcher, FetchSettings
 from workers.runs import (
     INTERRUPTED_BY_SIGNAL,
     RunHeartbeat,
     heartbeat_for,
+    is_live,
     reap_stale_runs,
     this_host,
 )
@@ -68,7 +70,9 @@ TRANSFORM = "transform"
 
 
 class SyncBusyError(RuntimeError):
-    """Another run of the same connection is still in progress."""
+    """Another run of the same connection is still in progress, or its run lock is held.
+    The message says which: a running run (its id, kind and last sign of life) or only a
+    lock (and when it expires)."""
 
 
 @dataclass
@@ -522,11 +526,59 @@ def run_deletion_check(
     return _close_run(session, run, result)
 
 
+def _busy_with_run(connection: Connection, run: SyncRun) -> SyncBusyError:
+    now = utcnow()
+    last = run.heartbeat_at or run.started_at
+    return SyncBusyError(
+        f"connection '{connection.name}' already has a sync running: run {run.id} "
+        f"({run.run_type}), started {run.started_at:%Y-%m-%d %H:%M} UTC, last sign of life "
+        f"{int((now - last).total_seconds())} s ago. Follow it with sync watch. If its process "
+        f"is gone it's marked interrupted {int(get_settings().sync_stale_sec)} s after its last "
+        "sign of life, or now with sync abandon"
+    )
+
+
+def _busy_with_lock(connection: Connection, held: locks.Holder | None) -> SyncBusyError:
+    left = f"; it expires within {held.seconds_left} s" if held and held.seconds_left else ""
+    return SyncBusyError(
+        f"connection '{connection.name}' has no running run, but its run lock is held by "
+        f"another process that is starting one{left}. Try again then, or clear the lock with "
+        "sync abandon"
+    )
+
+
+def _orphaned(session: Session, held: locks.Holder) -> bool:
+    """A lock no run stands behind: its run isn't running (ended, interrupted, unknown),
+    or the process that was opening a run is gone."""
+    if held.run_id is not None:
+        run = session.get(SyncRun, held.run_id)
+        return run is None or run.status != "running" or not is_live(run)
+    return locks.opener_gone(held.token)
+
+
 def _open_run(
     session: Session, connection: Connection, run_type: str
 ) -> tuple[SyncRun, SyncResult]:
-    if running_run(session, connection.id) is not None:
-        raise SyncBusyError(f"connection '{connection.name}' already has a sync running")
+    """Opens a run: refused while another run of the connection is in progress (the
+    database's `running` row) or its run lock is held (workers/locks.py). An orphaned lock
+    is cleared first."""
+    live = running_run(session, connection.id)  # reaps runs whose process is gone
+    if live is not None:
+        raise _busy_with_run(connection, live)
+    taken = locks.acquire(connection.id)
+    if taken is False:
+        held = locks.holder(connection.id)
+        if held is not None and _orphaned(session, held):
+            logger.warning("Cleared an orphaned run lock on connection %s", connection.id)
+            locks.clear(connection.id, held.token)
+            taken = locks.acquire(connection.id)
+        if taken is False:
+            raise _busy_with_lock(connection, locks.holder(connection.id))
+    live = running_run(session, connection.id)  # opened in between by another process?
+    if live is not None:
+        if taken:
+            locks.release(connection.id)
+        raise _busy_with_run(connection, live)
     now = utcnow()
     run = SyncRun(
         connection_id=connection.id,
@@ -539,7 +591,13 @@ def _open_run(
     )
     session.add(run)
     session.commit()
-    _heartbeats[run.id] = heartbeat_for(session.get_bind(), run.id)  # type: ignore[arg-type]
+    if taken:
+        locks.bind(connection.id, run.id)
+    _heartbeats[run.id] = heartbeat_for(
+        session.get_bind(),  # type: ignore[arg-type]
+        run.id,
+        connection.id,
+    )
     return run, SyncResult(sync_run_id=run.id, status="running", run_type=run_type)
 
 
@@ -571,6 +629,7 @@ def _close_run(session: Session, run: SyncRun, result: SyncResult) -> SyncResult
     run.finished_at = utcnow()
     session.add(run)
     session.commit()
+    locks.release(run.connection_id, run.id)  # however the run ended
     return result
 
 

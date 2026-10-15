@@ -17,17 +17,6 @@ def test_failed_run_logs_no_sql(monkeypatch, caplog) -> None:  # noqa: ANN001
 
     from workers import celery_app as worker
 
-    class FakeLock:
-        def acquire(self) -> bool:
-            return True
-
-        def release(self) -> None:
-            pass
-
-    class FakeRedis:
-        def lock(self, *args, **kwargs) -> FakeLock:  # noqa: ANN002, ANN003
-            return FakeLock()
-
     def failing(connection_id, runner):  # noqa: ANN001, ANN202
         raise OperationalError(
             "UPDATE ledgerbridge_system.connections SET config=%s",
@@ -35,7 +24,6 @@ def test_failed_run_logs_no_sql(monkeypatch, caplog) -> None:  # noqa: ANN001
             pymysql.err.OperationalError(1205, "Lock wait timeout exceeded"),
         )
 
-    monkeypatch.setattr(worker.Redis, "from_url", lambda url: FakeRedis())
     monkeypatch.setattr(worker, "_run", failing)
     result = worker._locked_run(1, lambda *a: None)
     assert result == {

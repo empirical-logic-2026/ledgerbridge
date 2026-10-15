@@ -40,7 +40,16 @@ from core.models.system import (
     ValidationIssue,
     ValidationRun,
 )
-from core.problems import BY_CODE, ERROR, INFO, WARNING, Problem, for_error, for_key
+from core.problems import (
+    BY_CODE,
+    ERROR,
+    INFO,
+    WARNING,
+    WORK_FIRST,
+    Problem,
+    for_error,
+    for_key,
+)
 from workers.entities import Labels
 from workers.failures import failure_breakdown, format_group, warning_breakdown
 from workers.fields import catalogue_counts
@@ -148,10 +157,10 @@ def ordered(occurrences: Iterable[Occurrence]) -> list[list[Occurrence]]:
         groups.setdefault(o.problem.code, []).append(o)
     present = _present(o for g in groups.values() for o in g)
 
-    def key(group: list[Occurrence]) -> tuple[int, int, str]:
+    def key(group: list[Occurrence]) -> tuple[int, int, int, str]:
         p = group[0].problem
         consequence = any(c in present and c != p.code for c in p.consequence_of)
-        return (_RANK[p.severity], int(consequence), p.code)
+        return (_work_rank(p.code), _RANK[p.severity], int(consequence), p.code)
 
     return sorted(groups.values(), key=key)
 
@@ -178,11 +187,18 @@ def problem_lines(occurrences: list[Occurrence], env: str, details: bool) -> lis
     return out
 
 
+def _work_rank(code: str) -> int:
+    """Unfinished work first (in WORK_FIRST's order), then everything else."""
+    return WORK_FIRST.index(code) if code in WORK_FIRST else len(WORK_FIRST)
+
+
 def next_step(occurrences: list[Occurrence], env: str) -> str | None:
-    """The first problem's command (root causes come first)."""
+    """The first problem's command: unfinished work (a running job, a full sync to resume,
+    records waiting) before anything else, then root causes before their consequences."""
     for group in ordered(occurrences):
-        if group[0].problem.severity != INFO:
-            return group[0].problem.command(env)
+        p = group[0].problem
+        if p.severity != INFO or p.code in WORK_FIRST:
+            return p.command(env)
     return None
 
 

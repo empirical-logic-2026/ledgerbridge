@@ -51,7 +51,13 @@ def _p(*args: object, **kwargs: object) -> Problem:
     return Problem(*args, **kwargs)  # type: ignore[arg-type]
 
 
-_FAILED = ("LB-TRF-001", "LB-VAL-007")  # records missing here change balances and counts
+# Records missing here change balances and counts: records that failed to convert, ledgers
+# missing, and unfinished work (a full sync not finished or interrupted, records waiting).
+_FAILED = ("LB-TRF-001", "LB-VAL-007", "LB-SYNC-002", "LB-SYNC-010", "LB-TRF-002")
+# Unfinished work comes first in every report's order and next step, before any analysis:
+# a running job (follow it), a full sync to resume, then records waiting to be converted
+# (pilot 2026-10-15: the next step said `validate analyse` while a full sync was unfinished).
+WORK_FIRST = ("LB-SYNC-007", "LB-SYNC-002", "LB-SYNC-010", "LB-SYNC-004", "LB-TRF-002")
 
 PROBLEMS: tuple[Problem, ...] = (
     # --- sync: fetching from the source -------------------------------------------------
@@ -164,10 +170,19 @@ PROBLEMS: tuple[Problem, ...] = (
         "sync_busy",
         "A sync is already running",
         WARNING,
-        "This command needs the connection, but another sync of it is running.",
-        ("The worker started a scheduled sync, or another window started one.",),
+        "This command needs the connection, but another run of it is in progress. The message "
+        "says which was found: a running run (its id and last sign of life) or only the "
+        "connection's run lock (and when it expires).",
+        (
+            "The worker started a scheduled sync, or another window started one.",
+            "Only a lock: another process is starting a run right now.",
+        ),
         (".\\dev.ps1 status -Env {env} shows the running run.",),
-        ("Wait for it, then run the command again. If its process is gone: sync abandon.",),
+        (
+            "Wait for it, then run the command again. A run whose process is gone is marked "
+            "interrupted after a few minutes without a sign of life, and its lock is cleared; "
+            "sync abandon does both at once.",
+        ),
         ".\\dev.ps1 sync watch -Env {env}",
     ),
     _p(
@@ -220,8 +235,12 @@ PROBLEMS: tuple[Problem, ...] = (
         "Some stored records are still waiting to be converted.",
         ("A sync or transform job was interrupted, or is still running.",),
         ("Check work in progress in the report.",),
-        ("Convert them: transform retry (doesn't contact the source).",),
+        (
+            "Convert them: transform retry (doesn't contact the source). If a full sync is "
+            "unfinished, resume it instead: it converts them.",
+        ),
         ".\\dev.ps1 transform retry -Env {env}",
+        ("LB-SYNC-002", "LB-SYNC-010"),
     ),
     _p(
         "LB-TRF-003",

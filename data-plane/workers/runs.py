@@ -6,7 +6,8 @@
 - **Interrupted runs:** Ctrl+C or termination marks the run `interrupted` (checkpoints are
   kept). A run left `running` whose heartbeat is older than SYNC_STALE_SEC, or whose
   process is known to be gone, has no live process: `reap_stale_runs` marks it
-  `interrupted`. `abandon_runs` does that by hand.
+  `interrupted`. `abandon_runs` does that by hand. Both also clear the connection's run
+  lock when no live run stands behind it (workers/locks.py); the heartbeat renews it.
 - **Job output:** a sync started in the background writes what it prints to `sync_logs`
   under a job id, ending with a `[job finished: exit N]` line, so `sync watch` can follow
   it from any terminal.
@@ -75,7 +76,30 @@ def reap_stale_runs(session: Session, connection_id: int | None = None) -> list[
         run.finished_at = run.finished_at or now
     if stale:
         session.commit()
+    for connection in {run.connection_id for run in stale} | (
+        {connection_id} if connection_id is not None else set()
+    ):
+        clear_orphaned_lock(session, connection)
     return [run.id for run in stale]
+
+
+def clear_orphaned_lock(session: Session, connection_id: int, force: bool = False) -> bool:
+    """Removes the connection's run lock when no live run stands behind it (or always,
+    with `force`). Returns whether one was removed."""
+    from workers import locks
+
+    held = locks.holder(connection_id)
+    if held is None:
+        return False
+    if not force:
+        if held.run_id is None:
+            if not locks.opener_gone(held.token):
+                return False
+        else:
+            run = session.get(SyncRun, held.run_id)
+            if run is not None and run.status == "running" and is_live(run):
+                return False
+    return locks.clear(connection_id, held.token)
 
 
 def abandon_runs(
@@ -96,6 +120,8 @@ def abandon_runs(
         run.finished_at = now
         abandoned.append(run.id)
     session.commit()
+    if not live:  # nothing left running (confirmed by hand): no lock may remain either
+        clear_orphaned_lock(session, connection_id, force=True)
     return abandoned, live
 
 
@@ -127,8 +153,9 @@ class RunHeartbeat:
             self._thread.join(timeout=5)
 
 
-def heartbeat_for(engine: Engine, run_id: int) -> RunHeartbeat:
-    """A heartbeat for one run, writing through its own short transactions."""
+def heartbeat_for(engine: Engine, run_id: int, connection_id: int | None = None) -> RunHeartbeat:
+    """A heartbeat for one run, writing through its own short transactions; it also
+    renews the connection's run lock, so the lock lives only as long as the run's process."""
 
     def beat() -> None:
         with Session(engine) as session:
@@ -138,6 +165,10 @@ def heartbeat_for(engine: Engine, run_id: int) -> RunHeartbeat:
                 .values(heartbeat_at=utcnow())
             )
             session.commit()
+        if connection_id is not None:
+            from workers import locks
+
+            locks.renew(connection_id, run_id)
 
     return RunHeartbeat(beat, get_settings().sync_heartbeat_sec).start()
 

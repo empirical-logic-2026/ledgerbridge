@@ -125,6 +125,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $stack = Join-Path (Join-Path $PSScriptRoot 'deploy') 'stack.ps1'
+# Tests only (tests/test_dev_script_args.py): a stand-in for deploy/stack.ps1 that records
+# the docker compose arguments each command builds instead of running Docker.
+if ($env:LEDGERBRIDGE_DEV_STACK) { $stack = $env:LEDGERBRIDGE_DEV_STACK }
 $envFile = Join-Path $root ".env.$Env"
 $connection = "tally-$Env"
 
@@ -139,6 +142,9 @@ function Get-ColorArgs {
 
 function Add-ColorArgs([object[]]$Arguments) {
     # `exec -T api ...` becomes `exec -T -e LB_COLOR=1 api ...` when colours are on.
+    # PowerShell unwraps a one-element array returned by a function
+    # into a plain string, and splatting a string passes its characters (`ps` became `p s`).
+    # Callers therefore always wrap the call in @(), which collects it back into an array.
     if ($Arguments.Count -ge 2 -and $Arguments[0] -eq 'exec' -and $Arguments[1] -eq '-T') {
         return @('exec', '-T') + @(Get-ColorArgs) + @($Arguments | Select-Object -Skip 2)
     }
@@ -147,7 +153,7 @@ function Add-ColorArgs([object[]]$Arguments) {
 
 function Invoke-Stack {
     # All Docker calls go through deploy/stack.ps1 (project name, env file, env_file path).
-    $stackArgs = Add-ColorArgs $args
+    $stackArgs = @(Add-ColorArgs $args)
     & $stack -Env $Env @stackArgs
     if ($LASTEXITCODE -ne 0) { throw "docker compose failed (exit $LASTEXITCODE)" }
 }
@@ -156,7 +162,7 @@ function Invoke-Checked {
     # For workers.cli commands whose exit codes mean "ran, but": 1 = checks or the sync
     # failed, 2 = refused or not found, 3 = a sync is already running. Reported plainly
     # instead of as a Docker failure.
-    $stackArgs = Add-ColorArgs $args
+    $stackArgs = @(Add-ColorArgs $args)
     & $stack -Env $Env @stackArgs
     switch ($LASTEXITCODE) {
         0 { }
@@ -319,7 +325,7 @@ switch ($Command) {
         if ($code -gt 1) { throw "The report failed (exit $code): see the message above." }
         [System.IO.File]::WriteAllText($file, (($markdown -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
         if ($Details) { $reportArgs += '--details' }
-        $stackArgs = Add-ColorArgs (@('exec', '-T', 'api') + $reportArgs)
+        $stackArgs = @(Add-ColorArgs (@('exec', '-T', 'api') + $reportArgs))
         & $stack -Env $Env @stackArgs
         if ($LASTEXITCODE -gt 1) { throw "The report failed (exit $LASTEXITCODE)." }
         Write-Host ''

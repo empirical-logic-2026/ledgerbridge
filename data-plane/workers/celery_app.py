@@ -3,8 +3,9 @@
 The worker runs Celery Beat inside it. Every SYNC_TICK_SEC seconds `sync_tick` looks at each
 active connection and queues `sync_connection` for those whose own `sync_interval_sec` has
 passed since their last sync, or else `deletion_check_connection` when the deletion check
-interval (default hourly) has passed since the last deletion check. A Redis lock per
-connection keeps runs from overlapping, on top of the database check in workers/sync.py.
+interval (default hourly) has passed since the last deletion check. Runs never overlap:
+every run, scheduled or started by hand, opens through workers.sync, which checks for a
+running run and takes the connection's run lock (workers/locks.py).
 """
 
 import logging
@@ -12,7 +13,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from celery import Celery
-from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -37,8 +37,6 @@ celery_app.conf.update(
         "sync-tick": {"task": "workers.sync_tick", "schedule": float(settings.sync_tick_sec)},
     },
 )
-
-LOCK_TIMEOUT_SEC = 2 * 60 * 60
 
 
 @celery_app.task(name="workers.ping")
@@ -96,23 +94,17 @@ def deletion_check_connection(connection_id: int) -> dict[str, object]:
 def _locked_run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict[str, object]:
     """Runs one sync or deletion check, then its alerts and validation (ADR-019).
 
-    "Sync in progress" is marked by this Redis lock and the run's `running` row in sync_runs,
-    never by a database lock on the connection. Errors are logged as type and short message
-    only: a traceback would print SQL statements and their parameters.
+    "Sync in progress" is marked by the run's `running` row and the connection's run lock,
+    both taken when the run opens (workers.sync._open_run) and released when it ends, never
+    by a database lock on the connection. Errors are logged as type and short message only:
+    a traceback would print SQL statements and their parameters.
     """
-    lock = Redis.from_url(settings.redis_url).lock(
-        f"ledgerbridge:sync:{connection_id}", timeout=LOCK_TIMEOUT_SEC, blocking=False
-    )
-    if not lock.acquire():
-        return {"status": "skipped", "reason": "locked"}
     try:
         return _run(connection_id, runner)
     except Exception as exc:  # noqa: BLE001 - see the docstring
         error = short_error(exc, redact=True)
         logger.error("Run for connection %s failed: %s", connection_id, error)
         return {"status": "error", "error": error}
-    finally:
-        lock.release()
 
 
 def _run(connection_id: int, runner: Callable[..., "SyncResult"]) -> dict[str, object]:

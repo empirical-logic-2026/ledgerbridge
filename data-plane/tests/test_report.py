@@ -3,7 +3,7 @@ against the previous validation, root causes before consequences, colours with a
 fallback, and the error catalogue (core/problems.py, workers/report.py, workers/style.py)."""
 
 import re
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -28,6 +28,7 @@ from workers.report import (
     Section,
     build,
     cause_line,
+    next_step,
     ordered,
     render_markdown,
     render_text,
@@ -171,7 +172,8 @@ def test_text_report_has_verdict_sections_problems_and_next_steps() -> None:
     text = render_text(_report())
     lines = text.splitlines()
     assert lines[1].startswith("Overall: FAILED  (1 problem(s), 2 warning(s))")
-    assert lines[2] == "Next step: .\\dev.ps1 validate analyse -Env pilot"
+    # The unfinished full sync comes first: its results change the validation (LB-SYNC-002).
+    assert lines[2] == r"Next step: .\dev.ps1 sync full -Env pilot"
     assert "== Validation per company: FAILED ==" in text
     assert "== Work in progress: ATTENTION NEEDED ==" in text
     assert "== Warnings: ATTENTION NEEDED ==" in text
@@ -286,3 +288,29 @@ def test_validation_counts_are_compared_with_the_previous_run(
     assert labels.for_entity(first.entity_id) in text
     assert COMPANY not in text and COMPANY not in render_markdown(report)
     assert date.today().isoformat() in text
+
+
+def test_unfinished_work_comes_before_analysis() -> None:
+    """Pilot 2026-10-15: with a full sync unfinished and 168,306 records waiting, the next
+    step said `validate analyse`. Resuming the sync comes first, then converting."""
+    found = [
+        _occ("LB-VAL-004", 602),
+        _occ("LB-VAL-006", 3609),
+        _occ("LB-TRF-002", 168_306, "connection 2"),
+        _occ("LB-SYNC-002", 40, "entity 4 (company 2)"),
+    ]
+    assert next_step(found, "pilot") == r".\dev.ps1 sync full -Env pilot"
+    assert [g[0].problem.code for g in ordered(found)][:2] == ["LB-SYNC-002", "LB-TRF-002"]
+    present = {"LB-VAL-004", "LB-VAL-006", "LB-TRF-002", "LB-SYNC-002"}
+    assert cause_line(BY_CODE["LB-VAL-004"], present).startswith("Consequence:")
+    assert "Unfinished full sync [LB-SYNC-002]" in cause_line(BY_CODE["LB-VAL-004"], present)
+    assert "Unfinished full sync" in cause_line(BY_CODE["LB-TRF-002"], present)
+    # Records waiting with no unfinished sync: convert them before analysing.
+    assert next_step(found[:3], "pilot") == r".\dev.ps1 transform retry -Env pilot"
+    # A job still running: follow it first (a note, but still the next step).
+    running = [*found, Occurrence(BY_CODE["LB-SYNC-007"], "connection 2")]
+    assert next_step(running, "pilot") == r".\dev.ps1 sync watch -Env pilot"
+    text = render_text(
+        HealthReport("pilot", datetime(2026, 10, 15), [Section("X", occurrences=found)])
+    )
+    assert r"Next step: .\dev.ps1 sync full -Env pilot" in text

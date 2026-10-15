@@ -107,7 +107,8 @@ It prints the job's output from the start, then new lines as they come, and ends
 **If a run is stuck as running:**
 - A sync that is stopped with Ctrl+C in its own process, or terminated, marks its run `interrupted` and keeps its checkpoints. The next `sync full` continues from there.
 - A sync killed without warning (e.g. `./dev.ps1 down -Env pilot`, Docker stopping, or a crash) can't do that. Its run is detected automatically instead: once it has sent no heartbeat for 5 minutes (`SYNC_STALE_SEC`), the next sync or `status` marks it `interrupted`. Its checkpoints are kept too.
-- **By hand:** `./dev.ps1 sync abandon -Env pilot` asks you to type `abandon`, then marks the connection's running runs `interrupted`. It leaves alone a run that still sends heartbeats, i.e. one that is really still running; add `-Force` only if you're sure it isn't. Never edit `sync_runs` in the database again.
+- **"already has a sync running" / "its run lock is held":** the refusal says which it found. A running run shows its id and last sign of life: follow it with `sync watch`. Only a lock means another process is starting a run; the lock expires within the time shown. A run's lock is tied to its heartbeat, so after a shutdown it lapses within about 90 seconds, and the stale-run check clears it as soon as the run is marked `interrupted`.
+- **By hand:** `./dev.ps1 sync abandon -Env pilot` asks you to type `abandon`, then marks the connection's running runs `interrupted` and clears the connection's run lock. It leaves alone a run that still sends heartbeats, i.e. one that is really still running; add `-Force` only if you're sure it isn't. Never edit `sync_runs` in the database again.
 
 Large companies take a while. Each company is fetched chunk by chunk (the company record, each master type, then vouchers month by month), and each chunk is stored as soon as it arrives. Every chunk prints a line:
 
@@ -291,6 +292,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-15 | 0.13 | Refusals say whether a running run or only a run lock was found; the lock lapses after a shutdown and `sync abandon` clears it; `report`'s next step puts unfinished work first. |
 | 2026-10-14 | 0.12 | Step 9: `sync full -Restart` after a fix that needs fields not fetched before (openings at the books' beginning, tracking numbers); step 8: pairs, primary groups, first month. |
 | 2026-10-14 | 0.11 | `report` (step 6): verdict, sections, problems with meaning, cause and next step, saved as Markdown; plain names and stable codes everywhere ([error-catalogue.md](error-catalogue.md)); validation compared with the previous run. |
 | 2026-10-14 | 0.10 | `validate analyse` (step 8); stock journal entries read; orders and memorandum don't move stock; foreign currency amounts in the base currency; `watch` follows jobs that are busy without printing. |

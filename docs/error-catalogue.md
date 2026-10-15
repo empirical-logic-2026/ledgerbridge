@@ -222,11 +222,12 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 `sync_busy` | Warning
 
-**What it means:** This command needs the connection, but another sync of it is running.
+**What it means:** This command needs the connection, but another run of it is in progress. The message says which was found: a running run (its id and last sign of life) or only the connection's run lock (and when it expires).
 
 **Common causes:**
 
 - The worker started a scheduled sync, or another window started one.
+- Only a lock: another process is starting a run right now.
 
 **How to investigate:**
 
@@ -234,7 +235,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **How to fix:**
 
-- Wait for it, then run the command again. If its process is gone: sync abandon.
+- Wait for it, then run the command again. A run whose process is gone is marked interrupted after a few minutes without a sign of life, and its lock is cleared; sync abandon does both at once.
 
 **Next step:** `.\dev.ps1 sync watch -Env <env>`
 
@@ -309,6 +310,8 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **What it means:** Some stored records are still waiting to be converted.
 
+**Usually a consequence of:** LB-SYNC-002, LB-SYNC-010.
+
 **Common causes:**
 
 - A sync or transform job was interrupted, or is still running.
@@ -319,7 +322,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **How to fix:**
 
-- Convert them: transform retry (doesn't contact the source).
+- Convert them: transform retry (doesn't contact the source). If a full sync is unfinished, resume it instead: it converts them.
 
 **Next step:** `.\dev.ps1 transform retry -Env <env>`
 
@@ -472,7 +475,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **What it means:** Some vouchers' debits and credits don't add up to the same total here.
 
-**Usually a consequence of:** LB-TRF-001, LB-VAL-007.
+**Usually a consequence of:** LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
 
 **Common causes:**
 
@@ -496,7 +499,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **What it means:** On some dates total debits and credits differ.
 
-**Usually a consequence of:** LB-VAL-001, LB-VAL-003, LB-TRF-001, LB-VAL-007.
+**Usually a consequence of:** LB-VAL-001, LB-VAL-003, LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
 
 **Common causes:**
 
@@ -519,7 +522,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **What it means:** The ledgers' opening balances don't add up to zero (the source reports a difference in opening balances).
 
-**Usually a consequence of:** LB-TRF-001, LB-VAL-007.
+**Usually a consequence of:** LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
 
 **Common causes:**
 
@@ -542,7 +545,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **What it means:** Some ledgers' balances as of the validation date differ from the source's.
 
-**Usually a consequence of:** LB-TRF-001, LB-VAL-007.
+**Usually a consequence of:** LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
 
 **Common causes:**
 
@@ -566,7 +569,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **What it means:** The profit and loss ledger's balance (with the period's profit) differs from the source's.
 
-**Usually a consequence of:** LB-VAL-004, LB-TRF-001, LB-VAL-007.
+**Usually a consequence of:** LB-VAL-004, LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
 
 **Common causes:**
 
@@ -589,7 +592,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **What it means:** Some ledgers' balances at past financial year ends differ from the source's.
 
-**Usually a consequence of:** LB-TRF-001, LB-VAL-007.
+**Usually a consequence of:** LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
 
 **Common causes:**
 
@@ -657,7 +660,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **What it means:** Some stock items' closing quantities differ from the source's.
 
-**Usually a consequence of:** LB-TRF-001, LB-VAL-007.
+**Usually a consequence of:** LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
 
 **Common causes:**
 
@@ -680,7 +683,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **What it means:** Some parties' outstanding bills differ from the source's.
 
-**Usually a consequence of:** LB-TRF-001, LB-VAL-007.
+**Usually a consequence of:** LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
 
 **Common causes:**
 
