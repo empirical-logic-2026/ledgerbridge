@@ -219,6 +219,7 @@ class TallyConnector:
             closing_stock=closing_stock,
             opening_difference=difference,
             ledger_openings=ledger_openings,
+            stock_ledger_openings=stock_ledgers[0],
         )
 
     def _integrated(self, entity: SourceEntity) -> bool:

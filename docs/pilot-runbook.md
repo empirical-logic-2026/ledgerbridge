@@ -238,7 +238,7 @@ It runs in the background like a sync (follow it again with `./dev.ps1 sync watc
 
 Share the output as it is. It also shows: pairs of explanations that fit only together; the differing ledgers by primary group, split into those the opening explains, those with a non-zero stored opening and those with none; and, for ledgers nothing explains, the first month end of the first financial year where they differ (it reads Tally's balance at each month end of that year) with the voucher types that have lines that month.
 
-**Ledger profiles** (end of `validate analyse`): each ledger that differs today or at a year end, as ledger A, B, ...: its primary group, a renamed reserved group above it (e.g. Stock-in-Hand), whether it sits directly under its primary group, its kind and nature, whether our stored opening equals Tally's, the voucher types posting to it, at which year ends it differs and whether by the same amount, the voucher types around a year end where it differs only sometimes, vouchers whose effective date isn't their date, and what the difference equals (its opening, the stock items' opening value, Tally's opening minus ours). No names or amounts.
+**Ledger profiles** (end of `validate analyse`): each ledger that differs today or at a year end, as ledger A, B, ...: its primary group, a renamed reserved group above it (e.g. Stock-in-Hand), whether it sits directly under its primary group, its kind and nature, whether our stored opening equals Tally's, the voucher types posting to it, at which year ends it differs and whether by the same amount, the voucher types around a year end where it differs only sometimes, vouchers whose effective date isn't their date, and what the difference equals (its opening, the stock items' opening value, Tally's opening minus ours, the closing stock value minus its opening at every date, one month's lines of a voucher type around a year end, its opening bills minus its opening). It also says whether the ledger already differs on the books' first day and how many optional, cancelled, post-dated, reversing and memorandum vouchers post to it. After the profiles, **Opening difference** says what Tally's own difference equals (the stock ledgers' openings, the opening stock value, ...). No names or amounts.
 
 ### 9. After a change to how data is fetched: `sync full -Restart`
 
@@ -294,6 +294,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-15 | 0.16 | More facts in the ledger profiles; what the opening difference equals. |
 | 2026-10-15 | 0.15 | Ledger profiles in `validate analyse`; the opening difference leaves out Stock-in-Hand ledgers in integrated companies. |
 | 2026-10-15 | 0.14 | Job work godowns, stock journals read once and the source's own opening difference: after this release run `sync full -Restart` (godown flags are new fields); `validate analyse` compares stock by godown and lists job work. |
 | 2026-10-15 | 0.13 | Refusals say whether a running run or only a run lock was found; the lock lapses after a shutdown and `sync abandon` clears it; `report`'s next step puts unfinished work first. |

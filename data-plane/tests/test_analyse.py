@@ -400,3 +400,94 @@ def test_ledger_profiles(synced) -> None:  # noqa: ANN001
     assert ", by the same amount" in line
     assert "minus its stored opening" in line and "the source's opening minus ours" in line
     assert "Cash" not in line  # anonymous
+
+
+class Probing(Source):
+    """The source's balances with set stock values, opening difference and first day."""
+
+    stock_values: dict[date, Decimal]
+    difference: Decimal | None
+    stock_ledgers: Decimal
+
+    def closing_balances(self, entity, as_of):  # noqa: ANN001, ANN201
+        balances = self.balances.get(as_of)
+        if balances is None:  # e.g. the books' first day: ours, unchanged
+            balances = self.first_day
+        return SourceBalances(
+            as_of,
+            dict(balances),
+            closing_stock=self.stock_values.get(as_of),
+            opening_stock=Decimal(0),
+            opening_difference=self.difference,
+            stock_ledger_openings=self.stock_ledgers,
+        )
+
+
+def test_profile_probes_and_opening_difference(synced) -> None:  # noqa: ANN001
+    """Pilot 2026-10-15 hypotheses: a stock ledger the source reports at the closing stock
+    value; a ledger differing at one year end by one month's lines; the source's opening
+    difference equal to its stock ledgers' openings."""
+    db, connection, connector, entity, entity_id, ours = synced
+    connector.__class__ = Probing
+    year_end = date(2027, 3, 31)
+    validator = Validator(db, entity_id, AS_OF, Decimal(0), connection.id)
+    row = db.get_one(A.Entity, entity_id)
+    row.books_from = books = row.books_from or date(2026, 4, 1)
+    db.commit()
+    cash, capital = _key(db, "Cash"), _key(db, "Capital")
+    # Capital: the source reports it at the stock's value at each date (2,000 and 2,500).
+    connector.stock_values = {year_end: Decimal(2000), AS_OF: Decimal(2500)}
+    for when, value in connector.stock_values.items():
+        connector.balances[when][capital] = value
+    # Cash: differs at the year end only, by its Payment lines in March 2027 (one voucher
+    # moved there: balances at the year end and today are unchanged by the move).
+    moved = db.scalar(
+        select(A.Voucher)
+        .join(A.VoucherLine, A.VoucherLine.voucher_id == A.Voucher.id)
+        .where(A.VoucherLine.ledger_id == ours[AS_OF][cash].id)
+        .limit(1)
+    )
+    moved.voucher_date = date(2027, 3, 15)
+    for line in db.scalars(select(A.VoucherLine).where(A.VoucherLine.voucher_id == moved.id)):
+        line.voucher_date = moved.voucher_date
+    db.commit()
+    march = sum(
+        db.scalars(
+            select(A.VoucherLine.amount).where(
+                A.VoucherLine.ledger_id == ours[AS_OF][cash].id,
+                A.VoucherLine.voucher_date > date(2027, 2, 28),
+                A.VoucherLine.voucher_date <= year_end,
+            )
+        ),
+        Decimal(0),
+    )
+    assert march
+    connector.balances[year_end][cash] -= march
+    # The books' first day: the source agrees with us.
+    connector.first_day = {lb.source_key: lb.balance for lb in validator.ledger_balances(books)}
+    connector.difference = connector.stock_ledgers = Decimal(1234)
+    out = "\n".join(_analyse(synced))
+    lines = {x.split(":")[0].strip(): x for x in out.splitlines() if x.startswith("  ledger ")}
+    stock_like = next(x for x in lines.values() if "the closing stock value minus" in x)
+    assert "the closing stock value minus its stored opening (at every date)" in stock_like
+    assert "by changing amounts" in stock_like
+    one_year = next(x for x in lines.values() if "at 1 of 1 year ends" in x and "today" not in x)
+    assert "Payment lines in the month up to 2027-03-31" in one_year
+    assert "matches on the books' first day" in one_year
+    assert "Opening difference (the source's own figures): non-zero; it equals: the stock " in out
+    assert "the stock ledgers' openings" in out
+
+
+def test_special_vouchers_are_counted(synced) -> None:  # noqa: ANN001
+    db, connection, connector, entity, entity_id, ours = synced
+    cash = ours[AS_OF][_key(db, "Cash")]
+    voucher = db.scalar(
+        select(A.Voucher)
+        .join(A.VoucherLine, A.VoucherLine.voucher_id == A.Voucher.id)
+        .where(A.VoucherLine.ledger_id == cash.id)
+        .limit(1)
+    )
+    voucher.is_optional = True
+    db.commit()
+    analyser = Analyser(db, connection, connector, entity, entity_id, AS_OF, Decimal(0), print)
+    assert analyser._special_vouchers(cash.id) == {"optional": 1}

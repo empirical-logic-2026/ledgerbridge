@@ -442,6 +442,10 @@ VOUCHERS: tuple[Voucher, ...] = (
     _journal("MEMO-1", "Memorandum", date(2026, 10, 1), "Electricity", "Cash", "250"),
     _journal("REV-JNL-1", "Reversing Journal", date(2026, 10, 1), "Rent", "Salary Payable",
              "125"),
+    # With reversing journals enabled in the company: still in no balance, not even on its
+    # own date (checked on 1 and 2 September, 2026-10-15).
+    _journal("REV-JNL-2", "Reversing Journal", date(2026, 9, 1), "Rent", "Salary Payable",
+             "135"),
     _journal("ADJ-JNL-1", "Adjustment Journal", date(2026, 10, 2), "Rent", "Salary Payable",
              "300"),
     _journal("PDC-1", "Payment", date(2027, 1, 1), "Rent", "Cash", "75", post_dated=True),

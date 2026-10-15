@@ -162,6 +162,7 @@ class Analyser:
         self._stock()
         self._job_work()
         self._profiles()
+        self._opening()
         self._census()
         return self.lines
 
@@ -985,20 +986,147 @@ class Analyser:
             )
             first = next(iter(dated.values()))
             all_dates = len(self.year_ends) + 1
+            window: list[tuple[str, Decimal]] = []
             if len(dated) < all_dates and ends:
                 facts.append(self._around(lb.id, ends[0]))
+                window = self._window_sums(lb.id, ends[0])
+                first = dated[ends[0]]
+            special = self._special_vouchers(lb.id)
+            if special:
+                facts.append(
+                    "vouchers posting to it: "
+                    + ", ".join(f"{k} {n:,}" for k, n in sorted(special.items()))
+                )
+            day_one = self._first_day_differs(key, lb.id)
+            if day_one is not None:
+                facts.append(
+                    "differs already on the books' first day"
+                    if day_one
+                    else "matches on the books' first day"
+                )
+            bills = self._opening_bills_of(lb.id) if bill_wise else None
+            if bills is not None:
+                facts.append(
+                    "opening bills total "
+                    + ("equal to" if self.close(bills, lb.opening) else "different from")
+                    + " its opening"
+                )
+            tests += tuple(window)
+            if bills is not None:
+                tests += (("its opening bills minus its opening", bills - lb.opening),)
             effective = self._effective_dates(lb.id)
             if effective:
                 facts.append(
                     f"vouchers whose effective date differs from their date: {effective:,}"
                 )
             equals = [label for label, value in tests if value and self.close(first, value)]
+            equals += self._stock_value_fits(dated, lb.opening)
             self.out(
                 f"  ledger {_letter(n)}: {'; '.join(where)}; {'; '.join(facts)}; {when}; "
                 f"the difference equals: {', '.join(equals) or 'none of the tested amounts'}"
             )
         if len(keys) > PROFILE_LEDGERS:
             self.out(f"  ({len(keys) - PROFILE_LEDGERS:,} more not profiled)")
+
+    def _stock_value_fits(self, dated: dict[date, Decimal], opening: Decimal) -> list[str]:
+        """Whether, at every date the ledger differs, the difference is the source's closing
+        stock value as of that date minus its stored opening (the source reports the ledger
+        at the stock's value), or that value itself."""
+        values = {}
+        for on in dated:
+            source = self.source if on == self.as_of else self.source_years.get(on)
+            closing = getattr(source, "closing_stock", None)
+            if closing is None:
+                return []
+            values[on] = Decimal(closing)
+        fits = []
+        if all(self.close(dated[d], values[d] - opening) for d in dated):
+            fits.append("the closing stock value minus its stored opening (at every date)")
+        if all(self.close(dated[d], values[d]) for d in dated):
+            fits.append("the closing stock value (at every date)")
+        return fits
+
+    def _special_vouchers(self, ledger_id: int) -> Counter[str]:
+        """Vouchers posting to the ledger that count differently: optional, cancelled,
+        post-dated, and reversing journals or memorandum vouchers (also custom types under
+        them)."""
+        L, V, T = A.VoucherLine, A.Voucher, A.VoucherType  # noqa: N806
+        found: Counter[str] = Counter()
+        for optional, cancelled, post_dated, standard, n in self.session.execute(
+            select(
+                V.is_optional,
+                V.is_cancelled,
+                V.is_post_dated,
+                T.standard_type,
+                func.count(func.distinct(V.id)),
+            )
+            .join(L, L.voucher_id == V.id)
+            .join(T, T.id == V.voucher_type_id)
+            .where(L.ledger_id == ledger_id)
+            .group_by(V.is_optional, V.is_cancelled, V.is_post_dated, T.standard_type)
+        ):
+            for flag, label in ((optional, "optional"), (cancelled, "cancelled"),
+                                (post_dated, "post-dated")):  # fmt: skip
+                if flag:
+                    found[label] += n
+            if standard in ("Reversing Journal", "Memorandum"):
+                found[standard] += n
+        return found
+
+    def _window_sums(self, ledger_id: int, year_end: date) -> list[tuple[str, Decimal]]:
+        """Tested amounts for a ledger that differs at one year end only: its lines of each
+        voucher type and kind (counted, optional, ...) in the month up to that year end, and
+        in the month after it, with either sign."""
+        L, V, T = A.VoucherLine, A.Voucher, A.VoucherType  # noqa: N806
+        sums: Counter[str] = Counter()
+        before, after = year_end - timedelta(days=31), year_end + timedelta(days=31)
+        for on, standard, base, deleted, cancelled, optional, effective, amount in (
+            self.session.execute(
+                select(
+                    L.voucher_date, T.standard_type, T.base_type, V.is_deleted,
+                    V.is_cancelled, V.is_optional, L.is_effective, L.amount,
+                )
+                .join(V, V.id == L.voucher_id)
+                .join(T, T.id == V.voucher_type_id)
+                .where(L.ledger_id == ledger_id, L.voucher_date > before, L.voucher_date <= after)
+            )
+        ):  # fmt: skip
+            kind = _type(standard, base)
+            why = "" if effective else (_category(deleted, cancelled, optional) or "not posting")
+            side = "the month up to" if on <= year_end else "the month after"
+            sums[f"{why + ' ' if why else ''}{kind} lines in {side} {year_end}"] += Decimal(amount)
+        out = []
+        for label, total in sorted(sums.items()):
+            out += [(label, total), (f"minus {label}", -total)]
+        return out
+
+    def _first_day_differs(self, key: str, ledger_id: int) -> bool | None:
+        """Whether the ledger already differs on the books' first day (the source's balance
+        then against ours), read once."""
+        if "_first_day" not in self.__dict__:
+            books = self.row.books_from
+            source = self._read("closing_balances", self.entity, books) if books else None
+            ours = (
+                {lb.source_key: lb.balance for lb in self.validator.ledger_balances(books)}
+                if books
+                else {}
+            )
+            self._first_day = (getattr(source, "ledgers", None), ours)
+        theirs, ours = self._first_day
+        if theirs is None or key not in theirs or key not in ours:
+            return None
+        return not self.close(theirs[key], ours[key])
+
+    def _opening_bills_of(self, ledger_id: int) -> Decimal | None:
+        """The source's opening bills of a bill-wise ledger, totalled (canonical sign)."""
+        if "_opening_bills" not in self.__dict__:
+            found = self._read("bill_outstanding", self.entity)
+            self._opening_bills = found[1] if isinstance(found, tuple) else None
+        if self._opening_bills is None:
+            return None
+        name = self.session.scalar(select(A.Ledger.name).where(A.Ledger.id == ledger_id))
+        total = self._opening_bills.get(name)
+        return Decimal(total) if total is not None else Decimal(0)
 
     def _around(self, ledger_id: int, year_end: date) -> str:
         """For a ledger that differs at some dates only: the voucher types with lines in the
@@ -1074,6 +1202,39 @@ class Analyser:
                 )
             gid = parent
         return renamed, direct
+
+    def _opening(self) -> None:
+        """The source's own difference in opening balances (as the opening check uses it)
+        and what it equals: the stock ledgers' openings (the source counting them after
+        all), the opening stock value, or our openings' differences."""
+        difference = getattr(self.source, "opening_difference", None)
+        if difference is None:
+            return
+        if self.close(difference, ZERO):
+            self.out("Opening difference (the source's own figures): none")
+            return
+        stock_ledgers = getattr(self.source, "stock_ledger_openings", None) or ZERO
+        opening_stock = getattr(self.source, "opening_stock", None) or ZERO
+        ours = getattr(self, "ours_today", {}) or {}
+        source_openings = getattr(self.source, "ledger_openings", {}) or {}
+        ours_differ = sum(
+            (source_openings[k] - lb.opening for k, lb in ours.items() if k in source_openings),
+            ZERO,
+        )
+        tests = (
+            ("the stock ledgers' openings", stock_ledgers),
+            ("minus the stock ledgers' openings", -stock_ledgers),
+            ("the opening stock value", opening_stock),
+            ("minus the opening stock value", -opening_stock),
+            ("the opening stock value minus the stock ledgers' openings",
+             opening_stock - stock_ledgers),
+            ("the source's openings minus ours", ours_differ),
+        )  # fmt: skip
+        fits = [label for label, value in tests if value and self.close(difference, value)]
+        self.out(
+            "Opening difference (the source's own figures): non-zero; it equals: "
+            + (", ".join(fits) if fits else "none of the tested amounts")
+        )
 
     def _job_work(self) -> None:
         """Job work vouchers and where their stock sits (counts and standard names only)."""

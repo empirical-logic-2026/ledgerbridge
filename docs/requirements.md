@@ -347,6 +347,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
+| 2026-10-15 | 0.14 | VAL-010: ledger profiles test the books' first day, special vouchers, lines around a year end, opening bills and closing stock values; the opening difference is explained. |
 | 2026-10-15 | 0.13 | VAL-010: anonymous ledger profiles; DAT-012: stock ledgers with integrated inventory. |
 | 2026-10-15 | 0.12 | DAT-012: job work godowns and the source's own opening difference; VAL-010: godown-level stock and job work in the analysis. |
 | 2026-10-14 | 0.11 | DAT-012: the source's counting rules (openings at the books' beginning, stock moved once, what counts in the books); VAL-010 extended (pairs, primary groups, first month). |
