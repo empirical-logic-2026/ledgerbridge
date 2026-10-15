@@ -1,0 +1,802 @@
+<ENVELOPE>
+
+ <HEADER>
+
+  <VERSION>1</VERSION>
+
+  <STATUS>1</STATUS>
+
+ </HEADER>
+
+ <BODY>
+
+  <DESC>
+
+   <CMPINFO>
+
+    <COMPANY>0</COMPANY>
+
+    <GROUP>1</GROUP>
+
+    <LEDGER>2</LEDGER>
+
+    <COSTCATEGORY>0</COSTCATEGORY>
+
+    <COSTCENTRE>0</COSTCENTRE>
+
+    <GODOWN>0</GODOWN>
+
+    <STOCKGROUP>0</STOCKGROUP>
+
+    <STOCKCATEGORY>0</STOCKCATEGORY>
+
+    <STOCKITEM>0</STOCKITEM>
+
+    <VOUCHERTYPE>0</VOUCHERTYPE>
+
+    <CURRENCY>0</CURRENCY>
+
+    <UNIT>0</UNIT>
+
+    <BUDGET>0</BUDGET>
+
+    <CLIENTRULE>0</CLIENTRULE>
+
+    <SERVERRULE>0</SERVERRULE>
+
+    <STATE>0</STATE>
+
+    <TDSRATE>0</TDSRATE>
+
+    <TAXCLASSIFICATION>0</TAXCLASSIFICATION>
+
+    <STCATEGORY>0</STCATEGORY>
+
+    <DEDUCTEETYPE>0</DEDUCTEETYPE>
+
+    <ATTENDANCETYPE>0</ATTENDANCETYPE>
+
+    <FBTCATEGORY>0</FBTCATEGORY>
+
+    <FBTASSESSEETYPE>0</FBTASSESSEETYPE>
+
+    <TARIFFCLASSIFICATION>0</TARIFFCLASSIFICATION>
+
+    <EXCISEDUTYCLASSIFICATION>0</EXCISEDUTYCLASSIFICATION>
+
+    <SERIALNUMBER>0</SERIALNUMBER>
+
+    <ADJUSTMENTCLASSIFICATION>0</ADJUSTMENTCLASSIFICATION>
+
+    <INCOMETAXSLAB>0</INCOMETAXSLAB>
+
+    <INCOMETAXCLASSIFICATION>0</INCOMETAXCLASSIFICATION>
+
+    <LBTCLASSIFICATION>0</LBTCLASSIFICATION>
+
+    <TAXUNIT>0</TAXUNIT>
+
+    <RETURNMASTER>0</RETURNMASTER>
+
+    <GSTCLASSIFICATION>0</GSTCLASSIFICATION>
+
+    <VOUCHERNUMBERSERIES>0</VOUCHERNUMBERSERIES>
+
+    <VOUCHER>0</VOUCHER>
+
+   </CMPINFO>
+
+  </DESC>
+
+  <DATA>
+
+   <COLLECTION ISMSTDEPTYPE="Yes" MSTDEPTYPE="8">
+
+    <LEDGER NAME="Capital" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d1</GUID>
+
+     <PARENT TYPE="String">Capital Account</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">50000.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">50000.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Capital</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Capital - Stock" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f4</GUID>
+
+     <PARENT TYPE="String">Capital Account</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">2010.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">2010.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Capital - Stock</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Cash" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000001f</GUID>
+
+     <PARENT TYPE="String">Cash-in-Hand</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-27425.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">-50000.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Cash</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Customer Alpha Traders" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000dd</GUID>
+
+     <PARENT TYPE="String">Sundry Debtors</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-5100.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Customer Alpha Traders</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Customer Beta Retail" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000de</GUID>
+
+     <PARENT TYPE="String">Sundry Debtors</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">0.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Customer Beta Retail</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Customer Gamma Stores" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000df</GUID>
+
+     <PARENT TYPE="String">Sundry Debtors</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-1200.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Customer Gamma Stores</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Electricity" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d6</GUID>
+
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-4500.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Electricity</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Input CGST" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000db</GUID>
+
+     <PARENT TYPE="String">Duties &amp; Taxes</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-1170.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Input CGST</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Input SGST" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000dc</GUID>
+
+     <PARENT TYPE="String">Duties &amp; Taxes</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-1170.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Input SGST</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Output CGST" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d9</GUID>
+
+     <PARENT TYPE="String">Duties &amp; Taxes</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">1800.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Output CGST</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Output SGST" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000da</GUID>
+
+     <PARENT TYPE="String">Duties &amp; Taxes</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">1800.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Output SGST</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Profit &amp; Loss A/c" RESERVEDNAME="Profit &amp; Loss A/c">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-0000001e</GUID>
+
+     <PARENT TYPE="String">&#4; Primary</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-11155.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Profit &amp; Loss A/c</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Purchases" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d5</GUID>
+
+     <PARENT TYPE="String">Purchase Accounts</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-16250.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Purchases</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Rent" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d0</GUID>
+
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-1375.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Rent</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Salary" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d7</GUID>
+
+     <PARENT TYPE="String">Indirect Expenses</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-15000.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Salary</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Salary Payable" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d8</GUID>
+
+     <PARENT TYPE="String">Current Liabilities</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">15300.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Salary Payable</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Sales - Goods" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d3</GUID>
+
+     <PARENT TYPE="String">Sales Accounts</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">4400.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Sales - Goods</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Sales - Services" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d4</GUID>
+
+     <PARENT TYPE="String">Sales Accounts</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">18000.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Sales - Services</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Security Deposit" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000e9</GUID>
+
+     <PARENT TYPE="String">Deposits (Asset)</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-12000.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">-12000.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Security Deposit</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Stock Ledger" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f5</GUID>
+
+     <PARENT TYPE="String">Inventories</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-1500.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">-1500.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Stock Ledger</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Term Loan" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000ea</GUID>
+
+     <PARENT TYPE="String">Loans (Liability)</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">12000.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">12000.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Term Loan</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Test Bank Current A/c" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000d2</GUID>
+
+     <PARENT TYPE="String">Bank Accounts</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">-25260.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">Yes</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">Yes</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Test Bank Current A/c</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Vendor Delta Supplies" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000e0</GUID>
+
+     <PARENT TYPE="String">Sundry Creditors</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">1500.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Vendor Delta Supplies</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Vendor Epsilon Wholesale" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000e1</GUID>
+
+     <PARENT TYPE="String">Sundry Creditors</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">4470.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Vendor Epsilon Wholesale</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+    <LEDGER NAME="Vendor Zeta Services" RESERVEDNAME="">
+
+     <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000e2</GUID>
+
+     <PARENT TYPE="String">Sundry Creditors</PARENT>
+
+     <CLOSINGBALANCE TYPE="Amount">1180.00</CLOSINGBALANCE>
+
+     <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+
+     <LBOPENINGISDR TYPE="Logical">No</LBOPENINGISDR>
+
+     <LBCLOSINGISDR TYPE="Logical">No</LBCLOSINGISDR>
+
+     <LANGUAGENAME.LIST>
+
+      <NAME.LIST TYPE="String">
+
+       <NAME>Vendor Zeta Services</NAME>
+
+      </NAME.LIST>
+
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+
+     </LANGUAGENAME.LIST>
+
+    </LEDGER>
+
+   </COLLECTION>
+
+  </DATA>
+
+ </BODY>
+
+</ENVELOPE>
+

@@ -153,7 +153,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | VAL-006 | Each stock item's closing quantity matches the source's. | P1 |
 | VAL-007 | Each party's bill-wise outstanding matches the source's. | P1 |
 | VAL-008 | Ledger closing balances match the source at every financial year end, not only the validation date. | P1 |
-| VAL-010 | An analysis of validation mismatches tests explanations that can be checked automatically (opening balances, signs, voucher types counted differently, cancelled, optional and post-dated vouchers, financial year boundaries, units, stock journals, tracked notes, rounding, foreign currency, bills), alone and in pairs, and reports how many mismatches each explains; differing ledgers are broken down by primary group and whether the opening explains them, and unexplained ones by the first month (of the first financial year) where they differ and the voucher types that month. Counts and the source's standard names only. | P1 |
+| VAL-010 | An analysis of validation mismatches tests explanations that can be checked automatically (opening balances, signs, voucher types counted differently, cancelled, optional and post-dated vouchers, financial year boundaries, units, stock journals, tracked notes, rounding, foreign currency, bills), alone and in pairs, and reports how many mismatches each explains; differing ledgers are broken down by primary group and whether the opening explains them, and unexplained ones by the first month (of the first financial year) where they differ and the voucher types that month; each differing ledger gets an anonymous profile (where it sits, kind, nature, renamed reserved group, stored opening against the source's, voucher types posting to it, when and whether by a constant amount, what the difference equals). Counts and the source's standard names only. | P1 |
 | VAL-009 | Validation results name the root cause: records that failed to transform, and how many other failures are likely their consequences. | P1 |
 
 ### 4.8 Reporting and dashboards
@@ -347,6 +347,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
+| 2026-10-15 | 0.13 | VAL-010: anonymous ledger profiles; DAT-012: stock ledgers with integrated inventory. |
 | 2026-10-15 | 0.12 | DAT-012: job work godowns and the source's own opening difference; VAL-010: godown-level stock and job work in the analysis. |
 | 2026-10-14 | 0.11 | DAT-012: the source's counting rules (openings at the books' beginning, stock moved once, what counts in the books); VAL-010 extended (pairs, primary groups, first month). |
 | 2026-10-14 | 0.10 | OPS-005: readable health report, stable error codes and error catalogue, shared output layout. |

@@ -185,3 +185,68 @@ def test_stock_validation_matches_tally_for_job_work(job_work: Session, synced) 
     assert differing == set()  # the consumption at the job worker's godown isn't counted
     holding = dict(db.execute(select(A.Godown.name, A.Godown.holding)).all())
     assert holding["Job Worker Alpha"] == "ours_with_third_party"
+
+
+# --- the stock ledger (a renamed Stock-in-Hand group) -------------------------------------
+
+STOCK_LEDGER = RULES / "stock_ledger"
+
+
+def _replaying(companies: str | None = None) -> TallyConnector:
+    """A connector answered by the responses recorded from the test company."""
+    import httpx
+
+    files = {
+        "LBCompanies": "companies.xml",
+        "LBGroups": "groups.xml",
+        "LBLedgerBalances": "ledger_balances.xml",
+        "LBStockValues": "stock_values.xml",
+    }
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        collection = request.content.decode().split("<ID>")[1].split("</ID>")[0]
+        text = (STOCK_LEDGER / files[collection]).read_text(encoding="utf-8")
+        if collection == "LBCompanies" and companies is not None:
+            text = companies
+        return httpx.Response(200, content=text.encode("utf-8"))
+
+    return TallyConnector.from_config(
+        {"url": "http://tally.test:9000"}, transport=httpx.MockTransport(answer)
+    )
+
+
+def _test_company(connector: TallyConnector):  # noqa: ANN202
+    return next(e for e in connector.list_entities() if e.name == "LedgerBridge Test Co")
+
+
+def test_an_integrated_company_leaves_its_stock_ledger_out_of_the_opening_difference() -> None:
+    """Recorded from the test company (2026-10-15): the reserved Stock-in-Hand group renamed
+    "Inventories" holds one ledger with a 1,500 opening; the items' opening stock is 2,010.
+    Tally's trial balance from the books' beginning shows Opening Stock 2,010 and no stock
+    ledger, and balances: its difference in opening balances is zero."""
+    connector = _replaying()
+    entity = _test_company(connector)
+    balances = connector.closing_balances(entity, YEAR_END)
+    assert balances.opening_difference == 0
+    assert balances.opening_stock == Decimal(2010)
+    stock_ledger = next(
+        parser.source_key(x)
+        for x in parser.objects(
+            parser.parse_response((STOCK_LEDGER / "ledger_balances.xml").read_bytes()), "LEDGER"
+        )
+        if parser.object_name(x) == "Stock Ledger"
+    )
+    # The ledger itself keeps its own opening and balance (validated ledger by ledger).
+    assert balances.ledger_openings[stock_ledger] == Decimal(1500)
+    assert balances.ledgers[stock_ledger] == Decimal(1500)
+    assert connector._stock_in_hand_groups(entity) == {"Inventories"}
+
+
+def test_without_integration_the_stock_ledgers_are_the_stock() -> None:
+    """Not integrated: Tally's stock is the Stock-in-Hand ledgers, and their openings are
+    part of the opening difference (here -2,010 capital + 1,500 stock ledger)."""
+    text = (STOCK_LEDGER / "companies.xml").read_text(encoding="utf-8")
+    connector = _replaying(text.replace(">Yes</ISINTEGRATED>", ">No</ISINTEGRATED>"))
+    balances = connector.closing_balances(_test_company(connector), YEAR_END)
+    assert balances.opening_difference == Decimal(-510)
+    assert (balances.opening_stock, balances.closing_stock) == (Decimal(1500), Decimal(1500))

@@ -82,6 +82,11 @@ def stock_group_create(name: str) -> str:
     return f'<STOCKGROUP NAME={quoteattr(name)} ACTION="Create">{_names(name)}</STOCKGROUP>'
 
 
+def group_rename(current: str, new: str) -> str:
+    """Renames a group (Tally keeps its reserved name)."""
+    return f'<GROUP NAME={quoteattr(current)} ACTION="Alter">{_names(new)}</GROUP>'
+
+
 def godown_create(godown: Godown) -> str:
     return (
         f'<GODOWN NAME={quoteattr(godown.name)} ACTION="Create">{_names(godown.name)}'

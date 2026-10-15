@@ -339,8 +339,8 @@ class Validator:
         used. Returns our ledger openings' total: the trial balance must total exactly that."""
         ours = sum((ledger.opening for ledger in ledgers), ZERO)
         theirs = None
-        if isinstance(source, SourceBalances) and source.opening_ledgers is not None:
-            theirs = source.opening_ledgers + (source.opening_stock or ZERO)
+        if isinstance(source, SourceBalances) and source.opening_difference is not None:
+            theirs = source.opening_difference
             where = "The source shows a difference in opening balances"
         else:
             stock = self.session.scalar(

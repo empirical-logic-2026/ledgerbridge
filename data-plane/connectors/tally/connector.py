@@ -161,15 +161,22 @@ class TallyConnector:
     def closing_balances(self, entity: SourceEntity, as_of: date) -> SourceBalances:
         """Tally's own closing balances for the period books-from .. as_of (inclusive).
 
-        *Profit & Loss A/c* (directly under Primary) carries the period's computed profit;
-        Tally computes that profit with the stock items' opening and closing values.
+        *Profit & Loss A/c* (directly under Primary) carries the period's computed profit.
+        Tally's stock (checked on the test company, 2026-10-15; schema.md 7.5): with
+        accounts integrated with inventory, its trial balance, balance sheet and profit use
+        the stock items' values and leave out ledgers under Stock-in-Hand (renamed or not);
+        otherwise those ledgers are the stock. The opening difference follows the same rule.
         """
         if entity.books_from is None:
             raise TallyError(f"Company '{entity.name}' has no books-from date")
         period = (entity.books_from, as_of)
+        integrated = self._integrated(entity)
+        in_stock_group = self._stock_in_hand_groups(entity)
         ledgers: dict[str, Decimal] = {}
         carriers: set[str] = set()
         openings = Decimal(0)  # at the books' beginning: the period starts there
+        stock_ledgers = [Decimal(0), Decimal(0)]  # Stock-in-Hand ledgers: opening, closing
+        ledger_openings: dict[str, Decimal] = {}
         body = self._company_post(
             entity,
             lambda name: envelopes.collection_request(
@@ -179,24 +186,72 @@ class TallyConnector:
         for element in parser.objects(parser.parse_response(body), "LEDGER"):
             key = parser.source_key(element)
             ledgers[key] = _canonical(element.findtext("CLOSINGBALANCE"))
-            openings += _canonical(element.findtext("OPENINGBALANCE"))
-            if (element.findtext("PARENT") or "").strip() in ("", mapping.PRIMARY):
+            opening = _canonical(element.findtext("OPENINGBALANCE"))
+            ledger_openings[key] = opening
+            parent = (element.findtext("PARENT") or "").strip()
+            if parent in in_stock_group:
+                stock_ledgers[0] += opening
+                stock_ledgers[1] += ledgers[key]
+                if integrated:
+                    continue  # replaced by the stock items' values
+            openings += opening
+            if parent in ("", mapping.PRIMARY):
                 carriers.add(key)
-        body = self._company_post(
-            entity,
-            lambda name: envelopes.collection_request(
-                envelopes.STOCK_VALUES, company=name, balances_period=period
-            ),
-        )
-        items = parser.objects(parser.parse_response(body), "STOCKITEM")
+        if integrated:
+            body = self._company_post(
+                entity,
+                lambda name: envelopes.collection_request(
+                    envelopes.STOCK_VALUES, company=name, balances_period=period
+                ),
+            )
+            items = parser.objects(parser.parse_response(body), "STOCKITEM")
+            opening_stock = sum((_canonical(i.findtext("OPENINGVALUE")) for i in items), Decimal(0))
+            closing_stock = sum((_canonical(i.findtext("CLOSINGVALUE")) for i in items), Decimal(0))
+            difference = openings + opening_stock
+        else:
+            opening_stock, closing_stock = stock_ledgers
+            difference = openings  # the stock ledgers' openings are in it
         return SourceBalances(
             as_of=as_of,
             ledgers=ledgers,
             profit_carriers=frozenset(carriers),
-            opening_stock=sum((_canonical(i.findtext("OPENINGVALUE")) for i in items), Decimal(0)),
-            closing_stock=sum((_canonical(i.findtext("CLOSINGVALUE")) for i in items), Decimal(0)),
-            opening_ledgers=openings,
+            opening_stock=opening_stock,
+            closing_stock=closing_stock,
+            opening_difference=difference,
+            ledger_openings=ledger_openings,
         )
+
+    def _integrated(self, entity: SourceEntity) -> bool:
+        """Whether the company integrates accounts with inventory (ISINTEGRATED; Tally's
+        default, so assumed when not reported)."""
+        body = self._post(envelopes.collection_request(envelopes.COMPANIES))
+        for company in parser.objects(parser.parse_response(body), envelopes.COMPANIES.object_tag):
+            if parser.source_key(company) == entity.key:
+                flag = (company.findtext("ISINTEGRATED") or "").strip()
+                return flag != "No"
+        return True
+
+    def _stock_in_hand_groups(self, entity: SourceEntity) -> set[str]:
+        """Names of Tally's reserved Stock-in-Hand group (whatever it's called now) and of
+        every group under it."""
+        body = self._company_post(
+            entity, lambda name: envelopes.collection_request(envelopes.GROUPS, company=name)
+        )
+        parents: dict[str, str] = {}
+        stock: set[str] = set()
+        for group in parser.objects(parser.parse_response(body), envelopes.GROUPS.object_tag):
+            name = parser.object_name(group) or ""
+            parents[name] = (group.findtext("PARENT") or "").strip()
+            if (group.get("RESERVEDNAME") or "").strip() == STOCK_IN_HAND:
+                stock.add(name)
+        found = True
+        while found:
+            found = False
+            for name, parent in parents.items():
+                if parent in stock and name not in stock:
+                    stock.add(name)
+                    found = True
+        return stock
 
     # --- figures that prove the books complete (VAL-005 to VAL-008) ---------------------
 
@@ -532,6 +587,9 @@ _GODOWN = re.compile(r"<GODOWNNAME[^>]*>([^<]*)<")
 _BATCH = re.compile(r"<BATCHNAME[^>]*>([^<]*)<")
 # A list element with content (Tally writes some lists empty in every voucher).
 _LIST_TAG = re.compile(r"<([A-Za-z][\w.:]*\.LIST)(?:\s[^>]*)?>\s*<(?!/)")
+
+
+STOCK_IN_HAND = "Stock-in-Hand"  # Tally's reserved group for stock ledgers
 
 
 def _period_for(spec: envelopes.CollectionSpec, entity: SourceEntity) -> tuple[date, date] | None:
