@@ -206,7 +206,8 @@ def _inventory(line: ItemLine, tag: str = "ALLINVENTORYENTRIES.LIST") -> str:
 
 def _voucher_body(voucher: Voucher, entries: tuple[Entry, ...]) -> str:
     head = (
-        f"<DATE>{_date(voucher.on)}</DATE><EFFECTIVEDATE>{_date(voucher.on)}</EFFECTIVEDATE>"
+        f"<DATE>{_date(voucher.on)}</DATE>"
+        f"<EFFECTIVEDATE>{_date(voucher.effective or voucher.on)}</EFFECTIVEDATE>"
         f"<VOUCHERTYPENAME>{escape(voucher.voucher_type)}</VOUCHERTYPENAME>"
     )
     if voucher.number:

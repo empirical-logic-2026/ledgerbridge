@@ -4,7 +4,7 @@ import re
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Self
@@ -197,16 +197,25 @@ class TallyConnector:
         accounts integrated with inventory, its trial balance, balance sheet and profit use
         the stock items' values and leave out ledgers under Stock-in-Hand (renamed or not);
         otherwise those ledgers are the stock. The opening difference follows the same rule.
+
+        Tally's own group totals for the period are used when it reports them (checked on
+        the test company, 2026-10-15): the Stock-in-Hand group holds the stock value Tally
+        uses (integrated), and the primary groups' openings with those of ledgers directly
+        under Primary total its difference in opening balances, as its trial balance from
+        the books' beginning shows it. Otherwise both are computed from ledgers and items.
         """
         if entity.books_from is None:
             raise TallyError(f"Company '{entity.name}' has no books-from date")
         period = (entity.books_from, as_of)
         integrated = self._integrated(entity)
-        in_stock_group = self._stock_in_hand_groups(entity)
+        groups = self._group_balances(entity, period)
+        in_stock_group = _stock_in_hand(groups)
         ledgers: dict[str, Decimal] = {}
         carriers: set[str] = set()
         openings = Decimal(0)  # at the books' beginning: the period starts there
+        primary_ledgers = Decimal(0)  # openings of ledgers directly under Primary
         stock_ledgers = [Decimal(0), Decimal(0)]  # Stock-in-Hand ledgers: opening, closing
+        stock_keys: set[str] = set()
         ledger_openings: dict[str, Decimal] = {}
         body = self._company_post(
             entity,
@@ -221,6 +230,7 @@ class TallyConnector:
             ledger_openings[key] = opening
             parent = (element.findtext("PARENT") or "").strip()
             if parent in in_stock_group:
+                stock_keys.add(key)
                 stock_ledgers[0] += opening
                 stock_ledgers[1] += ledgers[key]
                 if integrated:
@@ -228,6 +238,8 @@ class TallyConnector:
             openings += opening
             if parent in ("", mapping.PRIMARY):
                 carriers.add(key)
+                primary_ledgers += opening
+        item_values = None
         if integrated:
             body = self._company_post(
                 entity,
@@ -236,12 +248,23 @@ class TallyConnector:
                 ),
             )
             items = parser.objects(parser.parse_response(body), "STOCKITEM")
-            opening_stock = sum((_canonical(i.findtext("OPENINGVALUE")) for i in items), Decimal(0))
-            closing_stock = sum((_canonical(i.findtext("CLOSINGVALUE")) for i in items), Decimal(0))
+            item_values = (
+                sum((_canonical(i.findtext("OPENINGVALUE")) for i in items), Decimal(0)),
+                sum((_canonical(i.findtext("CLOSINGVALUE")) for i in items), Decimal(0)),
+            )
+            opening_stock, closing_stock = item_values
             difference = openings + opening_stock
+            stock_group = next(
+                (g for g in groups if g.reserved == STOCK_IN_HAND and g.reported), None
+            )
+            if stock_group is not None:  # Tally's own stock value
+                opening_stock, closing_stock = stock_group.opening, stock_group.closing
         else:
             opening_stock, closing_stock = stock_ledgers
             difference = openings  # the stock ledgers' openings are in it
+        primary = [g for g in groups if g.parent in ("", mapping.PRIMARY)]
+        if any(g.reported for g in primary):  # Tally's own trial balance
+            difference = sum((g.opening for g in primary), primary_ledgers)
         return SourceBalances(
             as_of=as_of,
             ledgers=ledgers,
@@ -251,7 +274,34 @@ class TallyConnector:
             opening_difference=difference,
             ledger_openings=ledger_openings,
             stock_ledger_openings=stock_ledgers[0],
+            stock_ledgers=frozenset(stock_keys),
+            integrated=integrated,
+            item_opening_value=item_values[0] if item_values else None,
         )
+
+    def _group_balances(self, entity: SourceEntity, period: tuple[date, date]) -> list["_Group"]:
+        """Every group with its parent, reserved name and Tally's own opening and closing
+        for the period."""
+        body = self._company_post(
+            entity,
+            lambda name: envelopes.collection_request(
+                envelopes.GROUP_BALANCES, company=name, balances_period=period
+            ),
+        )
+        groups = []
+        for group in parser.objects(parser.parse_response(body), envelopes.GROUPS.object_tag):
+            opening, closing = group.findtext("OPENINGBALANCE"), group.findtext("CLOSINGBALANCE")
+            groups.append(
+                _Group(
+                    parser.object_name(group) or "",
+                    (group.findtext("PARENT") or "").strip(),
+                    (group.get("RESERVEDNAME") or "").strip(),
+                    _canonical(opening),
+                    _canonical(closing),
+                    bool((opening or "").strip() or (closing or "").strip()),
+                )
+            )
+        return groups
 
     def _integrated(self, entity: SourceEntity) -> bool:
         """Whether the company integrates accounts with inventory (ISINTEGRATED; Tally's
@@ -262,28 +312,6 @@ class TallyConnector:
                 flag = (company.findtext("ISINTEGRATED") or "").strip()
                 return flag != "No"
         return True
-
-    def _stock_in_hand_groups(self, entity: SourceEntity) -> set[str]:
-        """Names of Tally's reserved Stock-in-Hand group (whatever it's called now) and of
-        every group under it."""
-        body = self._company_post(
-            entity, lambda name: envelopes.collection_request(envelopes.GROUPS, company=name)
-        )
-        parents: dict[str, str] = {}
-        stock: set[str] = set()
-        for group in parser.objects(parser.parse_response(body), envelopes.GROUPS.object_tag):
-            name = parser.object_name(group) or ""
-            parents[name] = (group.findtext("PARENT") or "").strip()
-            if (group.get("RESERVEDNAME") or "").strip() == STOCK_IN_HAND:
-                stock.add(name)
-        found = True
-        while found:
-            found = False
-            for name, parent in parents.items():
-                if parent in stock and name not in stock:
-                    stock.add(name)
-                    found = True
-        return stock
 
     # --- figures that prove the books complete (VAL-005 to VAL-008) ---------------------
 
@@ -622,6 +650,31 @@ _LIST_TAG = re.compile(r"<([A-Za-z][\w.:]*\.LIST)(?:\s[^>]*)?>\s*<(?!/)")
 
 
 STOCK_IN_HAND = "Stock-in-Hand"  # Tally's reserved group for stock ledgers
+
+
+@dataclass(frozen=True)
+class _Group:
+    name: str
+    parent: str
+    reserved: str  # Tally's reserved name (kept when the group is renamed)
+    opening: Decimal  # canonical sign, for the requested period
+    closing: Decimal
+    reported: bool  # Tally gave a balance (empty for groups it doesn't total)
+
+
+def _stock_in_hand(groups: Iterable[_Group]) -> set[str]:
+    """Names of Tally's reserved Stock-in-Hand group (whatever it's called now) and of every
+    group under it."""
+    parents = {g.name: g.parent for g in groups}
+    stock = {g.name for g in groups if g.reserved == STOCK_IN_HAND}
+    found = True
+    while found:
+        found = False
+        for name, parent in parents.items():
+            if parent in stock and name not in stock:
+                stock.add(name)
+                found = True
+    return stock
 
 
 def _period_for(spec: envelopes.CollectionSpec, entity: SourceEntity) -> tuple[date, date] | None:

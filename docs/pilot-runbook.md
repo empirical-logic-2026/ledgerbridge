@@ -159,7 +159,7 @@ Each `report` also saves the full report as Markdown under `reports/pilot/report
 
 **Every problem has a plain name and a stable code**, the same in every command, e.g. `Balances at year ends [year_end_mismatch, LB-VAL-006]`. [error-catalogue.md](error-catalogue.md) explains each code: what it means, common causes, how to investigate and how to fix it.
 
-**Companies are always named the same way:** `entity <id> (company <n>)`, in sync progress, transform, validation, `status` and `summary`. `entity <id>` is the company's id in the database; `company <n>` is its position in the connection's list of companies (as `connect` stored them). A company that hasn't been transformed yet shows as `company <n> (no entity yet)`, and the sync says when it becomes `entity <id> (company <n>)`.
+**Companies are always named the same way:** `entity <id> (company <n>)`, in sync progress, transform, validation, `status` and `summary`. `entity <id>` is the company's id in the database; `company <n>` is its number on the connection, given once (synced companies in the order first synced, then the configured ones) and kept: `connect` with the companies in another order doesn't change it. A company that hasn't been transformed yet shows as `company <n> (no entity yet)`, and the sync says when it becomes `entity <id> (company <n>)`.
 
 `summary` shows for the connection the last sync and deletion check, plus any raw records that failed to transform:
 - **why records failed to convert [LB-TRF-001]**, grouped by object type and kind of error, with counts and a short message without values (e.g. `ledger x2,170: DataError: MySQL 1406 too long: parties.phone (values up to 61 characters)`);
@@ -242,6 +242,8 @@ Share the output as it is. It also shows: pairs of explanations that fit only to
 
 **Educational mode.** TallyPrime in Educational mode gives correct balances only on the 1st, 2nd and 31st of a month. Validation then runs as of the latest such date (e.g. the 2nd when you run it on the 15th), year ends on the 30th move to the 1st of the next month, and `validate analyse` prints `Dates used: ...` with the reason. Tally is asked whether it is in Educational mode; if it doesn't say, set it on the connection: `./dev.ps1 connect -Env pilot -Origin backup -All -Educational yes`. The settings line of `status`/`summary` shows `Educational mode: auto|yes|no`.
 
+**Stock ledgers and the opening difference.** When Tally reports a Stock-in-Hand ledger at its closing stock value, validation compares it with that value and notes it (`Stock ledgers at the stock value [stock_ledger_at_stock_value, LB-VAL-021]`). The opening difference warning follows Tally's own trial balance from the books' beginning. `validate analyse` narrows down when a ledger starts to differ and matches again, and counts the vouchers then; effective dates appear after `transform rebuild`.
+
 ### 9. After a change to how data is fetched: `sync full -Restart`
 
 `transform rebuild` re-applies changed rules to what is stored. When a fix needs fields that weren't fetched before (for example opening balances as at the books' beginning, or tracking numbers on inventory lines; schema.md 7.5), the stored records don't have them: fetch everything again with `./dev.ps1 sync full -Env pilot -Restart`. It takes as long as the first full sync, resumes if interrupted, transforms with the current rules and validates thoroughly; no rebuild is needed afterwards.
@@ -296,6 +298,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-15 | 0.18 | Stock ledgers at the stock value; the opening difference as Tally's trial balance shows it; company numbers kept across `connect`; narrowed dates in `validate analyse`. |
 | 2026-10-15 | 0.17 | Educational mode: validation and analysis use reliable dates only; `connect -Educational`. |
 | 2026-10-15 | 0.16 | More facts in the ledger profiles; what the opening difference equals. |
 | 2026-10-15 | 0.15 | Ledger profiles in `validate analyse`; the opening difference leaves out Stock-in-Hand ledgers in integrated companies. |

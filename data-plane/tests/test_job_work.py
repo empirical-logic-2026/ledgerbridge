@@ -10,6 +10,7 @@ company with job work enabled, 2026-10-15; schema.md 7.5, ADR-031):
 - Tally's difference in opening balances is its ledger openings plus opening stock value.
 """
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -192,13 +193,15 @@ def test_stock_validation_matches_tally_for_job_work(job_work: Session, synced) 
 STOCK_LEDGER = RULES / "stock_ledger"
 
 
-def _replaying(companies: str | None = None) -> TallyConnector:
-    """A connector answered by the responses recorded from the test company."""
+def _replaying(companies: str | None = None, groups: str | None = None) -> TallyConnector:
+    """A connector answered by the responses recorded from the test company (`companies`,
+    `groups`: other responses to the company list and the group balances)."""
     import httpx
 
     files = {
         "LBCompanies": "companies.xml",
         "LBGroups": "groups.xml",
+        "LBGroupBalances": "group_balances.xml",
         "LBLedgerBalances": "ledger_balances.xml",
         "LBStockValues": "stock_values.xml",
     }
@@ -208,6 +211,8 @@ def _replaying(companies: str | None = None) -> TallyConnector:
         text = (STOCK_LEDGER / files[collection]).read_text(encoding="utf-8")
         if collection == "LBCompanies" and companies is not None:
             text = companies
+        if collection == "LBGroupBalances" and groups is not None:
+            text = groups
         return httpx.Response(200, content=text.encode("utf-8"))
 
     return TallyConnector.from_config(
@@ -239,14 +244,18 @@ def test_an_integrated_company_leaves_its_stock_ledger_out_of_the_opening_differ
     # The ledger itself keeps its own opening and balance (validated ledger by ledger).
     assert balances.ledger_openings[stock_ledger] == Decimal(1500)
     assert balances.ledgers[stock_ledger] == Decimal(1500)
-    assert connector._stock_in_hand_groups(entity) == {"Inventories"}
+    assert balances.stock_ledgers == frozenset({stock_ledger})
+    assert balances.integrated is True
 
 
 def test_without_integration_the_stock_ledgers_are_the_stock() -> None:
     """Not integrated: Tally's stock is the Stock-in-Hand ledgers, and their openings are
     part of the opening difference (here -2,010 capital + 1,500 stock ledger)."""
     text = (STOCK_LEDGER / "companies.xml").read_text(encoding="utf-8")
-    connector = _replaying(text.replace(">Yes</ISINTEGRATED>", ">No</ISINTEGRATED>"))
+    # Without Tally's own group totals (recorded from the integrated company): computed.
+    groups = (STOCK_LEDGER / "group_balances.xml").read_text(encoding="utf-8")
+    groups = re.sub(r"<(OPENING|CLOSING)BALANCE[^>]*>[^<]*</\1BALANCE>", "", groups)
+    connector = _replaying(text.replace(">Yes</ISINTEGRATED>", ">No</ISINTEGRATED>"), groups)
     balances = connector.closing_balances(_test_company(connector), YEAR_END)
     assert balances.opening_difference == Decimal(-510)
     assert (balances.opening_stock, balances.closing_stock) == (Decimal(1500), Decimal(1500))

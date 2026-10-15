@@ -43,8 +43,9 @@ def test_validate_rejects_non_educational_dates_and_imbalance() -> None:
 
 def test_expected_trial_balance_for_anchors() -> None:
     balances = expected_balances(SEED)
-    # cancelled 500 and the reversing journal's 125 excluded; adjustment 300, post-dated 75
-    assert balances["Rent"] == (Decimal("1375"), "Dr")
+    # cancelled 500 and the reversing journal's 125 excluded; adjustment 300, post-dated 75;
+    # the effective-date journals 11 and 13 (the optional one's 17 excluded)
+    assert balances["Rent"] == (Decimal("1399"), "Dr")
     # contra, receipts, payments, altered 1,500, post-dated 75; the memorandum's 250 excluded
     assert balances["Cash"] == (Decimal("27425"), "Dr")
     assert balances["Capital"] == (Decimal("50000"), "Cr")

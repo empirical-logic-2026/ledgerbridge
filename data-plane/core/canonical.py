@@ -200,6 +200,9 @@ class CanonicalVoucher:
     inventory: tuple[CanonicalInventoryLine, ...] = ()
     reference_number: str | None = None
     reference_date: date | None = None
+    # The source's effective date when it keeps one (Tally's EFFECTIVEDATE). Balances still
+    # count by voucher_date: Tally does (checked on the test company, 2026-10-15).
+    effective_date: date | None = None
     party_ledger_name: str | None = None
     narration: str | None = None
     currency_code: str = "INR"

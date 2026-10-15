@@ -249,9 +249,10 @@ def test_seed_reproduces_tallys_figures() -> None:
     # PUR-PART-1 - 5 (RO-1). Job work items: tests/test_job_work.py.
     assert (stock["Widget"], stock["Gadget"]) == (Decimal(-22), Decimal(85))
     balances = expected_balances(SEED)
-    assert balances["Rent"] == (Decimal("1375"), "Dr")  # 1,000 + ADJ 300 + PDC 75; REV out
+    # 1,000 + ADJ 300 + PDC 75 + the effective-date journals 11 and 13; REV out
+    assert balances["Rent"] == (Decimal("1399"), "Dr")
     assert balances["Salary"] == (Decimal("15000"), "Dr")  # optional 400 out
-    assert balances["Salary Payable"] == (Decimal("15300"), "Cr")
+    assert balances["Salary Payable"] == (Decimal("15324"), "Cr")  # with the 11 and 13
     assert balances["Electricity"] == (Decimal("4500"), "Dr")  # memorandum 250 out
     assert balances["Cash"] == (Decimal("27425"), "Dr")
     # The invoices post (+1,500, +2,000, debit note -250), the notes don't.

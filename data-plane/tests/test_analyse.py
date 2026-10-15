@@ -411,8 +411,8 @@ class Probing(Source):
 
     def closing_balances(self, entity, as_of):  # noqa: ANN001, ANN201
         balances = self.balances.get(as_of)
-        if balances is None:  # e.g. the books' first day: ours, unchanged
-            balances = self.first_day
+        if balances is None:  # another date (e.g. the books' first day)
+            balances = self.between(as_of)
         return SourceBalances(
             as_of,
             dict(balances),
@@ -432,7 +432,7 @@ def test_profile_probes_and_opening_difference(synced) -> None:  # noqa: ANN001
     year_end = date(2027, 3, 31)
     validator = Validator(db, entity_id, AS_OF, Decimal(0), connection.id)
     row = db.get_one(A.Entity, entity_id)
-    row.books_from = books = row.books_from or date(2026, 4, 1)
+    row.books_from = row.books_from or date(2026, 4, 1)
     db.commit()
     cash, capital = _key(db, "Cash"), _key(db, "Capital")
     # Capital: the source reports it at the stock's value at each date (2,000 and 2,500).
@@ -463,8 +463,25 @@ def test_profile_probes_and_opening_difference(synced) -> None:  # noqa: ANN001
     )
     assert march
     connector.balances[year_end][cash] -= march
-    # The books' first day: the source agrees with us.
-    connector.first_day = {lb.source_key: lb.balance for lb in validator.ledger_balances(books)}
+
+    # Other dates: the source agrees with us, except that it counts Cash's March 2027 lines
+    # only from the year end (so Cash starts to differ in March and matches again after).
+    def between(on: date) -> dict[str, Decimal]:
+        found = {lb.source_key: lb.balance for lb in validator.ledger_balances(on)}
+        if date(2027, 2, 28) < on < year_end:
+            found[cash] -= sum(
+                db.scalars(
+                    select(A.VoucherLine.amount).where(
+                        A.VoucherLine.ledger_id == ours[AS_OF][cash].id,
+                        A.VoucherLine.voucher_date > date(2027, 2, 28),
+                        A.VoucherLine.voucher_date <= on,
+                    )
+                ),
+                Decimal(0),
+            )
+        return found
+
+    connector.between = between
     connector.difference = connector.stock_ledgers = Decimal(1234)
     out = "\n".join(_analyse(synced))
     lines = {x.split(":")[0].strip(): x for x in out.splitlines() if x.startswith("  ledger ")}
@@ -474,8 +491,15 @@ def test_profile_probes_and_opening_difference(synced) -> None:  # noqa: ANN001
     one_year = next(x for x in lines.values() if "at 1 of 1 year ends" in x and "today" not in x)
     assert "Payment lines in the month up to 2027-03-31" in one_year
     assert "matches on the books' first day" in one_year
-    assert "Opening difference (the source's own figures): non-zero; it equals: the stock " in out
-    assert "the stock ledgers' openings" in out
+    # Narrowed to the day the moved voucher is dated, and to the day after the year end.
+    assert "first differs between 2027-03-14 and 2027-03-15 (vouchers posting to it then 1: " \
+        "regular 1; Payment 1;" in one_year  # fmt: skip
+    assert "matches again between 2027-03-31 and 2027-04-01 (no vouchers" in one_year
+    assert "one voucher's line on it (Payment, regular) (first differs window)" in one_year
+    assert (
+        "Opening difference (the source's own trial balance from the books' beginning): "
+        "non-zero; it equals: the stock ledgers' openings" in out
+    )
 
 
 def test_special_vouchers_are_counted(synced) -> None:  # noqa: ANN001
