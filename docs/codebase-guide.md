@@ -161,6 +161,7 @@ ledgerbridge/
 | `validation.py` | The checks: every voucher balances, the trial balance balances, every ledger matches Tally's closing balance, plus voucher counts, stock quantities, bills and year-end balances; and the "root cause" explanation. |
 | `alerts.py` | Raises and resolves alerts when syncs or checks fail. |
 | `errors.py` | Writes errors briefly and safely, never with SQL statements or values from the books. |
+| `dates.py` | Which dates a source answers reliably (Tally's Educational mode: the 1st, 2nd and 31st), and how validation moves its dates to them. |
 | `problems.py` | Every error and warning the system reports, with its plain name, stable code (LB-SYNC, LB-TRF, LB-VAL, LB-CON, LB-SYS), meaning, causes, how to investigate and fix it, and the next command. All output and the error catalogue come from it. |
 
 **`workers/`: commands and background jobs.**
@@ -205,6 +206,7 @@ ledgerbridge/
 | `fixtures/tally/` | Real answers recorded from the test company (`*.xml`) and `manifest.json`, which says which request each file answers. Test company data only. |
 | `fixtures/tally/rules/` | Answers recorded from the test company that prove Tally's counting rules: ledger and stock item openings fetched for different periods, and tracked notes and invoices. |
 | `test_counting_rules.py` | Tally's counting rules (schema.md 7.5): openings fetched at the books' beginning, stock moved once for tracked invoices, and the seed matching Tally's own figures. |
+| `test_dates.py` | Reliable dates in Educational mode: validation as of the latest reliable date, year and month ends moved forward, detection and the connection setting. |
 | `test_job_work.py` | Job work and godowns as Tally counts them, stock journals read once, Tally's own opening difference; on fixtures recorded from the test company. |
 | `test_dev_script_args.py`, `test_run_lock.py` | The docker compose arguments each `dev.ps1` command builds (with a stand-in for `deploy/stack.ps1`); the run lock: released however a run ends, lapsing after a shutdown, cleared when orphaned, refusals that say what they found. |
 | `connectors/tally/test_*.py` | The Tally connector: requests, parser, mapping, signs, recorded fixtures. |
@@ -361,6 +363,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-15 | 0.8 | `core/dates.py`, `tests/test_dates.py`. |
 | 2026-10-15 | 0.7 | Migration 0015; job work in the seed; `tests/test_job_work.py`. |
 | 2026-10-15 | 0.6 | `workers/locks.py`; `tests/test_dev_script_args.py` (each dev.ps1 command's docker arguments), `tests/test_run_lock.py`. |
 | 2026-10-14 | 0.5 | Migration 0014; the seed reproduces Tally's counting rules; `tests/test_counting_rules.py` and `tests/fixtures/tally/rules/`. |

@@ -120,6 +120,24 @@ CASES = {
             ),
         ],
     ),  # fmt: skip
+    "connect -Educational": (
+        ["connect", "-Origin", "backup", "-All", "-Educational", "yes"],
+        [
+            SERVICES,
+            _exec(
+                "connect",
+                "--connection",
+                "tally-test",
+                "--source",
+                "tally",
+                "--origin",
+                "backup",
+                "--all",
+                "--educational",
+                "yes",
+            ),
+        ],
+    ),  # fmt: skip
     "extract": (
         ["extract", "-Company", "LedgerBridge Test Co"],
         [

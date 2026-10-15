@@ -123,6 +123,13 @@ VOUCHERS = CollectionSpec(
     ),
 )  # fmt: skip
 
+# Whether TallyPrime runs in Educational mode (its license, asked through the company list):
+# then balances are reliable on the 1st, 2nd and 31st only (core/dates.py).
+LICENSE = CollectionSpec(
+    "LBLicense", "Company", "COMPANY", "license", ("NAME",),
+    compute=("LBEDUCATIONAL : $$LicenseInfo:IsEducationalMode",),
+)  # fmt: skip
+
 # Ledger balances with Tally's own Dr/Cr judgement ($$IsDr), independent of how amounts are
 # signed in XML. Used to confirm the sign convention (schema.md Section 7) and, with a
 # balances period, for closing-balance validation (M4).

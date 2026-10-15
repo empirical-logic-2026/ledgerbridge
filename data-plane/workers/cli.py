@@ -67,6 +67,7 @@ from connectors import registry
 from connectors.base import Period
 from core import naming
 from core.config import get_settings
+from core.dates import EVERY_DAY, date_rule
 from core.db import get_engine
 from core.errors import redact_quoted, short_error
 from core.models import Connection, SyncRun
@@ -296,6 +297,12 @@ def _parser() -> argparse.ArgumentParser:
         "--pause-sec",
         type=float,
         help="pause between requests during a sync, to ease the load on the source (0 = none)",
+    )
+    connect.add_argument(
+        "--educational",
+        choices=("auto", "yes", "no"),
+        help="whether the source runs in Tally's Educational mode (reliable balances on the "
+        "1st, 2nd and 31st only; auto: asked of the source)",
     )
     connect.add_argument(
         "--part-month",
@@ -790,6 +797,8 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
         connection.config = {**connection.config, "pause_sec": args.pause_sec}
     if args.part_month:
         connection.config = {**connection.config, "part_month_requests": args.part_month}
+    if args.educational:
+        connection.config = {**connection.config, "educational": args.educational}
     if args.activate:
         connection.status = "active"
     elif args.pause:
@@ -836,7 +845,8 @@ def _fetch_settings_line(connection: Connection) -> str:
     return (
         f"request timeout {effective.timeout_sec:g} s ({source}); pause between requests "
         f"{effective.pause_sec:g} s; part-month requests: {effective.part_month}"
-        " (change with connect --timeout-sec / --pause-sec / --part-month)"
+        f"; Educational mode: {connection.config.get('educational', 'auto')}"
+        " (change with connect --timeout-sec / --pause-sec / --part-month / --educational)"
     )
 
 
@@ -1347,7 +1357,12 @@ def _validate_analyse(session: Session, args: argparse.Namespace) -> int:
     entities = select_entities(connector, connection, args.entity)
     ids = entity_ids_for(session, connection.id, [e.key for e in entities])
     labels = Labels(session, connection)
-    as_of = args.as_of or date.today()
+    asked = args.as_of or date.today()
+    # Educational mode: the latest date the source answers reliably (core/dates.py).
+    rule = date_rule(connector, entities[0]) if entities else EVERY_DAY
+    as_of = rule.on_or_before(asked)
+    if as_of != asked:
+        print(f"As of {as_of} instead of {asked}: {rule.describe()}")
     for entity in entities:
         if entity.key not in ids:
             print(f"{labels.for_key(entity.key)}: not transformed yet, nothing to analyse")

@@ -40,6 +40,7 @@ from sqlalchemy import extract, func, select
 from sqlalchemy.orm import Session
 
 from connectors.base import Connector, SourceEntity
+from core.dates import date_rule
 from core.models import Connection
 from core.models import accounting as A  # noqa: N812
 from core.models.source import RawRecord
@@ -121,6 +122,7 @@ class Analyser:
         self.as_of = as_of
         self.tolerance = tolerance
         self.say = progress
+        self.rule = date_rule(connector, entity)
         self.validator = Validator(session, entity_id, as_of, tolerance, connection.id)
         self.row = self.validator.entity
         self.lines: list[str] = []
@@ -145,9 +147,17 @@ class Analyser:
     # --- driver -----------------------------------------------------------------------
 
     def run(self) -> list[str]:
-        self.year_ends = financial_year_ends(
-            self.row.books_from, self.row.fy_start_month, self.as_of
+        # Year ends at the source's next reliable date (Educational mode, core/dates.py).
+        self.year_ends = sorted(
+            {
+                used
+                for ye in financial_year_ends(
+                    self.row.books_from, self.row.fy_start_month, self.as_of
+                )
+                if (used := self.rule.on_or_after(ye)) <= self.as_of
+            }
         )
+        self.out(self._dates_used())
         self.say("reading the source's balances as of today and at every year end")
         self.source = self._read("closing_balances", self.entity, self.as_of)
         self.source_years = {
@@ -325,6 +335,12 @@ class Analyser:
                     fits.append(" + ".join(sorted((first, second))))
         return list(dict.fromkeys(fits))
 
+    def _dates_used(self) -> str:
+        """The dates compared, and why (Educational mode moves them to reliable days)."""
+        listed = ", ".join(str(d) for d in self.year_ends) or "none"
+        rule = f"; {self.rule.describe()}" if self.rule.restricted else ""
+        return f"Dates used: as of {self.as_of}; year ends {listed}{rule}"
+
     def _ledgers(self) -> None:
         self.out("Ledger closing balances as of the validation date:")
         if not hasattr(self.source, "ledgers"):
@@ -405,7 +421,7 @@ class Analyser:
         current = books_from.replace(day=1)
         while True:
             following = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
-            end = following - timedelta(days=1)
+            end = self.rule.on_or_after(following - timedelta(days=1))  # e.g. 30th -> 1st
             if end > self.as_of or following > first_year.replace(year=first_year.year + 1):
                 break
             month_ends.append(end)
@@ -428,7 +444,7 @@ class Analyser:
                     pending.discard(key)
             if not pending:
                 break
-        months = Counter(f"{end:%Y-%m}" for end in first.values())
+        months = Counter(f"{end:%Y-%m}" if end.day > 2 else f"{end}" for end in first.values())
         if pending:
             months["matches every month end of the first financial year"] = len(pending)
         self.out("  unexplained ledgers, first month end where they differ (first financial year):")
@@ -1104,7 +1120,7 @@ class Analyser:
         """Whether the ledger already differs on the books' first day (the source's balance
         then against ours), read once."""
         if "_first_day" not in self.__dict__:
-            books = self.row.books_from
+            books = self.rule.on_or_after(self.row.books_from) if self.row.books_from else None
             source = self._read("closing_balances", self.entity, books) if books else None
             ours = (
                 {lb.source_key: lb.balance for lb in self.validator.ledger_balances(books)}
