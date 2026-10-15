@@ -441,12 +441,16 @@ class Validator:
         profit = sum((x.balance for x in ours if x.nature in PROFIT_NATURES), ZERO)
         if source.closing_stock is not None and source.opening_stock is not None:
             profit -= source.closing_stock - source.opening_stock  # debit positive: a loss
+        at_stock_value = self._at_stock_value(ours, source, year_end or self.as_of, entity_id)
         seen = set()
         for ledger in ours:
             seen.add(ledger.source_key)
             theirs = source.ledgers.get(ledger.source_key)
             if theirs is None and year_end is not None:
                 continue  # reported as ledger_missing as of the validation date
+            if ledger.source_key in at_stock_value:
+                self.passed += 1  # compared with the source's closing stock value
+                continue
             if theirs is None:
                 self._fail(
                     Finding(
@@ -496,6 +500,34 @@ class Validator:
                         "A ledger in the source isn't here (sync it, or check for a failure).",
                     )
                 )
+
+    def _at_stock_value(
+        self, ours: list[_LedgerBalance], source: SourceBalances, on: date, object_id: str
+    ) -> set[str]:
+        """Stock ledgers the source reports at its closing stock value rather than at their
+        own opening and postings (pilot, 2026-10-15: in two companies the Stock-in-Hand
+        ledger's balance was the closing stock value at every date; on the test company the
+        ledger keeps its own opening). When the stock ledgers' balances here differ from the
+        source's and the source's total equals its closing stock value as of the date, they
+        are compared with that value (a note says so); otherwise ledger by ledger."""
+        mine = {x.source_key: x.balance for x in ours if x.source_key in source.stock_ledgers}
+        if not mine or source.closing_stock is None:
+            return set()
+        theirs = sum((source.ledgers.get(key, ZERO) for key in mine), ZERO)
+        here = sum(mine.values(), ZERO)
+        if abs(theirs - here) <= self.tolerance:
+            return set()
+        if abs(theirs - source.closing_stock) > self.tolerance:
+            return set()
+        self._fail(
+            Finding(
+                "stock_ledger_at_stock_value", "info", "entity", object_id,
+                source.closing_stock, theirs,
+                f"Ledgers under the source's stock group carry its closing stock value as of "
+                f"{on}, not their own postings: compared with that value.",
+            )
+        )  # fmt: skip
+        return set(mine)
 
     # --- controls: counts, stock, bills (VAL-005 to VAL-008) ----------------------------
 

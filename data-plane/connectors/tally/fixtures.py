@@ -61,6 +61,7 @@ class FixtureTransport(httpx.BaseTransport):
             for spec in (
                 envelopes.LEDGER_BALANCES,
                 envelopes.STOCK_VALUES,
+                envelopes.GROUP_BALANCES,
                 envelopes.BILLS,
                 envelopes.LEDGER_OPENING_BILLS,
             )

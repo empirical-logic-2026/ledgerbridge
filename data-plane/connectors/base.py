@@ -109,6 +109,15 @@ class SourceBalances:
     ledger_openings: Mapping[str, Decimal] = field(default_factory=dict)
     # The openings of the source's stock ledgers (Tally: under Stock-in-Hand), totalled.
     stock_ledger_openings: Decimal | None = None
+    # The stock ledgers' keys. A source may report them at its closing stock value rather
+    # than at their own postings (validation then compares them with that value).
+    stock_ledgers: frozenset[str] = frozenset()
+    # Whether accounts are integrated with inventory (the stock is the items' value, not
+    # the stock ledgers); None: unknown or not applicable.
+    integrated: bool | None = None
+    # The stock items' opening value, totalled from the items (the source's own opening
+    # stock above may come from its own totals; `validate analyse` compares them).
+    item_opening_value: Decimal | None = None
 
 
 @dataclass(frozen=True)

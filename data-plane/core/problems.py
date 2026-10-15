@@ -596,6 +596,22 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Load the companies in TallyPrime and validate again.",),
         ".\\dev.ps1 validate -Env {env}",
     ),
+    _p(
+        "LB-VAL-021",
+        "stock_ledger_at_stock_value",
+        "Stock ledgers at the stock value",
+        INFO,
+        "The source reports its stock ledgers (Tally: under Stock-in-Hand) at its closing "
+        "stock value, not at their own opening and postings, so they were compared with that "
+        "value.",
+        (
+            "Tally with accounts integrated with inventory in some companies, or closing "
+            "values entered on the stock ledgers.",
+        ),
+        (".\\dev.ps1 validate analyse -Env {env} profiles the stock ledgers.",),
+        ("Nothing to fix.",),
+        ".\\dev.ps1 report -Env {env} -Details",
+    ),
     # --- connection settings ------------------------------------------------------------
     _p(
         "LB-CON-001",

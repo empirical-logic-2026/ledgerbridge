@@ -155,6 +155,15 @@ STOCK_VALUES = CollectionSpec(
     ("GUID", "NAME", "OPENINGVALUE", "CLOSINGVALUE", "CLOSINGBALANCE"),
 )
 
+# Groups with Tally's own totals for a period: its primary groups' openings are the trial
+# balance's (their sum is Tally's difference in opening balances), and with accounts
+# integrated with inventory its Stock-in-Hand group holds the stock value Tally uses
+# (checked on the test company, 2026-10-15).
+GROUP_BALANCES = CollectionSpec(
+    "LBGroupBalances", "Group", "GROUP", "group_balance",
+    ("NAME", "PARENT", "OPENINGBALANCE", "CLOSINGBALANCE"),
+)  # fmt: skip
+
 # One stock item's stock by godown (and batch), with Tally's own opening and closing
 # quantities for the period: `validate analyse` compares stock godown by godown. Requested
 # per item (CHILDOF): Tally's Stock Summary leaves out godowns of items in stock groups.
