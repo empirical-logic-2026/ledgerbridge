@@ -1,0 +1,13 @@
+%% How a name used in a record finds its master (rulebook Section 9, ADR-027, ADR-034). Written by hand.
+flowchart TD
+    A([A name used in a record<br/>e.g. a voucher line's ledger]) --> B{Exactly a live master's name?}
+    B -- yes --> R1[Resolved: exact]
+    B -- no --> C{An alias of exactly one live master?<br/>alias names, a renamed reserved group's reserved name}
+    C -- yes --> R2[Resolved: by alias<br/>reported as a warning, LB-TRF-004]
+    C -- "several" --> AMB[Ambiguous: the record fails<br/>LB-TRF-005]
+    C -- no --> D{"Normalised name (entities decoded, NFC,<br/>spaces collapsed, trimmed, case folded)<br/>matches exactly one live master?"}
+    D -- yes --> R3[Resolved: after normalisation<br/>warning LB-TRF-004; Tally compares names this way]
+    D -- several --> AMB
+    D -- no --> E{A master deleted in the source<br/>with that name, and no live one?}
+    E -- yes --> R4[Resolved to the deleted master]
+    E -- no --> F[Unknown: the record fails<br/>LB-TRF-001, transform explain shows close matches]

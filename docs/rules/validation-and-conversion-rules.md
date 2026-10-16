@@ -1,0 +1,324 @@
+# Validation and conversion rules
+
+| Field | Value |
+| --- | --- |
+| Version | 1.0 |
+| Date | 2026-10-16 |
+| Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
+
+The rulebook: every rule LedgerBridge follows when it converts Tally data and validates it against Tally's own figures. For each rule: **what** it is, **why** (what the pilot showed, in counts only), **how it was proven** (a Tally report, or an experiment on LedgerBridge Test Co reproduced by the seeder), **where** it lives in the code, which **tests** cover it, and its **ADR** in [architecture.md](../architecture.md). The tables and columns named here are described in the [schema reference](../database/schema-reference.md); the problem codes (LB-xxx) in the [error catalogue](../error-catalogue.md).
+
+Rules are built generically (PIL-003): Tally specifics live in `data-plane/connectors/tally`; the rest works for any source. Every rule about Tally's counting was reproduced on the test company and checked against Tally's own reports before it was coded (ADR-029). No client names or amounts appear here: pilot findings are counts and Tally's standard names only.
+
+**Contents:** 1 Identity and duplicates · 2 Signs and amounts · 3 Opening balances · 4 Which vouchers count · 5 Stock moved once · 6 Stock journals and job work · 7 Stock ledgers · 8 Foreign-currency ledgers · 9 Effective dates · 10 Reference resolution · 11 Master classification · 12 Custom fields · 13 Error handling · 14 Reliable dates (Educational mode) · 15 Validation checks
+
+---
+
+## 1. Identity and duplicates
+
+### 1.1 Every object is identified by the source's key
+
+- **What:** a record's identity is the source's own key (Tally: GUID), never its name. Canonical rows are upserted on `(connection_id, source_key)`. Companies are found by their GUID too (`entity_sources`), so a company whose name is shown slightly differently is still found.
+- **Why:** pilot: company names with double and trailing spaces weren't found by name (pilot run, 2026-10-12).
+- **Proven:** recorded responses of the test company; names with spaces in the pilot.
+- **Code:** `connectors/tally/parser.py` (`source_key`), `core/transform.py` (`_Upserter`), `workers/entities.py` (`select_entities`, `resolve`).
+- **Tests:** `tests/test_sync.py` (`test_month_overlap_updates_never_duplicates`, `test_second_sync_is_incremental_and_changes_nothing`), `tests/test_entity_lookup.py`.
+- **ADR:** ADR-021.
+
+### 1.2 An unchanged record is stored once; a changed one replaces the old version
+
+- **What:** the raw layer keeps every record exactly as received; a record whose payload hash equals the latest stored version isn't stored again. Retries and rebuilds apply only an object's latest version; older failed versions are marked superseded.
+- **Code:** `core/raw_store.py`; `core/transform.py` (`retry_failed`, `rebuild`).
+- **Tests:** `tests/test_raw_store.py`, `tests/test_retransform.py`.
+- **ADR:** ADR-005, ADR-025 (DAT-008).
+
+### 1.3 A voucher's child rows are replaced as a whole
+
+- **What:** when a voucher is created or changed in the source, its lines, bill, cost-centre and dimension allocations, inventory and tax lines are deleted and written again, with the header, in one transaction.
+- **Code:** `core/transform.py` (voucher preparation and write), `ON DELETE CASCADE` foreign keys.
+- **Tests:** `tests/test_sync.py` (`test_altered_voucher_replaces_its_lines`).
+- **ADR:** schema.md Section 8 rule 7.
+
+### 1.4 Incremental syncs by AlterID; deletions by a separate check
+
+- **What:** a sync fetches what changed since the highest AlterID stored per object type (`sync_markers`). Deleted objects are found by a **deletion check** that lists every key in the source and soft-deletes stored rows whose key has gone (`is_deleted`); a sync alone never soft-deletes.
+- **Code:** `workers/sync.py`, `core/transform.py` (`mark_deleted`).
+- **Tests:** `tests/test_sync.py` (`test_sync_alone_never_soft_deletes`, `test_deletion_check_run_soft_deletes_what_has_gone`, `test_voucher_deleted_in_source_is_soft_deleted`).
+- **ADR:** ADR-018.
+
+### 1.5 Nothing unverified is counted as complete; company numbers stay the same
+
+- **What:** a chunk of a full sync is checkpointed only when it is known to be complete; ranges that couldn't be proven complete are recorded (`sync_unverified_ranges`) and re-fetched. In output, a company keeps its number (`company <n>`) once given, whatever order `connect` lists companies in.
+- **Why:** pilot: a part-month listing returned fewer vouchers than the month; after a reconnect, entity 1 became company 2.
+- **Code:** `workers/sync.py`, `workers/entities.py` (`Labels`, `connections.config.company_numbers`).
+- **Tests:** `tests/test_large_sync.py`, `tests/test_entity_lookup.py` (`test_company_numbers_survive_connect_in_another_order`).
+- **ADR:** ADR-022, ADR-023, ADR-033.
+
+---
+
+## 2. Signs and amounts
+
+### 2.1 Canonical sign: debit positive
+
+- **What:** canonical amount = −(Tally amount): Tally writes debits negative (`ISDEEMEDPOSITIVE=Yes`). Every voucher's lines sum to zero. Amounts are exact decimals (`DECIMAL(20,4)`, Python `Decimal`), never floats.
+- **Proven:** the sign check on the test company (schema.md 7.1): 21 of 21 balances agree with Tally's own `$$IsDr`.
+- **Code:** `connectors/tally/signs.py` (`tally_amount`), `connectors/tally/mapping.py` (`_canonical`).
+- **Tests:** `tests/connectors/tally/test_signs.py`.
+- **ADR:** schema.md 7.1.
+
+### 2.2 The postings of a voucher are read once
+
+- **What:** `ALLLEDGERENTRIES.LIST`, when present, is the complete set of postings (it already holds the sales or purchase ledger posted through inventory). Otherwise `LEDGERENTRIES.LIST` plus the inventory entries' `ACCOUNTINGALLOCATIONS.LIST`. Entries without a ledger (a cancelled voucher's placeholder) are skipped.
+- **Code:** `connectors/tally/signs.py` (`postings`).
+- **Tests:** `tests/connectors/tally/test_signs.py` (`test_complete_all_ledger_entries_are_not_double_counted`, `test_cancelled_voucher_placeholder_entry_is_ignored`).
+- **ADR:** schema.md 7.2.
+
+### 2.3 Foreign-currency amounts: the base part is the books' figure
+
+- **What:** an amount written `-$100.00 @ Rs82.00/$ = -Rs8200.00` counts by its base part (after `=`); its foreign part (before `@`) is kept in `voucher_lines.amount_fc`.
+- **Code:** `connectors/tally/signs.py` (`tally_amount`, `tally_foreign_amount`).
+- **Tests:** `tests/test_forex.py` (`test_a_foreign_amount_keeps_both_parts`).
+- **ADR:** ADR-035, ADR-037.
+
+---
+
+## 3. Opening balances (as at the books' beginning)
+
+### 3.1 Openings are fetched for a period starting on the books' beginning
+
+- **What:** Tally computes `OPENINGBALANCE` (ledgers, stock items, opening bills) and `OPENINGVALUE` **for the requested period**: the balance at its start. Masters with openings are therefore fetched for a period starting on the company's books-from date, so the opening is the master's own.
+- **Why:** pilot: ledgers and items differed from the first year end by exactly their opening.
+- **Proven:** the test company: the same ledger fetched from the books' beginning and from 1 August gave its opening and its balance on 1 August.
+- **Code:** `connectors/tally/envelopes.py` (`OPENING_SPECS`, `balances_period`), `connectors/tally/connector.py` (`_period_for`).
+- **Tests:** `tests/test_counting_rules.py` (`test_masters_with_openings_are_fetched_as_at_the_books_beginning`, `test_opening_fields_follow_the_requested_period`).
+- **ADR:** ADR-029.
+
+### 3.2 A ledger's balance follows its own opening, not its opening bills
+
+- **What:** opening bills affect only the bill-wise outstanding; a ledger whose opening bills total differently keeps its own opening.
+- **Proven:** the test company (2026-10-15).
+- **Tests:** `tests/test_counting_rules.py` (`test_a_ledgers_balance_follows_its_opening_not_its_opening_bills`).
+- **ADR:** ADR-031.
+
+### 3.3 The opening difference is the one Tally displays
+
+- **What:** the `opening_difference` warning fires only when Tally itself shows a difference: the "Difference in opening balances" line of its own Trial Balance as at the books' beginning (its Balance Sheet then shows "Diff. in Opening Balances"), by that line's amount. When the report can't be read: the primary group openings, else ledger and item openings. `validate analyse` compares the figures and tests what a difference equals.
+- **Why:** pilot: a company not integrated with inventory had no difference line in Tally's Trial Balance or Balance Sheet while its group openings didn't total zero.
+- **Proven:** the test company's Trial Balance at the books' beginning (no difference line); synthetic trial balances with and without the line.
+- **Code:** `connectors/tally/connector.py` (`opening_difference_shown`), `core/validation.py` (`_opening_difference`).
+- **Tests:** `tests/test_forex.py` (`test_the_opening_difference_is_what_tallys_trial_balance_shows`), `tests/test_validation.py` (`test_opening_difference_warns_only_when_the_source_shows_one`), `tests/test_job_work.py`.
+- **ADR:** ADR-031, ADR-033, ADR-038.
+
+---
+
+## 4. Which vouchers count, in the books and in stock
+
+[![Which vouchers count](../diagrams/rules-vouchers-count.png)](../diagrams/rules-vouchers-count.svg)
+
+### 4.1 Cancelled, optional and deleted vouchers count nowhere
+
+- **What:** their lines are stored but not effective (`voucher_lines.is_effective = false`); they move no stock.
+- **Code:** `core/transform.py` (effective flag), `connectors/tally/mapping.py` (`voucher`).
+- **Tests:** `tests/test_sync.py` (`test_every_voucher_balances_and_lines_are_effective_only_when_they_count`).
+- **ADR:** ADR-027, ADR-029.
+
+### 4.2 Voucher types that don't post: memorandum, reversing journals, orders, notes
+
+- **What:** a voucher type's behaviour comes from the standard type it derives from (its reserved name, its parent, inherited through custom types). Memorandum and Reversing Journal vouchers are in no balance, **not even on their own date**; orders, delivery and receipt notes, rejections, Material In/Out and stock journals post nothing to the books. A custom type under Journal counts like Journal.
+- **Why:** pilot: unbalanced and differing ledgers explained by non-posting types; 3 optional Journals per foreign-currency customer appeared only on our side in `compare-ledger`, not counted.
+- **Proven:** the test company: a reversing journal on 1 and 2 September, with reversing journals enabled, was in no balance; a memorandum and an optional journal likewise.
+- **Code:** `connectors/tally/mapping.py` (`NON_ACCOUNTING_VOUCHER_TYPES`, `NON_STOCK_VOUCHER_TYPES`, `voucher_type`), `core/transform.py` (`_TypeTree`).
+- **Tests:** `tests/test_references.py` (`test_vouchers_of_types_that_dont_post_dont_count`, `test_voucher_type_mapping_follows_parents`), `tests/test_counting_rules.py`.
+- **ADR:** ADR-027, ADR-029.
+
+### 4.3 Post-dated vouchers count from their own date
+
+- **What:** every balance, validation and report is computed **as of a date**: vouchers dated after it, post-dated ones included, are left out.
+- **Proven:** the test company (a post-dated payment).
+- **Tests:** `tests/test_validation.py` (`test_balances_as_of_a_date_leave_out_later_vouchers`).
+- **ADR:** ADR-019.
+
+---
+
+## 5. Stock moved once (tracked invoices)
+
+[![How an inventory line moves stock](../diagrams/rules-stock-movement.png)](../diagrams/rules-stock-movement.svg)
+
+- **What:** a delivery or receipt note, or a rejection, moves stock. A sales, purchase, debit or credit note line **tracked** to one of them (`BATCHALLOCATIONS.LIST/TRACKINGNUMBER`, not "Not Applicable") moves nothing, whether the note came before or after; a partly tracked line moves only its untracked part. `inventory_lines.stock_quantity` holds what a line moves; `quantity` stays the invoiced quantity.
+- **Why:** pilot: stock items differed by sales lines tracked to delivery notes (counted twice).
+- **Proven:** the test company's Stock Summary with notes before and after their invoices, partly tracked invoices, and a return tracked to a rejection.
+- **Code:** `connectors/tally/mapping.py` (`_tracked`, `_inventory_lines`), migration 0014.
+- **Tests:** `tests/test_counting_rules.py` (`test_tracked_invoice_lines_dont_move_stock_but_the_note_does`, `test_tracked_quantity`).
+- **ADR:** ADR-029.
+
+---
+
+## 6. Stock journals and job work
+
+### 6.1 Stock journals are read once
+
+- **What:** TallyPrime lists a stock journal's produced and consumed items in `ALLINVENTORYENTRIES.LIST` (with the right sign) **and** again in `INVENTORYENTRIESIN/OUT.LIST`. They are read from `ALLINVENTORYENTRIES`; the in and out lists only when it is missing.
+- **Why:** reading both counted each entry twice.
+- **Proven:** the test company (a manufacturing stock journal).
+- **Code:** `connectors/tally/mapping.py` (`voucher`).
+- **Tests:** `tests/test_job_work.py`.
+- **ADR:** ADR-031.
+
+### 6.2 Stock is counted where Tally counts it: by godown kind
+
+- **What:** godowns carry whose stock they hold (`godowns.holding`): `own`, `ours_with_third_party` (a job worker's, Tally `ISEXTERNAL`), `third_party_with_us` (a principal's, `ISINTERNAL`). Stock at a job worker's godown is in no item balance, Stock Summary or closing stock value; a principal's stock with us is counted. A Material In/Out moves stock at its line's godown; its destination godown moves nothing. An entry spread over several godowns becomes one inventory line per godown.
+- **Why:** pilot: stock differences on items sent for job work.
+- **Proven:** the test company's godown and item balances after Material Out/In, consumption at the job worker and a principal's material.
+- **Code:** `connectors/tally/mapping.py` (`_holding`, `_inventory_lines`), `core/validation.py` (`counted_godown`), migration 0015.
+- **Tests:** `tests/test_job_work.py`.
+- **ADR:** ADR-031.
+
+---
+
+## 7. Stock ledgers at the stock value
+
+- **What:** with accounts integrated with inventory (`ISINTEGRATED`), Tally's trial balance, balance sheet and profit use the stock items' values and leave out every ledger under its reserved Stock-in-Hand group (renamed or not); the group's own opening and closing are the stock value Tally uses. Tally refuses vouchers on such a ledger. When Tally reports a stock ledger at its closing stock value (not its own opening and postings), validation compares it with that value and notes LB-VAL-021; otherwise ledger by ledger.
+- **Why:** pilot: in two companies the Stock-in-Hand ledger's balance was the closing stock value at every date.
+- **Proven:** the test company: a renamed Stock-in-Hand group with one ledger (its opening kept in its own balance, left out of the trial balance); the group equal to the items' value at each date; a voucher on the ledger refused.
+- **Code:** `connectors/tally/connector.py` (`closing_balances`, `_stock_in_hand`), `core/validation.py` (`at_stock_value`, `_at_stock_value`).
+- **Tests:** `tests/test_stock_ledger_and_dates.py`, `tests/test_job_work.py`.
+- **ADR:** ADR-031, ADR-033.
+
+---
+
+## 8. Foreign-currency ledgers at book value
+
+[![Foreign-currency book value](../diagrams/rules-forex-book-value.png)](../diagrams/rules-forex-book-value.svg)
+
+- **What:** a ledger is kept in a foreign currency when its `CURRENCYNAME` differs from the base currency's (the currency of the ledgers directly under Primary; Tally exports the rupee sign as "?"). Tally reports its closing balance, and its group totals, **revalued at current rates**; its books keep the amounts entered. Its **book value** at a date is its opening plus the total of Tally's own vouchers on it up to the date (its ledger-voucher collection, read once per ledger; optional and cancelled vouchers count nothing). Validation compares each foreign-currency ledger with its own book value at every date checked and notes LB-VAL-022; the revalued balance is information only. Tally's Ledger Vouchers report adds a calculated "Unadjusted Forex Gain/Loss" line on its To date: it is not a voucher and is never counted.
+- **Why:** pilot: three foreign-currency customers differed; `compare-ledger` matched every one of Tally's vouchers with ours (47 of 47, 60 of 60, 3 of 3) with equal totals, while Tally's closing balances were revalued.
+- **Proven:** the test company: a dollar customer whose closing balance and group total were 0 while Rs 8,200 was entered, with an "Unadjusted Forex Gain/Loss" line in the trial balance; its book value from its vouchers equals ours.
+- **Code:** `connectors/tally/connector.py` (`_foreign`, `_book_values`, `ledger_total`, `ledger_vouchers`), `core/validation.py` (`at_book_value`, `_at_book_value`), `workers/compare.py`.
+- **Tests:** `tests/test_forex.py`, `tests/test_compare_ledger.py`.
+- **ADR:** ADR-035 to ADR-038 (ADR-038 current).
+
+---
+
+## 9. Effective dates
+
+- **What:** a voucher's effective date (`EFFECTIVEDATE`) is kept (`vouchers.effective_date`) but **balances count by the voucher date**, as Tally does.
+- **Proven:** the test company: journals and sales dated 31 August and effective 1 September (and the reverse), regular and optional: each counted on its voucher date.
+- **Code:** `connectors/tally/mapping.py` (`voucher`), migration 0016.
+- **Tests:** `tests/test_stock_ledger_and_dates.py` (`test_tally_counts_by_the_voucher_date_not_the_effective_date`, `test_the_effective_date_is_stored`).
+- **ADR:** ADR-033.
+
+---
+
+## 10. Reference resolution
+
+[![How a name finds its master](../diagrams/rules-reference-resolution.png)](../diagrams/rules-reference-resolution.svg)
+
+- **What:** a reference by name (a voucher's ledger, a ledger's group, a stock item) resolves **exact**, then by **alias** (alias names, a renamed reserved group's reserved name), then **normalised** (entities decoded, Unicode NFC, spaces collapsed, trimmed, case folded), each only when exactly one master fits; otherwise the record fails (unknown or ambiguous). Alias and normalised matches are reported (LB-TRF-004). Masters deleted in the source answer only to names no live master has. Look-alike characters and punctuation are never matched automatically; `transform explain` names the kinds of difference.
+- **Why:** pilot: references matched by alias (voucher → ledger 20, voucher → party 2) and after normalisation; three customers differed as if lines sat on the wrong ledger (it turned out to be foreign currency, Section 8).
+- **Proven:** the test company: "Party Lima ", "PARTY LIMA" and "Party  Lima" were taken by Tally for the existing "Party Lima"; a ledger whose alias was another ledger's name was refused; a journal naming an alias came back naming the ledger. So Tally's names compare the way our normalisation does, and one name identifies one master.
+- **Code:** `core/names.py` (`NameIndex`, `normalise`), `core/transform.py` (`_by_name`, `_ref`), `workers/references.py`.
+- **Tests:** `tests/test_references.py`, `tests/test_line_attribution.py`.
+- **ADR:** ADR-027, ADR-034.
+
+---
+
+## 11. Master classification
+
+### 11.1 Groups, natures and standard accounts
+
+- **What:** a group's nature comes from its primary group (`ISREVENUE`, `ISDEEMEDPOSITIVE`; Capital Account and Reserves & Surplus are equity). Each ledger gets a standard account from its nearest reserved group (`STANDARD_ACCOUNT_BY_GROUP`); Indirect Expenses stays unmapped (it mixes accounts). Ledgers directly under Primary (Profit & Loss A/c) hang from a synthetic primary group mapped to reserves and surplus.
+- **Code:** `connectors/tally/mapping.py` (`group`, `ledger`, `STANDARD_ACCOUNT_BY_GROUP`); the standard chart is seeded by `migrations/versions/0003_seed_reference_data.py`.
+- **Tests:** `tests/test_standard_accounts.py`, `tests/test_sync.py` (`test_standard_accounts_mapped_from_groups`).
+- **ADR:** schema.md 7.3.
+
+### 11.2 Parties
+
+- **What:** ledgers under Sundry Debtors are customers, under Sundry Creditors vendors (`PARTY_TYPE_BY_GROUP`); GSTIN, state, PAN, e-mail, phone, credit days and limit go to `parties` (sensitive: AI-015).
+- **Code:** `connectors/tally/mapping.py` (`ledger`).
+- **Tests:** `tests/test_sync.py`.
+
+### 11.3 Duties & Taxes and GST tax lines
+
+- **What:** a Duties & Taxes ledger's standard account follows its tax type (GST, TDS, TCS); `TAXTYPE` and `GSTDUTYHEAD` give `tax_type` (Central → cgst, State/UT → sgst, Integrated → igst, Cess). An empty duty head on a GST ledger is taken as Central Tax (Tally leaves defaults out) and reported (LB-TRF-007). Every line on a tax ledger becomes a `tax_lines` row.
+- **Code:** `connectors/tally/mapping.py` (`_tax_type`, `STANDARD_ACCOUNT_BY_TAX_TYPE`).
+- **Tests:** `tests/connectors/tally/test_mapping.py` (`test_duties_and_taxes_default_by_tax_type`, `test_empty_duty_head_is_central_tax_for_gst_only_and_warns`), `tests/test_sync.py` (`test_bills_tax_and_inventory_details`).
+
+### 11.4 Branch / Divisions
+
+- **What:** ledgers under Branch / Divisions map to standard account 1275 (debit balances; credit balances report as 3275 at the reporting date, M6).
+- **Code:** `connectors/tally/mapping.py` (`STANDARD_ACCOUNT_BY_GROUP`).
+- **Tests:** `tests/test_standard_accounts.py` (`test_suspense_and_inter_company_accounts`).
+
+---
+
+## 12. Custom fields and the `extra` column
+
+- **What:** every field Tally sends that has no column (e.g. UDFs from TDL customisations, `UDF:` prefixed tags) is kept in the row's `extra` JSON and catalogued (`source_fields`, with counts and an inferred type); a catalogued voucher field can be promoted to a reporting dimension (`promote-field`). A value too long or otherwise unfit for its column is kept in full in `extra` (never truncated) and reported (LB-TRF-003). Undeclared XML prefixes are parsed and kept as written.
+- **Why:** pilot: UDF prefixes broke parsing; values longer than their column failed records.
+- **Code:** `core/transform.py` (`_fit`, `_with_extra`, `_Catalogue`), `connectors/tally/mapping.py` (`unmapped_fields`, `USED_FIELDS`), `connectors/tally/parser.py`.
+- **Tests:** `tests/test_retransform.py`, `tests/test_fit_integration.py`, `tests/test_pilot_robustness.py`.
+- **ADR:** ADR-025.
+
+---
+
+## 13. Error handling
+
+- **What:** a record that can't be converted fails **alone**: `raw_records.process_status = failed` with the error type and a short message (never SQL or values). A batch the database rejects is written again one record at a time, so one bad record leaves the rest converted. `transform retry` converts failed records again with the current code, `transform rebuild` every stored record, both without contacting Tally. Validation names the root cause when records failed (consequences counted, LB-TRF-001 first).
+- **Why:** pilot: thousands of records failed in one batch on a data error (2,170 ledgers and 238,392 vouchers in one attempt).
+- **Code:** `core/transform.py` (batch write, `retry_failed`, `rebuild`), `core/errors.py` (`short_error`), `core/validation.py` (`RootCause`).
+- **Tests:** `tests/test_retransform.py` (`test_one_bad_record_in_a_batch_leaves_the_rest_converted`, `test_mysql_data_errors_are_described_without_values`, `test_validation_names_the_root_cause`).
+- **ADR:** ADR-025, ADR-028.
+
+On the fetch side: requests time out and wait for a busy source before declaring it unresponsive; slow months are split; interrupted syncs resume from their checkpoints; a run lock tied to its job keeps runs from overlapping (ADR-022, ADR-023, ADR-024, ADR-030).
+
+---
+
+## 14. Educational mode: reliable dates only
+
+- **What:** TallyPrime in Educational mode gives correct balances only on the 1st, 2nd and 31st of a month. Validation runs as of the latest such date on or before the date asked; year ends and month ends move to the next one (a 30 June year end is checked on 1 July); the output names the dates used. The connection setting `educational` (auto / yes / no) decides; auto asks Tally (`$$LicenseInfo:IsEducationalMode`). Voucher listings always request whole months.
+- **Why:** on the test company a balance requested for the 30th included later vouchers; the pilot runs in Educational mode.
+- **Code:** `core/dates.py` (`DateRule`), `connectors/tally/connector.py` (`date_rule`, `is_educational`), `workers/validate.py`.
+- **Tests:** `tests/test_dates.py`.
+- **ADR:** ADR-032.
+
+---
+
+## 15. Validation checks
+
+Every check compares our figures with Tally's own, **as of a date** (default today, moved to a reliable date in Educational mode, Section 14). Amounts compare within the connection's **tolerance**: `validation_tolerance` in the connection's settings, else `VALIDATION_TOLERANCE`, **0 (exact) by default**. Counts and quantities always compare exactly. A *thorough* validation (every `validate` and full sync) also compares the source's controls: voucher counts, stock, bills and year ends.
+
+| Code | Check | What it compares | Tolerance | As-of rule |
+| --- | --- | --- | --- | --- |
+| LB-VAL-001 | `voucher_unbalanced` | Each effective voucher's lines sum to zero | exact | every voucher |
+| LB-VAL-002 | `tb_unbalanced` | The trial balance totals our opening total at the as-of date and each year end | exact | as of, year ends |
+| LB-VAL-003 | `opening_difference` (warning) | Tally's own difference in opening balances (Section 3.3) | tolerance | books' beginning |
+| LB-VAL-004 | `closing_mismatch` | Each ledger's balance against Tally's closing balance; stock ledgers at the stock value (Section 7); foreign-currency ledgers at book value (Section 8) | tolerance | as of |
+| LB-VAL-005 | `profit_carrier_mismatch` | Profit & Loss A/c: its posted balance plus the period's profit (stock change included) against Tally's | tolerance | as of |
+| LB-VAL-006 | `year_end_mismatch` | The same ledger comparison at every financial year end before the as-of date | tolerance | year ends (reliable dates) |
+| LB-VAL-007 | `ledger_missing` | Ledgers on one side only | — | as of |
+| LB-VAL-008 | `voucher_count_mismatch` | Vouchers per month and voucher type (cancelled and optional included, deleted excluded) | exact | months up to as of |
+| LB-VAL-009 | `stock_quantity_mismatch` | Each item's closing quantity (counted vouchers, counted godowns, Sections 5 and 6) | exact | as of |
+| LB-VAL-010 | `bills_mismatch` | Each party's bill-wise outstanding (opening bills plus allocations, on-account excluded) | tolerance | only as of today (Tally reports bills as of now) |
+| LB-VAL-011 | `closing_unavailable` | Tally's closing balances couldn't be read | — | — |
+| LB-VAL-012 | `year_end_balances_unavailable` | A year end's balances couldn't be read | — | — |
+| LB-VAL-013 | `voucher_counts_unavailable` | Counts couldn't be read | — | — |
+| LB-VAL-014 | `stock_quantities_unavailable` | Stock couldn't be read | — | — |
+| LB-VAL-015 | `bill_outstanding_unavailable` | Bills couldn't be read | — | — |
+| LB-VAL-016 | `check_not_supported` (info) | The source doesn't offer a figure | — | — |
+| LB-VAL-017 | `not_compared` (info) | Stock values per item and bills on other dates are compared only in total / as of today | — | — |
+| LB-VAL-018 | `source_controls_not_checked` (info) | A quick validation skipped the controls | — | — |
+| LB-VAL-019 | `never_validated` | A company never validated | — | — |
+| LB-VAL-020 | `validation_error` | Validation couldn't run | — | — |
+| LB-VAL-021 | `stock_ledger_at_stock_value` (info) | Stock ledgers compared with Tally's closing stock value (Section 7) | tolerance | each date |
+| LB-VAL-022 | `foreign_ledgers_at_book_value` (info) | Foreign-currency ledgers compared with their book value (Section 8) | tolerance | each date |
+
+- **Code:** `core/validation.py` (`Validator`), `workers/validate.py` (`run_validation`, `source_controls`), `core/problems.py` (codes, texts).
+- **Tests:** `tests/test_validation.py`, `tests/test_counting_rules.py` (`test_seed_reproduces_tallys_figures`), `tests/test_retransform.py` (`test_thorough_validation_passes_on_the_test_company`), and the rule tests above.
+- **Diagnostics:** `validate analyse` tests explanations for every mismatch (counts only, VAL-010); `validate compare-ledger` compares one ledger voucher by voucher (VAL-014).
+- **ADR:** ADR-019, ADR-028, ADR-029.
+
+## Change log
+
+| Date | Version | Change |
+| --- | --- | --- |
+| 2026-10-16 | 1.0 | First edition: every conversion and validation rule up to PR #33, with flowcharts. |

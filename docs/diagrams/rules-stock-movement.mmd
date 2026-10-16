@@ -1,0 +1,17 @@
+%% How an inventory line moves stock (rulebook Sections 5 and 6, ADR-029, ADR-031). Written by hand.
+flowchart TD
+    A([An inventory entry of a voucher]) --> B{Does the voucher count?<br/>not deleted, cancelled or optional}
+    B -- no --> X0[Moves nothing]
+    B -- yes --> C{Does its type move stock?<br/>orders and memorandum don't}
+    C -- no --> X0
+    C -- yes --> D{"Stock journal?"}
+    D -- yes --> J["Read once from ALLINVENTORYENTRIES<br/>(in/out lists only when it is missing)"]
+    D -- no --> E{"Invoice, debit or credit note line<br/>tracked to a delivery/receipt note or rejection?"}
+    E -- "fully tracked" --> X1["Moves nothing:<br/>the note moved it, before or after"]
+    E -- "partly tracked" --> P["Moves only the untracked part<br/>(stock_quantity)"]
+    E -- "not tracked" --> M[Moves its quantity]
+    J --> G
+    P --> G
+    M --> G{"Godown kind (godowns.holding)"}
+    G -- "own / third_party_with_us (a principal's)" --> IN[Counted in Tally's stock]
+    G -- "ours_with_third_party (a job worker's)" --> OUT["Left out of Tally's stock balances<br/>(Material In/Out destination moves nothing)"]

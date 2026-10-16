@@ -27,7 +27,8 @@
     ./dev.ps1 fields
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
-    ./dev.ps1 diagrams                          (regenerate docs/diagrams from the models, render SVG/PNG)
+    ./dev.ps1 diagrams                          (regenerate docs/diagrams and the schema reference from the models, render SVG/PNG)
+    ./dev.ps1 docs-export                       (Word and PDF copies of the rulebook, schema reference and history in docs/export)
     ./dev.ps1 seed-test-data
     ./dev.ps1 seed-test-data create-only
     ./dev.ps1 down
@@ -52,7 +53,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'help')]
+    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -536,6 +537,8 @@ switch ($Command) {
             Invoke-Uv run python -m devtools.diagrams
             # The error catalogue is generated from the code too (core/problems.py).
             Invoke-Uv run python -m devtools.error_catalogue
+            # So is the schema reference (every table and column, from the models).
+            Invoke-Uv run python -m devtools.schema_reference
         }
         finally { Pop-Location }
         # Remove renders of sources that no longer exist (e.g. a diagram split in two).
@@ -562,6 +565,42 @@ switch ($Command) {
             }
             Write-Host "Rendered $name (svg, png)"
         }
+    }
+    'docs-export' {
+        # Word and PDF copies of the knowledge-base documents in docs/export/, with their
+        # diagrams (PNG) embedded, made by the official pandoc Docker image in a throwaway
+        # container. Run `./dev.ps1 diagrams` first so the diagrams are current. Needs no
+        # database, no Tally and no running stack.
+        $pandocImage = 'pandoc/latex:3.5'
+        $docs = Join-Path $root 'docs'
+        $export = Join-Path $docs 'export'
+        New-Item -ItemType Directory -Force -Path $export | Out-Null
+        $documents = @('rules/validation-and-conversion-rules.md', 'database/schema-reference.md', 'project-history.md')
+        foreach ($document in $documents) {
+            $folder = Split-Path -Parent $document
+            $leaf = Split-Path -Leaf $document
+            $name = [System.IO.Path]::GetFileNameWithoutExtension($leaf)
+            # Documents sit at most one folder deep under docs/ (rules/, database/).
+            $workdir = if ($folder) { "/data/$folder" } else { '/data' }
+            foreach ($format in @('docx', 'pdf')) {
+                $convert = @('run', '--rm', '-v', "${docs}:/data", '-w', $workdir, $pandocImage,
+                    $leaf, '-o', "/data/export/$name.$format", '--toc', "--resource-path=.:$workdir")
+                if ($format -eq 'pdf') {
+                    $convert += @('--pdf-engine=xelatex', '-V', 'geometry:margin=1.6cm', '-V', 'fontsize=10pt')
+                }
+                # pandoc writes warnings to stderr; rely on the exit code (as `diagrams` does).
+                $ErrorActionPreference = 'Continue'
+                $output = & docker @convert 2>&1
+                $code = $LASTEXITCODE
+                $ErrorActionPreference = 'Stop'
+                if ($code -ne 0) {
+                    $output | Select-Object -Last 5 | ForEach-Object { Write-Host "  $_" }
+                    throw "Exporting $name.$format failed (exit $code)"
+                }
+            }
+            Write-Host "Exported $name (docx, pdf)"
+        }
+        Write-Host "Saved in $export"
     }
     'seed-test-data' {
         # Writes into Tally (ADR-014): test environment and test company only. The tool itself

@@ -85,6 +85,11 @@ ledgerbridge/
 │   └── mysql/init/             the database's first-start script
 ├── docs/
 │   ├── error-catalogue.md      every error and warning code (generated)
+│   ├── project-history.md      what was built and done so far, PR by PR
+│   ├── progress-log.md         dated progress entries
+│   ├── rules/                  the rulebook: conversion and validation rules
+│   ├── database/               the schema reference (generated)
+│   ├── export/                 Word and PDF copies of those (./dev.ps1 docs-export)
 │   ├── design/                 dashboard design and mockup
 │   ├── diagrams/               ER, database and data flow diagrams (source and images)
 │   └── learning/               the Docker guide
@@ -194,6 +199,8 @@ ledgerbridge/
 
 **`devtools/error_catalogue.py`: the error catalogue.** Writes `docs/error-catalogue.md` from `core/problems.py`, so the documented codes always match what the commands print (also run by `./dev.ps1 diagrams`; a test fails when it is stale). Development only.
 
+**`devtools/schema_reference.py`: the schema reference.** Writes `docs/database/schema-reference.md` from the database models: every table and column with types, keys, relationships and meanings (also run by `./dev.ps1 diagrams`; a test fails when it is stale). Development only.
+
 **`devtools/diagrams.py`: the diagrams.** Writes the Mermaid sources of the ER diagrams and the database diagram in `docs/diagrams/` from the database models, so they always match the code (`./dev.ps1 diagrams`, which also draws the images). Development only.
 
 **`devtools/tally_seed/`: filling the test company.** Development only, never part of the product, and it may only write to the company "LedgerBridge Test Co" (it checks this before doing anything). `data.py` holds the synthetic ledgers and vouchers, including the cases that reproduce Tally's counting rules (openings, delivery and receipt notes with tracked invoices, optional, memorandum, reversing and post-dated vouchers; schema.md 7.5); `requests.py` builds Tally's import requests; `seed.py` works out what is missing and imports it; `__main__.py` is the command (`./dev.ps1 seed-test-data`).
@@ -243,6 +250,11 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | [schema.md](schema.md) | The database design: every table, the Tally mapping, the processing rules, the migrations. |
 | [roadmap.md](roadmap.md) | The milestones (M0 to M9, plus M7b), each with "done when" and the prompt that starts it. |
 | [error-catalogue.md](error-catalogue.md) | Every error and warning code: what it means, common causes, how to investigate, how to fix (generated from `core/problems.py`). |
+| [rules/validation-and-conversion-rules.md](rules/validation-and-conversion-rules.md) | The rulebook: every rule for converting and validating Tally data, with why, how it was proven, where it lives in the code, its tests and ADR; flowcharts. |
+| [database/schema-reference.md](database/schema-reference.md) | Every database, table and column with its type, keys, relationships and meaning, the database users and their rights, ER and data-flow diagrams (generated from the models by `devtools/schema_reference.py`). |
+| [project-history.md](project-history.md) | What has been built and done so far: milestones, every PR with what and why, problems and fixes, pilot results, lessons, open items. |
+| [progress-log.md](progress-log.md) | Dated progress entries. |
+| `export/` | Word and PDF copies of the rulebook, schema reference and history (`./dev.ps1 docs-export`). |
 | [pilot-runbook.md](pilot-runbook.md) | Step by step for running the pilot on client data (the developer runs it, never Claude Code), and how to read the output. |
 | [design/dashboard.md](design/dashboard.md), `design/dashboard-mockup.png` | The dashboard design: the approved home page and the proposed Budget page. |
 | [learning/docker.md](learning/docker.md) | Docker explained for this project, file by file. |
@@ -368,6 +380,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-16 | 0.13 | Knowledge base: `docs/rules/`, `docs/database/`, `docs/project-history.md`, `docs/progress-log.md`, `docs/export/`; `devtools/schema_reference.py`; `./dev.ps1 docs-export`. |
 | 2026-10-16 | 0.12 | `workers/compare.py`, `tests/test_compare_ledger.py`. |
 | 2026-10-16 | 0.11 | `tests/test_forex.py`. |
 | 2026-10-16 | 0.10 | `tests/test_line_attribution.py`. |
