@@ -246,6 +246,8 @@ Share the output as it is. It also shows: pairs of explanations that fit only to
 
 **Which ledger a line is on.** `validate analyse` says, for a ledger that starts to differ, which lines of any voucher then equal the difference, on what kind of ledger we put them and how the name was matched; whether two ledgers' differences cancel out; how many stored vouchers name the ledger, and ledger lines in lists the mapping doesn't read. After a change to how names are resolved, run `transform rebuild`.
 
+**Foreign-currency ledgers.** Tally reports them at current exchange rates; validation compares them with Tally's book value (the amounts entered, as Ledger Vouchers show them) and notes it (`Foreign-currency ledgers at book value [foreign_ledgers_at_book_value, LB-VAL-022]`). Foreign amounts on lines appear after `transform rebuild`.
+
 ### 9. After a change to how data is fetched: `sync full -Restart`
 
 `transform rebuild` re-applies changed rules to what is stored. When a fix needs fields that weren't fetched before (for example opening balances as at the books' beginning, or tracking numbers on inventory lines; schema.md 7.5), the stored records don't have them: fetch everything again with `./dev.ps1 sync full -Env pilot -Restart`. It takes as long as the first full sync, resumes if interrupted, transforms with the current rules and validates thoroughly; no rebuild is needed afterwards.
@@ -300,6 +302,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-16 | 0.20 | Foreign-currency ledgers at book value. |
 | 2026-10-16 | 0.19 | Line attribution in `validate analyse`; `transform rebuild` after the name resolution change. |
 | 2026-10-15 | 0.18 | Stock ledgers at the stock value; the opening difference as Tally's trial balance shows it; company numbers kept across `connect`; narrowed dates in `validate analyse`. |
 | 2026-10-15 | 0.17 | Educational mode: validation and analysis use reliable dates only; `connect -Educational`. |

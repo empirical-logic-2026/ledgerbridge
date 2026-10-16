@@ -52,6 +52,7 @@ class Ledger:
     gst_duty_head: str | None = None  # "Central Tax" / "State Tax" for GST ledgers
     predefined: bool = False  # exists in every Tally company (e.g. Cash); only altered
     aliases: tuple[str, ...] = ()  # other names (Tally's alias names)
+    currency: str | None = None  # a foreign currency's symbol (else the base currency)
 
 
 @dataclass(frozen=True)
@@ -142,6 +143,13 @@ class Godown:
 
 
 @dataclass(frozen=True)
+class Currency:
+    symbol: str  # Tally's name for it, e.g. "$"
+    formal_name: str
+    code: str
+
+
+@dataclass(frozen=True)
 class SeedData:
     ledgers: tuple[Ledger, ...]
     units: tuple[str, ...]
@@ -152,6 +160,7 @@ class SeedData:
     renamed_groups: tuple[tuple[str, str], ...] = field(default=())  # (reserved, new name)
     godowns: tuple[Godown, ...] = field(default=())
     stock_groups: tuple[str, ...] = field(default=())
+    currencies: tuple[Currency, ...] = field(default=())
 
 
 # Voucher types whose vouchers don't post to the books (Tally leaves them out of every
@@ -523,11 +532,26 @@ VOUCHERS: tuple[Voucher, ...] = (
            _bill("PI-5", "250", "Agst Ref")),
 )  # fmt: skip
 
+# --- foreign currency (2026-10-16): a US dollar currency and a customer kept in it, with a
+# sale entered in rupees. Tally's XML import refused foreign amounts written as its exports
+# show them ("-$50.00 @ Rs84.00/$ = ..."), and rates of exchange can't be written without
+# knowing their fields (none exported yet): see ADR-035.
+USD = Currency("$", "US Dollar", "USD")
+FX_CUSTOMER = "Customer Delta USD"
+FX_LEDGERS = (Ledger(FX_CUSTOMER, "Sundry Debtors", currency="$"),)
+FX_VOUCHERS = (
+    Voucher(
+        "FX-SAL-1", "Sales", date(2026, 8, 1), "Export sale USD 100 at 82",
+        (Entry(FX_CUSTOMER, "Dr", _d("8200")), Entry("Sales - Services", "Cr", _d("8200"))),
+    ),
+)  # fmt: skip
+
 # A voucher naming a ledger by its alias.
 NAME_VOUCHERS = (_journal("NAME-ALIAS-1", "Journal", date(2026, 9, 1), "Kilo Alias", "Cash", "21"),)
 
 SEED = SeedData(
-    ledgers=(*LEDGERS, *NAME_LEDGERS),
+    ledgers=(*LEDGERS, *NAME_LEDGERS, *FX_LEDGERS),
+    currencies=(USD,),
     units=("Nos",),
     stock_items=(
         StockItem("Widget", "Nos"),
@@ -538,7 +562,7 @@ SEED = SeedData(
         StockItem("Hinge", "Nos", _d("5"), _d("2"), group="Components"),  # in a stock group
     ),
     cost_centres=("Head Office", "Branch"),
-    vouchers=(*VOUCHERS, *NAME_VOUCHERS),
+    vouchers=(*VOUCHERS, *NAME_VOUCHERS, *FX_VOUCHERS),
     voucher_types=(("Adjustment Journal", "Journal"),),  # a custom type under Journal
     godowns=(Godown(JOB_WORKER, external=True), Godown(PRINCIPAL, internal=True)),
     renamed_groups=(STOCK_IN_HAND,),

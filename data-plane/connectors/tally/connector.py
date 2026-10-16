@@ -217,6 +217,7 @@ class TallyConnector:
         stock_ledgers = [Decimal(0), Decimal(0)]  # Stock-in-Hand ledgers: opening, closing
         stock_keys: set[str] = set()
         ledger_openings: dict[str, Decimal] = {}
+        currencies: dict[str, str] = {}
         body = self._company_post(
             entity,
             lambda name: envelopes.collection_request(
@@ -229,6 +230,7 @@ class TallyConnector:
             opening = _canonical(element.findtext("OPENINGBALANCE"))
             ledger_openings[key] = opening
             parent = (element.findtext("PARENT") or "").strip()
+            currencies[key] = (element.findtext("CURRENCYNAME") or "").strip()
             if parent in in_stock_group:
                 stock_keys.add(key)
                 stock_ledgers[0] += opening
@@ -270,10 +272,13 @@ class TallyConnector:
             if g.reported:
                 label = g.reserved or g.name
                 group_openings[label] = group_openings.get(label, Decimal(0)) + g.opening
+        foreign = _foreign(currencies, carriers)
         return SourceBalances(
             as_of=as_of,
             ledgers=ledgers,
             profit_carriers=frozenset(carriers),
+            foreign_ledgers=frozenset(foreign),
+            book_values=self._book_values(entity, period, foreign, ledgers),
             opening_stock=opening_stock,
             closing_stock=closing_stock,
             opening_difference=difference,
@@ -285,6 +290,30 @@ class TallyConnector:
             group_openings=group_openings,
             reserved_groups=frozenset(g.reserved for g in primary if g.reserved),
         )
+
+    def _book_values(
+        self,
+        entity: SourceEntity,
+        period: tuple[date, date],
+        foreign: set[str],
+        ledgers: Mapping[str, Decimal],
+    ) -> dict[frozenset[str], Decimal]:
+        """Tally's book value of its foreign-currency ledgers together: their closing
+        balances, which Tally revalues at current rates (its group totals too), plus its
+        trial balance's "Unadjusted Forex Gain/Loss" line, which holds the difference to the
+        amounts entered (checked on the test company, 2026-10-16; pilot: Ledger Vouchers
+        equalled the amounts entered)."""
+        if not foreign:
+            return {}
+        body = self._company_post(
+            entity,
+            lambda name: envelopes.report_request(envelopes.TRIAL_BALANCE, name, period),
+        )
+        unadjusted = sum(
+            (amount for name, amount in report_lines(body) if name.casefold() == UNADJUSTED),
+            Decimal(0),
+        )
+        return {frozenset(foreign): sum((ledgers[k] for k in foreign), unadjusted)}
 
     def _group_balances(self, entity: SourceEntity, period: tuple[date, date]) -> list["_Group"]:
         """Every group with its parent, reserved name and Tally's own opening and closing
@@ -697,6 +726,8 @@ _LIST_TAG = re.compile(r"<([A-Za-z][\w.:]*\.LIST)(?:\s[^>]*)?>\s*<(?!/)")
 
 
 STOCK_IN_HAND = "Stock-in-Hand"  # Tally's reserved group for stock ledgers
+# Tally's trial balance line for foreign-currency ledgers' revaluation not posted yet.
+UNADJUSTED = "unadjusted forex gain/loss"
 
 
 @dataclass(frozen=True)
@@ -707,6 +738,39 @@ class _Group:
     opening: Decimal  # canonical sign, for the requested period
     closing: Decimal
     reported: bool  # Tally gave a balance (empty for groups it doesn't total)
+
+
+def _foreign(currencies: Mapping[str, str], carriers: Iterable[str]) -> set[str]:
+    """Ledgers kept in a foreign currency: their CURRENCYNAME isn't the base currency's,
+    which is the currency of the ledgers directly under Primary (Profit & Loss A/c is always
+    in the base currency); without one, the currency most ledgers use. Tally writes the
+    rupee sign as "?" in exports, so the base currency isn't recognised by its symbol."""
+    base = next((currencies[k] for k in carriers if currencies.get(k)), None)
+    if base is None:
+        used = Counter(c for c in currencies.values() if c)
+        base = used.most_common(1)[0][0] if used else None
+    return {k for k, c in currencies.items() if c and base is not None and c != base}
+
+
+def report_lines(body: bytes) -> list[tuple[str, Decimal]]:
+    """Lines of one of Tally's own reports (DSPACCNAME followed by DSPACCINFO): (the name
+    shown, canonical amount from its debit and credit columns)."""
+    lines: list[tuple[str, Decimal]] = []
+    name = None
+    for element in parser.parse_response(body).iter():
+        if element.tag == "DSPACCNAME":
+            name = (element.findtext("DSPDISPNAME") or "").strip()
+        elif element.tag == "DSPACCINFO" and name is not None:
+            total = sum(
+                (
+                    tally_amount(element.findtext(path)) or Decimal(0)
+                    for path in ("DSPCLDRAMT/DSPCLDRAMTA", "DSPCLCRAMT/DSPCLCRAMTA")
+                ),
+                Decimal(0),
+            )
+            lines.append((name, -total if total else Decimal(0)))
+            name = None
+    return lines
 
 
 def _stock_in_hand(groups: Iterable[_Group]) -> set[str]:

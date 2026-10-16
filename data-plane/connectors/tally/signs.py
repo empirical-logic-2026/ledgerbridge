@@ -35,6 +35,15 @@ def tally_amount(text: str | None) -> Decimal | None:
     return -value if negative else value
 
 
+def tally_foreign_amount(text: str | None) -> Decimal | None:
+    """The foreign currency part of a Tally amount (`-$100.00 @ ...` -> -100.00), or None
+    for an amount in the base currency only."""
+    if not text or "=" not in text:
+        return None
+    left = text.rsplit("=", 1)[0].split("@", 1)[0]
+    return tally_amount(left)
+
+
 def _first_present(voucher: ET.Element, tags: Iterable[str]) -> list[ET.Element]:
     for tag in tags:
         found = voucher.findall(tag)

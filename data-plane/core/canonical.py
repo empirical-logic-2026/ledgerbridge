@@ -169,6 +169,9 @@ class CanonicalBill:
 class CanonicalLine:
     ledger_name: str
     amount: Decimal
+    # The foreign currency amount of a line in a foreign currency (canonical sign); its rate
+    # is amount / amount_fc. None in the base currency.
+    amount_fc: Decimal | None = None
     is_party_line: bool = False
     bills: tuple[CanonicalBill, ...] = ()
     cost_allocations: tuple[tuple[str, Decimal], ...] = ()  # (cost centre name, amount)

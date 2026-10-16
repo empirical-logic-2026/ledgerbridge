@@ -9,7 +9,16 @@ from datetime import date
 from decimal import Decimal
 from xml.sax.saxutils import escape, quoteattr
 
-from devtools.tally_seed.data import Entry, Godown, ItemLine, Ledger, Side, StockItem, Voucher
+from devtools.tally_seed.data import (
+    Currency,
+    Entry,
+    Godown,
+    ItemLine,
+    Ledger,
+    Side,
+    StockItem,
+    Voucher,
+)
 
 GODOWN = "Main Location"
 BATCH = "Primary Batch"
@@ -59,7 +68,8 @@ def ledger_create(ledger: Ledger) -> str:
         f"{_names(ledger.name, *ledger.aliases)}"
         f"<PARENT>{escape(ledger.parent)}</PARENT>"
         f"<ISBILLWISEON>{'Yes' if ledger.bill_wise else 'No'}</ISBILLWISEON>"
-        f"{gst}"
+        + (f"<CURRENCYNAME>{escape(ledger.currency)}</CURRENCYNAME>" if ledger.currency else "")
+        + f"{gst}"
         f"<OPENINGBALANCE>{_amount(ledger.opening_side, ledger.opening)}</OPENINGBALANCE>"
         "</LEDGER>"
     )
@@ -130,6 +140,17 @@ def cost_centre_create(name: str) -> str:
     return (
         f'<COSTCENTRE NAME={quoteattr(name)} ACTION="Create">{_names(name)}'
         f"<CATEGORY>{COST_CATEGORY}</CATEGORY></COSTCENTRE>"
+    )
+
+
+def currency_create(currency: Currency) -> str:
+    return (
+        f'<CURRENCY NAME={quoteattr(currency.symbol)} ACTION="Create">'
+        f"<ORIGINALNAME>{escape(currency.symbol)}</ORIGINALNAME>"
+        f"<MAILINGNAME>{escape(currency.formal_name)}</MAILINGNAME>"
+        f"<EXPANDEDSYMBOL>{escape(currency.code)}</EXPANDEDSYMBOL>"
+        "<DECIMALSYMBOL>cents</DECIMALSYMBOL><DECIMALPLACES>2</DECIMALPLACES>"
+        "<ISSUFFIX>No</ISSUFFIX><HASSPACE>No</HASSPACE></CURRENCY>"
     )
 
 

@@ -49,7 +49,13 @@ from core.models import Connection
 from core.models import accounting as A  # noqa: N812
 from core.models.source import RawRecord
 from core.names import normalise
-from core.validation import PROFIT_NATURES, Validator, at_stock_value, financial_year_ends
+from core.validation import (
+    PROFIT_NATURES,
+    Validator,
+    at_book_value,
+    at_stock_value,
+    financial_year_ends,
+)
 
 Progress = Callable[[str], None]
 ZERO = Decimal(0)
@@ -373,12 +379,13 @@ class Analyser:
         explained = by_pair = 0
         twice = "the opening balance is counted twice here, or the source leaves it out"
         at_stock = self._at_stock_value(self.as_of)
+        at_book = self._at_book_value(self.as_of)
         for key, lb in ours.items():
             theirs = self.source.ledgers.get(key)
             if theirs is None or key in carriers or self.close(theirs, lb.balance):
                 continue
-            if key in at_stock:
-                continue  # compared with the source's closing stock value, as validation does
+            if key in at_stock or key in at_book:
+                continue  # compared as validation does: the stock value, or the book value
             diff = theirs - lb.balance
             self.mismatched[key] = diff
             found = self._explain(lb, theirs, lb.balance, start)
@@ -410,6 +417,14 @@ class Analyser:
             self.out(
                 f"  stock ledgers at the source's closing stock value (compared with it, as "
                 f"validation does; LB-VAL-021): {len(at_stock):,}"
+            )
+        foreign = getattr(self.source, "foreign_ledgers", frozenset()) or frozenset()
+        if foreign:
+            differing = sum(1 for k in self.mismatched if k in foreign)
+            self.out(
+                f"  foreign-currency ledgers: {len(foreign):,}; matching the source's book value "
+                f"(its revaluation at current rates left out, as validation does; LB-VAL-022) "
+                f"{len(at_book):,}; differing {differing:,}"
             )
         cancelling = self._cancelling(self.mismatched)
         if cancelling:
@@ -536,7 +551,7 @@ class Analyser:
             ours = self._year_balances(year_end)
             start = fy_start(year_end, self.row.fy_start_month)
             differ, fits = 0, Counter()
-            at_stock = self._at_stock_value(year_end)
+            at_stock = self._at_stock_value(year_end) | self._at_book_value(year_end)
             for key, lb in ours.items():
                 theirs = source.ledgers.get(key)
                 if (
@@ -1073,6 +1088,8 @@ class Analyser:
             effective = self._effective_across(key, lb.id)
             if effective:
                 facts.append(effective)
+            if key in getattr(self.source, "foreign_ledgers", frozenset()):
+                facts.append("kept in a foreign currency; " + self._book_fact(key))
             if key in stock_keys:
                 integration = {True: "integrated", False: "not integrated"}.get(
                     integrated, "integration unknown"
@@ -1383,7 +1400,7 @@ class Analyser:
             if not hasattr(source, "ledgers"):
                 cache[on] = None
             else:
-                at_stock = self._at_stock_value(on)
+                at_stock = self._at_stock_value(on) | self._at_book_value(on)
                 cache[on] = {
                     key: source.ledgers[key] - lb.balance
                     for key, lb in self._year_balances(on).items()
@@ -1402,6 +1419,31 @@ class Analyser:
             return set()
         ours = {key: lb.balance for key, lb in self._year_balances(on).items()}
         return at_stock_value(ours, source, self.tolerance)
+
+    def _at_book_value(self, on: date) -> set[str]:
+        """Foreign-currency ledgers equal to the source's book value as of a date (their
+        revaluation at current rates left out): explained, as in validation (LB-VAL-022)."""
+        source = self._source_at(on)
+        if not hasattr(source, "ledgers"):
+            return set()
+        ours = {key: lb.balance for key, lb in self._year_balances(on).items()}
+        found: set[str] = set()
+        for keys, (book, mine) in at_book_value(ours, source).items():
+            if self.close(book, mine):
+                found |= keys
+        return found
+
+    def _book_fact(self, key: str) -> str:
+        """For a foreign-currency ledger that differs: whether the source gives a book value
+        for it (alone or with others of its group) and whether ours equals it."""
+        source = self.source
+        ours = {k: lb.balance for k, lb in (getattr(self, "ours_today", {}) or {}).items()}
+        for keys, (book, mine) in at_book_value(ours, source).items():
+            if key in keys:
+                alone = "its" if len(keys) == 1 else f"its group's ({len(keys):,} ledgers)"
+                state = "equals" if self.close(book, mine) else "differs from"
+                return f"{alone} book value in the source {state} ours"
+        return "the source gives no book value for it (its closing balance is revalued)"
 
     def _cancelling(self, diffs: dict[str, Decimal]) -> int:
         """Pairs of ledgers whose differences are each other's opposite."""

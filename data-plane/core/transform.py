@@ -1334,6 +1334,7 @@ class Transformer:
                             "line_no": no,
                             "ledger_id": lid,
                             "amount": line.amount,
+                            "amount_fc": line.amount_fc,
                             "is_party_line": line.is_party_line,
                             "is_effective": effective,
                         },
