@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.2 |
-| Date | 2026-10-13 |
+| Version | 0.3 |
+| Date | 2026-10-16 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) |
 
@@ -243,9 +243,47 @@ A **"Plan budget"** button opens the planning view for the selected company and 
 
 The "Ask a question" panel from the home page (Section 3.8), with budget chips: **"Which expenses are over budget this quarter?"**, **"Projected profit for the full year vs budget"**, **"Biggest variances this month"** (M8, BUD-014). Same privacy note as on the home page.
 
+## 8. Forex page (M7, proposed)
+
+Requirements: FX-008 to FX-012. Same top bar, LIVE strip, sidebar, visual style and number format as the home page; the sidebar item **"Foreign currency"** is shown only with `forex.view` and is active here. No mockup yet: one is to be approved before it is built, like the home page's. Base-currency figures are the books; every figure the source calculated (its revaluation, its rates) is marked with a small "from Tally" note and the date it applies to.
+
+### 8.1 Filters
+
+| Filter | Options | Default |
+| --- | --- | --- |
+| As of | Any date (reports calculate as of a date) | Today |
+| Company | Consolidated or one company (top bar; entity access applies) | As in the top bar |
+| Currency | All, or one currency | All |
+| Party | All, customers, suppliers, or one party (searchable) | All |
+
+### 8.2 Summary cards
+
+| Card | Value | Status line |
+| --- | --- | --- |
+| Net exposure | Net position per currency (receivables − payables), in the currency, one line per currency | Base equivalent at the latest rate, with its date and source |
+| Receivables in foreign currency | Total in base at book value | Number of parties and currencies |
+| Unrealised gain / loss | The source's latest calculated figure (FX-004) | "from Tally, as of <date>" |
+| Realised gain / loss | This financial year to date (FX-005) | Split: adjustment journals / settlements |
+
+### 8.3 Tables
+
+- **Party balances in their own currency:** party, currency, balance in the currency, ageing buckets in the currency, base book value, value at the latest rate. Each figure drills down to the party's foreign-currency vouchers.
+- **Gains and losses:** by month (or quarter), currency and party: realised, unrealised, total. Realised drills down to vouchers, unrealised to the snapshot (which ledger, date, the source's figures).
+
+### 8.4 Graphs (ECharts)
+
+- Exposure by currency: receivables and payables as bars, net as a marker, in base at the latest rate.
+- Realised vs unrealised gains by month: stacked bars, total as a line.
+- Exchange-rate history: one line per currency; points from the source's rate lists solid, rates from vouchers hollow (FX-003 source shown in the tooltip).
+
+### 8.5 Ask about currencies
+
+The "Ask a question" panel offers currency chips, e.g. "What is our net USD exposure today?", "Which customers owe us in euros?", "Exchange gains last quarter?" (FX-013, M8).
+
 ## Change log
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-16 | 0.3 | Forex page (Section 8, proposed for M7): filters, summary cards, own-currency balances and ageing, gains and losses, exposure and rate graphs; source-calculated figures marked (FX-008 to FX-013, ADR-037). |
 | 2026-10-13 | 0.2 | Budget page (Section 7, proposed for M7b): filters, summary cards, four graphs, budget vs actual table, planning view, budget questions; sidebar item "Budget"; budget variance alerts in "Needs your attention". |
 | 2026-10-12 | 0.1 | Home page design described from the approved mockup. "Cash forecast for next month" chip replaced by "Who do we owe the most?" until forecasting (AI-009, phase 3). |
