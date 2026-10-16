@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.8 |
-| Date | 2026-10-13 |
+| Version | 0.9 |
+| Date | 2026-10-16 |
 | Current milestone | **M4** |
 
 Goal: load the client's Tally backup data (two companies) into MySQL and deliver dashboards and AI querying, with every part built generically so it later works for live Tally, other accounting books and other clients (PIL-001 to PIL-005).
@@ -52,9 +52,25 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 **Your part (outside Claude Code):** run M3 and M4 against the `pilot` environment with the client's two companies. Share only pass/fail results and error messages, never figures or names.
 
+## M4b — Consolidation (after pilot validation reaches zero)
+
+Starts when validation of every pilot company passes with zero failures. It consolidates what the pilot taught before reports are built on the data, beginning with the foreign-currency data layer.
+
+**Done when:**
+- currencies are mapped from the source's currency masters per entity (`currencies`, `currency_sources`), and foreign-currency ledgers, voucher lines and bill allocations keep currency, foreign amount, rate and base amount (FX-001);
+- `fx_transactions` holds every foreign-currency entry and is replaced with its voucher (FX-002);
+- `exchange_rates` holds the source's rate lists where they exist, else voucher rates, each with its source (FX-003);
+- `fx_revaluation_snapshots` stores the source's calculated unrealised gain or loss per foreign-currency ledger at month ends, year ends and validation dates, as source figures, never as vouchers (FX-004);
+- `fx_realised` holds realised gains and losses from forex adjustment journals and from bills settled at another rate, each with its method (FX-005);
+- balances in the original currency are available per ledger and party as of any date (FX-006);
+- validation compares each foreign-currency ledger's balance in its own currency with the source's, besides its base book value (FX-007), and the pilot still passes with zero failures;
+- tests cover the mapping of foreign amounts, rates and bills, the derived rates and realised gains, and the snapshots, on test-company seed cases (a foreign-currency voucher and a rate entered in TallyPrime first, so their exported fields are copied, never guessed).
+
+> Read docs/requirements.md Section 4.13 (FX-001 to FX-013), architecture.md Section 4.8 and ADR-037, and the proposed foreign-currency tables in docs/schema.md Section 4.8. Plan milestone M4b: the foreign-currency data layer, built generically (PIL-003). Confirm or adjust the proposed tables, then build Alembic migrations with docs/schema.md updated in the same change; the connector mapping of currency masters, rate lists and foreign amounts (Tally specifics only in connectors/tally); the transform writing `fx_transactions`, `fx_realised` and voucher-derived rates; the read-only snapshot reader and its schedule; and the own-currency validation. Base-currency figures must not change. Show me the plan first.
+
 ## M5 — Local login and access control
 
-**Done when:** users can log in locally; roles, entity access and permissions are enforced on every API endpoint; the validation and alert endpoints from M4 are protected with `validation.view`; the budget permissions `budget.view`, `budget.edit` and `budget.approve` exist and are granted to the default roles (requirements.md Section 3, BUD-013), ready for M7b; audit log records logins and data access.
+**Done when:** users can log in locally; roles, entity access and permissions are enforced on every API endpoint; the validation and alert endpoints from M4 are protected with `validation.view`; the budget permissions `budget.view`, `budget.edit` and `budget.approve` and the foreign-currency permission `forex.view` exist and are granted to the default roles (requirements.md Section 3, BUD-013, FX-012), ready for M6 and M7b; audit log records logins and data access.
 
 > Plan milestone M5: implement AUTH_MODE=local per architecture.md Section 13 and ADR-010, with token verification behind an interface so control-plane tokens can replace it later. Implement roles, permissions, user_entity_access and audit logging per schema.md Sections 5.3 and 5.4, enforced in the data plane on every endpoint (requirements ACC-001, ACC-002, ACC-004, AUD-001). Seed the permissions `validation.view`, `budget.view`, `budget.edit` and `budget.approve` and the default role grants from requirements.md Section 3 (BUD-013); the budget endpoints themselves come in M7b. Show me the plan first.
 
@@ -65,12 +81,13 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 - cash cover in months, with its definition documented
 - simple rule-based alerts with severity, message and suggested action, with configurable rules and thresholds
 - a recent-events feed for the LIVE ticker (new vouchers, payments, bank balance and GST payable changes, data-check results), written after each sync
+- the foreign-currency reports from the M4b data: party balances and ageing in their own currency, exposure per currency with base equivalents, realised vs unrealised gains by period, currency and party, and exchange-rate history (FX-008 to FX-011), through the views in docs/schema.md Section 6 and API endpoints protected by `forex.view` (FX-012)
 
 > Plan milestone M6: implement the ledgerbridge_reporting database objects from docs/schema.md Section 6, incremental refresh of aggregate tables after each sync, the semantic_catalog with descriptions of every view and column, and API endpoints for requirements RPT-001 to RPT-004 and RPT-006 to RPT-008, all respecting the user's entity access. Also provide the data for the dashboard home page in docs/design/dashboard.md Section 4: propose a business health score formula (components, weights, label bands) and a cash-cover definition for my approval and document them in docs/schema.md; rule-based alerts with severity, message and suggested action; a recent-events feed written after each sync for the LIVE ticker; and the last-sync status per connection. Every report calculates **as of a date** (default today): vouchers dated after it, including post-dated ones, are excluded, the same rule as validation in M4. Update docs/schema.md for any new tables or views in the same change. Show me the plan first.
 
 ## M7 — Dashboard
 
-**Done when:** the React app supports login, entity and consolidated selection, period filters, MIS overview with health indicators, all statements from M6, ageing, drill-down to voucher detail, and a data-quality page; and the home page matches the approved design in docs/design/dashboard.md and dashboard-mockup.png in layout, wording and visual style (top bar with company and period switchers and sync status, LIVE ticker, plain-language sidebar, greeting, five KPI cards, sales vs expenses chart, "Needs your attention" panel, "Ask a question" panel), with real data from the M6 API in place of the sample figures.
+**Done when:** the React app supports login, entity and consolidated selection, period filters, MIS overview with health indicators, all statements from M6, ageing, drill-down to voucher detail, a data-quality page, and the Forex page per docs/design/dashboard.md Section 8 (FX-008 to FX-012); and the home page matches the approved design in docs/design/dashboard.md and dashboard-mockup.png in layout, wording and visual style (top bar with company and period switchers and sync status, LIVE ticker, plain-language sidebar, greeting, five KPI cards, sales vs expenses chart, "Needs your attention" panel, "Ask a question" panel), with real data from the M6 API in place of the sample figures.
 
 > Read docs/requirements.md Section 4.8, docs/design/dashboard.md with docs/design/dashboard-mockup.png, and the M6 API. Plan milestone M7: build the React dashboard with login, an entity/consolidated switcher, period and dimension filters, an MIS overview with KPI cards flagged good/bad, pages for trial balance, P&L, balance sheet, cash flow, receivables and payables ageing, drill-down from any figure to vouchers, and a data-quality page from M4. The home page must match the approved design element by element: layout, the exact wording, colours as Ant Design theme tokens, Indian number format (L / Cr), and the suggested question chips as listed in dashboard.md (no forecast chip until forecasting exists). Settle the open points in dashboard.md Section 6 in the plan. Use Ant Design and ECharts, TanStack Query, and generated API types. Show me the plan first.
 
@@ -101,6 +118,7 @@ Goal: load the client's Tally backup data (two companies) into MySQL and deliver
 
 **Done when:**
 - users ask questions in plain language and get correct answers with the SQL shown
+- currency questions are answered from the foreign-currency views (FX-013), e.g. "What is our net USD exposure today?" and "What were realised and unrealised exchange gains last quarter?"
 - budget questions are answered from the budget views (BUD-014), e.g. "Which expenses are over budget this quarter?" and "What is the projected full-year profit against budget?", with budget figures protected like actuals in every privacy mode
 - the guardrails from architecture.md Section 5.2 are enforced
 - all three privacy modes work, and `private` is the default:
@@ -164,3 +182,4 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | 2026-10-12 | 0.6 | Current milestone M4. M5 "Done when" protects the M4 validation and alert endpoints with `validation.view`. M6 reports calculate as of a date, like validation. |
 | 2026-10-12 | 0.7 | M9 points to docs/pilot-runbook.md. |
 | 2026-10-13 | 0.8 | New milestone M7b "Budget planning and analysis" (BUD-001 to BUD-016, ADR-026) between M7 and M8. M5 seeds `budget.view`, `budget.edit`, `budget.approve`. M8 answers budget questions and embeds the budget views. M9 includes budgets. |
+| 2026-10-16 | 0.9 | New step M4b "Consolidation" after pilot validation reaches zero, starting with the foreign-currency data layer (FX-001 to FX-007, ADR-037). M5 seeds `forex.view`; M6 adds the foreign-currency reports (FX-008 to FX-011); M7 the Forex page (dashboard.md Section 8); M8 currency questions (FX-013). |

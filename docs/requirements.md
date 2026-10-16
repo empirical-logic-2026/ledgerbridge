@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.7 (Draft) |
-| Date | 2026-10-13 |
+| Version | 0.20 (Draft) |
+| Date | 2026-10-16 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
 
@@ -58,6 +58,8 @@ The long-term vision (from client requirements) is for the platform to:
 | Viewer / Auditor | Read-only access to assigned reports and audit logs. |
 
 Budget permissions (BUD-013) are granted per role: by default Management / CXO and Finance Manager have `budget.view`, `budget.edit` and `budget.approve`; Accountant has `budget.view` and `budget.edit`; Viewer / Auditor has `budget.view`.
+
+Foreign-currency permission (FX-012): by default Management / CXO, Finance Manager and Accountant have `forex.view`; Viewer / Auditor has it too, read-only like everything they see.
 
 Roles are configurable; the list above is the default set.
 
@@ -256,6 +258,43 @@ Budgets are data the client enters or imports, kept alongside the data synced fr
 | BUD-015 | Importing source budgets is **read-only** towards the source (CON-008); imported budgets keep their source key and origin, and a re-import updates the draft it created without touching user edits made in later versions. | P1 |
 | BUD-016 | Budgets can be exported to Excel in the same template layout (RPT-009). | P2 |
 
+### 4.13 Foreign currency
+
+The books stay in the **base currency** (INR): base amounts are the source of truth for every statement, balance and validation. Foreign-currency information is kept **alongside** them, in its own columns and tables, for three uses: customer and supplier balances and dues in their own currency; exchange gains and losses, realised and unrealised; and currency exposure for management. Nothing here changes a base-currency figure. Figures the source calculates (its revaluation at current rates, its unadjusted gain or loss, its rate lists) are stored as **source figures with the date they apply to**, never as vouchers (ADR-037). Everything here respects the user's entity access (ACC-002).
+
+**Data**
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| FX-001 | Every foreign-currency voucher line keeps its **currency, foreign amount, exchange rate and base amount** (the base amount is the books' figure; the rate as the source wrote it, else base ÷ foreign). Ledgers kept in a foreign currency keep their currency and their opening balance in it; bill allocations keep their foreign amount. Base-currency lines keep none of these. | P1 |
+| FX-002 | A **foreign-currency transactions** table holds every foreign-currency entry: date, voucher, voucher type, ledger, party, currency, foreign amount, rate, base amount and whether it counts in the books. It is filled by the transform and replaced with its voucher, like the voucher's other child rows. | P1 |
+| FX-003 | **Exchange-rate history** per currency and date: from the source's own rate lists where they exist (Tally: the currency's standard, buying and selling rates), otherwise from the rates on its vouchers (per currency and date, weighted by foreign amount). Each rate records **where it came from** (the source's list and which kind, or vouchers and how many). | P1 |
+| FX-004 | **Revaluation snapshots:** the source's own calculated unrealised gain or loss per foreign-currency ledger (Tally: the "Unadjusted Forex Gain/Loss" line of its Ledger Vouchers report) at each month end, financial year end and validation date, with the ledger's foreign balance, book value and revalued value as the source shows them. Stored as source figures; **never** posted as vouchers or added to any base-currency balance. | P1 |
+| FX-005 | **Realised gains and losses** from (a) forex adjustment journals: lines posted to the ledgers set as forex gain/loss ledgers per entity (the source's own posted figures); and (b) bills settled at a different rate from the one they were raised at: the base amount of the settlement less the base amount of the settled part at the bill's original rate (calculated here). Each records its method, voucher, party, currency and date. | P1 |
+| FX-006 | **Balances in the original currency** per ledger and party **at any date**: the opening in that currency plus the foreign amounts of counted lines dated on or before it, like base-currency balances (as of a date). | P1 |
+
+**Validation**
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| FX-007 | Each foreign-currency ledger's **balance in its own currency** is compared with the source's own (Tally: the foreign part of its closing balance), in addition to the base-currency book value (VAL-013). A difference is a validation failure, counted and coded like the others. | P1 |
+
+**Reports**
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| FX-008 | **Party balances and ageing in their own currency:** per customer and supplier, the balance and outstanding bills by ageing bucket in the currency they are kept in, with the base-currency book value beside them. | P1 |
+| FX-009 | **Currency exposure** per currency: open receivables, payables and net position in the currency, with base-currency equivalents at book value and at the latest rate (showing that rate's date and source), per company and consolidated. | P1 |
+| FX-010 | **Realised vs unrealised gains and losses** by period, currency and party: realised from FX-005, unrealised from the latest revaluation snapshot in the period (FX-004), with drill-down to vouchers or to the snapshot. | P1 |
+| FX-011 | **Exchange-rate history** per currency, with each rate's source (FX-003). | P1 |
+
+**Access and AI**
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| FX-012 | Permission **`forex.view`** for every foreign-currency report and API, checked in the data plane on every request together with the user's entity access (ACC-001, ACC-002). | P1 |
+| FX-013 | **AI questions about currencies** (AI-001), e.g. "What is our net USD exposure today?", "Which customers owe us in euros, and how old are their bills?", "What were realised and unrealised exchange gains last quarter?". Foreign-currency figures get the same protection as other figures (AI-011 to AI-018). | P1 |
+
 ## 5. Non-functional requirements
 
 ### 5.1 Security
@@ -351,6 +390,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
+| 2026-10-16 | 0.20 | Section 4.13 Foreign currency (FX-001 to FX-013): foreign-currency data kept alongside the base-currency books, revaluation snapshots, realised and unrealised gains, exposure, `forex.view` (ADR-037). |
 | 2026-10-16 | 0.19 | VAL-013 per ledger; VAL-014: `validate compare-ledger`. |
 | 2026-10-16 | 0.18 | VAL-013: foreign-currency ledgers at the source's book value. |
 | 2026-10-16 | 0.17 | VAL-010: line attribution, cancelling pairs, unread lists, opening difference by primary group; stock ledgers at the stock value explained as in validation. |

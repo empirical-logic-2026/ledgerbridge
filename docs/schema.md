@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.17 (Draft) |
-| Date | 2026-10-13 |
+| Version | 0.29 (Draft) |
+| Date | 2026-10-16 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
 This document describes the database inside each **client deployment**. The control plane has its own small database (users, clients, licences), described in `docs/architecture.md` Section 3.
@@ -183,7 +183,7 @@ Unique: `(connection_id, source_entity_key)`.
 #### `ledgerbridge_accounting.currencies` and `ledgerbridge_accounting.exchange_rates`
 
 - `currencies`: `code CHAR(3) PK, name, decimal_places`.
-- `exchange_rates`: `id, from_code, to_code, rate_date, rate DECIMAL(20,8), source`. Unique `(from_code, to_code, rate_date)`.
+- `exchange_rates`: `id, from_code, to_code, rate_date, rate DECIMAL(20,8), source`. Unique `(from_code, to_code, rate_date)`. Replaced by the foreign-currency design in Section 4.8 (FX-003).
 
 ### 4.2 Chart of accounts
 
@@ -415,6 +415,75 @@ Unique `(budget_id, standard_account_id, account_group_id, ledger_id, cost_centr
 
 Append-only history of every change (BUD-006): `id, budget_id, budget_line_id NULL, month DATE NULL, action ENUM('create','edit','spread','import','upload','copy','revise','approve','lock','unlock','delete_line'), old_amount DECIMAL(20,4) NULL, new_amount DECIMAL(20,4) NULL, changed_by CHAR(36), changed_at DATETIME(6), note VARCHAR(255) NULL`. Written in the same transaction as the change; the application user has INSERT and SELECT only on this table. Index `(budget_id, changed_at)`.
 
+### 4.8 Foreign currency (proposed for M4b; FX-001 to FX-007, ADR-037)
+
+The base-currency columns (`amount`, `opening_balance`, bill `amount`) stay the books: every statement, balance and validation uses them. The columns and tables below hold foreign-currency information **beside** them and never change a base figure. Each object says how it is filled and whether its figures are **source-calculated** (stored as the source reports them, with the date they apply to) or **derived here** from stored lines. Amounts `DECIMAL(20,4)` in the canonical sign (debit positive); rates `DECIMAL(20,8)`, base currency per unit of the foreign currency. Proposed design, to be confirmed in the M4b plan.
+
+**Columns added to existing tables**
+
+| Table | Columns | Filled from (Tally) |
+| --- | --- | --- |
+| `currencies` (4.1) | `symbol` (as the source writes it, e.g. `$`), `name`, `decimal_places`; `code` is the ISO code | The source's currency masters (Tally `CURRENCY`: `EXPANDEDSYMBOL` → `code`, `ORIGINALNAME` → `symbol`, `MAILINGNAME` → `name`). |
+| `currency_sources` (new, small) | `entity_id, source_name, currency_code` | Maps the name a source uses (`$`, or `?` for Tally's rupee sign in exports) to a currency, per entity. |
+| `ledgers` | `currency_code` (already there, now filled), `opening_balance_fc NULL` | `CURRENCYNAME` through `currency_sources`; the foreign part of `OPENINGBALANCE` at the books' beginning. NULL / base currency for base-currency ledgers. |
+| `voucher_lines` | `currency_code NULL`, `exchange_rate NULL` (`amount_fc` is already there) | The entry's `AMOUNT` written as `-$100.00 @ Rs82.00/$ = -Rs8200.00`: foreign amount, rate, base amount. NULL on base-currency lines (FX-001). |
+| `bill_allocations` | `amount_fc NULL`, `currency_code NULL` | The bill allocation's amount in the same form (for ageing in own currency, FX-008). |
+
+**New tables**
+
+#### `ledgerbridge_accounting.fx_transactions` (derived here; FX-002)
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | BIGINT UNSIGNED PK | |
+| entity_id | BIGINT UNSIGNED | |
+| voucher_id | BIGINT UNSIGNED FK | `ON DELETE CASCADE`: replaced with the voucher (Section 8 rule 7). |
+| voucher_line_id | BIGINT UNSIGNED FK | |
+| voucher_date | DATE | |
+| voucher_type_id | BIGINT UNSIGNED FK | |
+| ledger_id | BIGINT UNSIGNED FK | |
+| party_id | BIGINT UNSIGNED NULL | The ledger's party, if any. |
+| currency_code | CHAR(3) | |
+| amount_fc | DECIMAL(20,4) | |
+| exchange_rate | DECIMAL(20,8) | |
+| amount | DECIMAL(20,4) | Base amount: the books' figure. |
+| is_effective | BOOLEAN | As the line. |
+
+One row per voucher line with a foreign amount, written by the transform in the same transaction as the voucher's other child rows. Indexes: `(entity_id, currency_code, voucher_date)`, `(party_id, voucher_date)`.
+
+#### `ledgerbridge_accounting.exchange_rates` (replaces the outline in 4.1; FX-003)
+
+`id, entity_id, currency_code, rate_date, rate DECIMAL(20,8), rate_kind ENUM('standard','buying','selling','vouchers'), source ENUM('source_rate_list','vouchers'), voucher_count INT NULL, connection_id, created_at, updated_at`. Unique `(entity_id, currency_code, rate_date, rate_kind)`.
+
+- **Source-calculated** (`source_rate_list`): the source's own rate lists, read with the currency masters (Tally: the currency's `DAILYSTDRATES.LIST`, `DAILYBUYINGRATES.LIST`, `DAILYSELLINGRATES.LIST`; their fields are taken from an export of a rate entered in TallyPrime, never guessed).
+- **Derived here** (`vouchers`): when the source has no rate for a currency and date, the foreign-amount-weighted rate of that day's foreign-currency lines, with `voucher_count`. Refreshed after each transform for the dates touched.
+
+#### `ledgerbridge_accounting.fx_revaluation_snapshots` (source-calculated; FX-004)
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| id | BIGINT UNSIGNED PK | |
+| entity_id | BIGINT UNSIGNED | |
+| ledger_id | BIGINT UNSIGNED FK | |
+| currency_code | CHAR(3) | |
+| as_of | DATE | Month end, financial year end or validation date (a reliable date in Educational mode, core/dates.py). |
+| balance_fc | DECIMAL(20,4) | The source's own balance in the currency (the foreign part of its closing balance). |
+| book_value | DECIMAL(20,4) | The source's base-currency value of its vouchers (closing balance less the calculated line). |
+| revalued_value | DECIMAL(20,4) | The source's closing balance at current rates. |
+| unrealised_gain_loss | DECIMAL(20,4) | The source's calculated "Unadjusted Forex Gain/Loss" for the ledger (canonical sign: credit = gain). |
+| connection_id, read_at, origin | | When and from where it was read ([SRC] style). |
+
+Unique `(ledger_id, as_of)`; a later read for the same date replaces the row. Written by the sync after each full sync and by validation for its dates; **never** turned into voucher lines and never part of a base-currency balance.
+
+#### `ledgerbridge_accounting.fx_realised` (FX-005)
+
+`id, entity_id, voucher_id, voucher_line_id NULL, ledger_id, party_id NULL, currency_code, on_date, amount DECIMAL(20,4)` (canonical: credit = gain), `method ENUM('adjustment_journal','bill_settlement')`, `bill_name NULL`.
+
+- `adjustment_journal` (**source figures**): lines posted to the entity's forex gain/loss ledgers (setting `fx.gain_loss_ledgers` in `ledgerbridge_system.settings`, per entity), with the party and currency of the foreign-currency line they adjust.
+- `bill_settlement` (**derived here**): for a bill settled against a foreign-currency bill at another rate: base amount of the settlement less the settled part's base amount at the bill's original rate.
+
+Rebuilt for a voucher whenever the voucher or the bill it settles changes.
+
 ## 5. `ledgerbridge_system`
 
 ### 5.1 Integration
@@ -472,7 +541,7 @@ A run is `failed` when any error-severity issue is recorded, else `passed`. `che
 | --- | --- |
 | `ledgerbridge_system.users` | `id CHAR(36) PK` (same ID as the control plane), `email, display_name, status, password_hash NULL` (`password_hash` used only when `AUTH_MODE=local`) |
 | `ledgerbridge_system.roles` | `id, code, name, is_system` |
-| `ledgerbridge_system.permissions` | `id, code` (e.g. `report.pnl.view`, `ai.query`, `connections.manage`, `validation.view`, `budget.view`, `budget.edit`, `budget.approve`) |
+| `ledgerbridge_system.permissions` | `id, code` (e.g. `report.pnl.view`, `ai.query`, `connections.manage`, `validation.view`, `budget.view`, `budget.edit`, `budget.approve`, `forex.view`) |
 | `ledgerbridge_system.role_permissions` | `role_id, permission_id` |
 | `ledgerbridge_system.user_roles` | `user_id, role_id` |
 | `ledgerbridge_system.user_entity_access` | `user_id, entity_id, branch_id NULL` (NULL branch = all branches) |
@@ -527,6 +596,19 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | `ledgerbridge_reporting.v_budget_variance_alerts` | View | Lines exceeding the active `budget_alert_rules`, for the alert engine and "Needs your attention" (BUD-011). |
 
 All budget views get entries in `semantic_catalog` so the AI can answer budget questions (BUD-014). Graph data (BUD-012) comes from these views: monthly bars and last-year line from `v_budget_vs_actual_monthly`, cumulative lines from its running totals, the waterfall from `v_budget_vs_actual_period` by account group, the heatmap from `v_budget_vs_actual_monthly` by account and month.
+
+**Foreign-currency views (proposed for M6; FX-008 to FX-011, FX-013).** Same rules as the other reports: as of a date, effective lines only, the user's entity access applied by the API (and injected into AI queries); `forex.view` required (FX-012).
+
+| Object | Type | Purpose |
+| --- | --- | --- |
+| `ledgerbridge_reporting.v_fx_party_balances` | View | Per entity, party, ledger and currency, as of a date: `balance_fc` (opening + counted foreign amounts), `book_value` (base), latest rate with its date and source, `value_at_latest_rate`. |
+| `ledgerbridge_reporting.v_fx_receivables_ageing` | View | Outstanding customer bills in their own currency by ageing bucket, with base book value. |
+| `ledgerbridge_reporting.v_fx_payables_ageing` | View | The same for suppliers. |
+| `ledgerbridge_reporting.v_fx_exposure` | View | Per entity (and consolidated) and currency: `receivables_fc, payables_fc, net_fc`, base at book value and at the latest rate (rate date and source shown). |
+| `ledgerbridge_reporting.v_fx_gains` | View | By period (month, quarter, year), currency and party: `realised` (from `fx_realised`), `unrealised` (latest `fx_revaluation_snapshots` row in the period), `total`; each row says which figures are source-calculated. |
+| `ledgerbridge_reporting.v_fx_rates` | View | Exchange-rate history per currency and date with `rate_kind` and `source`. |
+
+All foreign-currency views get entries in `semantic_catalog` so the AI can answer currency questions (FX-013).
 
 ## 7. Tally to canonical mapping
 
@@ -702,6 +784,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-16 | 0.29 | Section 4.8 Foreign currency (proposed for M4b): currency columns on ledgers, voucher lines and bill allocations, `currency_sources`, `fx_transactions`, `exchange_rates` with each rate's source, `fx_revaluation_snapshots` (source-calculated), `fx_realised`; foreign-currency views in Section 6 (M6); `forex.view` (FX-001 to FX-013, ADR-037). |
 | 2026-10-16 | 0.28 | Section 7.5: foreign-currency ledgers one by one; the Ledger Vouchers report's export. |
 | 2026-10-16 | 0.27 | `voucher_lines.amount_fc` filled; Section 7.5: foreign currency; `foreign_ledgers_at_book_value`. |
 | 2026-10-16 | 0.26 | Section 7.5: how Tally compares names; deleted masters in reference resolution. |
