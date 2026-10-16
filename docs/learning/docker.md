@@ -427,6 +427,22 @@ docker run --rm -v "C:/ledgerbridge/docs/diagrams:/data" ghcr.io/mermaid-js/merm
 
 See which images you have: `docker image ls ghcr.io/mermaid-js/mermaid-cli/mermaid-cli`.
 
+### Word and PDF copies: `./dev.ps1 docs-export`
+
+The same idea with **pandoc**, the document converter, from its official image `pandoc/latex` (pandoc plus a LaTeX installation for PDFs), pinned to `3.5`:
+
+```powershell
+docker run --rm -v "C:/ledgerbridge/docs:/data" -w /data/rules pandoc/latex:3.5 `
+    validation-and-conversion-rules.md -o /data/export/validation-and-conversion-rules.pdf `
+    --toc --pdf-engine=xelatex --resource-path=.:/data/rules
+```
+
+- `-v` mounts the whole `docs` folder as `/data`, so a document and the diagrams it links (`../diagrams/*.png`) are both visible; `-w` (working directory) is the document's own folder, so its relative image links resolve.
+- Everything after the image name is passed to pandoc: the input file, the output (`.docx` or `.pdf`, by its extension), a table of contents, and for PDFs the LaTeX engine (`xelatex`, which handles Unicode).
+- The first run downloads the image (about 1 GB); later runs reuse it. Like mermaid-cli it is not part of the LedgerBridge stack and starts nothing else.
+
+See it: `docker image ls pandoc/latex`.
+
 ## 10. Problems we actually hit
 
 | Symptom | Cause | Fix |
@@ -468,3 +484,4 @@ See which images you have: `docker image ls ghcr.io/mermaid-js/mermaid-cli/merma
 | 2026-10-12 | M4: the worker validates after every sync and deletion check and raises alerts; `./dev.ps1 validate` runs `workers.cli validate` through `docker compose exec`. For `sync` and `validate`, exit code 1 now means "ran, but checks failed" and is reported as such instead of as a Docker failure. |
 | 2026-10-12 | M3 review: the worker also runs the hourly deletion check (section 6.7); `./dev.ps1 sync deletions` runs one through `docker compose exec`; `status` shows both schedules. |
 | 2026-10-12 | M3: the `worker` starts with `up` and runs Celery Beat (`-B`) for the scheduled sync; `./dev.ps1 sync`; `status` shows each connection's last and next sync; `PYTHONPATH=/app` in the Dockerfile. |
+| 2026-10-16 | `./dev.ps1 docs-export`: Word and PDF copies with the official `pandoc/latex:3.5` image in a throwaway container (section 9). |

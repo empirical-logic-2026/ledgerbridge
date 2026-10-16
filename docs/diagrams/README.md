@@ -10,6 +10,7 @@ Pictures of the project: what the database holds, who may read it, and how data 
 | Databases and users | **Generated** the same way (tables from the models, users and rights from `deploy/mysql/init/01-schemas.sh`) | `schema-databases.mmd` |
 | Budget tables | Written by hand from [schema.md](../schema.md) Section 4.7: **planned**, not built yet | `er-budgets-planned.mmd` |
 | Data flow, levels 0 and 1 | Written by hand | `dataflow-context.mmd`, `dataflow-level1.mmd` |
+| Rule flowcharts: which vouchers count, reference resolution, foreign-currency book value, stock movement | Written by hand for the [rulebook](../rules/validation-and-conversion-rules.md) | `rules-vouchers-count.mmd`, `rules-reference-resolution.mmd`, `rules-forex-book-value.mmd`, `rules-stock-movement.mmd` |
 
 `mermaid-config.json` sets how the images are drawn (each at its natural size, so large diagrams stay readable).
 

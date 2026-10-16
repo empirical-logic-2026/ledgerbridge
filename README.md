@@ -2,6 +2,8 @@
 
 Connects to accounting systems (Tally first), stores their data in MySQL, and provides MIS dashboards, reporting and AI querying. See `docs/` for requirements, architecture, schema and roadmap; [docs/codebase-guide.md](docs/codebase-guide.md) explains in plain language what every folder and file is for.
 
+**Knowledge base:** [the rulebook](docs/rules/validation-and-conversion-rules.md) (every rule for converting and validating Tally data), [the schema reference](docs/database/schema-reference.md) (every table and column), [the project history](docs/project-history.md) and the [progress log](docs/progress-log.md). Word and PDF copies are in `docs/export/` (`./dev.ps1 docs-export`).
+
 ## Prerequisites
 
 - Docker Desktop
@@ -47,6 +49,7 @@ Create an env file by copying the matching example (`.env.test.example` → `.en
 | `./dev.ps1 validate -Company "LedgerBridge Test Co"` | Checks the synced books as of today: every voucher balances, the trial balance balances, and each ledger's balance equals Tally's own closing balance (*Profit & Loss A/c* is reconciled with the computed profit). Prints counts, check codes and pass/fail only. Every sync also validates afterwards; failures raise an alert. Details with amounts: `http://127.0.0.1:8001/api/validation/status`, `/api/validation/runs/{id}`, `/api/alerts`. |
 | `./dev.ps1 seed-test-data` | Fills **LedgerBridge Test Co** in TallyPrime with repeatable test data: ledgers, GST sales and purchases, bills, a cancelled voucher, two altered vouchers, a deleted voucher, and more. Safe to re-run: only missing items are created. `seed-test-data create-only` skips the alterations, cancellation and deletion, so you can sync the vouchers before they change. The deleted voucher leaves an empty stock group, *lb-seed DEL-1 deleted*, so re-runs don't create it again. Test environment only; it refuses unless that company is the only one loaded (ADR-014). Prints the Trial Balance you should then see in TallyPrime. |
 | `./dev.ps1 diagrams` | Regenerates the ER and database diagrams in `docs/diagrams/` from the models, then draws every diagram as SVG and PNG with the mermaid-cli Docker image (no database or Tally needed). See [docs/diagrams/README.md](docs/diagrams/README.md). |
+| `./dev.ps1 docs-export` | Word and PDF copies of the rulebook, schema reference and project history in `docs/export/`, with diagrams, made by the official pandoc Docker image (run `diagrams` first). |
 | `./dev.ps1 test` | Backend lint, unit tests and, if the stack is up, integration tests; then frontend lint and tests. **Test environment only.** The migration test resets the test database tables. |
 | `./dev.ps1 down` | Stops and removes the containers. Data volumes are kept. |
 | `./dev.ps1 up -Env pilot` | The same commands against `.env.pilot` (developer only; `test` refuses pilot). Outside the test environment the commands print no company, ledger or party names and no error messages, only counts and pass/fail, and `trial-balance` refuses to run. The steps are in [docs/pilot-runbook.md](docs/pilot-runbook.md). |

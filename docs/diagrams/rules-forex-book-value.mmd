@@ -1,0 +1,12 @@
+%% The book value of a foreign-currency ledger (rulebook Section 7, ADR-035 to ADR-038). Written by hand.
+flowchart TD
+    A([A ledger in Tally's closing balances]) --> B{"CURRENCYNAME differs from the base currency's?<br/>(the currency of the ledgers directly under Primary)"}
+    B -- no --> N[Compared as usual:<br/>Tally's closing balance against ours]
+    B -- yes --> C[Foreign-currency ledger]
+    C --> D["Tally's closing balance = revalued at current rates<br/>(group totals too): information only"]
+    C --> E["Read once per ledger: Tally's own vouchers on it<br/>(its ledger-voucher collection, month by month,<br/>optional and cancelled ones count nothing)"]
+    E --> F["Book value at a date =<br/>its opening at the books' beginning<br/>+ total of those vouchers dated up to the date"]
+    F --> G{Equal to ours<br/>within the tolerance?}
+    G -- yes --> P["Pass; note LB-VAL-022<br/>at every date checked: today and each year end"]
+    G -- no --> Q["closing_mismatch / year_end_mismatch<br/>LB-VAL-004 / LB-VAL-006"]
+    D -.-> H["Ledger Vouchers report: a calculated<br/>Unadjusted Forex Gain/Loss line on its To date<br/>(not a voucher; never counted)"]

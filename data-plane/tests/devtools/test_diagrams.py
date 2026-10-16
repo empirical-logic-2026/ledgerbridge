@@ -40,3 +40,12 @@ def test_schema_diagram_limits_ai_to_reporting() -> None:
     text = diagrams.schema_diagram()
     ai_lines = [line for line in text.splitlines() if line.strip().startswith("ai_ro ")]
     assert ai_lines == ['    ai_ro ==>|"read only:<br/>reporting ONLY"| ledgerbridge_reporting']
+
+
+def test_schema_reference_is_up_to_date() -> None:
+    """docs/database/schema-reference.md is generated from the models: run ./dev.ps1 diagrams
+    and commit the result when the models change."""
+    from devtools import schema_reference
+
+    current = schema_reference.OUT.read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert current == schema_reference.generate(), "out of date; run ./dev.ps1 diagrams"

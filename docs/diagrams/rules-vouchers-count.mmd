@@ -1,0 +1,19 @@
+%% Which vouchers count, in the books and in stock (rulebook Section 4). Written by hand.
+flowchart TD
+    A([A voucher from Tally]) --> B{Deleted in Tally?}
+    B -- yes --> X1[Kept, soft-deleted:<br/>counts nowhere]
+    B -- no --> C{Cancelled?}
+    C -- yes --> X2[Counts nowhere<br/>its lines are not effective]
+    C -- no --> D{Optional?}
+    D -- yes --> X3[Counts nowhere<br/>not in balances, stock or counts of the books]
+    D -- no --> E{"Its voucher type, by the standard type it derives from"}
+    E -- "Memorandum, Reversing Journal" --> X4[Not in the books<br/>never in any balance, even on its own date]
+    E -- "Sales/Purchase Order, Delivery/Receipt Note,<br/>Rejections, Material In/Out, Stock Journal" --> F[Not in the books]
+    E -- "Sales, Purchase, Payment, Receipt, Journal, Contra,<br/>Debit/Credit Note, custom types under them" --> G[In the books]
+    G --> H{Post-dated?}
+    H -- yes --> I[Counts from its own date<br/>validation and reports are as of a date]
+    H -- no --> I
+    F --> S{Moves stock?}
+    G --> S
+    S -- "orders, memorandum" --> X5[No stock movement]
+    S -- "notes, rejections, stock journals, Material In/Out,<br/>invoices" --> T[Stock: see the stock-movement flowchart]
