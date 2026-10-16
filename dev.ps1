@@ -22,6 +22,8 @@
     ./dev.ps1 transform rebuild                 (transform every stored record again; no Tally)
     ./dev.ps1 transform explain [-CheckSource]  (why references didn't resolve; counts only)
     ./dev.ps1 validate analyse                  (test explanations for validation mismatches)
+    ./dev.ps1 validate compare-ledger -Ledger 88 [-From 2020-04-01] [-To 2021-04-01]
+                                                (a ledger's vouchers in Tally against ours; details to reports/<env>/private/)
     ./dev.ps1 fields
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
@@ -94,7 +96,15 @@ param(
 
     # For `sync full`: fetch again every chunk of an interrupted full sync from this date
     # (YYYY-MM-DD), e.g. a damaged range; earlier completed chunks are kept.
+    # For `validate compare-ledger`: compare from this date (default: the books' beginning).
     [string]$From = '',
+
+    # For `validate compare-ledger`: compare up to this date (default: today).
+    [string]$To = '',
+
+    # For `validate compare-ledger`: the ledger's id (as reports and `validate analyse`
+    # name ledgers).
+    [int]$Ledger = 0,
 
     # For `sync full`: ignore an interrupted full sync's progress and fetch everything again.
     [switch]$Restart,
@@ -416,6 +426,38 @@ switch ($Command) {
         # on their own; this runs it on demand.
         Assert-EnvFile
         Assert-ApiRunning
+        if ($Service -eq 'compare-ledger') {
+            # One ledger's vouchers in Tally (read-only) against ours, voucher by voucher.
+            # Printed: counts by voucher type and month, kinds only. The details (dates,
+            # voucher numbers, both amounts) go to a local file under reports/<env>/private/
+            # (git-ignored), for you to check in Tally: only its path is printed.
+            if ($Ledger -le 0) { throw 'Usage: ./dev.ps1 validate compare-ledger -Ledger <id> [-From YYYY-MM-DD] [-To YYYY-MM-DD]' }
+            $compareArgs = @('python', '-m', 'workers.cli', 'compare-ledger', '--connection', $connection, '--ledger', "$Ledger", '--private')
+            if ($From) { $compareArgs += @('--from', $From) }
+            if ($To) { $compareArgs += @('--to', $To) }
+            $encoding = [Console]::OutputEncoding
+            [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+            try {
+                $ErrorActionPreference = 'Continue'
+                $output = @(& $stack -Env $Env exec -T api @compareArgs)
+                $code = $LASTEXITCODE
+                $ErrorActionPreference = 'Stop'
+            }
+            finally { [Console]::OutputEncoding = $encoding }
+            $marker = "PRIVATE`t"
+            $private = @($output | Where-Object { "$_".StartsWith($marker) } | ForEach-Object { "$_".Substring($marker.Length) })
+            $output | Where-Object { -not "$_".StartsWith($marker) } | ForEach-Object { Write-Host $_ }
+            if ($code -ne 0) { throw "compare-ledger failed (exit $code): see the message above." }
+            if ($private.Count -gt 0) {
+                $folder = Join-Path (Join-Path (Join-Path $root 'reports') $Env) 'private'
+                New-Item -ItemType Directory -Force -Path $folder | Out-Null
+                $file = Join-Path $folder ('compare-ledger-{0}-{1:yyyy-MM-dd-HHmmss}.tsv' -f $Ledger, (Get-Date))
+                [System.IO.File]::WriteAllText($file, (($private -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
+                Write-Host ''
+                Write-Host "Details (dates, voucher numbers, amounts; local only, never share): $file"
+            }
+            return
+        }
         if ($Service -eq 'analyse') {
             # `validate analyse`: tests explanations for every validation mismatch (counts,
             # patterns and Tally's standard names only). Reads Tally's own figures (read-only),

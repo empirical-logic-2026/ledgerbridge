@@ -218,6 +218,7 @@ class TallyConnector:
         stock_keys: set[str] = set()
         ledger_openings: dict[str, Decimal] = {}
         currencies: dict[str, str] = {}
+        names: dict[str, str] = {}
         body = self._company_post(
             entity,
             lambda name: envelopes.collection_request(
@@ -231,6 +232,7 @@ class TallyConnector:
             ledger_openings[key] = opening
             parent = (element.findtext("PARENT") or "").strip()
             currencies[key] = (element.findtext("CURRENCYNAME") or "").strip()
+            names[key] = parser.object_name(element) or ""
             if parent in in_stock_group:
                 stock_keys.add(key)
                 stock_ledgers[0] += opening
@@ -278,7 +280,7 @@ class TallyConnector:
             ledgers=ledgers,
             profit_carriers=frozenset(carriers),
             foreign_ledgers=frozenset(foreign),
-            book_values=self._book_values(entity, period, foreign, ledgers),
+            book_values=self._book_values(entity, period, foreign, ledgers, names),
             opening_stock=opening_stock,
             closing_stock=closing_stock,
             opening_difference=difference,
@@ -297,23 +299,55 @@ class TallyConnector:
         period: tuple[date, date],
         foreign: set[str],
         ledgers: Mapping[str, Decimal],
+        names: Mapping[str, str],
     ) -> dict[frozenset[str], Decimal]:
-        """Tally's book value of its foreign-currency ledgers together: their closing
-        balances, which Tally revalues at current rates (its group totals too), plus its
-        trial balance's "Unadjusted Forex Gain/Loss" line, which holds the difference to the
-        amounts entered (checked on the test company, 2026-10-16; pilot: Ledger Vouchers
-        equalled the amounts entered)."""
-        if not foreign:
-            return {}
+        """Tally's book value of each foreign-currency ledger (its vouchers only): its
+        closing balance, which Tally revalues at current rates, less the calculated
+        "Unadjusted Forex Gain/Loss" line its Ledger Vouchers report shows on the To date
+        (checked on the test company, 2026-10-16; pilot: Ledger Vouchers without that line
+        equalled ours)."""
+        values: dict[frozenset[str], Decimal] = {}
+        for key in sorted(foreign):
+            line = self.unadjusted_forex(entity, names[key], period)
+            values[frozenset({key})] = ledgers[key] - (line or Decimal(0))
+        return values
+
+    def unadjusted_forex(
+        self, entity: SourceEntity, ledger: str, period: tuple[date, date]
+    ) -> Decimal | None:
+        """The calculated "Unadjusted Forex Gain/Loss" line of a ledger's Ledger Vouchers
+        report for the period (canonical sign), or None when Tally shows none. It is no
+        voucher: Tally adds it on the report's To date for a foreign-currency ledger."""
         body = self._company_post(
-            entity,
-            lambda name: envelopes.report_request(envelopes.TRIAL_BALANCE, name, period),
+            entity, lambda name: envelopes.ledger_report_request(name, ledger, period)
         )
-        unadjusted = sum(
-            (amount for name, amount in report_lines(body) if name.casefold() == UNADJUSTED),
-            Decimal(0),
-        )
-        return {frozenset(foreign): sum((ledgers[k] for k in foreign), unadjusted)}
+        found = None
+        for row in report_rows(body):
+            if row.account.casefold() == UNADJUSTED and not row.voucher_type:
+                found = (found or Decimal(0)) + row.amount
+        return found
+
+    def ledger_vouchers(
+        self, entity: SourceEntity, ledger: str, start: date, end: date
+    ) -> list[ET.Element]:
+        """The vouchers of one ledger as Tally lists them (month by month, so Educational
+        mode answers): read-only, for `validate compare-ledger`."""
+        out: list[ET.Element] = []
+        for month in month_periods(start, end):
+            body = self._company_post(
+                entity,
+                lambda name, month=month: envelopes.collection_request(
+                    envelopes.LEDGER_VOUCHERS,
+                    company=name,
+                    period=(month.start, month.end),
+                    child_of=ledger,
+                ),
+            )
+            for element in parser.objects(parser.parse_response(body), "VOUCHER"):
+                dated = parser.tally_date(parser.text_of(element, "DATE"))
+                if dated is None or start <= dated <= end:
+                    out.append(element)
+        return out
 
     def _group_balances(self, entity: SourceEntity, period: tuple[date, date]) -> list["_Group"]:
         """Every group with its parent, reserved name and Tally's own opening and closing
@@ -752,25 +786,39 @@ def _foreign(currencies: Mapping[str, str], carriers: Iterable[str]) -> set[str]
     return {k for k, c in currencies.items() if c and base is not None and c != base}
 
 
-def report_lines(body: bytes) -> list[tuple[str, Decimal]]:
-    """Lines of one of Tally's own reports (DSPACCNAME followed by DSPACCINFO): (the name
-    shown, canonical amount from its debit and credit columns)."""
-    lines: list[tuple[str, Decimal]] = []
-    name = None
+@dataclass(frozen=True)
+class ReportRow:
+    """One row of Tally's Ledger Vouchers report: the date and other account shown, the
+    voucher type (empty for a calculated line) and the canonical amount."""
+
+    on: str
+    account: str
+    voucher_type: str
+    amount: Decimal
+
+
+def report_rows(body: bytes) -> list[ReportRow]:
+    """Rows of Tally's Ledger Vouchers report export (DSPVCHDATE, DSPVCHLEDACCOUNT,
+    DSPVCHTYPE, DSPVCHDRAMT, DSPVCHCRAMT in turn)."""
+    rows: list[ReportRow] = []
+    current: dict[str, str] = {}
     for element in parser.parse_response(body).iter():
-        if element.tag == "DSPACCNAME":
-            name = (element.findtext("DSPDISPNAME") or "").strip()
-        elif element.tag == "DSPACCINFO" and name is not None:
-            total = sum(
-                (
-                    tally_amount(element.findtext(path)) or Decimal(0)
-                    for path in ("DSPCLDRAMT/DSPCLDRAMTA", "DSPCLCRAMT/DSPCLCRAMTA")
-                ),
-                Decimal(0),
+        if element.tag in ("DSPVCHDATE", "DSPVCHLEDACCOUNT", "DSPVCHTYPE", "DSPVCHDRAMT"):
+            current[element.tag] = (element.text or "").strip()
+        elif element.tag == "DSPVCHCRAMT":
+            total = (tally_amount(current.get("DSPVCHDRAMT")) or Decimal(0)) + (
+                tally_amount(element.text) or Decimal(0)
             )
-            lines.append((name, -total if total else Decimal(0)))
-            name = None
-    return lines
+            rows.append(
+                ReportRow(
+                    current.get("DSPVCHDATE", ""),
+                    current.get("DSPVCHLEDACCOUNT", ""),
+                    current.get("DSPVCHTYPE", ""),
+                    -total if total else Decimal(0),
+                )
+            )
+            current = {}
+    return rows
 
 
 def _stock_in_hand(groups: Iterable[_Group]) -> set[str]:

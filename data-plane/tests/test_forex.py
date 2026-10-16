@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from connectors.base import SourceBalances
-from connectors.tally.connector import TallyConnector, _foreign, report_lines
+from connectors.tally.connector import TallyConnector, _foreign, report_rows
 from connectors.tally.signs import tally_amount, tally_foreign_amount
 from core.models import accounting as A  # noqa: N812
 from core.models import system as S  # noqa: N812
@@ -47,7 +47,7 @@ def _replaying() -> TallyConnector:
         "LBGroupBalances": "group_balances.xml",
         "LBLedgerBalances": "ledger_balances.xml",
         "LBStockValues": "stock_values.xml",
-        "Trial Balance": "trial_balance.xml",
+        "Ledger Vouchers": "ledger_vouchers_report.xml",
     }
 
     def answer(request: httpx.Request) -> httpx.Response:
@@ -59,18 +59,23 @@ def _replaying() -> TallyConnector:
     )
 
 
-def test_the_book_value_is_the_revalued_balance_plus_the_unadjusted_forex() -> None:
+def test_the_book_value_is_the_revalued_balance_less_the_calculated_line() -> None:
     """Tally values the dollar customer at its dollar amount ($0, so Rs 0) in its closing
-    balance and in its group totals, and shows the Rs 8,200 entered as "Unadjusted Forex
-    Gain/Loss" in its trial balance: the book value is their sum."""
+    balance and in its group totals; its trial balance shows the Rs 8,200 entered as
+    "Unadjusted Forex Gain/Loss", and the customer's Ledger Vouchers report shows the sale
+    and a calculated line of that name, Cr 8,200, on the To date. The book value, per
+    ledger, is the closing balance less that calculated line: its vouchers only."""
     connector = _replaying()
     (entity,) = connector.list_entities()
     balances = connector.closing_balances(entity, AS_OF)
     (key,) = balances.foreign_ledgers
     assert balances.ledgers[key] == 0
     assert balances.book_values == {frozenset({key}): Decimal("8200.00")}
-    lines = dict(report_lines((FOREX_FIXTURES / "trial_balance.xml").read_bytes()))
-    assert lines["Unadjusted Forex Gain/Loss"] == Decimal("8200.00")  # a debit
+    rows = report_rows((FOREX_FIXTURES / "ledger_vouchers_report.xml").read_bytes())
+    assert [(r.account, r.voucher_type, r.amount) for r in rows] == [
+        ("Sales - Services", "Sale", Decimal("8200.00")),
+        ("Unadjusted Forex Gain/Loss", "", Decimal("-8200.00")),  # calculated, no voucher
+    ]
 
 
 def _validate(db: Session, connection: S.Connection, book: Decimal):  # noqa: ANN202

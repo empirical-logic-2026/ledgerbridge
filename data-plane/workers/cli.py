@@ -18,6 +18,7 @@
     python -m workers.cli transform-explain --connection tally-pilot [--check-source]
     python -m workers.cli fields [--entity-id 3]
     python -m workers.cli validate-analyse --connection tally-pilot [--entity NAME]
+    python -m workers.cli compare-ledger --connection tally-pilot --ledger 88 [--from D --to D]
     python -m workers.cli promote-field --field-id 12 --code SALESMAN --name "Salesman"
 
 `extract` only stores raw records (M1); `sync` also transforms them (M3); `check-deletions`
@@ -87,6 +88,7 @@ from core.transform import trial_balance
 from core.validation import ValidationReport
 from workers import style
 from workers.analyse import analyse
+from workers.compare import compare_ledger
 from workers.entities import Labels, by_names, configured, select_entities, to_config
 from workers.extract import connector_for, get_or_create_connection, run_extract
 from workers.failures import failure_breakdown, format_group, warning_breakdown
@@ -236,6 +238,24 @@ def _parser() -> argparse.ArgumentParser:
     analyse.add_argument("--entity", action="append", help="entity name (repeatable)")
     analyse.add_argument("--as-of", type=date.fromisoformat, help="as of this date (default today)")
     analyse.add_argument("--job", help="job id: also write the output to sync_logs, for `watch`")
+
+    compare = sub.add_parser(
+        "compare-ledger",
+        help="one ledger's vouchers in the source against ours, voucher by voucher (counts "
+        "only; --private adds detail lines for a local file)",
+    )
+    connection_args(compare)
+    compare.add_argument("--ledger", type=int, required=True, help="the ledger's id here")
+    compare.add_argument(
+        "--from", dest="start", type=date.fromisoformat, help="from (default: books)"
+    )
+    compare.add_argument("--to", dest="end", type=date.fromisoformat, help="to (default: today)")
+    compare.add_argument(
+        "--private",
+        action="store_true",
+        help="also print the details (dates, voucher numbers, amounts) as lines starting "
+        "PRIVATE<TAB>, for dev.ps1 to write to reports/<env>/private/ and never show",
+    )
 
     explain = sub.add_parser(
         "transform-explain",
@@ -470,6 +490,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _transform_explain(session, args)
     if args.command == "validate-analyse":
         return _validate_analyse(session, args)
+    if args.command == "compare-ledger":
+        return _compare_ledger(session, args)
     if args.command == "summary":
         return _summary(session)
     if args.command == "report":
@@ -1388,6 +1410,56 @@ def _validate_analyse(session: Session, args: argparse.Namespace) -> int:
         ):
             print(line, flush=True)
     print("Result: analyse finished")
+    return 0
+
+
+def _compare_ledger(session: Session, args: argparse.Namespace) -> int:
+    """One ledger's vouchers in the source against ours (workers/compare.py). Counts by
+    voucher type and month only; with --private, the details as PRIVATE lines for a local
+    file (never names in any case: the source's own voucher numbers and amounts only)."""
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    ledger = session.get(A.Ledger, args.ledger)
+    key = (
+        session.scalar(
+            select(A.EntitySource.source_entity_key).where(
+                A.EntitySource.entity_id == ledger.entity_id,
+                A.EntitySource.connection_id == connection.id,
+            )
+        )
+        if ledger is not None
+        else None
+    )
+    if ledger is None or key is None:
+        print(f"No ledger {args.ledger} on this connection.", file=sys.stderr)
+        return 2
+    connector = connector_for(session, connection)
+    entities = select_entities(connector, connection, keys=[key])
+    if not entities:
+        print("The ledger's company isn't loaded in the source.", file=sys.stderr)
+        return 2
+    entity = entities[0]
+    rule = date_rule(connector, entity)
+    end = rule.on_or_before(args.end or date.today())
+    start = args.start or session.get_one(A.Entity, ledger.entity_id).books_from or end
+    labels = Labels(session, connection)
+    print(
+        f"{labels.for_key(key, ledger.entity_id)}: comparing ledger {ledger.id} voucher by voucher"
+    )
+    if end != (args.end or date.today()):
+        print(f"To {end}: {rule.describe()}")
+    result = compare_ledger(
+        session, connector, entity, ledger.entity_id, ledger.id, start, end,  # type: ignore[arg-type]
+        tolerance_for(connection), _progress,
+    )  # fmt: skip
+    for line in result.summary:
+        print(f"  {line}")
+    if args.private:
+        for line in result.private:
+            print(f"PRIVATE\t{line}")
+    print("Result: compare finished")
     return 0
 
 
