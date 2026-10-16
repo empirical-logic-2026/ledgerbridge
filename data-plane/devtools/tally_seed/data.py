@@ -23,6 +23,10 @@ Tally's own balances, 2026-10-14; schema.md 7.4):
   accounts integrated with inventory, Tally's trial balance, balance sheet and profit use
   the items' values and leave the ledger out; the ledger itself keeps its own opening.
   Tally refuses vouchers posting to it ("Ledger under Stock-in-Hand");
+- names (2026-10-16): a ledger with an alias, and a journal naming it by the alias (Tally
+  stores it naming the ledger). "Party Lima" was imported again as "Party Lima ", "PARTY
+  LIMA" and "Party  Lima": Tally took each for the existing ledger (its name list keeps the
+  last), and refused a ledger whose alias was another ledger's name;
 - effective dates (2026-10-15): journals and sales dated on one side of a month end and
   effective on the other, regular and optional: Tally counts them by their date.
 """
@@ -47,6 +51,7 @@ class Ledger:
     bill_wise: bool = False
     gst_duty_head: str | None = None  # "Central Tax" / "State Tax" for GST ledgers
     predefined: bool = False  # exists in every Tally company (e.g. Cash); only altered
+    aliases: tuple[str, ...] = ()  # other names (Tally's alias names)
 
 
 @dataclass(frozen=True)
@@ -199,6 +204,11 @@ LEDGERS: tuple[Ledger, ...] = (
     Ledger("Stock Ledger", "Inventories", _d("1500"), "Dr"),
 )
 STOCK_IN_HAND = ("Stock-in-Hand", "Inventories")  # Tally's reserved group, renamed
+# --- names (2026-10-16): how Tally resolves a name used in a voucher (experiments) ------
+NAME_LEDGERS = (
+    Ledger("Party Kilo", "Sundry Debtors", aliases=("Kilo Alias",)),
+    Ledger("Party Lima", "Sundry Debtors"),
+)
 
 
 def _sale(marker: str, on: date, party: str, bill: str, net: str, tax: str) -> Voucher:
@@ -513,8 +523,11 @@ VOUCHERS: tuple[Voucher, ...] = (
            _bill("PI-5", "250", "Agst Ref")),
 )  # fmt: skip
 
+# A voucher naming a ledger by its alias.
+NAME_VOUCHERS = (_journal("NAME-ALIAS-1", "Journal", date(2026, 9, 1), "Kilo Alias", "Cash", "21"),)
+
 SEED = SeedData(
-    ledgers=LEDGERS,
+    ledgers=(*LEDGERS, *NAME_LEDGERS),
     units=("Nos",),
     stock_items=(
         StockItem("Widget", "Nos"),
@@ -525,7 +538,7 @@ SEED = SeedData(
         StockItem("Hinge", "Nos", _d("5"), _d("2"), group="Components"),  # in a stock group
     ),
     cost_centres=("Head Office", "Branch"),
-    vouchers=VOUCHERS,
+    vouchers=(*VOUCHERS, *NAME_VOUCHERS),
     voucher_types=(("Adjustment Journal", "Journal"),),  # a custom type under Journal
     godowns=(Godown(JOB_WORKER, external=True), Godown(PRINCIPAL, internal=True)),
     renamed_groups=(STOCK_IN_HAND,),
@@ -536,7 +549,7 @@ SEED = SeedData(
 def validate(seed: SeedData) -> list[str]:
     """Problems with the data set itself; empty when it is safe to import."""
     problems: list[str] = []
-    known = {ledger.name for ledger in seed.ledgers}
+    known = {name for ledger in seed.ledgers for name in (ledger.name, *ledger.aliases)}
     items = {item.name for item in seed.stock_items}
     for v in seed.vouchers:
         for on in (v.on, v.effective or v.on):
@@ -584,6 +597,7 @@ def expected_balances(seed: SeedData) -> dict[str, tuple[Decimal, Side]]:
     the vouchers in the books, using altered amounts. Returned as (amount, side) the way
     Tally's Trial Balance shows it."""
     net: dict[str, Decimal] = {}  # debit positive
+    names = {alias: ledger.name for ledger in seed.ledgers for alias in ledger.aliases}
     for ledger in seed.ledgers:
         sign = 1 if ledger.opening_side == "Dr" else -1
         net[ledger.name] = sign * ledger.opening
@@ -591,9 +605,8 @@ def expected_balances(seed: SeedData) -> dict[str, tuple[Decimal, Side]]:
         if not _counts(v):
             continue
         for e in v.final_entries():
-            net[e.ledger] = net.get(e.ledger, Decimal(0)) + (
-                e.amount if e.side == "Dr" else -e.amount
-            )
+            name = names.get(e.ledger, e.ledger)
+            net[name] = net.get(name, Decimal(0)) + (e.amount if e.side == "Dr" else -e.amount)
         for item in v.items:
             if item.sales_ledger is None:
                 continue

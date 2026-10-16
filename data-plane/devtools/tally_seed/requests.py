@@ -45,8 +45,9 @@ def envelope(company: str, report: str, body: str) -> str:
     )
 
 
-def _names(name: str) -> str:
-    return f"<NAME.LIST><NAME>{escape(name)}</NAME></NAME.LIST>"
+def _names(name: str, *aliases: str) -> str:
+    listed = "".join(f"<NAME>{escape(n)}</NAME>" for n in (name, *aliases))
+    return f"<NAME.LIST>{listed}</NAME.LIST>"
 
 
 def ledger_create(ledger: Ledger) -> str:
@@ -54,7 +55,8 @@ def ledger_create(ledger: Ledger) -> str:
     if ledger.gst_duty_head:
         gst = f"<TAXTYPE>GST</TAXTYPE><GSTDUTYHEAD>{escape(ledger.gst_duty_head)}</GSTDUTYHEAD>"
     return (
-        f'<LEDGER NAME={quoteattr(ledger.name)} ACTION="Create">{_names(ledger.name)}'
+        f'<LEDGER NAME={quoteattr(ledger.name)} ACTION="Create">'
+        f"{_names(ledger.name, *ledger.aliases)}"
         f"<PARENT>{escape(ledger.parent)}</PARENT>"
         f"<ISBILLWISEON>{'Yes' if ledger.bill_wise else 'No'}</ISBILLWISEON>"
         f"{gst}"

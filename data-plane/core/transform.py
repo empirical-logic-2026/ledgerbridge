@@ -62,7 +62,7 @@ from core.fit import PLACEHOLDER, UNFIT, UnfitValueError, fitter, merge_extra
 from core.models import accounting as A  # noqa: N812 - short alias for many models
 from core.models.base import utcnow
 from core.models.source import RawRecord
-from core.names import ALIAS, NORMALISED, NameIndex
+from core.names import ALIAS, NORMALISED, NameIndex, normalise
 
 logger = logging.getLogger(__name__)
 
@@ -836,23 +836,45 @@ class Transformer:
     def _by_name(self, model: type, column: str = "name", *values: str) -> NameIndex:
         """The entity's rows by name -> id (or (id, *values)), resolving by the rules of
         core/names.py. A name too long for its column is in `extra`, and found there
-        (ADR-025); aliases are in `extra._aliases` (groups and ledgers)."""
+        (ADR-025); aliases are in `extra._aliases` (groups and ledgers).
+
+        Rows deleted in the source answer only to names no live row has (Tally refuses
+        vouchers on a deleted master, and a master deleted and created again keeps its name:
+        the live one is meant; ADR-034). Before, a deleted twin could take the exact match
+        or make the name ambiguous."""
         col = getattr(model, column)
         extra_cols = [getattr(model, v) for v in values]
         with_aliases = model in ALIASED
+        deleted_col = getattr(model, "is_deleted", None)
         index = NameIndex()
         placeholders = False
-        query = select(col, model.id, model.extra if with_aliases else col, *extra_cols)
-        for name, row_id, extra, *rest in self.session.execute(
+        query = select(
+            col,
+            model.id,
+            model.extra if with_aliases else col,
+            deleted_col if deleted_col is not None else col,
+            *extra_cols,
+        )
+        deleted = []
+        for name, row_id, extra, is_deleted, *rest in self.session.execute(
             query.where(model.entity_id == self.entity_id)
         ):
             value = (row_id, *rest) if values else row_id
             if name == PLACEHOLDER:
                 placeholders = True
                 continue
+            aliases = ((extra or {}).get(ALIASES) or []) if with_aliases else []
+            if deleted_col is not None and bool(is_deleted):
+                deleted.append((name, aliases, value))
+                continue
             index.add(name, value)
-            if with_aliases:
-                for alias in (extra or {}).get(ALIASES) or []:
+            for alias in aliases:
+                index.add_alias(alias, value)
+        for name, aliases, value in deleted:
+            if normalise(name) not in index.normalised:
+                index.add(name, value)
+            for alias in aliases:
+                if normalise(alias) not in index.normalised:
                     index.add_alias(alias, value)
         if placeholders:  # rare: read extra only for these rows
             for row_id, extra, *rest in self.session.execute(

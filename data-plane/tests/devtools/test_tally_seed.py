@@ -46,8 +46,9 @@ def test_expected_trial_balance_for_anchors() -> None:
     # cancelled 500 and the reversing journal's 125 excluded; adjustment 300, post-dated 75;
     # the effective-date journals 11 and 13 (the optional one's 17 excluded)
     assert balances["Rent"] == (Decimal("1399"), "Dr")
+    assert balances["Party Kilo"] == (Decimal("21"), "Dr")  # named by its alias
     # contra, receipts, payments, altered 1,500, post-dated 75; the memorandum's 250 excluded
-    assert balances["Cash"] == (Decimal("27425"), "Dr")
+    assert balances["Cash"] == (Decimal("27404"), "Dr")  # less the alias voucher's 21
     assert balances["Capital"] == (Decimal("50000"), "Cr")
     # 19,360 before ALTER-2 (receipt altered from 3,000 to 5,900); DEL-1 is deleted.
     assert balances["Test Bank Current A/c"] == (Decimal("25260"), "Dr")
