@@ -26,6 +26,7 @@ from connectors.tally.signs import postings, tally_amount
 from core.canonical import CanonicalRecord
 from core.config import get_settings
 from core.dates import EDUCATIONAL, EVERY_DAY, DateRule
+from core.names import normalise
 
 
 def month_end(value: date) -> date:
@@ -269,6 +270,9 @@ class TallyConnector:
         primary = [g for g in groups if g.parent in ("", mapping.PRIMARY)]
         if any(g.reported for g in primary):  # Tally's own trial balance
             difference = sum((g.opening for g in primary), primary_ledgers)
+        shown = self.opening_difference_shown(entity)
+        if shown is not None:  # what Tally itself displays, when it can be read
+            difference = shown
         group_openings: dict[str, Decimal] = {}
         for g in primary:
             if g.reported:
@@ -280,7 +284,7 @@ class TallyConnector:
             ledgers=ledgers,
             profit_carriers=frozenset(carriers),
             foreign_ledgers=frozenset(foreign),
-            book_values=self._book_values(entity, period, foreign, ledgers, names),
+            book_values=self._book_values(entity, period, foreign, ledger_openings, names),
             opening_stock=opening_stock,
             closing_stock=closing_stock,
             opening_difference=difference,
@@ -298,19 +302,68 @@ class TallyConnector:
         entity: SourceEntity,
         period: tuple[date, date],
         foreign: set[str],
-        ledgers: Mapping[str, Decimal],
+        openings: Mapping[str, Decimal],
         names: Mapping[str, str],
     ) -> dict[frozenset[str], Decimal]:
-        """Tally's book value of each foreign-currency ledger (its vouchers only): its
-        closing balance, which Tally revalues at current rates, less the calculated
-        "Unadjusted Forex Gain/Loss" line its Ledger Vouchers report shows on the To date
-        (checked on the test company, 2026-10-16; pilot: Ledger Vouchers without that line
-        equalled ours)."""
-        values: dict[frozenset[str], Decimal] = {}
-        for key in sorted(foreign):
-            line = self.unadjusted_forex(entity, names[key], period)
-            values[frozenset({key})] = ledgers[key] - (line or Decimal(0))
-        return values
+        """Tally's book value of each foreign-currency ledger: its opening plus the total of
+        Tally's own vouchers on it up to the date (its ledger-voucher collection, optional
+        vouchers left out), as `validate compare-ledger` counts them. Its closing balance is
+        revalued at current rates and stays information only (pilot 2026-10-16: every
+        voucher of three foreign-currency customers matched ours while their closing
+        balances differed, and Ledger Vouchers showed no calculated line)."""
+        return {
+            frozenset({key}): openings.get(key, Decimal(0))
+            + self.ledger_total(entity, names[key], period)
+            for key in sorted(foreign)
+        }
+
+    def ledger_total(self, entity: SourceEntity, ledger: str, period: tuple[date, date]) -> Decimal:
+        """The total of Tally's own vouchers on a ledger dated in the period (canonical),
+        from its ledger-voucher collection read month by month once and kept for later
+        dates (validation asks for the as-of date, then every year end)."""
+        start, end = period
+        cache = self.__dict__.setdefault("_ledger_lines", {})
+        known = cache.get((entity.key, ledger))
+        if known is None or known[0] != start or known[1] < end:
+            fetched: list[tuple[date, Decimal]] = []
+            for element in self.ledger_vouchers(entity, ledger, start, month_end(end)):
+                fetched.append(_on_ledger(element, ledger))
+            known = (start, month_end(end), fetched)
+            cache[(entity.key, ledger)] = known
+        return sum((amount for on, amount in known[2] if on <= end), Decimal(0))
+
+    def opening_difference_shown(self, entity: SourceEntity) -> Decimal | None:
+        """The difference in opening balances as Tally itself displays it: the "Difference
+        in opening balances" line of its Trial Balance as at the books' beginning (zero when
+        there is none, as its Balance Sheet shows no "Diff. in Opening Balances" then).
+        None when the report can't be read. Read once per company (pilot 2026-10-16: a
+        company not integrated with inventory whose trial balance and balance sheet show no
+        difference, while its group openings didn't total zero)."""
+        cache = self.__dict__.setdefault("_opening_shown", {})
+        if entity.key not in cache:
+            value = None
+            if entity.books_from is not None:
+                books = entity.books_from
+                try:
+                    if books.day not in (1, 2):  # Educational mode: a reliable date
+                        books = self.date_rule(entity).on_or_after(books)
+                    body = self._company_post(
+                        entity,
+                        lambda name: envelopes.report_request(
+                            envelopes.TRIAL_BALANCE, name, (books, books)
+                        ),
+                    )
+                    lines = report_lines(body)
+                    # No lines at all: not a trial balance (e.g. an unknown report).
+                    value = (
+                        sum((a for name, a in lines if _is_difference(name)), Decimal(0))
+                        if lines
+                        else None
+                    )
+                except Exception:  # noqa: BLE001 - unreadable: the computed figure is used
+                    value = None
+            cache[entity.key] = value
+        return cache[entity.key]
 
     def unadjusted_forex(
         self, entity: SourceEntity, ledger: str, period: tuple[date, date]
@@ -795,6 +848,48 @@ class ReportRow:
     account: str
     voucher_type: str
     amount: Decimal
+
+
+def _on_ledger(element: ET.Element, ledger: str) -> tuple[date, Decimal]:
+    """A listed voucher's date and its total on the ledger (canonical); cancelled and
+    optional vouchers count nothing."""
+    voucher = mapping.voucher(element, parser.source_key(element))
+    if voucher.is_cancelled or voucher.is_optional:
+        return voucher.voucher_date, Decimal(0)
+    wanted = normalise(ledger)
+    total = sum(
+        (line.amount for line in voucher.lines if normalise(line.ledger_name) == wanted),
+        Decimal(0),
+    )
+    return voucher.voucher_date, total
+
+
+def _is_difference(name: str) -> bool:
+    """Tally's line for a difference in opening balances ("Difference in opening balances",
+    "Diff. in Opening Balances")."""
+    text = name.casefold()
+    return text.startswith("diff") and "opening" in text
+
+
+def report_lines(body: bytes) -> list[tuple[str, Decimal]]:
+    """Lines of one of Tally's own reports (DSPACCNAME followed by DSPACCINFO): (the name
+    shown, canonical amount from its debit and credit columns)."""
+    lines: list[tuple[str, Decimal]] = []
+    name = None
+    for element in parser.parse_response(body).iter():
+        if element.tag == "DSPACCNAME":
+            name = (element.findtext("DSPDISPNAME") or "").strip()
+        elif element.tag == "DSPACCINFO" and name is not None:
+            total = sum(
+                (
+                    tally_amount(element.findtext(path)) or Decimal(0)
+                    for path in ("DSPCLDRAMT/DSPCLDRAMTA", "DSPCLCRAMT/DSPCLCRAMTA")
+                ),
+                Decimal(0),
+            )
+            lines.append((name, -total if total else Decimal(0)))
+            name = None
+    return lines
 
 
 def report_rows(body: bytes) -> list[ReportRow]:

@@ -224,6 +224,23 @@ def tally_date(value: date) -> str:
 
 
 LEDGER_VOUCHERS_REPORT = "Ledger Vouchers"  # one ledger's vouchers, as Tally shows them
+TRIAL_BALANCE = "Trial Balance"  # Tally's own report (an Export of data, read-only)
+
+
+def report_request(report: str, company: str, period: tuple[date, date]) -> str:
+    """An export of one of Tally's own reports for a period (e.g. its Trial Balance), as
+    Tally shows it: lines of DSPACCNAME / DSPACCINFO. Read-only."""
+    start, end = period
+    return (
+        "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>"
+        f"<TYPE>Data</TYPE><ID>{escape(report)}</ID></HEADER><BODY><DESC><STATICVARIABLES>"
+        "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
+        f"<SVCURRENTCOMPANY>{escape(company)}</SVCURRENTCOMPANY>"
+        f'<SVFROMDATE TYPE="Date">{tally_date(start)}</SVFROMDATE>'
+        f'<SVTODATE TYPE="Date">{tally_date(end)}</SVTODATE>'
+        "</STATICVARIABLES></DESC></BODY></ENVELOPE>"
+    )
+
 
 # One ledger's vouchers as Tally lists them (its standard collection type of a ledger's
 # vouchers; Child Of the ledger): the vouchers in the books (optional ones left out), with
