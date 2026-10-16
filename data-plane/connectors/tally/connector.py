@@ -22,7 +22,7 @@ from connectors.base import (
 )
 from connectors.tally import envelopes, mapping, parser
 from connectors.tally.client import TallyClient, TallyError
-from connectors.tally.signs import tally_amount
+from connectors.tally.signs import postings, tally_amount
 from core.canonical import CanonicalRecord
 from core.config import get_settings
 from core.dates import EDUCATIONAL, EVERY_DAY, DateRule
@@ -265,6 +265,11 @@ class TallyConnector:
         primary = [g for g in groups if g.parent in ("", mapping.PRIMARY)]
         if any(g.reported for g in primary):  # Tally's own trial balance
             difference = sum((g.opening for g in primary), primary_ledgers)
+        group_openings: dict[str, Decimal] = {}
+        for g in primary:
+            if g.reported:
+                label = g.reserved or g.name
+                group_openings[label] = group_openings.get(label, Decimal(0)) + g.opening
         return SourceBalances(
             as_of=as_of,
             ledgers=ledgers,
@@ -277,6 +282,8 @@ class TallyConnector:
             stock_ledgers=frozenset(stock_keys),
             integrated=integrated,
             item_opening_value=item_values[0] if item_values else None,
+            group_openings=group_openings,
+            reserved_groups=frozenset(g.reserved for g in primary if g.reserved),
         )
 
     def _group_balances(self, entity: SourceEntity, period: tuple[date, date]) -> list["_Group"]:
@@ -451,6 +458,46 @@ class TallyConnector:
             elif tag not in cls._READ_LISTS:
                 hints.add(f"unread list: {tag}")
         return hints
+
+    @staticmethod
+    def unread_postings(payload: str) -> list[tuple[str, str, Decimal]]:
+        """Ledger lines in a stored voucher outside the postings the mapping reads (schema.md
+        7.2): every element with a ledger name and an amount, anywhere in the voucher, whose
+        (ledger, amount) isn't one of the lines read. Returns (list tag, ledger name as
+        written, canonical amount); a custom (prefixed) list's tag is given as such. A
+        ledger entry's inventory allocations, already in ALLLEDGERENTRIES, aren't listed."""
+        try:
+            voucher = parser.objects(parser.parse_response(payload.encode("utf-8")), "VOUCHER")
+        except Exception:  # noqa: BLE001 - an unreadable record has nothing to report
+            return []
+        if not voucher:
+            return []
+        root = voucher[0]
+        read = postings(root)
+        remaining = Counter(
+            ((e.findtext("LEDGERNAME") or "").strip(), tally_amount(e.findtext("AMOUNT")))
+            for e in read
+        )
+        read_ids = {id(e) for e in read}
+        complete = bool(root.findall("ALLLEDGERENTRIES.LIST"))
+        found = []
+        for element in root.iter():
+            if id(element) in read_ids or element is root:
+                continue
+            if complete and element.tag == "ACCOUNTINGALLOCATIONS.LIST":
+                continue  # an item's posting, already in ALLLEDGERENTRIES
+            name = (element.findtext("LEDGERNAME") or "").strip()
+            amount_text = element.findtext("AMOUNT")
+            if not name or amount_text is None or not amount_text.strip():
+                continue
+            amount = tally_amount(amount_text)
+            if remaining[(name, amount)] > 0:
+                remaining[(name, amount)] -= 1  # the same line in another list
+                continue
+            custom = ":" in element.tag or parser.PREFIX_MARK in element.tag
+            tag = "a custom (prefixed) list" if custom else element.tag
+            found.append((tag, name, -amount if amount else Decimal(0)))
+        return found
 
     def master_keys(self, entity: SourceEntity, object_type: str) -> set[str]:
         """GUIDs of every master of a type that Tally lists now (are our requests

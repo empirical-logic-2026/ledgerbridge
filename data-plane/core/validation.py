@@ -158,6 +158,24 @@ class _LedgerBalance:
     balance: Decimal  # opening + effective lines dated on or before as_of
 
 
+def at_stock_value(
+    ours: Mapping[str, Decimal], source: SourceBalances, tolerance: Decimal = ZERO
+) -> set[str]:
+    """The stock ledgers (source keys) the source reports at its closing stock value rather
+    than at their own opening and postings: their balances here differ from the source's,
+    and the source's total equals its closing stock value as of the date (VAL-012). Used by
+    validation and by `validate analyse`, so both treat them alike."""
+    mine = {key: balance for key, balance in ours.items() if key in source.stock_ledgers}
+    if not mine or source.closing_stock is None:
+        return set()
+    theirs = sum((source.ledgers.get(key, ZERO) for key in mine), ZERO)
+    if abs(theirs - sum(mine.values(), ZERO)) <= tolerance:
+        return set()
+    if abs(theirs - source.closing_stock) > tolerance:
+        return set()
+    return set(mine)
+
+
 def financial_year_ends(books_from: date | None, fy_start_month: int, as_of: date) -> list[date]:
     """Financial year ends after books_from and before as_of."""
     if books_from is None:
@@ -510,15 +528,10 @@ class Validator:
         ledger keeps its own opening). When the stock ledgers' balances here differ from the
         source's and the source's total equals its closing stock value as of the date, they
         are compared with that value (a note says so); otherwise ledger by ledger."""
-        mine = {x.source_key: x.balance for x in ours if x.source_key in source.stock_ledgers}
-        if not mine or source.closing_stock is None:
+        mine = at_stock_value({x.source_key: x.balance for x in ours}, source, self.tolerance)
+        if not mine:
             return set()
         theirs = sum((source.ledgers.get(key, ZERO) for key in mine), ZERO)
-        here = sum(mine.values(), ZERO)
-        if abs(theirs - here) <= self.tolerance:
-            return set()
-        if abs(theirs - source.closing_stock) > self.tolerance:
-            return set()
         self._fail(
             Finding(
                 "stock_ledger_at_stock_value", "info", "entity", object_id,

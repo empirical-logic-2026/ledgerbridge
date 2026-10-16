@@ -1,0 +1,49 @@
+<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <LEDGER NAME="Party Kilo" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f7</GUID>
+          <CURRENCYNAME TYPE="String">?</CURRENCYNAME>
+          <PARENT TYPE="String">Sundry Debtors</PARENT>
+          <TAXTYPE TYPE="String">Others</TAXTYPE>
+          <ISBILLWISEON TYPE="Logical">No</ISBILLWISEON>
+          <ISCOSTCENTRESON TYPE="Logical">No</ISCOSTCENTRESON>
+          <ALTERID TYPE="Number"> 262</ALTERID>
+          <MASTERID TYPE="Number"> 247</MASTERID>
+          <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+          <CREDITLIMIT TYPE="Amount" />
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Party Kilo</NAME>
+              <NAME>Kilo Alias</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+          <LEDGSTREGDETAILS.LIST>     </LEDGSTREGDETAILS.LIST>
+          <LEDMAILINGDETAILS.LIST>     </LEDMAILINGDETAILS.LIST>
+        </LEDGER>
+        <LEDGER NAME="Party Lima" RESERVEDNAME="">
+          <GUID TYPE="String">fbbe2b88-8715-4cff-bea3-c8b0f45e20a0-000000f8</GUID>
+          <CURRENCYNAME TYPE="String">?</CURRENCYNAME>
+          <PARENT TYPE="String">Sundry Debtors</PARENT>
+          <TAXTYPE TYPE="String">Others</TAXTYPE>
+          <ISBILLWISEON TYPE="Logical">No</ISBILLWISEON>
+          <ISCOSTCENTRESON TYPE="Logical">No</ISCOSTCENTRESON>
+          <ALTERID TYPE="Number"> 266</ALTERID>
+          <MASTERID TYPE="Number"> 248</MASTERID>
+          <OPENINGBALANCE TYPE="Amount">0.00</OPENINGBALANCE>
+          <CREDITLIMIT TYPE="Amount" />
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Party  Lima</NAME>
+            </NAME.LIST>
+            <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+          <LEDGSTREGDETAILS.LIST>     </LEDGSTREGDETAILS.LIST>
+          <LEDMAILINGDETAILS.LIST>     </LEDMAILINGDETAILS.LIST>
+        </LEDGER>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>
