@@ -176,6 +176,21 @@ def at_stock_value(
     return set(mine)
 
 
+def at_book_value(
+    ours: Mapping[str, Decimal], source: SourceBalances, tolerance: Decimal = ZERO
+) -> dict[frozenset[str], tuple[Decimal, Decimal]]:
+    """Foreign-currency ledgers compared with the source's book value (VAL-013): each set
+    the source gives a book value for -> (its book value, ours). The source's own closing
+    balance of such a ledger is revalued at current rates; its books keep the amounts
+    entered. Used by validation and `validate analyse` alike."""
+    out = {}
+    for keys, book in source.book_values.items():
+        mine = [ours[k] for k in keys if k in ours]
+        if mine:
+            out[keys] = (book, sum(mine, ZERO))
+    return out
+
+
 def financial_year_ends(books_from: date | None, fy_start_month: int, as_of: date) -> list[date]:
     """Financial year ends after books_from and before as_of."""
     if books_from is None:
@@ -460,6 +475,7 @@ class Validator:
         if source.closing_stock is not None and source.opening_stock is not None:
             profit -= source.closing_stock - source.opening_stock  # debit positive: a loss
         at_stock_value = self._at_stock_value(ours, source, year_end or self.as_of, entity_id)
+        at_book = self._at_book_value(ours, source, year_end, entity_id)
         seen = set()
         for ledger in ours:
             seen.add(ledger.source_key)
@@ -469,6 +485,8 @@ class Validator:
             if ledger.source_key in at_stock_value:
                 self.passed += 1  # compared with the source's closing stock value
                 continue
+            if ledger.source_key in at_book:
+                continue  # compared with the source's book value (_at_book_value)
             if theirs is None:
                 self._fail(
                     Finding(
@@ -518,6 +536,49 @@ class Validator:
                         "A ledger in the source isn't here (sync it, or check for a failure).",
                     )
                 )
+
+    def _at_book_value(
+        self,
+        ours: list[_LedgerBalance],
+        source: SourceBalances,
+        year_end: date | None,
+        object_id: str,
+    ) -> set[str]:
+        """Foreign-currency ledgers: compared, per set the source gives a book value for,
+        with that book value instead of their revalued closing balances (VAL-013; pilot
+        2026-10-16: Tally's Ledger Vouchers equalled ours while its closing balance was at
+        current rates). Returns the ledgers compared this way."""
+        found = at_book_value({x.source_key: x.balance for x in ours}, source)
+        if not found:
+            return set()
+        by_key = {x.source_key: x for x in ours}
+        on = year_end or self.as_of
+        for keys, (book, mine) in found.items():
+            if abs(book - mine) <= self.tolerance:
+                self.passed += 1
+                continue
+            first = by_key[min(k for k in keys if k in by_key)]
+            code = "year_end_mismatch" if year_end is not None else "closing_mismatch"
+            suffix = f"@{year_end.isoformat()}" if year_end is not None else ""
+            what = (
+                f"Ledger '{first.name}'"
+                if len(keys) == 1
+                else f"{len(keys)} foreign-currency ledgers of one group (with '{first.name}')"
+            )
+            self._fail(
+                Finding(
+                    code, "error", "ledger", f"{first.id}{suffix}", book, mine,
+                    f"{what}: the balance differs from the source's book value as of {on}.",
+                )
+            )  # fmt: skip
+        self._fail(
+            Finding(
+                "foreign_ledgers_at_book_value", "info", "entity", object_id, None, None,
+                "Foreign-currency ledgers were compared with the source's book value (its "
+                "trial balance), not with their closing balances at current rates.",
+            )
+        )  # fmt: skip
+        return set().union(*found)
 
     def _at_stock_value(
         self, ours: list[_LedgerBalance], source: SourceBalances, on: date, object_id: str

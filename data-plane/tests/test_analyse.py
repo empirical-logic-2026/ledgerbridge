@@ -640,3 +640,39 @@ def test_ledger_lines_outside_the_lists_read_are_counted(synced) -> None:  # noq
     assert "ledger lines outside the lists read: a custom (prefixed) list (a party ledger) 1" in out
     profile = next(x for x in out.splitlines() if x.startswith("  ledger A: "))
     assert "named in lists not read: a custom (prefixed) list 1" in profile
+
+
+class Forex(Source):
+    """A foreign-currency customer revalued by the source; its book value set by the test."""
+
+    fx_key: str
+    books: dict[date, Decimal]
+
+    def closing_balances(self, entity, as_of):  # noqa: ANN001, ANN201
+        return SourceBalances(
+            as_of,
+            dict(self.balances[as_of]),
+            foreign_ledgers=frozenset({self.fx_key}),
+            book_values={frozenset({self.fx_key}): self.books[as_of]},
+        )
+
+
+def test_foreign_ledgers_at_their_book_value_count_as_explained(synced) -> None:  # noqa: ANN001
+    """Pilot 2026-10-16: three foreign-currency customers differed only because Tally's
+    closing balance was revalued at current rates; their book value equals ours."""
+    db, _, connector, _, _, ours = synced
+    key = _key(db, "Cash")
+    connector.__class__ = Forex
+    connector.fx_key = key
+    connector.books = {when: ours[when][key].balance for when in (AS_OF, date(2027, 3, 31))}
+    for when in connector.books:
+        connector.balances[when][key] += Decimal("321")  # revalued
+    out = "\n".join(_analyse(synced))
+    assert "0 ledgers differ" in out
+    assert "foreign-currency ledgers: 1; matching the source's book value" in out
+    assert "differing 0" in out
+    # Off its book value too: profiled as a foreign-currency ledger.
+    connector.books = {when: value - 1 for when, value in connector.books.items()}
+    out = "\n".join(_analyse(synced))
+    line = next(x for x in out.splitlines() if x.startswith("  ledger A: "))
+    assert "kept in a foreign currency; its book value in the source differs from ours" in line

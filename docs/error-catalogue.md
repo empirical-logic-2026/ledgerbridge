@@ -62,6 +62,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-019](#lb-val-019-not-validated-yet) | Not validated yet | `never_validated` | Warning |
 | [LB-VAL-020](#lb-val-020-validation-couldnt-run) | Validation couldn't run | `validation_error` | Error |
 | [LB-VAL-021](#lb-val-021-stock-ledgers-at-the-stock-value) | Stock ledgers at the stock value | `stock_ledger_at_stock_value` | Note |
+| [LB-VAL-022](#lb-val-022-foreign-currency-ledgers-at-book-value) | Foreign-currency ledgers at book value | `foreign_ledgers_at_book_value` | Note |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
 | [LB-SYS-001](#lb-sys-001-unexpected-error) | Unexpected error | `unexpected_error` | Error |
@@ -914,6 +915,26 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 **How to investigate:**
 
 - .\dev.ps1 validate analyse -Env <env> profiles the stock ledgers.
+
+**How to fix:**
+
+- Nothing to fix.
+
+**Next step:** `.\dev.ps1 report -Env <env> -Details`
+
+### LB-VAL-022: Foreign-currency ledgers at book value
+
+`foreign_ledgers_at_book_value` | Note
+
+**What it means:** Ledgers kept in a foreign currency were compared with the source's book value (as its trial balance and ledger vouchers show it), not with their closing balances revalued at current exchange rates.
+
+**Common causes:**
+
+- Tally reports a foreign-currency ledger's closing balance at current rates.
+
+**How to investigate:**
+
+- .\dev.ps1 validate analyse -Env <env> profiles foreign-currency ledgers.
 
 **How to fix:**
 

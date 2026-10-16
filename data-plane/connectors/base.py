@@ -121,6 +121,11 @@ class SourceBalances:
     # The source's own opening of each primary group (by its reserved name, else its name),
     # and of each ledger directly under Primary: what its trial balance totals.
     group_openings: Mapping[str, Decimal] = field(default_factory=dict)
+    # Ledgers kept in a foreign currency, and the source's book value of each set of them
+    # (Tally: per parent group, from its trial balance), when their own closing balance is
+    # revalued at current rates: validation compares them with the book value (VAL-013).
+    foreign_ledgers: frozenset[str] = frozenset()
+    book_values: Mapping[frozenset[str], Decimal] = field(default_factory=dict)
     # Each primary group's own key above -> whether it's one of the source's reserved groups.
     reserved_groups: frozenset[str] = frozenset()
 

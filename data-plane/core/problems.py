@@ -612,6 +612,19 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Nothing to fix.",),
         ".\\dev.ps1 report -Env {env} -Details",
     ),
+    _p(
+        "LB-VAL-022",
+        "foreign_ledgers_at_book_value",
+        "Foreign-currency ledgers at book value",
+        INFO,
+        "Ledgers kept in a foreign currency were compared with the source's book value (as "
+        "its trial balance and ledger vouchers show it), not with their closing balances "
+        "revalued at current exchange rates.",
+        ("Tally reports a foreign-currency ledger's closing balance at current rates.",),
+        (".\\dev.ps1 validate analyse -Env {env} profiles foreign-currency ledgers.",),
+        ("Nothing to fix.",),
+        ".\\dev.ps1 report -Env {env} -Details",
+    ),
     # --- connection settings ------------------------------------------------------------
     _p(
         "LB-CON-001",

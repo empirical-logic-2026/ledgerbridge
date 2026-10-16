@@ -37,6 +37,7 @@ VOUCHER_TYPES = CollectionSpec(
     "LBSeedVoucherTypes", "VoucherType", "VOUCHERTYPE", "voucher_type", ("NAME",)
 )
 GODOWNS = CollectionSpec("LBSeedGodowns", "Godown", "GODOWN", "godown", ("NAME",))
+CURRENCIES = CollectionSpec("LBSeedCurrencies", "Currency", "CURRENCY", "currency", ("NAME",))
 GROUPS = CollectionSpec("LBSeedGroups", "Group", "GROUP", "group", ("NAME",))
 _MARKER = re.compile(r"\[lb-seed:([A-Z0-9-]+)\]")
 
@@ -125,6 +126,7 @@ class TallyState:
     voucher_types: set[str] = field(default_factory=set)
     godowns: set[str] = field(default_factory=set)
     reserved_groups: dict[str, str] = field(default_factory=dict)  # reserved -> current name
+    currencies: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -205,6 +207,7 @@ def read_state(client: TallyClient, company: str) -> TallyState:
         vouchers=vouchers,
         voucher_types=_names(export(VOUCHER_TYPES), "VOUCHERTYPE"),
         godowns=_names(export(GODOWNS), "GODOWN"),
+        currencies=_names(export(CURRENCIES), "CURRENCY"),
         reserved_groups={
             reserved: name
             for g in parser.objects(export(GROUPS), "GROUP")
@@ -280,6 +283,11 @@ def seed(
         report.skipped.append(
             "cost centres (feature off in TallyPrime: F11 > Maintain cost centres)"
         )
+
+    for currency in seed_data.currencies:
+        if currency.symbol not in state.currencies:
+            run(currency.symbol, "currency", "All Masters", rq.currency_create(currency))
+            report.add("currencies")
 
     for ledger in seed_data.ledgers:
         wanted = -ledger.opening if ledger.opening_side == "Dr" else ledger.opening

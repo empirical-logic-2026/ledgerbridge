@@ -147,6 +147,8 @@ class FakeTally:
                 self.state.reserved_groups[reserved] = obj.findtext("NAME.LIST/NAME")
             elif obj.tag == "GODOWN":
                 self.state.godowns.add(obj.get("NAME"))
+            elif obj.tag == "CURRENCY":
+                self.state.currencies.add(obj.get("NAME"))
             elif obj.tag == "STOCKGROUP":
                 self.state.stock_groups.add(obj.get("NAME"))
             elif obj.tag == "STOCKITEM":

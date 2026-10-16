@@ -12,7 +12,7 @@ from typing import Any
 
 from connectors.base import SourceRecord
 from connectors.tally import parser
-from connectors.tally.signs import postings, tally_amount
+from connectors.tally.signs import postings, tally_amount, tally_foreign_amount
 from core.canonical import (
     NO_STANDARD_ACCOUNT,
     CanonicalBill,
@@ -169,6 +169,12 @@ class MappingError(ValueError):
 def _text(element: ET.Element, path: str) -> str | None:
     value = element.findtext(path)
     return value.strip() if value is not None and value.strip() else None
+
+
+def _foreign(text: str | None) -> Decimal | None:
+    """A line's foreign currency amount, canonical sign (None in the base currency)."""
+    value = tally_foreign_amount(text)
+    return -value if value else None
 
 
 def _flag(element: ET.Element, path: str) -> bool:
@@ -430,6 +436,7 @@ def _line(entry: ET.Element) -> CanonicalLine:
     return CanonicalLine(
         ledger_name=_text(entry, "LEDGERNAME") or "",
         amount=_canonical(tally_amount(_text(entry, "AMOUNT"))),
+        amount_fc=_foreign(_text(entry, "AMOUNT")),
         is_party_line=_flag(entry, "ISPARTYLEDGER"),
         bills=bills,
         cost_allocations=cost_allocations,
