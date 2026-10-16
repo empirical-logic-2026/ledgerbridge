@@ -161,6 +161,24 @@ CASES = {
         ["validate", "-Quick"],
         [SERVICES, _exec("validate", "--connection", "tally-test", "--source", "tally", "--quick")],
     ),  # fmt: skip
+    "validate compare-ledger": (
+        ["validate", "compare-ledger", "-Ledger", "88", "-From", "2020-04-01", "-To", "2021-04-01"],
+        [
+            SERVICES,
+            _exec(
+                "compare-ledger",
+                "--connection",
+                "tally-test",
+                "--ledger",
+                "88",
+                "--private",
+                "--from",
+                "2020-04-01",
+                "--to",
+                "2021-04-01",
+            ),
+        ],
+    ),  # fmt: skip
     "validate analyse": (
         ["validate", "analyse"],
         [SERVICES, _job("validate-analyse", "--connection", "tally-test"), WATCH_JOB],

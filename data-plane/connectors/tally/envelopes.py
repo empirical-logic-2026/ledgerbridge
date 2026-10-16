@@ -223,20 +223,30 @@ def tally_date(value: date) -> str:
     return value.strftime("%Y%m%d")
 
 
-TRIAL_BALANCE = "Trial Balance"  # Tally's own report (an Export of data, read-only)
+LEDGER_VOUCHERS_REPORT = "Ledger Vouchers"  # one ledger's vouchers, as Tally shows them
+
+# One ledger's vouchers as Tally lists them (its standard collection type of a ledger's
+# vouchers; Child Of the ledger): the vouchers in the books (optional ones left out), with
+# the same fields as VOUCHERS. Used by `validate compare-ledger`.
+LEDGER_VOUCHERS = replace(
+    VOUCHERS, collection_id="LBLedgerVouchers", tally_type="Vouchers : Ledger"
+)
 
 
-def report_request(report: str, company: str, period: tuple[date, date]) -> str:
-    """An export of one of Tally's own reports for a period (e.g. its Trial Balance), as
-    Tally shows it: lines of DSPACCNAME / DSPACCINFO. Read-only."""
+def ledger_report_request(company: str, ledger: str, period: tuple[date, date]) -> str:
+    """Tally's Ledger Vouchers report of one ledger (read-only). Its export lists the
+    vouchers of the To date's month only (checked on the test company, 2026-10-16), and a
+    calculated "Unadjusted Forex Gain/Loss" line dated on the To date for a foreign-currency
+    ledger; only that line is read from it."""
     start, end = period
     return (
         "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>"
-        f"<TYPE>Data</TYPE><ID>{escape(report)}</ID></HEADER><BODY><DESC><STATICVARIABLES>"
-        "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
+        f"<TYPE>Data</TYPE><ID>{LEDGER_VOUCHERS_REPORT}</ID></HEADER><BODY><DESC>"
+        "<STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
         f"<SVCURRENTCOMPANY>{escape(company)}</SVCURRENTCOMPANY>"
         f'<SVFROMDATE TYPE="Date">{tally_date(start)}</SVFROMDATE>'
         f'<SVTODATE TYPE="Date">{tally_date(end)}</SVTODATE>'
+        f"<LEDGERNAME>{escape(ledger)}</LEDGERNAME>"
         "</STATICVARIABLES></DESC></BODY></ENVELOPE>"
     )
 
