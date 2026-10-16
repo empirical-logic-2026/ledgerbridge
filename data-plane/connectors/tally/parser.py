@@ -39,6 +39,7 @@ def sanitize(text: str) -> str:
 # written back when a payload is stored, so payloads keep their original names (pilot
 # 2026-10-13). The mark is a middle dot: valid inside XML names, never in Tally's own.
 _MARK = chr(0x00B7)
+PREFIX_MARK = _MARK  # in element names that had a prefix
 _TAG = re.compile(r"<(/?)([^\s/>!?]+)([^>]*)>")
 _ATTR = re.compile(r"(\s+)([^\s=/>]+)(\s*=\s*)(\"[^\"]*\"|'[^']*')")
 _RESERVED_PREFIXES = {"xml", "xmlns"}

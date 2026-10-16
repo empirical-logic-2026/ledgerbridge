@@ -16,6 +16,7 @@ from connectors.tally.connector import TallyConnector
 from connectors.tally.signs import tally_amount
 from core.models import accounting as A  # noqa: N812
 from core.models import system as S  # noqa: N812
+from core.models.source import RawRecord
 from core.validation import Validator
 from tests.sim_tally import SimTally
 from workers import cli
@@ -515,3 +516,127 @@ def test_special_vouchers_are_counted(synced) -> None:  # noqa: ANN001
     db.commit()
     analyser = Analyser(db, connection, connector, entity, entity_id, AS_OF, Decimal(0), print)
     assert analyser._special_vouchers(cash.id) == {"optional": 1}
+
+
+def test_differences_that_cancel_out_are_paired(synced) -> None:  # noqa: ANN001
+    """Pilot 2026-10-16: two customers differed by opposite amounts (one amount posted to
+    the wrong one of them?)."""
+    db, _, connector, _, _, _ = synced
+    cash, bank = _key(db, "Cash"), _key(db, "Test Bank Current A/c")
+    for when in (AS_OF, date(2027, 3, 31)):
+        connector.balances[when][cash] += Decimal("250")
+        connector.balances[when][bank] -= Decimal("250")
+    out = "\n".join(_analyse(synced))
+    assert (
+        "pairs of ledgers whose differences cancel out (one amount on the other ledger?): 1" in out
+    )
+    lines = [x for x in out.splitlines() if x.startswith("  ledger ")]
+    assert any("the opposite of ledger B's difference" in x for x in lines)
+    assert any("the opposite of ledger A's difference" in x for x in lines)
+    assert all("stored vouchers naming it" in x for x in lines)
+
+
+def test_lines_equal_to_the_difference_and_how_their_names_matched(synced) -> None:  # noqa: ANN001
+    """For a ledger that starts to differ, the lines of any voucher in that window equal to
+    the difference: which ledger we posted each to, and how its name was matched."""
+    test_profile_probes_and_opening_difference(synced)
+    db, connection, connector, entity, entity_id, _ = synced
+    out = "\n".join(_analyse(synced))
+    one_year = next(x for x in out.splitlines() if x.startswith("  ledger ") and "kind cash" in x)
+    assert "lines of any voucher then equal to the difference: " in one_year
+    assert "this ledger, name matched exact 1" in one_year
+
+
+def test_stock_ledgers_at_the_stock_value_count_as_explained(synced) -> None:  # noqa: ANN001
+    """As validation does (LB-VAL-021): a stock ledger the source reports at its closing
+    stock value isn't a ledger that differs."""
+    db, _, connector, _, _, ours = synced
+    cash = _key(db, "Cash")
+    connector.__class__ = StockValued
+    connector.stock_keys = frozenset({cash})
+    for when in (AS_OF, date(2027, 3, 31)):
+        connector.balances[when][cash] = Decimal("4321")
+    out = "\n".join(_analyse(synced))
+    assert "0 ledgers differ" in out
+    assert "stock ledgers at the source's closing stock value (compared with it, as " \
+        "validation does; LB-VAL-021): 1" in out  # fmt: skip
+    assert "2027-03-31: 0 ledgers differ" in out
+
+
+class StockValued(Source):
+    stock_keys: frozenset[str]
+
+    def closing_balances(self, entity, as_of):  # noqa: ANN001, ANN201
+        return SourceBalances(
+            as_of,
+            dict(self.balances[as_of]),
+            closing_stock=Decimal("4321"),
+            opening_stock=Decimal("4321"),
+            stock_ledgers=self.stock_keys,
+        )
+
+
+class GroupOpenings(Source):
+    groups: dict[str, Decimal]
+
+    def closing_balances(self, entity, as_of):  # noqa: ANN001, ANN201
+        return SourceBalances(
+            as_of,
+            dict(self.balances[as_of]),
+            opening_difference=sum(self.groups.values(), Decimal(0)),
+            group_openings=self.groups,
+            reserved_groups=frozenset(self.groups),
+            ledger_openings={k: lb.opening for k, lb in self.ours.items()},
+            integrated=False,
+            stock_ledger_openings=Decimal(0),
+        )
+
+
+def test_the_opening_difference_by_primary_group(synced) -> None:  # noqa: ANN001
+    """Which primary group's own opening differs from its ledgers' openings, and whether
+    the difference is one group's openings."""
+    db, connection, connector, entity, entity_id, ours = synced
+    connector.__class__ = GroupOpenings
+    connector.ours = ours[AS_OF]
+    totals: dict[str, Decimal] = {}
+    primary = Analyser(
+        db, connection, connector, entity, entity_id, AS_OF, Decimal(0), print
+    )._primary_groups()
+    for lb in ours[AS_OF].values():
+        group = primary[lb.id]
+        totals[group] = totals.get(group, Decimal(0)) + lb.opening
+    totals["Current Assets"] += Decimal("77")  # the source's own figure differs by 77
+    connector.groups = totals
+    out = "\n".join(_analyse(synced))
+    assert "Opening difference (the source's own trial balance from the books' beginning): " \
+        "non-zero" in out  # fmt: skip
+    assert "primary groups whose own opening differs from their ledgers' openings: " \
+        "Current Assets (the gap equals:" in out  # fmt: skip
+    assert "accounts not integrated with inventory" in out
+
+
+def test_ledger_lines_outside_the_lists_read_are_counted(synced) -> None:  # noqa: ANN001
+    """A party ledger named in a voucher list the mapping doesn't read: the census counts
+    it by list and kind of ledger, and the ledger's profile says where it was named."""
+    db, _, connector, _, _, _ = synced
+    party = db.scalars(select(A.Ledger).where(A.Ledger.ledger_kind == "party")).first()
+    cash = _key(db, "Cash")
+    record = db.scalars(
+        select(RawRecord)
+        .join(A.Voucher, A.Voucher.raw_record_id == RawRecord.id)
+        .join(A.VoucherLine, A.VoucherLine.voucher_id == A.Voucher.id)
+        .join(A.Ledger, A.Ledger.id == A.VoucherLine.ledger_id)
+        .where(A.Ledger.source_key == cash)
+        .limit(1)
+    ).one()
+    extra = (
+        f"<UDF:EXTRAENTRIES.LIST><LEDGERNAME>{party.name}</LEDGERNAME>"
+        "<AMOUNT>-75.00</AMOUNT></UDF:EXTRAENTRIES.LIST>"
+    )
+    record.payload = record.payload.replace("</VOUCHER>", extra + "</VOUCHER>", 1)
+    db.commit()
+    connector.balances[AS_OF][party.source_key] += Decimal("75")
+    out = "\n".join(_analyse(synced))
+    assert "ledger lines outside the lists read: a custom (prefixed) list (a party ledger) 1" in out
+    profile = next(x for x in out.splitlines() if x.startswith("  ledger A: "))
+    assert "named in lists not read: a custom (prefixed) list 1" in profile

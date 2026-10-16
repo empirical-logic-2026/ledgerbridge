@@ -38,16 +38,18 @@ from collections.abc import Callable, Iterable
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
+from xml.sax.saxutils import escape
 
-from sqlalchemy import extract, func, select
+from sqlalchemy import extract, func, or_, select
 from sqlalchemy.orm import Session
 
-from connectors.base import Connector, SourceEntity
+from connectors.base import Connector, SourceEntity, SourceRecord
 from core.dates import date_rule
 from core.models import Connection
 from core.models import accounting as A  # noqa: N812
 from core.models.source import RawRecord
-from core.validation import PROFIT_NATURES, Validator, financial_year_ends
+from core.names import normalise
+from core.validation import PROFIT_NATURES, Validator, at_stock_value, financial_year_ends
 
 Progress = Callable[[str], None]
 ZERO = Decimal(0)
@@ -56,6 +58,8 @@ PROFILE_LEDGERS = 26  # differing ledgers profiled (ledger A to Z)
 EFFECTIVE_SAMPLE = 5_000  # vouchers per profiled ledger checked for their effective date
 PROBES = 60  # extra dates asked of the source to narrow down when a ledger starts to differ
 WINDOW_VOUCHERS = 5_000  # voucher lines read per window
+EQUAL_LINES = 200  # lines equal to a difference whose reference is checked, per ledger
+NAMED_VOUCHERS = 5_000  # stored vouchers naming a ledger read per profiled ledger
 GODOWN_ITEMS = 200  # differing items checked godown by godown (one source request each)
 GODOWN_KINDS = {
     "own": "own godown",
@@ -98,6 +102,11 @@ def _letter(n: int) -> str:
         n, rest = divmod(n - 1, 26)
         out = chr(65 + rest) + out
     return out
+
+
+def _like(text: str) -> str:
+    """Text for a LIKE pattern, its wildcards escaped (used with ESCAPE '\\')."""
+    return text.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
 
 
 def fy_start(on: date, fy_start_month: int) -> date:
@@ -363,10 +372,13 @@ class Analyser:
         self.unexplained_keys: list[str] = []
         explained = by_pair = 0
         twice = "the opening balance is counted twice here, or the source leaves it out"
+        at_stock = self._at_stock_value(self.as_of)
         for key, lb in ours.items():
             theirs = self.source.ledgers.get(key)
             if theirs is None or key in carriers or self.close(theirs, lb.balance):
                 continue
+            if key in at_stock:
+                continue  # compared with the source's closing stock value, as validation does
             diff = theirs - lb.balance
             self.mismatched[key] = diff
             found = self._explain(lb, theirs, lb.balance, start)
@@ -394,6 +406,17 @@ class Analyser:
             f"  {len(self.mismatched):,} ledgers differ; {explained:,} have at least one "
             f"explanation that fits; {by_pair:,} more are explained by two together"
         )
+        if at_stock:
+            self.out(
+                f"  stock ledgers at the source's closing stock value (compared with it, as "
+                f"validation does; LB-VAL-021): {len(at_stock):,}"
+            )
+        cancelling = self._cancelling(self.mismatched)
+        if cancelling:
+            self.out(
+                f"  pairs of ledgers whose differences cancel out (one amount on the other "
+                f"ledger?): {cancelling:,}"
+            )
         for reason, n in fits.most_common():
             self.out(f"    {reason}: {n:,}")
         if pairs:
@@ -513,11 +536,13 @@ class Analyser:
             ours = self._year_balances(year_end)
             start = fy_start(year_end, self.row.fy_start_month)
             differ, fits = 0, Counter()
+            at_stock = self._at_stock_value(year_end)
             for key, lb in ours.items():
                 theirs = source.ledgers.get(key)
                 if (
                     theirs is None
                     or key in source.profit_carriers
+                    or key in at_stock
                     or self.close(theirs, lb.balance)
                 ):
                     continue
@@ -954,6 +979,15 @@ class Analyser:
         integrated = getattr(self.source, "integrated", None)
         primary = self._primary_groups()
         tree = self._group_tree()
+        self.letters = {key: _letter(n) for n, key in enumerate(keys[:PROFILE_LEDGERS])}
+        self.profile_rows = rows
+        self.profile_primary = primary
+        dated_by_key = {}
+        for key in keys:
+            found = dict(self.year_end_diffs.get(key, {}))
+            if key in self.mismatched:
+                found[self.as_of] = self.mismatched[key]
+            dated_by_key[key] = found
         self.out(f"Ledger profiles (ledgers that differ today or at a year end: {len(keys):,}):")
         for n, key in enumerate(keys[:PROFILE_LEDGERS]):
             lb = ours.get(key)
@@ -1050,7 +1084,11 @@ class Analyser:
                 found, singles = self._windows(key, lb.id)
                 facts += found
                 tests += tuple(singles)
+                elsewhere = self._named_elsewhere(lb.id)
+                if elsewhere:
+                    facts.append(elsewhere)
             equals = [label for label, value in tests if value and self.close(first, value)]
+            equals += self._opposite_of(key, dated_by_key)
             equals += self._stock_value_fits(dated, lb.opening)
             self.out(
                 f"  ledger {_letter(n)}: {'; '.join(where)}; {'; '.join(facts)}; {when}; "
@@ -1058,6 +1096,184 @@ class Analyser:
             )
         if len(keys) > PROFILE_LEDGERS:
             self.out(f"  ({len(keys) - PROFILE_LEDGERS:,} more not profiled)")
+
+    def _opposite_of(self, key: str, dated_by_key: dict[str, dict[date, Decimal]]) -> list[str]:
+        """Other differing ledgers whose difference is this one's opposite at every date both
+        differ (one amount posted to the wrong one of the two)."""
+        mine = dated_by_key.get(key, {})
+        found = []
+        for other, theirs in dated_by_key.items():
+            common = set(mine) & set(theirs)
+            if other == key or not common:
+                continue
+            if all(self.close(mine[d], -theirs[d]) for d in common):
+                label = self.letters.get(other)
+                found.append(
+                    f"the opposite of ledger {label}'s difference"
+                    if label
+                    else "the opposite of an unprofiled ledger's difference"
+                )
+        return found
+
+    def _lines_equal(self, key: str, ledger_id: int, start: date, end: date, diff: Decimal) -> str:
+        """Lines of any voucher dated after `start` up to `end` whose amount equals the
+        difference (either sign): which ledger we posted each to (this one, another differing
+        ledger, another ledger by kind and primary group) and how the name in the voucher
+        was matched to it (exact, alias, normalised). Counts and standard names only."""
+        if not diff:
+            return ""
+        L, V = A.VoucherLine, A.Voucher  # noqa: N806
+        size = abs(diff)
+        rows = self.session.execute(
+            select(L.ledger_id, L.line_no, V.raw_record_id)
+            .join(V, V.id == L.voucher_id)
+            .where(
+                L.entity_id == self.entity_id,
+                V.voucher_date > start,
+                V.voucher_date <= end,
+                func.abs(L.amount) >= size - self.tolerance,
+                func.abs(L.amount) <= size + self.tolerance,
+            )
+            .limit(EQUAL_LINES)
+        ).all()
+        if not rows:
+            return "lines of any voucher then equal to the difference: none"
+        differing = {
+            lb.id: k
+            for k, lb in (getattr(self, "ours_today", {}) or {}).items()
+            if k in self.mismatched or k in self.year_end_diffs
+        }
+        found: Counter[str] = Counter()
+        for line_ledger, line_no, raw_id in rows:
+            if line_ledger == ledger_id:
+                where = "this ledger"
+            elif line_ledger in differing:
+                letter = self.letters.get(differing[line_ledger])
+                where = f"ledger {letter} (differs too)" if letter else "another differing ledger"
+            elif line_ledger in self._deleted_ledgers():
+                where = "a ledger deleted in the source"
+            else:
+                kind = (self.profile_rows.get(line_ledger) or (None,))[0]
+                group = self.profile_primary.get(line_ledger, "unknown group")
+                where = f"a {kind or 'unknown'} ledger in {group}"
+            found[f"{where}, name matched {self._matched_how(line_ledger, line_no, raw_id)}"] += 1
+        listed = ", ".join(f"{k} {n:,}" for k, n in sorted(found.items()))
+        more = f" (first {EQUAL_LINES:,})" if len(rows) >= EQUAL_LINES else ""
+        return f"lines of any voucher then equal to the difference{more}: {listed}"
+
+    def _matched_how(self, ledger_id: int, line_no: int, raw_id: int | None) -> str:
+        """How the name a stored voucher line used was matched to its ledger: exact, alias
+        or normalised (core/names.py), from the voucher's stored record."""
+        record = self.session.get(RawRecord, raw_id) if raw_id else None
+        if record is None:
+            return "unknown (no stored record)"
+        try:
+            mapped = self.connector.to_canonical(
+                SourceRecord(
+                    record.source_entity_key,
+                    record.object_type,
+                    record.source_key,
+                    record.source_alter_id,
+                    record.payload_format,
+                    record.payload,  # type: ignore[arg-type]
+                )
+            )
+        except Exception:  # noqa: BLE001 - reported as unknown
+            return "unknown (record not readable)"
+        voucher = next((m for m in mapped if hasattr(m, "lines")), None)
+        if voucher is None or not 0 < line_no <= len(voucher.lines):
+            return "unknown (line not found)"
+        used = voucher.lines[line_no - 1].ledger_name
+        name, extra = self.session.execute(
+            select(A.Ledger.name, A.Ledger.extra).where(A.Ledger.id == ledger_id)
+        ).one()
+        aliases = list((extra or {}).get("_aliases") or [])
+        shared = self._ledgers_named().get(normalise(used), 0)
+        note = f" (the name fits {shared:,} ledger rows here)" if shared > 1 else ""
+        if used == name:
+            return "exact" + note
+        if used in aliases:
+            return "by alias" + note
+        if normalise(used) in {normalise(n) for n in (name, *aliases)}:
+            return "after normalisation" + note
+        return "otherwise" + note
+
+    def _deleted_ledgers(self) -> set[int]:
+        if "_deleted" not in self.__dict__:
+            self._deleted = set(
+                self.session.scalars(
+                    select(A.Ledger.id).where(
+                        A.Ledger.entity_id == self.entity_id, A.Ledger.is_deleted.is_(True)
+                    )
+                )
+            )
+        return self._deleted
+
+    def _ledgers_named(self) -> Counter[str]:
+        """Ledger rows (deleted ones too) per normalised name or alias."""
+        if "_named" not in self.__dict__:
+            self._named: Counter[str] = Counter()
+            for name, extra in self.session.execute(
+                select(A.Ledger.name, A.Ledger.extra).where(A.Ledger.entity_id == self.entity_id)
+            ):
+                names = {normalise(n) for n in (name, *((extra or {}).get("_aliases") or []))}
+                self._named.update(names)
+        return self._named
+
+    def _named_elsewhere(self, ledger_id: int) -> str:
+        """The stored vouchers that name the ledger (by its name or an alias) against those
+        with lines on it here, and where it's named in lists the mapping doesn't read."""
+        name, extra = self.session.execute(
+            select(A.Ledger.name, A.Ledger.extra).where(A.Ledger.id == ledger_id)
+        ).one()
+        names = [name, *((extra or {}).get("_aliases") or [])]
+        unread = getattr(self.connector, "unread_postings", None)
+        if unread is None:
+            return ""
+        keys = select(A.EntitySource.source_entity_key).where(
+            A.EntitySource.entity_id == self.entity_id
+        )
+        patterns = {
+            "%>" + _like(written) + "</LEDGERNAME>%"
+            for n in names
+            for written in (escape(n), escape(n, {"'": "&apos;", '"': "&quot;"}))
+        }
+        naming = self.session.execute(
+            select(RawRecord.source_key, RawRecord.payload)
+            .where(
+                RawRecord.source_entity_key.in_(keys),
+                RawRecord.object_type == "voucher",
+                or_(*(RawRecord.payload.like(pattern, escape="\\") for pattern in patterns)),
+            )
+            .limit(NAMED_VOUCHERS)
+        ).all()
+        posting = set(
+            self.session.scalars(
+                select(A.Voucher.source_key)
+                .join(A.VoucherLine, A.VoucherLine.voucher_id == A.Voucher.id)
+                .where(A.VoucherLine.ledger_id == ledger_id)
+                .distinct()
+            )
+        )
+        wanted = {normalise(n) for n in names}
+        tags: Counter[str] = Counter()
+        latest: dict[str, str] = {}
+        for source_key, payload in naming:
+            latest[source_key] = payload  # several stored versions: any one names it
+        for payload in latest.values():
+            for tag, used, _ in unread(payload):
+                if normalise(used) in wanted:
+                    tags[tag] += 1
+        without = len(set(latest) - posting)
+        text = (
+            f"stored vouchers naming it {len(latest):,}, of them without a line on it here "
+            f"{without:,}"
+        )
+        if tags:
+            text += "; named in lists not read: " + ", ".join(
+                f"{k} {n:,}" for k, n in sorted(tags.items())
+            )
+        return text
 
     def _stock_value_fits(self, dated: dict[date, Decimal], opening: Decimal) -> list[str]:
         """Whether, at every date the ledger differs, the difference is the source's closing
@@ -1167,14 +1383,39 @@ class Analyser:
             if not hasattr(source, "ledgers"):
                 cache[on] = None
             else:
+                at_stock = self._at_stock_value(on)
                 cache[on] = {
                     key: source.ledgers[key] - lb.balance
                     for key, lb in self._year_balances(on).items()
                     if key in source.ledgers
                     and key not in source.profit_carriers
+                    and key not in at_stock
                     and not self.close(source.ledgers[key], lb.balance)
                 }
         return cache[on]
+
+    def _at_stock_value(self, on: date) -> set[str]:
+        """Stock ledgers the source reports at its closing stock value as of a date: treated
+        as explained, as validation compares them with that value (LB-VAL-021)."""
+        source = self._source_at(on)
+        if not hasattr(source, "ledgers"):
+            return set()
+        ours = {key: lb.balance for key, lb in self._year_balances(on).items()}
+        return at_stock_value(ours, source, self.tolerance)
+
+    def _cancelling(self, diffs: dict[str, Decimal]) -> int:
+        """Pairs of ledgers whose differences are each other's opposite."""
+        seen: Counter[Decimal] = Counter()
+        pairs = 0
+        for diff in diffs.values():
+            for amount in list(seen):
+                if seen[amount] and self.close(amount, -diff):
+                    seen[amount] -= 1
+                    pairs += 1
+                    break
+            else:
+                seen[diff] += 1
+        return pairs
 
     def _checked(self, key: str) -> list[tuple[date, bool]]:
         """Dates already compared, in order, with whether the ledger differs then."""
@@ -1231,6 +1472,9 @@ class Analyser:
             start, end = self._narrow(key, found[0], found[1], differs_at_end)
             diff = (self._diffs_at(end if differs_at_end else start) or {}).get(key, ZERO)
             described, fits = self._in_window(ledger_id, start, end, diff)
+            if differs_at_end:
+                equal = self._lines_equal(key, ledger_id, start, end, diff)
+                described += f"; {equal}" if equal else ""
             facts.append(f"{label} between {start} and {end} ({described})")
             tests += [(f"{fit} ({label} window)", diff) for fit in fits]
         return facts, tests
@@ -1457,6 +1701,18 @@ class Analyser:
                 "beginning): non-zero; it equals: " + self._fitting(difference, amounts)
             )
         integrated = getattr(self.source, "integrated", None)
+        if integrated is False:
+            self.out(
+                "  accounts not integrated with inventory: the items' opening value minus the "
+                "stock ledgers' openings is "
+                + ("zero" if self.close(items, stock_ledgers) else "non-zero")
+                + (
+                    " (equal to the difference)"
+                    if items != stock_ledgers and self.close(difference, items - stock_ledgers)
+                    else ""
+                )
+            )
+        self._opening_by_group(difference, amounts)
         stock_keys = getattr(self.source, "stock_ledgers", frozenset()) or frozenset()
         source_openings = getattr(self.source, "ledger_openings", {}) or {}
         if not source_openings:
@@ -1473,6 +1729,46 @@ class Analyser:
             + ("none" if self.close(computed, ZERO) else "non-zero")
             + "; the gap to the trial balance's equals: "
             + self._fitting(computed - difference, amounts)
+        )
+
+    def _opening_by_group(
+        self, difference: Decimal, amounts: Iterable[tuple[str, Decimal]]
+    ) -> None:
+        """The source's own opening of each primary group: whether the difference equals one
+        group's openings, and which groups' own openings differ from the total of their
+        ledgers' openings (and what that gap equals). Reserved group names only."""
+        groups = getattr(self.source, "group_openings", {}) or {}
+        if not groups:
+            return
+        reserved = getattr(self.source, "reserved_groups", frozenset()) or frozenset()
+
+        def label(name: str) -> str:
+            return name if name in reserved else "custom primary group"
+
+        theirs: Counter[str] = Counter()
+        for name, opening in groups.items():
+            theirs[label(name)] += opening
+        if not self.close(difference, ZERO):
+            self.out(
+                "  equal to one primary group's openings: "
+                + self._fitting(difference, [(f"primary group {k}", v) for k, v in theirs.items()])
+            )
+        source_openings = getattr(self.source, "ledger_openings", {}) or {}
+        ours = getattr(self, "ours_today", {}) or {}
+        primary = self._primary_groups()
+        ledgers: Counter[str] = Counter()
+        for key, opening in source_openings.items():
+            lb = ours.get(key)
+            if lb is not None:
+                ledgers[primary.get(lb.id, "unknown group")] += opening
+        differ = [
+            f"{group} (the gap equals: {self._fitting(theirs[group] - ledgers[group], amounts)})"
+            for group in sorted(theirs)
+            if not self.close(theirs[group], ledgers[group])
+        ]
+        self.out(
+            "  primary groups whose own opening differs from their ledgers' openings: "
+            + ("; ".join(differ) if differ else "none")
         )
 
     def _fitting(self, value: Decimal, amounts: Iterable[tuple[str, Decimal]]) -> str:
@@ -1542,6 +1838,7 @@ class Analyser:
         self.out("Stored vouchers by type (sample of their content):")
         for standard, base, n in sorted(counts, key=lambda r: -r[2]):
             hints: Counter[str] = Counter()
+            outside: Counter[str] = Counter()
             sampled = 0
             for (payload,) in self.session.execute(
                 select(RawRecord.payload)
@@ -1556,6 +1853,7 @@ class Analyser:
             ):
                 sampled += 1
                 hints.update(self._hints("voucher", payload))
+                outside.update(self._unread_postings(payload))
             parts = [f"{n:,} vouchers"]
             if standard in STOCK_TYPES or standard is None:
                 parts.append(f"with inventory lines here {with_inventory.get(standard, 0):,}")
@@ -1564,7 +1862,33 @@ class Analyser:
                     f"of {sampled:,} read: "
                     + ", ".join(f"{k} {c:,}" for k, c in hints.most_common(8))
                 )
+            if outside:
+                parts.append(
+                    "ledger lines outside the lists read: "
+                    + ", ".join(f"{k} {c:,}" for k, c in sorted(outside.items()))
+                )
             self.out(f"  {_type(standard, base)}: " + "; ".join(parts))
+
+    def _unread_postings(self, payload: str | None) -> Counter[str]:
+        """Ledger lines of a stored voucher outside the lists the mapping reads, by list and
+        the kind of ledger named (party or other; Tally's tag names only)."""
+        unread = getattr(self.connector, "unread_postings", None)
+        if unread is None or not payload:
+            return Counter()
+        if "_kinds_by_name" not in self.__dict__:
+            self._kinds_by_name: dict[str, str] = {}
+            for name, extra, kind in self.session.execute(
+                select(A.Ledger.name, A.Ledger.extra, A.Ledger.ledger_kind).where(
+                    A.Ledger.entity_id == self.entity_id
+                )
+            ):
+                for n in (name, *((extra or {}).get("_aliases") or [])):
+                    self._kinds_by_name.setdefault(normalise(n), kind)
+        found: Counter[str] = Counter()
+        for tag, name, _ in unread(payload):
+            kind = self._kinds_by_name.get(normalise(name), "unknown")
+            found[f"{tag} ({'a party ledger' if kind == 'party' else 'another ledger'})"] += 1
+        return found
 
     def _hints(self, object_type: str, payload: str | None) -> set[str]:
         hints = getattr(self.connector, "payload_hints", None)
