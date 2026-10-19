@@ -32,8 +32,8 @@ jobs:
       run:
         working-directory: data-plane
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
       - run: uv sync --frozen
       - name: Lint (ruff, including its security rules)
         run: uv run ruff check .
@@ -50,8 +50,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -88,14 +88,15 @@ jobs:
         image: qdrant/qdrant:v1.15.4
         ports: ["6333:6333"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
       - name: Create the CI env file
         run: cp .env.test.example .env.test
       - name: Create the databases and users (deploy/mysql/init, as on a fresh volume)
         run: |
           docker cp deploy/mysql/init/01-schemas.sh "${{ job.services.mysql.id }}:/tmp/01-schemas.sh"
-          docker exec --env-file .env.test "${{ job.services.mysql.id }}" bash /tmp/01-schemas.sh
+          grep -E '^MYSQL_(MIGRATOR|REPORT|AI)_' .env.test > "$RUNNER_TEMP/users.env"
+          docker exec --env-file "$RUNNER_TEMP/users.env" "${{ job.services.mysql.id }}"             bash /tmp/01-schemas.sh
       - name: Wait for Qdrant
         run: |
           for i in $(seq 1 30); do
@@ -117,8 +118,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
       # PyPI's advisories carry no severity, so any known vulnerability fails this step.
       - name: Python packages (every known vulnerability)
         working-directory: data-plane
@@ -136,18 +137,27 @@ jobs:
     timeout-minutes: 15
     container: semgrep/semgrep:1.128.0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Semgrep's public rules, no login; --metrics=off sends nothing about the code.
       # Only ERROR (high-severity) findings fail the job.
+      # Excluded: migrations already applied, which must never be edited (ADR-016). Their SQL
+      # strings are built from constant database names, never from input. New migrations
+      # are scanned.
       - name: Scan
-        run: semgrep scan --config p/default --severity ERROR --error --metrics=off
+        run: >-
+          semgrep scan --config p/default --severity ERROR --error --metrics=off
+          --exclude data-plane/migrations/versions/0003_seed_reference_data.py
+          --exclude data-plane/migrations/versions/0006_validation_as_of_and_alerts.py
+          --exclude data-plane/migrations/versions/0009_run_liveness_and_sync_logs.py
+          --exclude data-plane/migrations/versions/0010_flexible_accounting_layer.py
+          --exclude data-plane/migrations/versions/0014_inventory_line_stock_quantity.py
 
   secrets:
     name: Secret scanning (gitleaks)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # the whole history: a secret removed later is still in git
       # --redact: the log never shows a secret it found, only where it is.
@@ -165,7 +175,7 @@ jobs:
         docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
         -v trivy-cache:/root/.cache aquasec/trivy:0.64.1 image --no-progress
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build our image
         run: docker build -t ledgerbridge-data-plane:ci data-plane
       - name: Our image (high and critical with a fix available)

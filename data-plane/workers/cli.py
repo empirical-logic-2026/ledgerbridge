@@ -810,7 +810,9 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
         found, missing = by_names(available, wanted)
     if session.get_bind().dialect.name == "mysql":
         # Fail fast instead of hanging if the row is locked after all.
-        session.execute(text(f"SET SESSION innodb_lock_wait_timeout = {CONNECT_LOCK_WAIT_SEC}"))
+        session.execute(
+            text("SET SESSION innodb_lock_wait_timeout = :sec"), {"sec": CONNECT_LOCK_WAIT_SEC}
+        )
     # Store the entities found by key (and their names); names not found are not stored.
     # Company numbers already given are kept; new companies get the next ones.
     numbers = Labels(session, connection).numbers
