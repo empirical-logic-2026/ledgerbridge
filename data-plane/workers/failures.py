@@ -5,6 +5,9 @@ Stored errors already hold the error type and a short message naming fields and 
 never values (core/errors.py, core/fit.py). For display they are grouped further: quoted
 text is removed, and sizes in parentheses ("values up to 300 characters") are taken out of
 the group's message and shown as the largest size seen.
+
+Where it fits: `summary` (workers/cli.py) and the health report (workers/report.py) print
+these groups.
 """
 
 import re
