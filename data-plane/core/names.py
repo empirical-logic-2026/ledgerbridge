@@ -1,5 +1,9 @@
 """Resolving references by name (source-independent; ADR-027).
 
+Where it fits: the transform (core/transform.py) resolves every reference by name through
+a NameIndex; `workers/references.py` (`transform explain`) uses `differences` and
+`close_match` to say why a reference didn't resolve.
+
 Sources such as Tally refer to masters by name (a ledger's group, a voucher's ledgers, cost
 centres, stock items). A reference is resolved by these rules, in order:
 
@@ -54,6 +58,11 @@ def normalise(name: str) -> str:
     return _SPACES.sub(" ", text).strip().casefold()
 
 
+def _without_case_folding(text: str) -> str:
+    """`normalise` without the case folding: tells a difference of case apart."""
+    return _SPACES.sub(" ", unicodedata.normalize("NFC", _unescape(text))).strip()
+
+
 def _look_alike(text: str) -> str:
     return "".join(_LOOK_ALIKES.get(c, c) for c in unicodedata.normalize("NFKC", text))
 
@@ -78,8 +87,7 @@ def differences(referenced: str, candidate: str) -> list[str]:
         kinds.append("Unicode normalisation")
     a, b = normalise(referenced), normalise(candidate)
     if a == b:
-        flat = lambda s: _SPACES.sub(" ", unicodedata.normalize("NFC", _unescape(s))).strip()  # noqa: E731
-        if flat(referenced) != flat(candidate):
+        if _without_case_folding(referenced) != _without_case_folding(candidate):
             kinds.append("case")
         return kinds or ["other"]
     if _look_alike(a) == _look_alike(b):
@@ -151,7 +159,7 @@ class NameIndex:
         if name in self.exact:
             return Resolution(self.exact[name], EXACT)
         by_alias = self.aliases.get(name, set())
-        if len(by_alias) == 1 and name not in self.exact:
+        if len(by_alias) == 1:
             return Resolution(next(iter(by_alias)), ALIAS)
         if len(by_alias) > 1:
             return Resolution(ambiguous=True)

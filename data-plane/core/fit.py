@@ -1,5 +1,8 @@
 """Fitting source values to their columns without losing them (ADR-025). Source-independent.
 
+Where it fits: the transform (core/transform.py) passes every row through `fitter(model).fit`
+before writing it.
+
 Every row the transform writes is checked against its table's column types first, so the
 database never rejects a value and one bad value can't fail a whole batch:
 
@@ -92,8 +95,11 @@ def _spec(column: Any) -> _Spec:
 
 
 def _json_safe(value: Any) -> Any:
-    if isinstance(value, Decimal | date):
-        return str(value) if isinstance(value, Decimal) else value.isoformat()
+    """A value as JSON can hold it (numbers and dates as text)."""
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, date):
+        return value.isoformat()
     if isinstance(value, str) and _SURROGATE.search(value):
         return value.encode("utf-8", "backslashreplace").decode("utf-8")
     return value
@@ -134,47 +140,58 @@ class ColumnFitter:
     def _problem(self, spec: _Spec, value: Any) -> tuple[str, Any] | None:
         """(description, replacement or 'fatal'), or None if the value fits."""
         if spec.kind == "text":
-            text = str(value)
-            if _SURROGATE.search(text):
-                cleaned = _SURROGATE.sub(REPLACEMENT, text)
-                return f"invalid characters (length {len(text)})", cleaned
-            if spec.length is not None and len(text) > spec.length:
-                kind = f"too long (length {len(text)}, column allows {spec.length})"
-            elif spec.length is None and len(text.encode("utf-8")) > TEXT_BYTES:
-                kind = f"too long ({len(text.encode('utf-8'))} bytes, column allows {TEXT_BYTES})"
-            else:
-                return None
-            return kind, None if spec.nullable else PLACEHOLDER
+            return _text_problem(spec, str(value))
         if spec.kind == "enum":
-            if str(value) in spec.choices:
-                return None
-            return "unknown value", None if spec.nullable else "fatal"
+            return None if str(value) in spec.choices else ("unknown value", _missing(spec))
         if spec.kind == "date":
             if not isinstance(value, date) or MIN_DATE <= value:
                 return None
-            return f"invalid date (year {value.year})", None if spec.nullable else "fatal"
+            return f"invalid date (year {value.year})", _missing(spec)
         if spec.kind in ("int", "decimal"):
-            try:
-                number = Decimal(value)
-            except (InvalidOperation, TypeError, ValueError):
-                return "not a number", None if spec.nullable else "fatal"
-            if not number.is_finite():
-                return "not a finite number", None if spec.nullable else "fatal"
-            if spec.max_abs is None:
-                return None
-            if spec.kind == "int":
-                if number != number.to_integral_value() or abs(number) >= spec.max_abs:
-                    kind = f"out of range ({_digits(number)} digits)"
-                    return kind, None if spec.nullable else "fatal"
-                return None
-            rounded = number.quantize(Decimal(1).scaleb(-(spec.scale or 0)), ROUND_HALF_EVEN)
-            if abs(rounded) >= spec.max_abs:
-                kind = f"out of range ({_digits(number)} digits before the decimal point)"
-                return kind, None if spec.nullable else "fatal"
-            if rounded != number:
-                places = -number.as_tuple().exponent  # type: ignore[operator]
-                return f"more decimals than the column keeps ({places} > {spec.scale})", rounded
+            return _number_problem(spec, value)
         return None
+
+
+def _missing(spec: _Spec) -> Any:
+    """What a column gets instead of a value it can't store: NULL, or 'fatal' (the record
+    fails) when the column is required."""
+    return None if spec.nullable else "fatal"
+
+
+def _text_problem(spec: _Spec, text: str) -> tuple[str, Any] | None:
+    if _SURROGATE.search(text):
+        return f"invalid characters (length {len(text)})", _SURROGATE.sub(REPLACEMENT, text)
+    if spec.length is not None and len(text) > spec.length:
+        kind = f"too long (length {len(text)}, column allows {spec.length})"
+    elif spec.length is None and len(text.encode("utf-8")) > TEXT_BYTES:
+        kind = f"too long ({len(text.encode('utf-8'))} bytes, column allows {TEXT_BYTES})"
+    else:
+        return None
+    # Required text gets a placeholder: the full value is in extra.
+    return kind, None if spec.nullable else PLACEHOLDER
+
+
+def _number_problem(spec: _Spec, value: Any) -> tuple[str, Any] | None:
+    try:
+        number = Decimal(value)
+    except (InvalidOperation, TypeError, ValueError):
+        return "not a number", _missing(spec)
+    if not number.is_finite():
+        return "not a finite number", _missing(spec)
+    if spec.max_abs is None:
+        return None
+    if spec.kind == "int":
+        if number != number.to_integral_value() or abs(number) >= spec.max_abs:
+            return f"out of range ({_digits(number)} digits)", _missing(spec)
+        return None
+    rounded = number.quantize(Decimal(1).scaleb(-(spec.scale or 0)), ROUND_HALF_EVEN)
+    if abs(rounded) >= spec.max_abs:
+        kind = f"out of range ({_digits(number)} digits before the decimal point)"
+        return kind, _missing(spec)
+    if rounded != number:
+        places = -number.as_tuple().exponent  # type: ignore[operator]
+        return f"more decimals than the column keeps ({places} > {spec.scale})", rounded
+    return None
 
 
 def merge_extra(extra: dict[str, Any] | None, unfit: dict[str, Any]) -> dict[str, Any] | None:

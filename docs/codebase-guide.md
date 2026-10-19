@@ -161,8 +161,8 @@ ledgerbridge/
 | `models/` | The database tables as Python classes, one file per database: `source.py` (raw layer), `accounting.py` (the standard accounting model), `system.py` (connections, sync runs, validation, users, alerts, settings); `base.py` (shared column types and the source-tracking columns); `schemas.py` (the four database names). The tables are described for people in [schema.md](schema.md). |
 | `canonical.py` | The standard ("canonical") records every connector produces: company, group, ledger, voucher, voucher line and so on. |
 | `raw_store.py` | Stores what a source sends, unchanged, in the raw records table, skipping copies that haven't changed. |
-| `transform.py` | Turns raw records into the accounting tables: in batches, in the right order (groups before ledgers before vouchers), updating rather than duplicating, replacing a voucher's lines as a whole, and failing only the record at fault. |
-| `fit.py` | Checks every value against its column before writing; a value that doesn't fit is kept in full in the row's `extra` field and reported, never cut short. |
+| `transform.py` | Turns raw records into the accounting tables: in batches, in the right order (groups before ledgers before vouchers), updating rather than duplicating, replacing a voucher's lines as a whole, and failing only the record at fault. `Transformer.run` drives it per entity; one writer per kind of record (`_groups`, `_ledgers`, `_simple` for the small masters, `_vouchers`), with `_item_rows` fitting a record's rows, `_voucher_refs` resolving a voucher's names, `_prepare` building its rows and `_insert_children` writing lines, bills, cost allocations, tax lines and dimensions. `mark_deleted` soft-deletes rows whose source object is gone. |
+| `fit.py` | Checks every value against its column before writing (one check per kind of column: text, number, date, choice); a value that doesn't fit is kept in full in the row's `extra` field and reported, never cut short. |
 | `names.py` | The rules for finding what a name refers to (exact name, alias, then a normalised comparison), used by the transform. |
 | `naming.py` | Describes how two names differ without showing them (used by the company check `entity-check`). |
 | `validation.py` | The checks: every voucher balances, the trial balance balances, every ledger matches Tally's closing balance, plus voucher counts, stock quantities, bills and year-end balances; and the "root cause" explanation. |
@@ -385,6 +385,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 0.17 | `core/transform.py`, `fit.py` after the simplicity review. |
 | 2026-10-19 | 0.16 | `connectors/tally/` after the simplicity review: what each file does and how `connector.py` is grouped. |
 | 2026-10-19 | 0.15 | `.github/workflows/checks.yml`; `docs/security/`. |
 | 2026-10-19 | 0.14 | `tests/test_edit_log.py`. |
