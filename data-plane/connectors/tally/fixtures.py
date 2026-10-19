@@ -1,4 +1,9 @@
-"""Recorded Tally responses: saving them, and replaying them without Tally.
+"""Recorded Tally responses, replayed without Tally: the tests' stand-in for TallyPrime.
+
+Where it fits: `FixtureTransport` plugs into `TallyClient` (as its httpx transport) and
+answers each request from files recorded from LedgerBridge Test Co by
+`python -m connectors.tally.tools capture-fixtures`, so the connector, sync and validation
+run unchanged in tests and CI.
 
 A fixture directory holds the raw response bytes for each request plus `manifest.json`:
 
@@ -21,6 +26,19 @@ DEFAULT_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "tall
 _ID = re.compile(r"<ID>([^<]+)</ID>")
 _FROM = re.compile(r'<SVFROMDATE TYPE="Date">(\d{8})</SVFROMDATE>')
 _ALTER = re.compile(r"\$AlterID &gt; (\d+)")
+
+# Collections Tally knows: one the recording didn't include answers with no objects.
+_KNOWN = frozenset(
+    spec.collection_id
+    for spec in (
+        *envelopes.ALL_SPECS,
+        envelopes.LEDGER_BALANCES,
+        envelopes.STOCK_VALUES,
+        envelopes.GROUP_BALANCES,
+        envelopes.BILLS,
+        envelopes.LEDGER_OPENING_BILLS,
+    )
+)
 
 
 def load_manifest(directory: Path) -> dict[str, Any]:
@@ -55,19 +73,8 @@ class FixtureTransport(httpx.BaseTransport):
             return [str(e["file"]) for e in vouchers if e["from"].startswith(month)]
         if collection_id in self.manifest["files"]:
             return [self.manifest["files"][collection_id]]
-        known = {spec.collection_id for spec in envelopes.ALL_SPECS}
-        known.update(
-            spec.collection_id
-            for spec in (
-                envelopes.LEDGER_BALANCES,
-                envelopes.STOCK_VALUES,
-                envelopes.GROUP_BALANCES,
-                envelopes.BILLS,
-                envelopes.LEDGER_OPENING_BILLS,
-            )
-        )
         # A type this fixture set didn't record answers like Tally with no such objects.
-        return [] if collection_id in known else None
+        return [] if collection_id in _KNOWN else None
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         body = request.read().decode("utf-8")
@@ -75,9 +82,15 @@ class FixtureTransport(httpx.BaseTransport):
         files = self._files_for(body)
         if files is None:
             return httpx.Response(200, content=b"<RESPONSE>Unknown Request</RESPONSE>")
-        if len(files) == 1 and not _ALTER.search(body):
+        changed_since = _ALTER.search(body)
+        if len(files) == 1 and not changed_since:
             return httpx.Response(200, content=(self.directory / files[0]).read_bytes())
-        since = int(match.group(1)) if (match := _ALTER.search(body)) else None
+        since = int(changed_since.group(1)) if changed_since else None
+        return httpx.Response(200, content=self._combined(files, since))
+
+    def _combined(self, files: list[str], since: int | None) -> bytes:
+        """The objects of several recorded files in one answer; with `since`, only those
+        altered after that AlterID (an incremental request)."""
         objects = []
         for name in files:
             root = parser.parse_response((self.directory / name).read_bytes())
@@ -88,4 +101,4 @@ class FixtureTransport(httpx.BaseTransport):
                         child.tail = None
                         objects.append(ET.tostring(child, encoding="unicode"))
         content = "<ENVELOPE><COLLECTION>" + "".join(objects) + "</COLLECTION></ENVELOPE>"
-        return httpx.Response(200, content=content.encode("utf-8"))
+        return content.encode("utf-8")

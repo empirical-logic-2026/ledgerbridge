@@ -143,13 +143,13 @@ ledgerbridge/
 | --- | --- |
 | `base.py` | The **standard connector interface** every source must offer (list companies, fetch masters and transactions, map to the standard model, and optional extras such as closing balances), plus the shared data types. |
 | `registry.py` | The list of available sources ("tally" → the Tally connector), so a new source can be added without touching the others. |
-| `tally/client.py` | Sends requests to Tally over HTTP and decodes its answers (UTF-8 or UTF-16). Knows about timeouts and retries. |
-| `tally/envelopes.py` | Builds the XML requests Tally understands (which objects, which fields, which dates). **Export requests only**: the platform never writes to Tally. |
-| `tally/parser.py` | Reads Tally's XML answers into individual objects (one voucher, one ledger), cleans characters Tally sends that aren't valid XML, and handles custom fields with prefixes such as `UDF:`. |
-| `tally/connector.py` | The Tally connector itself: puts client, requests and parser together to implement the interface in `base.py` (list companies, fetch month by month, list keys, closing balances, voucher counts, stock, bills). |
-| `tally/mapping.py` | Turns one Tally object into the standard accounting record: groups, ledgers, voucher types, vouchers and their lines, with Tally's signs and reserved names. All Tally knowledge about meaning lives here. |
-| `tally/signs.py` | Rules for reading debit and credit from Tally's XML, and a check that confirms them on real data. |
-| `tally/fixtures.py` | Plays back recorded Tally answers in tests, so tests run without Tally. |
+| `tally/client.py` | Sends requests to Tally over HTTP and decodes its answers (UTF-8 or UTF-16). Refuses anything but an Export request. Retries a failed connection twice (after 2 s and 4 s); a request Tally doesn't answer in time raises `TallySlowError`, and the sync then splits it (ADR-022). |
+| `tally/envelopes.py` | Builds the XML requests Tally understands. Each `CollectionSpec` names the Tally objects and the fields to fetch; `collection_request` adds the company, dates and filters; `report_request` asks for one of Tally's own reports (Trial Balance, Ledger Vouchers); `keys_only` and `names_only` make small listings. **Export requests only**: the platform never writes to Tally. |
+| `tally/parser.py` | Reads Tally's XML answers: `parse_response` decodes, removes characters that aren't valid XML, makes custom prefixed names such as `UDF:` parseable and raises Tally's own errors; `objects` picks out the objects; `parse_records` makes the records the sync stores unchanged. |
+| `tally/connector.py` | The Tally connector itself (the interface in `base.py`). Every request goes through `_export` (one collection for a company) and `_company_post`, which retries once with the company's current name if Tally rejects it. Grouped as: the connection and companies; records for the sync (`fetch_*`, `fetch_plan`, `fetch_chunk`, `list_keys`); Tally's own figures for validation (`closing_balances`, built from `_ledger_figures`, `_item_values` and `_group_balances`, plus foreign-currency book values, voucher counts, stock, bills); and diagnostics for `validate analyse` (`payload_hints`, `unread_postings`, `master_keys`, `master_names`). |
+| `tally/mapping.py` | Turns one Tally object into the standard accounting record: groups, ledgers, voucher types, vouchers and their lines, with Tally's signs and reserved names. All Tally knowledge about meaning lives here. `to_canonical` is the entry point the transform calls; small helpers (`_amount`, `quantity`, `_entry_quantity`) read amounts and quantities the same way everywhere. |
+| `tally/signs.py` | Reading Tally amounts (`tally_amount`, including foreign-currency amounts) and a voucher's complete ledger lines (`postings`); and the checks behind `sign-check` that confirmed debits are negative in Tally's XML. |
+| `tally/fixtures.py` | `FixtureTransport` plays back recorded Tally answers in tests and CI, so they run without Tally. |
 | `tally/tools.py` | Developer tools for the test company only: record fixtures, run the sign check. |
 
 **`core/`: the source-independent heart.** Nothing here knows about Tally.
@@ -385,6 +385,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 0.16 | `connectors/tally/` after the simplicity review: what each file does and how `connector.py` is grouped. |
 | 2026-10-19 | 0.15 | `.github/workflows/checks.yml`; `docs/security/`. |
 | 2026-10-19 | 0.14 | `tests/test_edit_log.py`. |
 | 2026-10-16 | 0.13 | Knowledge base: `docs/rules/`, `docs/database/`, `docs/project-history.md`, `docs/progress-log.md`, `docs/export/`; `devtools/schema_reference.py`; `./dev.ps1 docs-export`. |
