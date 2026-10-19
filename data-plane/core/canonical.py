@@ -1,7 +1,8 @@
 """Source-independent canonical records (architecture.md 4.4, DAT-003).
 
-A connector's `to_canonical()` turns one raw record into one of these. The transform
-(core/transform.py) writes them to ledgerbridge_accounting. Nothing here knows any source.
+Where it fits: the contract between a connector and the transform. A connector's
+`to_canonical()` turns one raw record into one of these; the transform (core/transform.py)
+writes them to ledgerbridge_accounting. Nothing here knows any source.
 
 Conventions: amounts use the canonical sign (debit positive, credit negative, schema.md
 Section 1). Other objects are referred to by name within the same entity, because sources

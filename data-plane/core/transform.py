@@ -1,5 +1,11 @@
 """Raw records → canonical tables (schema.md Section 8). Source-independent.
 
+Where it fits: the sync stores each source object unchanged in
+`ledgerbridge_source.raw_records` (status `pending`); this module turns them into rows of
+the accounting tables (`ledgerbridge_accounting`). The connector's `to_canonical` says what
+a record means (core/canonical.py records); the transform resolves references by name,
+fits values to their columns and writes the rows. Validation then reads those rows.
+
 - Pending raw records are processed per entity, object type by object type in the
   connector's order, in batches read by id, so even hundreds of thousands of records never
   sit in memory at once. `progress` receives a line every PROGRESS_EVERY records.
@@ -81,6 +87,12 @@ MODELS_BY_KIND: dict[type, tuple[type, ...]] = {
     CanonicalCostCentre: (A.CostCentre,),
     CanonicalVoucher: (A.Voucher,),
 }
+# Every table whose rows are soft-deleted when their source object is deleted.
+DELETABLE_MODELS: tuple[type, ...] = tuple(
+    dict.fromkeys(model for models in MODELS_BY_KIND.values() for model in models)
+)
+ALIASED: tuple[type, ...] = (A.AccountGroup, A.Ledger)  # rows that keep aliases in extra
+ALIASES = "_aliases"
 
 Progress = Callable[[str], None]
 EntityLabel = Callable[[str, int | None], str]  # (source entity key, entity id) -> label
@@ -107,12 +119,50 @@ class TransformResult:
 
 @dataclass
 class _Raw:
+    """One raw record and the canonical records its mapping gave."""
+
     row: RawRecord
     records: list[CanonicalRecord]
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class _Refs:
+    """A voucher's references, resolved: name as written -> id (ledgers: (id, party_id,
+    tax_type); voucher type: (id, is_accounting))."""
+
+    voucher_type: tuple[int, bool | None]
+    ledgers: dict[str, Any]
+    items: dict[str, int]
+    centres: dict[str, int]
+    godowns: dict[str, int | None]
+    units: dict[str, int | None]
+    party: Any
+
+
+@dataclass
+class _PreparedLine:
+    """A voucher line's row and its child rows, fitted to their columns."""
+
+    row: dict[str, Any]
+    bills: list[dict[str, Any]]
+    allocations: list[dict[str, Any]]
+    tax: dict[str, Any] | None
+
+
+@dataclass
+class _Prepared:
+    """A voucher ready to write: its header row, lines and inventory lines."""
+
+    item: _Raw
+    header: dict[str, Any]
+    extra: Any
+    lines: list[_PreparedLine]
+    inventory: list[dict[str, Any]]
+
+
 def _slug(name: str) -> str:
+    """An entity code from its name: upper case, letters and digits, at most 28 characters."""
     return (re.sub(r"[^A-Z0-9]+", "_", name.upper()).strip("_") or "ENTITY")[:28]
 
 
@@ -500,14 +550,11 @@ class Transformer:
     def _deleted_rows(self, keys: list[str] | None) -> dict[type, list[int]]:
         """Rows soft-deleted because their object was deleted in the source (to keep them
         deleted through a rebuild: upserts mark rows as existing)."""
-        from core.models.accounting import EntitySource
-
-        entities = select(EntitySource.entity_id).where(
-            EntitySource.connection_id == self.connection_id
+        entities = select(A.EntitySource.entity_id).where(
+            A.EntitySource.connection_id == self.connection_id
         )
         if keys is not None:
-            entities = entities.where(EntitySource.source_entity_key.in_(keys))
-        models = dict.fromkeys(m for ms in MODELS_BY_KIND.values() for m in ms)
+            entities = entities.where(A.EntitySource.source_entity_key.in_(keys))
         return {
             model: list(
                 self.session.scalars(
@@ -518,23 +565,14 @@ class Transformer:
                     )
                 )
             )
-            for model in models
+            for model in DELETABLE_MODELS
         }
 
     def _keep_deleted(self, deleted: dict[type, list[int]]) -> None:
         now = utcnow()
         for model, ids in deleted.items():
             for start in range(0, len(ids), 5_000):
-                chunk = ids[start : start + 5_000]
-                self.session.execute(
-                    update(model).where(model.id.in_(chunk)).values(is_deleted=True, updated_at=now)
-                )
-                if model is A.Voucher:
-                    self.session.execute(
-                        update(A.VoucherLine)
-                        .where(A.VoucherLine.voucher_id.in_(chunk))
-                        .values(is_effective=False, updated_at=now)
-                    )
+                _soft_delete(self.session, model, ids[start : start + 5_000], now)
         self.session.commit()
 
     def _say(self, message: str) -> None:
@@ -759,15 +797,7 @@ class Transformer:
             return link.entity_id if link else None
         values = _with_extra(values, company.extra, unfit)
         if link is None:
-            code = _slug(company.name)
-            taken = set(
-                self.session.scalars(select(A.Entity.code).where(A.Entity.code.like(f"{code}%")))
-            )
-            suffix = 2
-            unique = code
-            while unique in taken:
-                unique, suffix = f"{code}_{suffix}", suffix + 1
-            entity = A.Entity(code=unique, **values)
+            entity = A.Entity(code=self._unique_code(company.name), **values)
             self.session.add(entity)
             self.session.flush()
             self.session.add(
@@ -788,6 +818,17 @@ class Transformer:
         self._done([item], result)
         self.session.commit()
         return entity_id
+
+    def _unique_code(self, name: str) -> str:
+        """The code of a new entity: its slug, with _2, _3, ... when taken."""
+        code = _slug(name)
+        taken = set(
+            self.session.scalars(select(A.Entity.code).where(A.Entity.code.like(f"{code}%")))
+        )
+        unique, suffix = code, 2
+        while unique in taken:
+            unique, suffix = f"{code}_{suffix}", suffix + 1
+        return unique
 
     def _latest(self, entity_key: str, object_types: tuple[str, ...], kind: type) -> list[Any]:
         """Every record of a kind as last received (any status), from the raw records of the
@@ -886,9 +927,6 @@ class Transformer:
                 index.add(name, (row_id, *rest) if values else row_id)
         return index
 
-    def _names(self, model: type, column: str = "name") -> NameIndex:
-        return self._by_name(model, column)
-
     def _ref(
         self, item: _Raw, index: NameIndex, name: str | None, what: str, required: bool = True
     ) -> Any:
@@ -905,14 +943,14 @@ class Transformer:
         if found.found:
             return found.value
         if found.ambiguous:
-            message = f"{source} refers to a {target} name that matches several {target}s"
-        elif not required:
+            if required:
+                raise TransformError(
+                    f"{source} refers to a {target} name that matches several {target}s"
+                )
+            item.warnings.append(f"ambiguous reference left empty: {what}")
             return None
-        else:
-            message = f"{source} refers to an unknown {target}"
         if required:
-            raise TransformError(message)
-        item.warnings.append(f"ambiguous reference left empty: {what}")
+            raise TransformError(f"{source} refers to an unknown {target}")
         return None
 
     def _src(self, item: _Raw, record: Any) -> dict[str, Any]:
@@ -939,34 +977,49 @@ class Transformer:
             return None
         return _with_extra({**self._src(item, record), **row}, record.extra, unfit)
 
+    def _item_rows(
+        self,
+        item: _Raw,
+        kind: type,
+        model: type,
+        values: Callable[[Any], dict[str, Any]],
+        result: TransformResult,
+    ) -> list[dict[str, Any]] | None:
+        """The rows of every record of `kind` in one raw record, fitted; None when one of
+        them can't be stored (the raw record has then failed)."""
+        rows = []
+        for record in item.records:
+            if isinstance(record, kind):
+                row = self._fitted(item, model, record, values(record), result)
+                if row is None:
+                    return None
+                rows.append(row)
+        return rows
+
+    def _group_values(self, g: CanonicalGroup) -> dict[str, Any]:
+        info = self.tree.get(g.name)
+        return {
+            "name": g.name,
+            "nature": info.nature if info else g.nature,
+            "is_primary": g.is_primary,
+            "affects_gross_profit": g.affects_gross_profit,
+            "standard_account_id": self._standard_id(info.standard_code if info else None),
+        }
+
     def _groups(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         rows, parents, ok = [], [], []
         for item in items:
-            good = True
-            for g in (r for r in item.records if isinstance(r, CanonicalGroup)):
-                info = self.tree.get(g.name)
-                row = self._fitted(
-                    item,
-                    A.AccountGroup,
-                    g,
-                    {
-                        "name": g.name,
-                        "nature": info.nature if info else g.nature,
-                        "is_primary": g.is_primary,
-                        "affects_gross_profit": g.affects_gross_profit,
-                        "standard_account_id": self._standard_id(
-                            info.standard_code if info else None
-                        ),
-                    },
-                    result,
-                )
-                if row is None:
-                    good = False
-                    break
-                rows.append(_with_aliases(row, g.aliases))
-                parents.append((g.source_key, g.parent_name))
-            if good:
-                ok.append(item)
+            item_rows = self._item_rows(
+                item, CanonicalGroup, A.AccountGroup, self._group_values, result
+            )
+            if item_rows is None:
+                continue
+            groups = [g for g in item.records if isinstance(g, CanonicalGroup)]
+            rows += [
+                _with_aliases(row, g.aliases) for row, g in zip(item_rows, groups, strict=True)
+            ]
+            parents += [(g.source_key, g.parent_name) for g in groups]
+            ok.append(item)
         self.upsert(A.AccountGroup, rows, "group")
         self._link_parents(A.AccountGroup, parents)
         return ok
@@ -974,7 +1027,7 @@ class Transformer:
     def _link_parents(self, model: type, pairs: list[tuple[str, str | None]]) -> None:
         """Parent links by name (exact, alias or normalised; an unresolved or ambiguous
         parent leaves the link empty: the row itself is fine)."""
-        names = self._names(model)
+        names = self._by_name(model)
         ids = self.upsert.ids(model, [key for key, _ in pairs])
         updates = [
             {"id": ids[key], "parent_id": names.get(parent) if parent else None}
@@ -987,7 +1040,7 @@ class Transformer:
     def _ledgers(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         # Groups that travel inside ledger records (e.g. Tally's synthetic Primary) first.
         items = self._groups(items, result)
-        groups = self._names(A.AccountGroup)
+        groups = self._by_name(A.AccountGroup)
         ok, ledger_rows, party_rows = [], [], []
         for item in items:
             ledger = next(r for r in item.records if isinstance(r, CanonicalLedger))
@@ -1075,32 +1128,30 @@ class Transformer:
     ) -> list[_Raw]:
         rows, ok = [], []
         for item in items:
-            good = True
-            for r in (r for r in item.records if isinstance(r, kind)):
-                row = self._fitted(item, model, r, values(r), result)
-                if row is None:
-                    good = False
-                    break
-                rows.append(row)
-            if good:
+            item_rows = self._item_rows(item, kind, model, values, result)
+            if item_rows is not None:
+                rows += item_rows
                 ok.append(item)
         self.upsert(model, rows, object_type)
         return ok
+
+    def _voucher_type_values(self, r: CanonicalVoucherType) -> dict[str, Any]:
+        info = self.types.info(r)  # inherited through the type tree when the source is silent
+        return {
+            "name": r.name,
+            "base_type": info.base_type,
+            "is_accounting": info.is_accounting,
+            "standard_type": info.standard_type,
+            "moves_stock": info.moves_stock,
+            "is_inventory": r.is_inventory,
+        }
 
     def _voucher_types(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         return self._simple(
             items,
             CanonicalVoucherType,
             A.VoucherType,
-            lambda r: {
-                "name": r.name,
-                # Inherited through the voucher type tree when the source didn't say.
-                "base_type": self.types.info(r).base_type,
-                "is_accounting": self.types.info(r).is_accounting,
-                "standard_type": self.types.info(r).standard_type,
-                "moves_stock": self.types.info(r).moves_stock,
-                "is_inventory": r.is_inventory,
-            },
+            self._voucher_type_values,
             result,
             "voucher_type",
         )
@@ -1154,8 +1205,8 @@ class Transformer:
         return done
 
     def _items(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
-        groups = self._names(A.ItemGroup)
-        units = self._names(A.Unit, "symbol")
+        groups = self._by_name(A.ItemGroup)
+        units = self._by_name(A.Unit, "symbol")
         return self._simple(
             items,
             CanonicalItem,
@@ -1180,77 +1231,73 @@ class Transformer:
             self._lookups = (
                 self._by_name(A.VoucherType, "name", "is_accounting"),
                 self._by_name(A.Ledger, "name", "party_id", "tax_type"),
-                self._names(A.Item),
-                self._names(A.Godown),
-                self._names(A.Unit, "symbol"),
-                self._names(A.CostCentre),
+                self._by_name(A.Item),
+                self._by_name(A.Godown),
+                self._by_name(A.Unit, "symbol"),
+                self._by_name(A.CostCentre),
             )
         return self._lookups
 
     def _vouchers(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
-        types, ledgers, items_by_name, godowns, units, centres = self._master_lookups()
-
         prepared: list[_Prepared] = []
         for item in items:
             v = next(r for r in item.records if isinstance(r, CanonicalVoucher))
             try:
-                refs = _Refs(
-                    voucher_type=self._ref(
-                        item, types, v.voucher_type_name, "voucher -> voucher type"
-                    ),
-                    ledgers={
-                        line.ledger_name: self._ref(
-                            item, ledgers, line.ledger_name, "voucher -> ledger"
-                        )
-                        for line in v.lines
-                    },
-                    items={
-                        inv.item_name: self._ref(
-                            item, items_by_name, inv.item_name, "voucher -> stock item"
-                        )
-                        for inv in v.inventory
-                    },
-                    centres={
-                        name: self._ref(item, centres, name, "voucher -> cost centre")
-                        for line in v.lines
-                        for name, _ in line.cost_allocations
-                    },
-                    godowns={
-                        inv.godown_name: self._ref(
-                            item, godowns, inv.godown_name, "voucher -> godown", required=False
-                        )
-                        for inv in v.inventory
-                        if inv.godown_name
-                    },
-                    units={
-                        inv.unit_name: self._ref(
-                            item, units, inv.unit_name, "voucher -> unit", required=False
-                        )
-                        for inv in v.inventory
-                        if inv.unit_name
-                    },
-                    party=self._ref(
-                        item,
-                        ledgers,
-                        v.party_ledger_name,
-                        "voucher -> party ledger",
-                        required=False,
-                    )
-                    if v.party_ledger_name
-                    else None,
-                )
-                prepared.append(self._prepare(item, v, refs))
+                prepared.append(self._prepare(item, v, self._voucher_refs(item, v)))
             except (TransformError, UnfitValueError) as exc:
                 self._fail(item.row, exc, result)
         if not prepared:
             return []
-
         voucher_ids = self.upsert(A.Voucher, [p.header for p in prepared], "voucher")
         # Overlapping deliveries of one voucher: only its latest version is written below.
         latest = {p.header["source_key"]: p for p in prepared}
-        ids = [voucher_ids[key] for key in latest]
-        self._delete_children(ids)
+        self._delete_children([voucher_ids[key] for key in latest])
+        self._insert_children(latest, voucher_ids)
+        return [p.item for p in prepared]
 
+    def _voucher_refs(self, item: _Raw, v: CanonicalVoucher) -> _Refs:
+        """Every name the voucher refers to, resolved; raises TransformError when a
+        required reference doesn't resolve."""
+        types, ledgers, items_by_name, godowns, units, centres = self._master_lookups()
+        voucher_type = self._ref(item, types, v.voucher_type_name, "voucher -> voucher type")
+        line_ledgers = {
+            line.ledger_name: self._ref(item, ledgers, line.ledger_name, "voucher -> ledger")
+            for line in v.lines
+        }
+        stock_items = {
+            inv.item_name: self._ref(item, items_by_name, inv.item_name, "voucher -> stock item")
+            for inv in v.inventory
+        }
+        cost_centres = {
+            name: self._ref(item, centres, name, "voucher -> cost centre")
+            for line in v.lines
+            for name, _ in line.cost_allocations
+        }
+        line_godowns = {
+            inv.godown_name: self._ref(
+                item, godowns, inv.godown_name, "voucher -> godown", required=False
+            )
+            for inv in v.inventory
+            if inv.godown_name
+        }
+        line_units = {
+            inv.unit_name: self._ref(item, units, inv.unit_name, "voucher -> unit", required=False)
+            for inv in v.inventory
+            if inv.unit_name
+        }
+        party = None
+        if v.party_ledger_name:
+            party = self._ref(
+                item, ledgers, v.party_ledger_name, "voucher -> party ledger", required=False
+            )
+        return _Refs(
+            voucher_type, line_ledgers, stock_items, cost_centres, line_godowns, line_units, party
+        )
+
+    def _insert_children(self, latest: dict[str, _Prepared], voucher_ids: dict[str, int]) -> None:
+        """Inserts the vouchers' lines and inventory lines, then the lines' own child rows
+        (bills, cost allocations, tax lines, dimensions), which need the new line ids."""
+        ids = [voucher_ids[key] for key in latest]
         now = utcnow()
         stamp = {"created_at": now, "updated_at": now}
         line_rows, inventory_rows = [], []
@@ -1298,14 +1345,8 @@ class Transformer:
         ):
             if rows:
                 self.session.execute(insert(model), rows)
-        return [p.item for p in prepared]
 
-    def _prepare(
-        self,
-        item: _Raw,
-        v: CanonicalVoucher,
-        refs: "_Refs",
-    ) -> "_Prepared":
+    def _prepare(self, item: _Raw, v: CanonicalVoucher, refs: _Refs) -> _Prepared:
         """A voucher's rows, each fitted to its columns. Child values that don't fit are kept
         in the voucher's extra as `<table>[<n>].<column>`. Raises UnfitValueError if a
         required value (an amount, a quantity, the date) can't be stored."""
@@ -1458,46 +1499,11 @@ class Transformer:
             )
 
 
-@dataclass
-class _Refs:
-    """A voucher's references, resolved: name as written -> id (ledgers: (id, party_id,
-    tax_type); voucher type: (id, is_accounting))."""
-
-    voucher_type: tuple[int, bool | None]
-    ledgers: dict[str, Any]
-    items: dict[str, int]
-    centres: dict[str, int]
-    godowns: dict[str, int | None]
-    units: dict[str, int | None]
-    party: Any
-
-
-ALIASED: tuple[type, ...] = (A.AccountGroup, A.Ledger)  # rows that keep aliases in extra
-ALIASES = "_aliases"
-
-
 def _with_aliases(row: dict[str, Any], aliases: tuple[str, ...]) -> dict[str, Any]:
     """Other names a master is known by (ADR-027), kept in its extra."""
     if not aliases:
         return row
     return {**row, "extra": {**(row.get("extra") or {}), ALIASES: list(aliases)}}
-
-
-@dataclass
-class _PreparedLine:
-    row: dict[str, Any]
-    bills: list[dict[str, Any]]
-    allocations: list[dict[str, Any]]
-    tax: dict[str, Any] | None
-
-
-@dataclass
-class _Prepared:
-    item: _Raw
-    header: dict[str, Any]
-    extra: Any
-    lines: list[_PreparedLine]
-    inventory: list[dict[str, Any]]
 
 
 def dimension_value_of(extra: Any, source_field: str) -> str | None:
@@ -1542,6 +1548,7 @@ def dimension_value_id(
 
 
 def _source_record(row: RawRecord) -> SourceRecord:
+    """A stored raw record as the connector's mapping takes it."""
     return SourceRecord(
         source_entity_key=row.source_entity_key,
         object_type=row.object_type,
@@ -1561,9 +1568,8 @@ def mark_deleted(
     raw records of that object type are considered. Deleted vouchers' lines stop counting.
     """
     deleted: dict[str, int] = {}
-    models = list(dict.fromkeys(m for ms in MODELS_BY_KIND.values() for m in ms))
     for object_type, keys in existing.items():
-        for model in models:
+        for model in DELETABLE_MODELS:
             candidates = session.execute(
                 select(model.id, model.source_key, RawRecord.source_key)
                 .join(RawRecord, RawRecord.id == model.raw_record_id)
@@ -1581,18 +1587,21 @@ def mark_deleted(
             ]
             if not gone:
                 continue
-            session.execute(
-                update(model).where(model.id.in_(gone)).values(is_deleted=True, updated_at=utcnow())
-            )
-            if model is A.Voucher:
-                session.execute(
-                    update(A.VoucherLine)
-                    .where(A.VoucherLine.voucher_id.in_(gone))
-                    .values(is_effective=False, updated_at=utcnow())
-                )
+            _soft_delete(session, model, gone, utcnow())
             deleted[f"{object_type}:{model.__tablename__}"] = len(gone)
     session.commit()
     return deleted
+
+
+def _soft_delete(session: Session, model: type, ids: list[int], now: datetime) -> None:
+    """Marks rows deleted in the source; a deleted voucher's lines stop counting."""
+    session.execute(update(model).where(model.id.in_(ids)).values(is_deleted=True, updated_at=now))
+    if model is A.Voucher:
+        session.execute(
+            update(A.VoucherLine)
+            .where(A.VoucherLine.voucher_id.in_(ids))
+            .values(is_effective=False, updated_at=now)
+        )
 
 
 def trial_balance(session: Session, entity_id: int) -> list[tuple[str, Any]]:
