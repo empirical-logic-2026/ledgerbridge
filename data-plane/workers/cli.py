@@ -1,5 +1,10 @@
 """Command line for syncing sources (source-independent).
 
+Where it fits: `./dev.ps1` runs these commands inside the api container
+(`python -m workers.cli <command>`); each command reads its arguments, does its work
+through workers/sync.py, workers/validate.py and the other workers modules, and prints the
+result. The worker's schedule (workers/celery_app.py) runs the same sync code without it.
+
     python -m workers.cli entities --connection tally-test --source tally
     python -m workers.cli extract --connection tally-test --entity "LedgerBridge Test Co"
     python -m workers.cli sync --connection tally-test --entity "LedgerBridge Test Co" [--full]
@@ -65,7 +70,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from connectors import registry
-from connectors.base import Period
+from connectors.base import Connector, Period
 from core import naming
 from core.config import get_settings
 from core.dates import EVERY_DAY, date_rule
@@ -766,15 +771,26 @@ def _entities(names: Sequence[str]) -> str:
     return ", ".join(names) if _show_names() else f"{len(names)} entities"
 
 
-def _list_entities(session: Session, args: argparse.Namespace) -> int:
-    """Read-only: an existing connection's settings, or the source's defaults."""
+def _reading_connector(
+    session: Session, args: argparse.Namespace
+) -> tuple[Connection | None, Connector | None]:
+    """For read-only commands: the connection (if it exists) and its connector, else a
+    connector with the source's defaults (--source); no connector, with a message, when
+    there is neither."""
     connection = session.scalar(select(Connection).where(Connection.name == args.connection))
     if connection is not None:
-        connector = connector_for(session, connection)
-    elif args.source:
+        return connection, connector_for(session, connection)
+    if args.source:
         connector = registry.create_connector(args.source, registry.default_config(args.source))
-    else:
-        print(f"No connection '{args.connection}'; pass --source.", file=sys.stderr)
+        return None, connector
+    print(f"No connection '{args.connection}'; pass --source.", file=sys.stderr)
+    return None, None
+
+
+def _list_entities(session: Session, args: argparse.Namespace) -> int:
+    """Read-only: an existing connection's settings, or the source's defaults."""
+    _, connector = _reading_connector(session, args)
+    if connector is None:
         return 2
     session.rollback()  # nothing to write; end the read transaction
     entities = connector.list_entities()
@@ -886,13 +902,8 @@ def _fetch_settings_line(connection: Connection) -> str:
 def _entity_check(session: Session, args: argparse.Namespace) -> int:
     """Read-only diagnostic: which configured entities the source has, and for those it
     doesn't, how the names differ. Kinds and counts only, never names (any environment)."""
-    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
-    if connection is not None:
-        connector = connector_for(session, connection)
-    elif args.source:
-        connector = registry.create_connector(args.source, registry.default_config(args.source))
-    else:
-        print(f"No connection '{args.connection}'; pass --source.", file=sys.stderr)
+    connection, connector = _reading_connector(session, args)
+    if connector is None:
         return 2
     session.rollback()  # read-only from here
     available = connector.list_entities()
@@ -1104,6 +1115,11 @@ def _print_validation_status(session: Session, connection: Connection) -> None:
             continue
         for line in validation_lines(session, run, name, indent="  "):
             print(line)
+    _print_open_alerts(session, connection)
+
+
+def _print_open_alerts(session: Session, connection: Connection) -> None:
+    """The connection's open alerts, counted by kind."""
     alerts = session.execute(
         select(Alert.kind, func.count())
         .where(Alert.connection_id == connection.id, Alert.resolved_at.is_(None))
@@ -1268,12 +1284,7 @@ def _summary(session: Session) -> int:
                 continue
             for line in validation_lines(session, run, labels.for_entity(entity_id), indent="    "):
                 print(line)
-        alerts = session.execute(
-            select(Alert.kind, func.count())
-            .where(Alert.connection_id == connection.id, Alert.resolved_at.is_(None))
-            .group_by(Alert.kind)
-        ).all()
-        print(f"  open alerts: {', '.join(f'{k} {n}' for k, n in sorted(alerts)) or 'none'}")
+        _print_open_alerts(session, connection)
     return 0
 
 

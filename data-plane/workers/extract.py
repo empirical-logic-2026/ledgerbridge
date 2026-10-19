@@ -1,5 +1,10 @@
 """Source-independent extraction: connector → ledgerbridge_source.raw_records, logged in
-ledgerbridge_system.sync_runs."""
+ledgerbridge_system.sync_runs.
+
+Where it fits: the M1 path, `./dev.ps1 extract`, which stores raw records without
+transforming them; it also finds or creates a connection by name (`get_or_create_connection`,
+used by every command). Syncs use workers/sync.py.
+"""
 
 import logging
 from collections import Counter

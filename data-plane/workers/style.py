@@ -10,6 +10,8 @@ terminal supports colours, and never when the output is redirected) and NO_COLOR
 (https://no-color.org). Inside `docker compose exec -T` the output is a pipe, so this
 process can't tell by itself. Background jobs never colour what they write to sync_logs:
 `watch` colours the lines when it prints them.
+
+Where it fits: workers/cli.py passes every line it prints through it.
 """
 
 import os

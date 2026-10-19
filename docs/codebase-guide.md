@@ -385,6 +385,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 0.19 | `workers/` lighter review: every module says where it fits. |
 | 2026-10-19 | 0.18 | `core/validation.py`, `workers/analyse.py` after the simplicity review. |
 | 2026-10-19 | 0.17 | `core/transform.py`, `fit.py` after the simplicity review. |
 | 2026-10-19 | 0.16 | `connectors/tally/` after the simplicity review: what each file does and how `connector.py` is grouped. |
