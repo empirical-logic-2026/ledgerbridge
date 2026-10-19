@@ -157,7 +157,7 @@ Go through it before committing; mention in "Security impact" any item the chang
 
 ## Automated checks
 
-`.github/workflows/checks.yml` runs on every pull request (SEC-009, ADR-039): lint and unit tests, integration tests on a throwaway MySQL with recorded Tally responses, dependency audits (pip-audit, npm audit), Semgrep, gitleaks and Trivy. Its "All checks" job is required on `dev` and `main`, so a failing check blocks merging. Fix what it finds rather than silencing it; a justified exception (`# nosemgrep`, `.gitleaksignore`, `.trivyignore`) needs a comment saying why. Ask before adding any tool that needs an account or a paid plan.
+`.github/workflows/checks.yml` runs on every pull request (SEC-009, ADR-039): lint and unit tests, integration tests on a throwaway MySQL with recorded Tally responses, the dev.ps1 tests on Windows, dependency audits (pip-audit, npm audit), Semgrep, gitleaks and Trivy. Its "All checks" job is required on `dev` and `main`, so a failing check blocks merging. Fix what it finds rather than silencing it; a justified exception (`# nosemgrep`, `.gitleaksignore`, `.trivyignore`) needs a comment saying why. Ask before adding any tool that needs an account or a paid plan.
 
 ## Docker changes (developer is learning Docker)
 
