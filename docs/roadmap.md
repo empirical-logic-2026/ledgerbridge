@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.10 |
+| Version | 0.11 |
 | Date | 2026-10-19 |
 | Current milestone | **M4** |
 
@@ -64,7 +64,8 @@ Starts when validation of every pilot company passes with zero failures. It cons
 - `fx_realised` holds realised gains and losses from forex adjustment journals and from bills settled at another rate, each with its method (FX-005);
 - balances in the original currency are available per ledger and party as of any date (FX-006);
 - validation compares each foreign-currency ledger's balance in its own currency with the source's, besides its base book value (FX-007), and the pilot still passes with zero failures;
-- tests cover the mapping of foreign amounts, rates and bills, the derived rates and realised gains, and the snapshots, on test-company seed cases (a foreign-currency voucher and a rate entered in TallyPrime first, so their exported fields are copied, never guessed).
+- tests cover the mapping of foreign amounts, rates and bills, the derived rates and realised gains, and the snapshots, on test-company seed cases (a foreign-currency voucher and a rate entered in TallyPrime first, so their exported fields are copied, never guessed);
+- parties outside India get their country: today a ledger whose COUNTRYNAME isn't India gets no country code (simplicity review, area 1, finding 7); country names are mapped to codes with the foreign-currency data, which is where foreign parties matter first.
 
 > Read docs/requirements.md Section 4.13 (FX-001 to FX-013), architecture.md Section 4.8 and ADR-037, and the proposed foreign-currency tables in docs/schema.md Section 4.8. Plan milestone M4b: the foreign-currency data layer, built generically (PIL-003). Confirm or adjust the proposed tables, then build Alembic migrations with docs/schema.md updated in the same change; the connector mapping of currency masters, rate lists and foreign amounts (Tally specifics only in connectors/tally); the transform writing `fx_transactions`, `fx_realised` and voucher-derived rates; the read-only snapshot reader and its schedule; and the own-currency validation. Base-currency figures must not change. Show me the plan first.
 
@@ -185,4 +186,5 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | 2026-10-12 | 0.7 | M9 points to docs/pilot-runbook.md. |
 | 2026-10-13 | 0.8 | New milestone M7b "Budget planning and analysis" (BUD-001 to BUD-016, ADR-026) between M7 and M8. M5 seeds `budget.view`, `budget.edit`, `budget.approve`. M8 answers budget questions and embeds the budget views. M9 includes budgets. |
 | 2026-10-16 | 0.9 | New step M4b "Consolidation" after pilot validation reaches zero, starting with the foreign-currency data layer (FX-001 to FX-007, ADR-037). M5 seeds `forex.view`; M6 adds the foreign-currency reports (FX-008 to FX-011); M7 the Forex page (dashboard.md Section 8); M8 currency questions (FX-013). |
+| 2026-10-19 | 0.11 | M4b: country codes for parties outside India (simplicity review finding). |
 | 2026-10-19 | 0.10 | M9: production hardening, including third-party images without high-severity findings, pinned by digest. |

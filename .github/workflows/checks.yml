@@ -128,6 +128,13 @@ jobs:
       - name: Create the CI env file
         run: Copy-Item ../.env.test.example ../.env.test
       - run: uv sync --frozen
+      # The reset test lists the test volumes with `docker volume ls`: the Docker service
+      # isn't always running on a fresh Windows runner, so start it if needed.
+      - name: Docker service
+        run: |
+          $service = Get-Service docker
+          if ($service.Status -ne 'Running') { Start-Service docker }
+          docker version --format 'Docker engine {{.Server.Version}}'
       # No Docker stack runs here. dev.ps1's test hook (LEDGERBRIDGE_DEV_STACK) points it at
       # a stand-in for deploy/stack.ps1 that only says which services are running, so
       # `sync abandon` reaches its confirmation; any other Docker call fails the test.

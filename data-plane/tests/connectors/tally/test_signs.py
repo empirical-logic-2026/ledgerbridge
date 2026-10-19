@@ -114,3 +114,9 @@ def test_cancelled_voucher_placeholder_entry_is_ignored() -> None:
     report = check_vouchers([*_vouchers(), cancelled])
     assert report.unparsable == 0
     assert report.debits_negative
+
+
+def test_anchors_not_found_are_listed_in_name_order() -> None:
+    """The same output on every run (the names not found were listed in set order)."""
+    report = check_balance_sides(_balances(), anchors=("Zeta", "Rent", "Alpha", "Mid"))
+    assert list(report.anchors) == ["Rent", "Alpha", "Mid", "Zeta"]

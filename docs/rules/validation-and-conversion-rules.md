@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.1 |
+| Version | 1.2 |
 | Date | 2026-10-19 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
@@ -173,7 +173,7 @@ Rules are built generically (PIL-003): Tally specifics live in `data-plane/conne
 
 ### 6.2 Stock is counted where Tally counts it: by godown kind
 
-- **What:** godowns carry whose stock they hold (`godowns.holding`): `own`, `ours_with_third_party` (a job worker's, Tally `ISEXTERNAL`), `third_party_with_us` (a principal's, `ISINTERNAL`). Stock at a job worker's godown is in no item balance, Stock Summary or closing stock value; a principal's stock with us is counted. A Material In/Out moves stock at its line's godown; its destination godown moves nothing. An entry spread over several godowns becomes one inventory line per godown.
+- **What:** godowns carry whose stock they hold (`godowns.holding`): `own`, `ours_with_third_party` (a job worker's, Tally `ISEXTERNAL`), `third_party_with_us` (a principal's, `ISINTERNAL`). Stock at a job worker's godown is in no item balance, Stock Summary or closing stock value; a principal's stock with us is counted. A Material In/Out moves stock at its line's godown; its destination godown moves nothing. An entry spread over several godowns becomes one inventory line per godown, each going in or out as the entry does; a batch without its own amount gets its share by quantity, so an entry with no quantity of its own whose batches lack amounts stays one line.
 - **Why:** pilot: stock differences on items sent for job work.
 - **Proven:** the test company's godown and item balances after Material Out/In, consumption at the job worker and a principal's material.
 - **Code:** `connectors/tally/mapping.py` (`_holding`, `_inventory_lines`), `core/validation.py` (`counted_godown`), migration 0015.
@@ -328,5 +328,6 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 1.2 | Rule 6.2: entries with no quantity of their own across several godowns. |
 | 2026-10-19 | 1.1 | Rule 1.6: TallyPrime Edit Log. |
 | 2026-10-16 | 1.0 | First edition: every conversion and validation rule up to PR #33, with flowcharts. |

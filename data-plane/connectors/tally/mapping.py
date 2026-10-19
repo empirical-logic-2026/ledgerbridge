@@ -453,8 +453,7 @@ def _inventory(entry: ET.Element, inward: bool | None = None) -> CanonicalInvent
     if not item:
         return None
     entry_qty, unit_name = _entry_quantity(entry)
-    if inward is None:
-        inward = _flag(entry, "ISDEEMEDPOSITIVE")
+    inward = _is_inward(entry, inward)
     batch = entry.find("BATCHALLOCATIONS.LIST")
     discount = _rate(text_of(entry, "DISCOUNT"))
     tracked = _tracked(entry, abs(entry_qty))
@@ -483,6 +482,11 @@ def _holding(godown: ET.Element) -> str:
     return "own"
 
 
+def _is_inward(entry: ET.Element, inward: bool | None) -> bool:
+    """The entry's direction: given for stock journal entries, else ISDEEMEDPOSITIVE."""
+    return _flag(entry, "ISDEEMEDPOSITIVE") if inward is None else inward
+
+
 def _inventory_lines(entry: ET.Element, inward: bool | None) -> list[CanonicalInventoryLine]:
     """An inventory entry as lines: one per batch allocation when its stock sits in more
     than one godown (each with its own quantity, amount and tracking), so stock is known
@@ -495,12 +499,18 @@ def _inventory_lines(entry: ET.Element, inward: bool | None) -> list[CanonicalIn
     godowns = {text_of(b, "GODOWNNAME") for b in batches}
     if len(batches) < 2 or len(godowns) < 2:
         return [line]
+    if not line.quantity and any(not text_of(b, "AMOUNT") for b in batches):
+        # A batch without an amount gets its share by quantity, which needs the entry's
+        # own quantity: without one the amount can't be shared, so keep the entry whole.
+        return [line]
+    # The direction comes from the entry itself: an entry quantity of zero has no sign.
+    inward = _is_inward(entry, inward)
     lines = []
     for batch in batches:
         batch_qty, _ = _entry_quantity(batch)
         if not batch_qty:
             return [line]  # quantities not split by batch: keep the entry whole
-        signed = abs(batch_qty) if line.quantity >= 0 else -abs(batch_qty)
+        signed = abs(batch_qty) if inward else -abs(batch_qty)
         amount = _amount(batch, "AMOUNT")
         lines.append(
             replace(
