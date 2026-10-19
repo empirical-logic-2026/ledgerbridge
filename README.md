@@ -66,6 +66,36 @@ The dashboard dev server always uses port 5175, and fails rather than switching 
 
 The test API listens on **http://127.0.0.1:8001** (`/health/ready`, `/docs`). For lower-level Docker commands, use `./deploy/stack.ps1 -Env test <docker compose args>`. See [docs/learning/docker.md](docs/learning/docker.md) for how the Docker setup works.
 
+## Automated checks
+
+Every pull request runs [.github/workflows/checks.yml](.github/workflows/checks.yml) on GitHub (SEC-009, ADR-039). Nothing in it touches Tally or client data: the integration tests replay responses recorded from LedgerBridge Test Co on a throwaway MySQL. Every tool is free and needs no account.
+
+| Job | What it checks | Fails when |
+| --- | --- | --- |
+| Python lint and unit tests | `ruff check` (including its security rules), `ruff format --check`, `pytest` | Any finding or failing test |
+| Frontend lint, tests and build | `oxlint`, `vitest`, `tsc` and `vite build` | Any finding, failing test or build error |
+| Integration tests | Migrations, MySQL users' grants and syncs on MySQL 8.4, Redis and Qdrant service containers | Any failing test |
+| Dependency vulnerabilities | `pip-audit` on `uv.lock`, `npm audit` on `package-lock.json` | Python: any known vulnerability; npm: high or critical |
+| Static security analysis | Semgrep's public rules on all code, Dockerfiles and workflows | A high-severity (ERROR) finding |
+| Secret scanning | gitleaks over every commit in the history | Any secret found |
+| Container image vulnerabilities | Trivy on the data-plane image (third-party images listed for information only) | A high or critical vulnerability that has a fix |
+| **All checks** | That every job above passed | Any job failed or was skipped |
+
+**Reading the results:**
+
+- **Where:** in the PR, the checks box at the bottom of the "Conversation" tab lists each job with a tick or a cross; "Details" opens its log. All runs are under the repository's **Actions** tab. From a terminal: `gh pr checks <number>` and `gh run view <run-id> --log-failed`.
+- **What you need:** **"All checks" is required on `dev` and `main`** (branch protection), so the merge button stays blocked until it is green.
+- **What a failure looks like, by job:**
+  - **Ruff and tests:** the file, line and rule, or the failing test.
+  - **pip-audit:** the package, version, advisory ID and the version that fixes it.
+  - **npm audit:** a table of packages and advisories.
+  - **Semgrep:** each finding as file, line, rule and a link to the rule's explanation.
+  - **gitleaks:** the commit, file and line, with the secret itself redacted.
+  - **Trivy:** a table of packages, CVEs, severity and fixed version.
+- **What to do:** fix the cause: upgrade the package, change the code, or remove the secret and rotate it. A justified exception needs a comment saying why (see [docs/security/security-guide.md](docs/security/security-guide.md)).
+
+Security documents: [threat model](docs/security/threat-model.md) and [security guide](docs/security/security-guide.md).
+
 ## Databases
 
 MySQL holds four databases, one per layer (ADR-016): `ledgerbridge_source` (data as received), `ledgerbridge_accounting` (canonical model), `ledgerbridge_reporting` (semantic layer, the only one the AI can read) and `ledgerbridge_system` (connections, sync, users, audit). Each MySQL user has only the rights it needs: see `docs/schema.md` Section 2.1.

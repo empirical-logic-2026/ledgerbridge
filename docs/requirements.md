@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.21 (Draft) |
-| Date | 2026-10-16 |
+| Version | 0.22 (Draft) |
+| Date | 2026-10-19 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
 
@@ -307,7 +307,7 @@ The books stay in the **base currency** (INR): base amounts are the source of tr
 - **SEC-006** Clients may self-host the dashboard frontend if they require full control.
 - **SEC-007** No telemetry, usage analytics or crash reports containing client data are sent to the provider.
 - **SEC-008** Principle of least privilege for all service accounts and database users.
-- **SEC-009** Dependency and container vulnerability scanning in the build pipeline.
+- **SEC-009** Automated checks on every pull request, required before merging: lint and tests, dependency and container image vulnerability scanning, static security analysis and secret scanning; high-severity findings block the merge (ADR-039).
 - **SEC-010** **Outbound network allowlist for the data plane:** the data plane may connect out only to its configured sources (e.g. Tally, Zoho, banks) and to the **one** AI endpoint approved for the client's privacy mode (none in `private` mode, AI-011). Everything else is blocked. The allowlist is enforced at the network level (container egress rules) and checked again in application code. Changes to it are audited.
 
 ### 5.2 Performance (initial targets, to validate)
@@ -390,6 +390,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
+| 2026-10-19 | 0.22 | SEC-009 widened: automated checks on every pull request, high-severity findings block merging (ADR-039). |
 | 2026-10-16 | 0.21 | VAL-013: the book value is the opening plus the source's own vouchers; DAT-012: the opening difference warning follows the source's own trial balance line. |
 | 2026-10-16 | 0.20 | Section 4.13 Foreign currency (FX-001 to FX-013): foreign-currency data kept alongside the base-currency books, revaluation snapshots, realised and unrealised gains, exposure, `forex.view` (ADR-037). |
 | 2026-10-16 | 0.19 | VAL-013 per ledger; VAL-014: `validate compare-ledger`. |

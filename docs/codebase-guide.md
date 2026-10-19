@@ -57,6 +57,7 @@ Generated and third-party folders (`.venv`, `node_modules`, `dist`, `__pycache__
 ```text
 ledgerbridge/
 ├── CLAUDE.md, README.md, dev.ps1
+├── .github/workflows/checks.yml   automated checks on every pull request
 ├── .env.test.example, .env.pilot.example, .gitignore, .gitattributes
 ├── agent/                      README only (Phase 1b)
 ├── control-plane/              README only (Phase 1b)
@@ -91,6 +92,7 @@ ledgerbridge/
 │   ├── database/               the schema reference (generated)
 │   ├── export/                 Word and PDF copies of those (./dev.ps1 docs-export)
 │   ├── design/                 dashboard design and mockup
+│   ├── security/               threat model and security guide
 │   ├── diagrams/               ER, database and data flow diagrams (source and images)
 │   └── learning/               the Docker guide
 ├── reports/                    saved health reports, per environment (git-ignored)
@@ -259,6 +261,7 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | [pilot-runbook.md](pilot-runbook.md) | Step by step for running the pilot on client data (the developer runs it, never Claude Code), and how to read the output. |
 | [design/dashboard.md](design/dashboard.md), `design/dashboard-mockup.png` | The dashboard design: the approved home page and the proposed Budget page. |
 | [learning/docker.md](learning/docker.md) | Docker explained for this project, file by file. |
+| [security/threat-model.md](security/threat-model.md), [security/security-guide.md](security/security-guide.md) | What we protect, from whom and what protects it today, with the security roadmap by milestone; and how to work securely, including what the automated checks catch. |
 | [diagrams/README.md](diagrams/README.md), `diagrams/*.mmd`, `*.svg`, `*.png` | The diagrams: ER diagrams (generated from the models), the databases and users, the data flow, the planned budget tables; each as Mermaid source and as images. |
 | `diagrams/mermaid-config.json` | How the images are drawn. |
 | `codebase-guide.md` | This guide. |
@@ -342,6 +345,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 | What may be printed outside the test environment? | `data-plane/workers/cli.py` (`_show_names`) and `data-plane/core/errors.py`. |
 | Where is the test company's data? | `data-plane/devtools/tally_seed/data.py`. |
 | Is there a picture of the tables or the flow? | [diagrams/README.md](diagrams/README.md); regenerate with `./dev.ps1 diagrams`. |
+| What runs on every pull request? | `.github/workflows/checks.yml`; how to read the results: README, "Automated checks". |
 | Where is a design decision explained? | [architecture.md](architecture.md) Section 11 (the ADRs). |
 | What is planned next? | [roadmap.md](roadmap.md). |
 
@@ -381,6 +385,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 0.15 | `.github/workflows/checks.yml`; `docs/security/`. |
 | 2026-10-19 | 0.14 | `tests/test_edit_log.py`. |
 | 2026-10-16 | 0.13 | Knowledge base: `docs/rules/`, `docs/database/`, `docs/project-history.md`, `docs/progress-log.md`, `docs/export/`; `devtools/schema_reference.py`; `./dev.ps1 docs-export`. |
 | 2026-10-16 | 0.12 | `workers/compare.py`, `tests/test_compare_ledger.py`. |

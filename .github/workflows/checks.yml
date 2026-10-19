@@ -1,0 +1,199 @@
+# Automated checks on every pull request (SEC-009, ADR-039).
+#
+# One job per kind of check. The last job, "All checks", passes only when every other job
+# passed; branch protection on dev and main requires it, so any failing check blocks merging.
+# How to read the results: README, "Automated checks".
+#
+# Every tool here is free and needs no account. Nothing here talks to Tally or to any client
+# data: the integration tests replay responses recorded from LedgerBridge Test Co.
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+# Read-only token: no job can push, comment or change settings.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the older run.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python lint and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: data-plane
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+      - run: uv sync --frozen
+      - name: Lint (ruff, including its security rules)
+        run: uv run ruff check .
+      - name: Formatting
+        run: uv run ruff format --check .
+      - name: Unit tests
+        run: uv run python -m pytest
+
+  frontend:
+    name: Frontend lint, tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --run
+      - run: npm run build
+
+  integration:
+    name: Integration tests (MySQL, recorded Tally responses)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Throwaway databases that live only for this job. The passwords are the placeholder
+    # values from .env.test.example, which the job copies to .env.test.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: change-me-root
+          MYSQL_USER: app_rw
+          MYSQL_PASSWORD: change-me-app
+        ports: ["3307:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pchange-me-root --silent"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      qdrant:
+        image: qdrant/qdrant:v1.15.4
+        ports: ["6333:6333"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+      - name: Create the CI env file
+        run: cp .env.test.example .env.test
+      - name: Create the databases and users (deploy/mysql/init, as on a fresh volume)
+        run: |
+          docker cp deploy/mysql/init/01-schemas.sh "${{ job.services.mysql.id }}:/tmp/01-schemas.sh"
+          grep -E '^MYSQL_(MIGRATOR|REPORT|AI)_' .env.test > "$RUNNER_TEMP/users.env"
+          docker exec --env-file "$RUNNER_TEMP/users.env" "${{ job.services.mysql.id }}"             bash /tmp/01-schemas.sh
+      - name: Wait for Qdrant
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:6333/readyz && exit 0
+            sleep 2
+          done
+          exit 1
+      - run: uv sync --frozen
+        working-directory: data-plane
+      - name: Migrate (as the migrator user)
+        run: uv run python -m alembic upgrade head
+        working-directory: data-plane
+      - name: Integration tests
+        run: uv run python -m pytest -m integration
+        working-directory: data-plane
+
+  dependencies:
+    name: Dependency vulnerabilities (pip-audit, npm audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+      # PyPI's advisories carry no severity, so any known vulnerability fails this step.
+      - name: Python packages (every known vulnerability)
+        working-directory: data-plane
+        run: |
+          uv export --frozen --no-hashes --no-emit-project --format requirements-txt \
+            -o "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit==2.9.0 --strict --no-deps --disable-pip -r "$RUNNER_TEMP/requirements.txt"
+      - name: npm packages (high and critical)
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  static-analysis:
+    name: Static security analysis (Semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: semgrep/semgrep:1.128.0
+    steps:
+      - uses: actions/checkout@v7
+      # Semgrep's public rules, no login; --metrics=off sends nothing about the code.
+      # Only ERROR (high-severity) findings fail the job.
+      # Excluded: migrations already applied, which must never be edited (ADR-016). Their SQL
+      # strings are built from constant database names, never from input. New migrations
+      # are scanned.
+      - name: Scan
+        run: >-
+          semgrep scan --config p/default --severity ERROR --error --metrics=off
+          --exclude data-plane/migrations/versions/0003_seed_reference_data.py
+          --exclude data-plane/migrations/versions/0006_validation_as_of_and_alerts.py
+          --exclude data-plane/migrations/versions/0009_run_liveness_and_sync_logs.py
+          --exclude data-plane/migrations/versions/0010_flexible_accounting_layer.py
+          --exclude data-plane/migrations/versions/0014_inventory_line_stock_quantity.py
+
+  secrets:
+    name: Secret scanning (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the whole history: a secret removed later is still in git
+      # --redact: the log never shows a secret it found, only where it is.
+      - name: Scan every commit
+        run: >-
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.28.0
+          git /repo --redact --verbose --exit-code 1
+
+  images:
+    name: Container image vulnerabilities (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TRIVY: >-
+        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+        -v trivy-cache:/root/.cache aquasec/trivy:0.64.1 image --no-progress
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build our image
+        run: docker build -t ledgerbridge-data-plane:ci data-plane
+      - name: Our image (high and critical with a fix available)
+        run: $TRIVY --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 ledgerbridge-data-plane:ci
+      # Images we use but don't build: listed for information, never blocking.
+      - name: Third-party images (report only)
+        run: |
+          for image in mysql:8.4 redis:7-alpine qdrant/qdrant:v1.15.4; do
+            $TRIVY --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 "$image"
+          done
+
+  all-checks:
+    name: All checks
+    if: always()
+    needs: [python, frontend, integration, dependencies, static-analysis, secrets, images]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every check passed
+        run: |
+          echo "Results: ${{ join(needs.*.result, ', ') }}"
+          test "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "false"

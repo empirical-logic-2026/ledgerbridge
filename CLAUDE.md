@@ -126,6 +126,39 @@ Claude Code only ever uses `-Env test` (with both `dev.ps1` and `deploy/stack.ps
 7. Keep the diagrams current: whenever the database models, the databases or users, or the data flows change, run `./dev.ps1 diagrams` and commit the regenerated `docs/diagrams/` (the ER and database diagrams are generated from the models; a test fails if they are stale). Edit the hand-written sources (`dataflow-*.mmd`, `er-budgets-planned.mmd`) when the flows or plans change, and update `docs/diagrams/README.md`.
 8. Every new error or warning gets an entry in `data-plane/core/problems.py` (a new stable code; never reuse or renumber one) and is printed with `title()`/the shared layout; run `./dev.ps1 diagrams` (or `python -m devtools.error_catalogue`) to regenerate `docs/error-catalogue.md`.
 
+## Reports to the developer
+
+Every report at the end of a change (and every PR description) ends with these four sections:
+
+- **What changed**: the files and behaviour, briefly.
+- **Why**: the finding, requirement or decision behind it.
+- **Security impact**: what the change means for the checklist below; "none" must say why.
+- **Code walkthrough**: the main functions and how they fit together, in plain language.
+
+## Security checklist (every change)
+
+Go through it before committing; mention in "Security impact" any item the change touches.
+
+1. **Authentication:** no endpoint or command added without a login check (from M5), and no way around it.
+2. **Authorisation:** permissions are checked in the data plane, in code, for every request and entity.
+3. **Input validation:** input from users, files and sources is validated (Pydantic, parsers) before use; SQL only with bound parameters.
+4. **Data exposure:** responses, logs, errors and reports show only what the caller may see; pilot output only counts and kinds.
+5. **Secrets:** none in code, git, logs or error messages; env files stay out of git.
+6. **Logging and audit:** no accounting values or secrets in logs; actions that change settings or permissions are audited (AUD-001).
+7. **Dependencies:** no new dependency without the developer's approval; the checks workflow must stay green.
+8. **Client data rules:** test environment only, read-only towards sources, synthetic or test-company fixtures.
+
+## Simplicity rules
+
+- Readable over clever: code a newcomer can follow beats a shorter trick.
+- Small, single-purpose functions with clear names; split a function when it does two things.
+- Every source file starts with a plain-English comment (a docstring in Python) saying what it is for.
+- No new dependencies (libraries, tools, GitHub Actions, Docker images) without the developer's approval.
+
+## Automated checks
+
+`.github/workflows/checks.yml` runs on every pull request (SEC-009, ADR-039): lint and unit tests, integration tests on a throwaway MySQL with recorded Tally responses, dependency audits (pip-audit, npm audit), Semgrep, gitleaks and Trivy. Its "All checks" job is required on `dev` and `main`, so a failing check blocks merging. Fix what it finds rather than silencing it; a justified exception (`# nosemgrep`, `.gitleaksignore`, `.trivyignore`) needs a comment saying why. Ask before adding any tool that needs an account or a paid plan.
+
 ## Docker changes (developer is learning Docker)
 
 Whenever a change touches anything Docker-related (Dockerfiles, `.dockerignore`, `deploy/compose.yaml`, volumes, ports, env files, MySQL init scripts, Docker commands in `deploy/stack.ps1` or other scripts):
