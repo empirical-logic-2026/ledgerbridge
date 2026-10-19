@@ -18,6 +18,12 @@ consequences, so the root cause is obvious (`root_cause`).
 
 Issue messages are stored in the database (they may name vouchers and ledgers); nothing
 here logs names or amounts.
+
+Where it fits: `workers/validate.py` reads the source's figures through the connector and
+runs a Validator after every sync (and on `validate`); the report is stored in
+`validation_runs` / `validation_issues` and printed by the CLI. `workers/analyse.py`
+(`validate analyse`) explains failures using the same balances (`ledger_balances`,
+`at_stock_value`, `at_book_value`).
 """
 
 from collections import Counter
@@ -26,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from connectors.base import SourceBalances, SourceControls
@@ -142,8 +148,6 @@ def counted_godown():  # noqa: ANN201 - a SQL condition
     """Inventory lines whose godown counts in stock balances: no godown, or one that isn't
     "our stock with a third party" (a job worker's location; ADR-031). Needs an outer join
     of `godowns` on the line's godown."""
-    from sqlalchemy import or_
-
     return or_(A.Godown.id.is_(None), A.Godown.holding != "ours_with_third_party")
 
 
@@ -189,6 +193,15 @@ def at_book_value(
         if mine:
             out[keys] = (book, sum(mine, ZERO))
     return out
+
+
+def _period_profit(ledgers: list[_LedgerBalance], source: SourceBalances) -> Decimal:
+    """The period's profit as the profit carrier needs it: income and expense ledgers, less
+    the stock's change in value (debit positive: a positive figure is a loss)."""
+    profit = sum((x.balance for x in ledgers if x.nature in PROFIT_NATURES), ZERO)
+    if source.closing_stock is not None and source.opening_stock is not None:
+        profit -= source.closing_stock - source.opening_stock
+    return profit
 
 
 def financial_year_ends(books_from: date | None, fy_start_month: int, as_of: date) -> list[date]:
@@ -245,6 +258,7 @@ class Validator:
 
         ledgers = self._ledger_balances(self.as_of)
         report.unbalanced_by_type, report.unbalanced_details = self._vouchers()
+        # Our ledger openings' total: the trial balance must total exactly that.
         report.opening_difference = self._opening_difference(ledgers, source)
         self._trial_balance(report.opening_difference)
         self._closing(ledgers, source)
@@ -264,11 +278,16 @@ class Validator:
         return report
 
     def _fail(self, finding: Finding) -> None:
+        """Records a finding: a failed check (error), a warning or a note (info)."""
         self.findings.append(finding)
+
+    def _note(self, check_code: str, object_id: str, message: str) -> None:
+        """An information finding about the entity (no amounts)."""
+        self._fail(Finding(check_code, "info", "entity", object_id, None, None, message))
 
     # --- our side ---------------------------------------------------------------------
 
-    def ledger_balances(self, as_of: date) -> list["_LedgerBalance"]:
+    def ledger_balances(self, as_of: date) -> list[_LedgerBalance]:
         """Each ledger's opening and balance as of a date (used by `validate analyse`)."""
         return self._ledger_balances(as_of)
 
@@ -435,45 +454,16 @@ class Validator:
         validation date)."""
         entity_id = str(self.entity.id)
         if year_end is not None:
-            if isinstance(source, Exception) or source is None:
-                self._unavailable("year_end_balances", source, f"at {year_end}")
-                return
             entity_id = f"{self.entity.id}@{year_end.isoformat()}"
-        if source is None:
-            self._fail(
-                Finding(
-                    "closing_not_supported",
-                    "info",
-                    "entity",
-                    entity_id,
-                    None,
-                    None,
-                    "The source can't report closing balances; closing checks skipped.",
-                )
-            )
-            return
-        if isinstance(source, Exception):
-            self._fail(
-                Finding(
-                    "closing_unavailable",
-                    "error",
-                    "entity",
-                    entity_id,
-                    None,
-                    None,
-                    f"Closing balances couldn't be read from the source "
-                    f"({type(source).__name__}); closing checks didn't run.",
-                )
-            )
+        if not isinstance(source, SourceBalances):
+            self._closing_unreadable(source, year_end, entity_id)
             return
         ours = [
             ledger
             for ledger in ledgers
             if self.connection_id is None or ledger.connection_id == self.connection_id
         ]
-        profit = sum((x.balance for x in ours if x.nature in PROFIT_NATURES), ZERO)
-        if source.closing_stock is not None and source.opening_stock is not None:
-            profit -= source.closing_stock - source.opening_stock  # debit positive: a loss
+        profit = _period_profit(ours, source)
         at_stock_value = self._at_stock_value(ours, source, year_end or self.as_of, entity_id)
         at_book = self._at_book_value(ours, source, year_end, entity_id)
         seen = set()
@@ -490,52 +480,76 @@ class Validator:
             if theirs is None:
                 self._fail(
                     Finding(
-                        "ledger_missing",
-                        "error",
-                        "ledger",
-                        str(ledger.id),
-                        None,
-                        ledger.balance,
-                        f"Ledger '{ledger.name}' isn't in the source.",
+                        "ledger_missing", "error", "ledger", str(ledger.id), None,
+                        ledger.balance, f"Ledger '{ledger.name}' isn't in the source.",
                     )
-                )
+                )  # fmt: skip
                 continue
-            if ledger.source_key in source.profit_carriers:
-                expected_ours = ledger.balance + profit
-                code = "profit_carrier_mismatch"
-                message = (
-                    f"Ledger '{ledger.name}' (carries the computed profit) doesn't reconcile: "
-                    "its posted balance plus the profit for the period differs from the source."
-                )
-            else:
-                expected_ours = ledger.balance
-                code = "closing_mismatch"
-                message = f"Ledger '{ledger.name}' closing balance differs from the source."
-            object_id = str(ledger.id)
-            if year_end is not None:
-                code, object_id = "year_end_mismatch", f"{ledger.id}@{year_end.isoformat()}"
-                message = f"{message[:-1]} at the year end {year_end}."
-            if abs(theirs - expected_ours) <= self.tolerance:
-                self.passed += 1
-            else:
-                self._fail(
-                    Finding(code, "error", "ledger", object_id, theirs, expected_ours, message)
-                )
+            self._compare_closing(ledger, theirs, profit, source, year_end)
+        if year_end is None:
+            self._missing_here(source, seen)
+
+    def _closing_unreadable(
+        self, source: Exception | None, year_end: date | None, entity_id: str
+    ) -> None:
+        """No closing balances from the source: not offered (a note) or not readable."""
         if year_end is not None:
-            return
+            self._unavailable("year_end_balances", source, f"at {year_end}")
+        elif source is None:
+            self._note(
+                "closing_not_supported",
+                entity_id,
+                "The source can't report closing balances; closing checks skipped.",
+            )
+        else:
+            self._fail(
+                Finding(
+                    "closing_unavailable", "error", "entity", entity_id, None, None,
+                    f"Closing balances couldn't be read from the source "
+                    f"({type(source).__name__}); closing checks didn't run.",
+                )
+            )  # fmt: skip
+
+    def _compare_closing(
+        self,
+        ledger: _LedgerBalance,
+        theirs: Decimal,
+        profit: Decimal,
+        source: SourceBalances,
+        year_end: date | None,
+    ) -> None:
+        """One ledger against the source's closing balance; the profit carrier (e.g. Tally's
+        Profit & Loss A/c) with the period's profit added."""
+        if ledger.source_key in source.profit_carriers:
+            expected_ours = ledger.balance + profit
+            code = "profit_carrier_mismatch"
+            message = (
+                f"Ledger '{ledger.name}' (carries the computed profit) doesn't reconcile: "
+                "its posted balance plus the profit for the period differs from the source."
+            )
+        else:
+            expected_ours = ledger.balance
+            code = "closing_mismatch"
+            message = f"Ledger '{ledger.name}' closing balance differs from the source."
+        object_id = str(ledger.id)
+        if year_end is not None:
+            code, object_id = "year_end_mismatch", f"{ledger.id}@{year_end.isoformat()}"
+            message = f"{message[:-1]} at the year end {year_end}."
+        if abs(theirs - expected_ours) <= self.tolerance:
+            self.passed += 1
+        else:
+            self._fail(Finding(code, "error", "ledger", object_id, theirs, expected_ours, message))
+
+    def _missing_here(self, source: SourceBalances, seen: set[str]) -> None:
+        """Ledgers the source has that aren't here."""
         for key, theirs in source.ledgers.items():
             if key not in seen:
                 self._fail(
                     Finding(
-                        "ledger_missing",
-                        "error",
-                        "source_ledger",
-                        key[:64],
-                        theirs,
-                        None,
+                        "ledger_missing", "error", "source_ledger", key[:64], theirs, None,
                         "A ledger in the source isn't here (sync it, or check for a failure).",
                     )
-                )
+                )  # fmt: skip
 
     def _at_book_value(
         self,
@@ -571,13 +585,12 @@ class Validator:
                     f"{what}: the balance differs from the source's book value as of {on}.",
                 )
             )  # fmt: skip
-        self._fail(
-            Finding(
-                "foreign_ledgers_at_book_value", "info", "entity", object_id, None, None,
-                "Foreign-currency ledgers were compared with the source's book value (its "
-                "trial balance), not with their closing balances at current rates.",
-            )
-        )  # fmt: skip
+        self._note(
+            "foreign_ledgers_at_book_value",
+            object_id,
+            "Foreign-currency ledgers were compared with the source's book value (its "
+            "trial balance), not with their closing balances at current rates.",
+        )
         return set().union(*found)
 
     def _at_stock_value(
@@ -610,12 +623,11 @@ class Validator:
         source doesn't offer it."""
         where = f" {detail}" if detail else ""
         if problem is None:
-            self._fail(
-                Finding(
-                    f"{what}_not_supported", "info", "entity", str(self.entity.id), None, None,
-                    f"The source can't report {what.replace('_', ' ')}{where}; check skipped.",
-                )
-            )  # fmt: skip
+            self._note(
+                f"{what}_not_supported",
+                str(self.entity.id),
+                f"The source can't report {what.replace('_', ' ')}{where}; check skipped.",
+            )
             return
         object_id = f"{self.entity.id}{where.replace(' at ', '@')}"[:64]
         self._fail(
@@ -728,13 +740,12 @@ class Validator:
                 )
             )
         if ours or theirs:
-            self._fail(
-                Finding(
-                    "stock_values_not_compared", "info", "entity", str(self.entity.id), None, None,
-                    "Stock values per item depend on the source's valuation method and aren't "
-                    "compared item by item; the total closing stock is part of the profit check.",
-                )
-            )  # fmt: skip
+            self._note(
+                "stock_values_not_compared",
+                str(self.entity.id),
+                "Stock values per item depend on the source's valuation method and aren't "
+                "compared item by item; the total closing stock is part of the profit check.",
+            )
 
     def _bills(
         self,
@@ -747,19 +758,19 @@ class Validator:
         The source reports bills as outstanding now, whatever the as-of date, so the check
         runs only for validations as of today or later and counts every voucher."""
         if self.as_of < date.today():
-            self._fail(
-                Finding(
-                    "bills_not_compared", "info", "entity", str(self.entity.id), None, None,
-                    "Bill-wise outstanding is only compared as of today: the source reports "
-                    "bills as outstanding now.",
-                )
-            )  # fmt: skip
+            self._note(
+                "bills_not_compared",
+                str(self.entity.id),
+                "Bill-wise outstanding is only compared as of today: the source reports "
+                "bills as outstanding now.",
+            )
             return
-        for part in (outstanding, opening):
-            if part is None or isinstance(part, Exception):
-                self._unavailable("bill_outstanding", part)
-                return
-        assert isinstance(outstanding, Mapping) and isinstance(opening, Mapping)  # noqa: S101
+        if not isinstance(outstanding, Mapping):
+            self._unavailable("bill_outstanding", outstanding)
+            return
+        if not isinstance(opening, Mapping):
+            self._unavailable("bill_outstanding", opening)
+            return
         ours: Counter[str] = Counter()
         ledger_ids: dict[str, int] = {}
         for ledger_id, name, total in self.session.execute(

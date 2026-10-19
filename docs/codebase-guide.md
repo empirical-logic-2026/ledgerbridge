@@ -165,7 +165,7 @@ ledgerbridge/
 | `fit.py` | Checks every value against its column before writing (one check per kind of column: text, number, date, choice); a value that doesn't fit is kept in full in the row's `extra` field and reported, never cut short. |
 | `names.py` | The rules for finding what a name refers to (exact name, alias, then a normalised comparison), used by the transform. |
 | `naming.py` | Describes how two names differ without showing them (used by the company check `entity-check`). |
-| `validation.py` | The checks: every voucher balances, the trial balance balances, every ledger matches Tally's closing balance, plus voucher counts, stock quantities, bills and year-end balances; and the "root cause" explanation. |
+| `validation.py` | The checks: every voucher balances, the trial balance balances, every ledger matches Tally's closing balance, plus voucher counts, stock quantities, bills and year-end balances; and the "root cause" explanation. `Validator.run` calls one method per check; the closing check is `_closing` (with `_compare_closing` per ledger, `_period_profit` for the profit carrier, and the stock-value and book-value comparisons); `_note` records an information finding. |
 | `alerts.py` | Raises and resolves alerts when syncs or checks fail. |
 | `errors.py` | Writes errors briefly and safely, never with SQL statements or values from the books. |
 | `dates.py` | Which dates a source answers reliably (Tally's Educational mode: the 1st, 2nd and 31st), and how validation moves its dates to them. |
@@ -190,7 +190,7 @@ ledgerbridge/
 | `report.py` | The health report (`./dev.ps1 report`): overall verdict, sections, problems with meaning, likely cause and next step; and the validation layout every command shares, compared with the previous run. Counts and codes only. |
 | `style.py` | Colours status words (green, yellow, red) when `dev.ps1` says the terminal supports it; plain text otherwise. |
 | `compare.py` | `validate compare-ledger`: one ledger's vouchers in the source against ours, voucher by voucher; counts printed, details only as private lines for a local file. |
-| `analyse.py` | The `validate analyse` diagnostic: tests explanations for every validation mismatch (ledgers, year ends, profit carrier, unbalanced vouchers, trial balance, bills, stock) and counts which fit. |
+| `analyse.py` | The `validate analyse` diagnostic: tests explanations for every validation mismatch (ledgers, year ends, profit carrier, unbalanced vouchers, trial balance, bills, stock) and counts which fit. `Analyser.run` lists the sections in order; everything read once (balances by date, the source's figures, ledger names) is kept in caches set up in `__init__`; each differing ledger gets an anonymous profile (`_profiles`, with `_where`, `_opening_fact`, `_when`). |
 
 **`migrations/`: database changes.**
 
@@ -385,6 +385,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 0.18 | `core/validation.py`, `workers/analyse.py` after the simplicity review. |
 | 2026-10-19 | 0.17 | `core/transform.py`, `fit.py` after the simplicity review. |
 | 2026-10-19 | 0.16 | `connectors/tally/` after the simplicity review: what each file does and how `connector.py` is grouped. |
 | 2026-10-19 | 0.15 | `.github/workflows/checks.yml`; `docs/security/`. |
