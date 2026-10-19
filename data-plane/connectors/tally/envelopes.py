@@ -305,6 +305,9 @@ def collection_request(
       are computed for, without filtering objects. TallyPrime accepts any end date here,
       also in Educational mode.
     """
+    if period is not None and balances_period is not None:
+        # Both set Tally's From and To dates; which one Tally would use is unknown.
+        raise ValueError("A collection request takes `period` or `balances_period`, not both")
     static = ["<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"]
     if company is not None:
         static.append(f"<SVCURRENTCOMPANY>{escape(company)}</SVCURRENTCOMPANY>")

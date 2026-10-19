@@ -1,8 +1,18 @@
+import logging
 from collections import Counter
 from datetime import date, timedelta
 
+import httpx
+import pytest
+
 from connectors.base import Period, SourceEntity
-from connectors.tally.connector import TallyConnector, month_end, month_periods
+from connectors.tally.connector import (
+    TallyConnector,
+    _base_currency,
+    _foreign,
+    month_end,
+    month_periods,
+)
 from connectors.tally.fixtures import FixtureTransport
 from tests.conftest import FIXTURES
 
@@ -70,3 +80,37 @@ def test_fetch_masters_and_vouchers() -> None:
     assert all(
         "<SVCURRENTCOMPANY>Synthetic Test Co</SVCURRENTCOMPANY>" in r for r in voucher_requests
     )
+
+
+def test_the_base_currency_is_the_same_on_every_run_and_ambiguity_is_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Ledgers directly under Primary in two currencies: the most used wins, then the
+    first by name, whatever order they come in; a warning says it was ambiguous."""
+    currencies = {"pl": "?", "x": "$", "y": "€", "z": "€"}
+    for carriers in (["pl", "x"], ["x", "pl"]):
+        with caplog.at_level(logging.WARNING):
+            assert _base_currency(currencies, carriers) == "$"  # "$" sorts before "?"
+    assert "Base currency ambiguous" in caplog.text
+    caplog.clear()
+    assert _base_currency({"pl": "?", "x": "$", "y": "?"}, ["pl"]) == "?"
+    assert _foreign({"pl": "?", "x": "$"}, ["pl"]) == {"x"}
+    assert caplog.text == ""
+
+
+def test_an_unreadable_trial_balance_is_logged_with_its_error_type(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The computed opening difference is still used (None here), and the warning names
+    the kind of error, never values."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError("broken")
+
+    connector = TallyConnector.from_config(
+        {"url": "http://tally.test:9000"}, transport=httpx.MockTransport(handler)
+    )
+    entity = SourceEntity(key="k", name="n", books_from=date(2026, 4, 1))
+    with caplog.at_level(logging.WARNING):
+        assert connector.opening_difference_shown(entity) is None
+    assert "trial balance couldn't be read (RuntimeError)" in caplog.text

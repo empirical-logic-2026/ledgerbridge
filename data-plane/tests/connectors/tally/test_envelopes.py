@@ -42,3 +42,12 @@ def test_balance_request_computes_isdr_without_dates() -> None:
     assert "LBCLOSINGISDR : $$IsDr:$ClosingBalance" in computes
     assert root.find(".//COLLECTION/FILTER") is None
     assert root.find(".//SVTODATE") is None
+
+
+def test_a_request_takes_one_date_range_only() -> None:
+    """`period` and `balances_period` both set Tally's From and To dates: refused."""
+    month = (date(2026, 4, 1), date(2026, 4, 30))
+    with pytest.raises(ValueError, match="not both"):
+        envelopes.collection_request(
+            envelopes.VOUCHERS, company="C", period=month, balances_period=month
+        )

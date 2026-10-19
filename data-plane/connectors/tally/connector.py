@@ -8,6 +8,7 @@ and reads the answer (`parser.py`); what the records mean is in `mapping.py`. Ev
 request is an export: the connector never changes anything in Tally (CON-008).
 """
 
+import logging
 import re
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections import Counter
@@ -35,6 +36,8 @@ from core.canonical import CanonicalRecord
 from core.config import get_settings
 from core.dates import EDUCATIONAL, EVERY_DAY, DateRule
 from core.names import normalise
+
+logger = logging.getLogger(__name__)
 
 STOCK_IN_HAND = "Stock-in-Hand"  # Tally's reserved group for stock ledgers
 # Tally's trial balance line for foreign-currency ledgers' revaluation not posted yet.
@@ -569,7 +572,12 @@ class TallyConnector:
                 ),
             )
             lines = report_lines(body)
-        except Exception:  # noqa: BLE001 - unreadable: the computed figure is used
+        except Exception as exc:  # noqa: BLE001 - unreadable: the computed figure is used
+            logger.warning(
+                "Tally's trial balance couldn't be read (%s); the computed opening "
+                "difference is used",
+                type(exc).__name__,
+            )
             return None
         if not lines:  # no lines at all: not a trial balance (e.g. an unknown report)
             return None
@@ -826,15 +834,31 @@ def _group_openings(primary: Iterable[_Group]) -> dict[str, Decimal]:
 
 
 def _foreign(currencies: Mapping[str, str], carriers: Iterable[str]) -> set[str]:
-    """Ledgers kept in a foreign currency: their CURRENCYNAME isn't the base currency's,
-    which is the currency of the ledgers directly under Primary (Profit & Loss A/c is always
-    in the base currency); without one, the currency most ledgers use. Tally writes the
-    rupee sign as "?" in exports, so the base currency isn't recognised by its symbol."""
-    base = next((currencies[k] for k in carriers if currencies.get(k)), None)
-    if base is None:
-        used = Counter(c for c in currencies.values() if c)
-        base = used.most_common(1)[0][0] if used else None
+    """Ledgers kept in a foreign currency: their CURRENCYNAME isn't the base currency's
+    (_base_currency)."""
+    base = _base_currency(currencies, carriers)
     return {k for k, c in currencies.items() if c and base is not None and c != base}
+
+
+def _base_currency(currencies: Mapping[str, str], carriers: Iterable[str]) -> str | None:
+    """The currency of the ledgers directly under Primary (Profit & Loss A/c is always in
+    the base currency); without one, the currency most ledgers use. Tally writes the rupee
+    sign as "?" in exports, so the base currency isn't recognised by its symbol. When the
+    candidates disagree, the most used wins, then the first by name, so every run picks
+    the same one; that is logged as a warning (counts only)."""
+    under_primary = Counter(currencies[k] for k in carriers if currencies.get(k))
+    candidates = under_primary or Counter(c for c in currencies.values() if c)
+    if not candidates:
+        return None
+    ranked = sorted(candidates.items(), key=lambda item: (-item[1], item[0]))
+    tied = len(ranked) > 1 and ranked[0][1] == ranked[1][1]
+    if len(under_primary) > 1 or tied:
+        logger.warning(
+            "Base currency ambiguous: %d currencies among the candidates; the most used "
+            "(then the first by name) is taken",
+            len(candidates),
+        )
+    return ranked[0][0]
 
 
 def _on_ledger(element: ET.Element, ledger: str) -> tuple[date, Decimal]:

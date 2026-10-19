@@ -271,6 +271,6 @@ def check_balance_sides(ledgers: Iterable[ET.Element], anchors: Iterable[str] = 
                 report.anchors[name] = (
                     f"closing {abs(amount):,.2f} {side} (XML amount {_sign_word(amount)})"
                 )
-    for name in wanted - report.anchors.keys():
+    for name in sorted(wanted - report.anchors.keys()):
         report.anchors[name] = "not found"
     return report

@@ -23,6 +23,11 @@ class TallyError(RuntimeError):
     """Tally could not be reached or rejected a request."""
 
 
+class TallyUnreachableError(TallyError):
+    """Tally couldn't be reached at all (no connection), even after the retries: closed,
+    another port, or a firewall. Not a slow answer, so the sync doesn't split requests."""
+
+
 class TallySlowError(TallyError, SourceTimeoutError):
     """Tally didn't answer within the timeout. Not retried here: resending the same large
     request rarely helps; the sync checks Tally and splits the request instead (ADR-022)."""
@@ -48,8 +53,9 @@ class TallyClient:
     """Posts export requests to Tally and returns raw response bytes.
 
     A failed connection is retried (`retries` times, waiting 2 s, then 4 s, ...): Tally may be
-    busy for a moment. A request Tally accepted but didn't answer in time is not retried
-    (TallySlowError), and neither is an HTTP error status.
+    busy for a moment; when it still can't be reached, TallyUnreachableError. A request Tally
+    accepted but didn't answer in time is not retried (TallySlowError), and neither is an
+    HTTP error status.
     """
 
     def __init__(
@@ -74,24 +80,28 @@ class TallyClient:
             try:
                 return self._send(request_xml, timeout)
             except httpx.TimeoutException as exc:
-                # Only a connect timeout is worth another try; Tally never saw the request.
-                if not isinstance(exc, httpx.ConnectTimeout) or attempt >= self._retries:
+                # A connect timeout means Tally never saw the request: retried, and reported
+                # as unreachable, never as slow. Any other timeout: Tally is slow.
+                if not isinstance(exc, httpx.ConnectTimeout):
                     limit = timeout if timeout is not None else self.timeout
                     raise TallySlowError(
                         f"Tally didn't answer within {limit:g} s ({type(exc).__name__})"
                     ) from exc
+                if attempt >= self._retries:
+                    raise self._unreachable(exc) from exc
                 attempt += 1
                 logger.warning("Tally connect timed out; retry %d", attempt)
             except httpx.TransportError as exc:
                 if attempt >= self._retries:
-                    raise TallyError(
-                        f"Tally not reachable at {self.url} ({type(exc).__name__})"
-                    ) from exc
+                    raise self._unreachable(exc) from exc
                 attempt += 1
                 logger.warning("Tally request failed (%s); retry %d", type(exc).__name__, attempt)
             except httpx.HTTPStatusError as exc:
                 raise TallyError(f"Tally returned HTTP {exc.response.status_code}") from exc
             time.sleep(2**attempt)  # 2 s, then 4 s, ...
+
+    def _unreachable(self, exc: Exception) -> TallyUnreachableError:
+        return TallyUnreachableError(f"Tally not reachable at {self.url} ({type(exc).__name__})")
 
     def _send(self, request_xml: str, timeout: float | None) -> bytes:
         """One HTTP request; raises httpx's errors, including for an error status."""
