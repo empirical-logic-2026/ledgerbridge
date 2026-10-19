@@ -216,6 +216,7 @@ ledgerbridge/
 | `test_counting_rules.py` | Tally's counting rules (schema.md 7.5): openings fetched at the books' beginning, stock moved once for tracked invoices, and the seed matching Tally's own figures. |
 | `test_dates.py` | Reliable dates in Educational mode: validation as of the latest reliable date, year and month ends moved forward, detection and the connection setting. |
 | `test_compare_ledger.py` | `validate compare-ledger`: matching, counts without numbers or amounts, private lines only with `--private`. |
+| `test_edit_log.py` | TallyPrime Edit Log: an altered voucher maps to its current version, the export carries no edit history, and the sync doesn't fetch the edit time; on responses recorded from the test company. |
 | `test_forex.py` | Foreign-currency ledgers at Tally's book value (its trial balance's Unadjusted Forex Gain/Loss), foreign amounts on lines; on responses recorded from the test company. |
 | `test_line_attribution.py` | Which ledger a voucher line belongs to: names as Tally compares them, deleted ledgers with a live twin, ledger lines in lists not read; on fixtures recorded from the test company. |
 | `test_stock_ledger_and_dates.py` | Stock ledgers at the source's stock value, Tally's own group totals (stock value, opening difference) and effective dates; on fixtures recorded from the test company. |
@@ -380,6 +381,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 0.14 | `tests/test_edit_log.py`. |
 | 2026-10-16 | 0.13 | Knowledge base: `docs/rules/`, `docs/database/`, `docs/project-history.md`, `docs/progress-log.md`, `docs/export/`; `devtools/schema_reference.py`; `./dev.ps1 docs-export`. |
 | 2026-10-16 | 0.12 | `workers/compare.py`, `tests/test_compare_ledger.py`. |
 | 2026-10-16 | 0.11 | `tests/test_forex.py`. |

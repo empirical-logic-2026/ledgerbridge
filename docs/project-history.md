@@ -85,6 +85,10 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 - **Entity 1:** from 16 failures (Educational-mode dates, PR #27) to 9 (three foreign-currency customers today and at year ends, plus the opening warning). `validate compare-ledger` then matched every one of Tally's vouchers with ours for those customers (47 of 47, 60 of 60, 3 of 3; our extra vouchers were 3 optional Journals each, not counted), with equal totals. PR #33 compares them with Tally's book value and follows Tally's own opening difference; the result of the developer's run after it is to be recorded here.
 - **Test company:** passes every check (104 as of 2026-10-02), with the stock-ledger and foreign-currency notes.
 
+### TallyPrime Edit Log (2026-10-19)
+
+The test company was opened in TallyPrime Edit Log (migrated, same GUID). Every export the sync and validation use was identical to TallyPrime's in fields, formats and values; an alteration leaves no edit history in the XML export, only a filled `UPDATEDDATETIME` (not fetched). Full sync, validation (105 checks) and the report passed with no code change. A first attempt opened an empty new company of the same name (a different GUID, with job work, cost centres and reversing journals off): nothing was written to it.
+
 ## 5. Lessons learned
 
 - **Reproduce before coding.** Every counting rule was first reproduced on the test company and checked against Tally's own reports (ADR-029); guesses about Tally were wrong more than once (trailing spaces, report periods, revaluation).
@@ -108,4 +112,5 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 1.1 | TallyPrime Edit Log check. |
 | 2026-10-16 | 1.0 | First edition, up to PR #33. |

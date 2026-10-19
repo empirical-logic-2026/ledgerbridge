@@ -45,7 +45,7 @@ def test_expected_trial_balance_for_anchors() -> None:
     balances = expected_balances(SEED)
     # cancelled 500 and the reversing journal's 125 excluded; adjustment 300, post-dated 75;
     # the effective-date journals 11 and 13 (the optional one's 17 excluded)
-    assert balances["Rent"] == (Decimal("1399"), "Dr")
+    assert balances["Rent"] == (Decimal("1436"), "Dr")  # with EDITLOG-ALTER-1 (37)
     assert balances["Party Kilo"] == (Decimal("21"), "Dr")  # named by its alias
     # contra, receipts, payments, altered 1,500, post-dated 75; the memorandum's 250 excluded
     assert balances["Cash"] == (Decimal("27404"), "Dr")  # less the alias voucher's 21

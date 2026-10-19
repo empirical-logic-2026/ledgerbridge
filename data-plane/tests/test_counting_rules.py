@@ -250,9 +250,9 @@ def test_seed_reproduces_tallys_figures() -> None:
     assert (stock["Widget"], stock["Gadget"]) == (Decimal(-22), Decimal(85))
     balances = expected_balances(SEED)
     # 1,000 + ADJ 300 + PDC 75 + the effective-date journals 11 and 13; REV out
-    assert balances["Rent"] == (Decimal("1399"), "Dr")
+    assert balances["Rent"] == (Decimal("1436"), "Dr")  # with EDITLOG-ALTER-1 (37)
     assert balances["Salary"] == (Decimal("15000"), "Dr")  # optional 400 out
-    assert balances["Salary Payable"] == (Decimal("15324"), "Cr")  # with the 11 and 13
+    assert balances["Salary Payable"] == (Decimal("15361"), "Cr")  # with the 11 and 13
     assert balances["Electricity"] == (Decimal("4500"), "Dr")  # memorandum 250 out
     assert balances["Cash"] == (Decimal("27404"), "Dr")  # less the alias voucher's 21
     # The invoices post (+1,500, +2,000, debit note -250), the notes don't.
