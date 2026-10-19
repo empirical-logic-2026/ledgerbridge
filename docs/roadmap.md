@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.9 |
-| Date | 2026-10-16 |
+| Version | 0.10 |
+| Date | 2026-10-19 |
 | Current milestone | **M4** |
 
 Goal: load the client's Tally backup data (two companies) into MySQL and deliver dashboards and AI querying, with every part built generically so it later works for live Tally, other accounting books and other clients (PIL-001 to PIL-005).
@@ -164,6 +164,8 @@ Starts when validation of every pilot company passes with zero failures. It cons
 
 This milestone is run by the developer, not Claude Code, following [pilot-runbook.md](pilot-runbook.md). Fix any problems by describing errors to Claude Code without sharing client data: the runbook's `summary` output (counts and pass/fail) is safe to share.
 
+**Production hardening (before the first production client):** TLS everywhere (SEC-001), encryption at rest (SEC-002), signed releases (SEC-004), backups and restore tested, an external penetration test, and the third-party images (MySQL, Redis, Qdrant) updated to versions without high-severity findings in the Trivy scan and pinned by digest (`image@sha256:...`) in `deploy/compose.yaml` and the checks workflow, so an image can't change under the same tag. See [security/threat-model.md](security/threat-model.md) Section 3.
+
 ---
 
 ## After the pilot (Phase 1b)
@@ -183,3 +185,4 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | 2026-10-12 | 0.7 | M9 points to docs/pilot-runbook.md. |
 | 2026-10-13 | 0.8 | New milestone M7b "Budget planning and analysis" (BUD-001 to BUD-016, ADR-026) between M7 and M8. M5 seeds `budget.view`, `budget.edit`, `budget.approve`. M8 answers budget questions and embeds the budget views. M9 includes budgets. |
 | 2026-10-16 | 0.9 | New step M4b "Consolidation" after pilot validation reaches zero, starting with the foreign-currency data layer (FX-001 to FX-007, ADR-037). M5 seeds `forex.view`; M6 adds the foreign-currency reports (FX-008 to FX-011); M7 the Forex page (dashboard.md Section 8); M8 currency questions (FX-013). |
+| 2026-10-19 | 0.10 | M9: production hardening, including third-party images without high-severity findings, pinned by digest. |

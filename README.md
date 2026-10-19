@@ -75,6 +75,7 @@ Every pull request runs [.github/workflows/checks.yml](.github/workflows/checks.
 | Python lint and unit tests | `ruff check` (including its security rules), `ruff format --check`, `pytest` | Any finding or failing test |
 | Frontend lint, tests and build | `oxlint`, `vitest`, `tsc` and `vite build` | Any finding, failing test or build error |
 | Integration tests | Migrations, MySQL users' grants and syncs on MySQL 8.4, Redis and Qdrant service containers | Any failing test |
+| dev.ps1 tests (Windows PowerShell) | On a Windows machine: the docker compose arguments of every `dev.ps1` command, and the refusals of `reset` and `sync abandon` (Linux skips these) | Any failing or skipped test |
 | Dependency vulnerabilities | `pip-audit` on `uv.lock`, `npm audit` on `package-lock.json` | Python: any known vulnerability; npm: high or critical |
 | Static security analysis | Semgrep's public rules on all code, Dockerfiles and workflows | A high-severity (ERROR) finding |
 | Secret scanning | gitleaks over every commit in the history | Any secret found |

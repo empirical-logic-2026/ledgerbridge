@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| Version | 0.1 |
+| Version | 0.2 |
 | Date | 2026-10-19 |
 | Scope | Phase 1a local pilot (data plane, dashboard, developer tools) and the path to production |
 
@@ -28,7 +28,7 @@ What we protect, from whom, what protects it today, and what is still to do. How
 | Too much database access | One MySQL user per role with least privilege (SEC-008, schema.md 2.1); containers never hold the root or migrator password | No per-user permissions in the app until M5. |
 | Anyone on the machine reads the API | Ports bound to 127.0.0.1 only; `AUTH_MODE=local` for the pilot | **No login yet: M5.** |
 | Malicious input (files, source XML, SQL) | Parsed with the standard library; SQLAlchemy bound parameters; Ruff security rules and Semgrep on every PR | AI-generated SQL guardrails arrive with M8. |
-| A vulnerable dependency or base image | pip-audit, npm audit and Trivy on every PR; lock files (`uv.lock`, `package-lock.json`) | No automatic update PRs yet. |
+| A vulnerable dependency or base image | pip-audit, npm audit and Trivy on every PR; lock files (`uv.lock`, `package-lock.json`) | No automatic update PRs yet. The third-party images (MySQL, Redis, Qdrant) have high-severity findings (Trivy, report only) and are pinned by tag, which can change: M9. |
 | A tampered build or update | PRs reviewed and checked before merging; read-only CI token | Signed releases (SEC-004): M9. |
 
 ## 3. Security roadmap
@@ -39,10 +39,11 @@ What we protect, from whom, what protects it today, and what is still to do. How
 | M6 Reporting | Every report endpoint behind its permission and entity filter; tests that a user can't read another entity's figures. |
 | M7 / M7b Dashboard and budgets | Content Security Policy (SEC-005); no figures cached in the browser beyond the session; budget approval permissions (BUD-013). |
 | M8 AI querying | SQL guardrails (single read-only SELECT on the semantic layer, `ai_ro` user, entity filters in code); privacy modes, masking and audit of every model call (AI-011 to AI-018); egress allowlist (SEC-010) with leak tests. |
-| M9 Production hardening | TLS everywhere (SEC-001); encryption at rest for databases, backups and env secrets (SEC-002); signed images and bundles verified on update (SEC-004); backups and restore tested; an external penetration test before the first production client. |
+| M9 Production hardening | TLS everywhere (SEC-001); encryption at rest for databases, backups and env secrets (SEC-002); signed images and bundles verified on update (SEC-004); MySQL, Redis and Qdrant images updated to versions without high-severity findings and pinned by digest (`image@sha256:...`) in `deploy/compose.yaml` and the checks workflow; backups and restore tested; an external penetration test before the first production client. |
 
 ## Change log
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 0.2 | Third-party images without high-severity findings, pinned by digest (M9). |
 | 2026-10-19 | 0.1 | First version. |

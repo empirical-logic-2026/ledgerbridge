@@ -113,6 +113,45 @@ jobs:
         run: uv run python -m pytest -m integration
         working-directory: data-plane
 
+  windows:
+    name: dev.ps1 tests (Windows PowerShell)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: data-plane
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+      # dev.ps1 needs .env.test; the placeholder values are enough, as these tests use a
+      # stand-in for deploy/stack.ps1 or check refusals before anything runs.
+      - name: Create the CI env file
+        run: Copy-Item ../.env.test.example ../.env.test
+      - run: uv sync --frozen
+      # No Docker stack runs here. dev.ps1's test hook (LEDGERBRIDGE_DEV_STACK) points it at
+      # a stand-in for deploy/stack.ps1 that only says which services are running, so
+      # `sync abandon` reaches its confirmation; any other Docker call fails the test.
+      - name: Stand-in for deploy/stack.ps1
+        run: |
+          $stub = Join-Path $env:RUNNER_TEMP 'stack-stand-in.ps1'
+          Set-Content -Path $stub -Encoding UTF8 -Value @'
+          param([string]$Env = 'test')
+          if (($args -join ' ') -eq 'ps --status running --services') { 'api'; 'mysql'; exit 0 }
+          Write-Error "stand-in stack: unexpected call: $($args -join ' ')"
+          exit 1
+          '@
+          "LEDGERBRIDGE_DEV_STACK=$stub" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # The tests that Linux skips: the docker compose arguments of every dev.ps1 command,
+      # and the refusals of `reset` and `sync abandon` (-m "" includes integration tests).
+      # A skipped test fails the step: here every one of them must run.
+      - name: dev.ps1 tests
+        run: |
+          $out = uv run python -m pytest -m "" -rs tests/test_dev_script_args.py tests/test_dev_script_integration.py
+          $code = $LASTEXITCODE
+          $out
+          if ($code -ne 0) { exit $code }
+          if ($out -match 'skipped') { Write-Error 'Some dev.ps1 tests were skipped'; exit 1 }
+
   dependencies:
     name: Dependency vulnerabilities (pip-audit, npm audit)
     runs-on: ubuntu-latest
@@ -190,7 +229,7 @@ jobs:
   all-checks:
     name: All checks
     if: always()
-    needs: [python, frontend, integration, dependencies, static-analysis, secrets, images]
+    needs: [python, frontend, integration, windows, dependencies, static-analysis, secrets, images]
     runs-on: ubuntu-latest
     steps:
       - name: Every check passed
