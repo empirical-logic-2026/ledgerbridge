@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.0 |
-| Date | 2026-10-16 |
+| Version | 1.2 |
+| Date | 2026-10-19 |
 | Covers | M0 to M4, the pilot on the client's two companies, PRs #1 to #33 |
 
 What has been built and done so far, in order: the milestones, every pull request with what it did and why, the problems the pilot found and how each was fixed, the pilot's results, lessons learned and what is still open. Counts and Tally's standard names only: no client names or amounts. The rules themselves are in the [rulebook](rules/validation-and-conversion-rules.md); the database in the [schema reference](database/schema-reference.md); the decisions in [architecture.md](architecture.md) (ADR-001 to ADR-038).
@@ -58,6 +58,9 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 | #31 | 2026-10-16 | `validate compare-ledger`; foreign-currency ledgers one by one (ADR-036) | Prove our vouchers equal Tally's, ledger by ledger. |
 | #32 | 2026-10-16 | Foreign currency alongside the base-currency books (docs, ADR-037) | Client requirement: own-currency balances, gains and losses, exposure. |
 | #33 | 2026-10-16 | Foreign-currency book value from Tally's vouchers; opening difference as Tally shows it (ADR-038) | Tally's report showed no calculated line to subtract; an opening warning Tally doesn't show. |
+| #34 | 2026-10-16 | Knowledge base: rulebook, generated schema reference, project history, progress log, Word and PDF copies | One place for every rule and table, with proof and history. |
+| #35 | 2026-10-19 | TallyPrime Edit Log checked like for like; seed case and test (no code change) | Confirm the platform works unchanged on Edit Log. |
+| #36 | 2026-10-19 | Security foundations: checks on every pull request, CLAUDE.md security checklist and report sections, threat model and security guide (SEC-009, ADR-039) | Catch bugs, vulnerable dependencies, insecure code and secrets before merging, ahead of M5. |
 
 ## 3. Problems found and how each was fixed
 
@@ -112,5 +115,6 @@ The test company was opened in TallyPrime Edit Log (migrated, same GUID). Every 
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 1.2 | PRs #34 to #36; security foundations. |
 | 2026-10-19 | 1.1 | TallyPrime Edit Log check. |
 | 2026-10-16 | 1.0 | First edition, up to PR #33. |

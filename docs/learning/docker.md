@@ -459,10 +459,22 @@ See it: `docker image ls pandoc/latex`.
 | Worker log: `ModuleNotFoundError: No module named 'connectors'` inside a task | Celery removes the working folder from the import path after loading the app | `PYTHONPATH=/app` in the Dockerfile (section 7) |
 | `docker` not found in an old terminal | PATH was updated after the terminal opened | Open a new terminal |
 
+## 11. Docker in the automated checks (GitHub Actions)
+
+Every pull request runs `.github/workflows/checks.yml` on a GitHub-hosted Linux machine (README, "Automated checks"). Four of its jobs use Docker, on that machine, never on yours:
+
+- **Service containers (integration tests).** The `services:` block starts `mysql:8.4`, `redis:7-alpine` and `qdrant/qdrant:v1.15.4`, like `compose.yaml` does, on the same host ports as `.env.test` (3307, 6380, 6333), so the tests find them where they expect. GitHub starts them before the code is checked out, so it can't mount `deploy/mysql/init` as Compose does. Instead the job copies the init script in (`docker cp`) and runs it (`docker exec`), passing only the three users' variables: the whole env file would also pass `MYSQL_HOST`, which the `mysql` client inside reads and then refuses the socket connection. The containers and their data are deleted when the job ends.
+- **A job inside a container (Semgrep).** `container: semgrep/semgrep:1.128.0` runs every step of that job inside the image, so nothing has to be installed.
+- **Throwaway tool containers (gitleaks, Trivy).** `docker run --rm` with the checkout mounted, as `./dev.ps1 diagrams` does with mermaid-cli. Trivy also gets the Docker socket (`-v /var/run/docker.sock:...`) so it can read the images on that machine.
+- **Building our image.** `docker build -t ledgerbridge-data-plane:ci data-plane` builds the same `Dockerfile` as `./dev.ps1 up`; Trivy then lists the packages inside it with known vulnerabilities.
+
+See it: the PR's checks, "Details" on a job, then the step "Initialize containers" (the `docker create` and `docker start` lines).
+
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 2026-10-19 | Section 11: Docker in the automated checks (service containers, a job in a container, throwaway tool containers, building and scanning our image). |
 | 2026-10-09 | First version: M0 stack, plus the M1 MySQL init script and `TALLY_URL` override. |
 | 2026-10-09 | Added `dev.ps1` (section 3). `stack.ps1` is now a simple script and checks exit codes. The init script uses the `mysql` client. Test API moved to host port 8001. Fixed the MySQL example commands for PowerShell 5.1. |
 | 2026-10-09 | Test dashboard moved to port 5175 (`FRONTEND_ORIGIN`). Explained why env changes need `up` to recreate containers. |
