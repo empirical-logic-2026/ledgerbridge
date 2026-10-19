@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.0 |
-| Date | 2026-10-16 |
+| Version | 1.1 |
+| Date | 2026-10-19 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
 The rulebook: every rule LedgerBridge follows when it converts Tally data and validates it against Tally's own figures. For each rule: **what** it is, **why** (what the pilot showed, in counts only), **how it was proven** (a Tally report, or an experiment on LedgerBridge Test Co reproduced by the seeder), **where** it lives in the code, which **tests** cover it, and its **ADR** in [architecture.md](../architecture.md). The tables and columns named here are described in the [schema reference](../database/schema-reference.md); the problem codes (LB-xxx) in the [error catalogue](../error-catalogue.md).
@@ -55,6 +55,13 @@ Rules are built generically (PIL-003): Tally specifics live in `data-plane/conne
 - **ADR:** ADR-022, ADR-023, ADR-033.
 
 ---
+
+### 1.6 TallyPrime Edit Log changes nothing the sync reads
+
+- **What:** a company opened in TallyPrime Edit Log exports the same fields, formats and values as in TallyPrime. An alteration keeps **no edit history in the XML export** (its audit lists stay empty); the altered voucher is exported as its current version with a new AlterID, like any alteration, and replaces the stored one (1.2, 1.3). Only `UPDATEDDATETIME` is now filled, which the sync doesn't fetch, so stored records and their hashes don't change.
+- **Proven:** the test company opened in Edit Log (2026-10-19): every export compared with the responses recorded from TallyPrime (identical, same AlterIDs); a journal created and altered under Edit Log (seed case `EDITLOG-ALTER-1`); full sync, validation (105 checks) and report passed.
+- **Code:** `connectors/tally/envelopes.py` (`VOUCHERS.fetch`).
+- **Tests:** `tests/test_edit_log.py`.
 
 ## 2. Signs and amounts
 
@@ -321,4 +328,5 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 1.1 | Rule 1.6: TallyPrime Edit Log. |
 | 2026-10-16 | 1.0 | First edition: every conversion and validation rule up to PR #33, with flowcharts. |

@@ -546,6 +546,16 @@ FX_VOUCHERS = (
     ),
 )  # fmt: skip
 
+# --- edit log (2026-10-19): a journal altered after creation with TallyPrime Edit Log, so
+# Tally keeps its earlier version.
+EDIT_LOG_VOUCHERS = (
+    Voucher(
+        "EDITLOG-ALTER-1", "Journal", date(2026, 9, 2), "Journal altered under the edit log",
+        (Entry("Rent", "Dr", _d("31")), Entry("Salary Payable", "Cr", _d("31"))),
+        alter_to=(Entry("Rent", "Dr", _d("37")), Entry("Salary Payable", "Cr", _d("37"))),
+    ),
+)  # fmt: skip
+
 # A voucher naming a ledger by its alias.
 NAME_VOUCHERS = (_journal("NAME-ALIAS-1", "Journal", date(2026, 9, 1), "Kilo Alias", "Cash", "21"),)
 
@@ -562,7 +572,7 @@ SEED = SeedData(
         StockItem("Hinge", "Nos", _d("5"), _d("2"), group="Components"),  # in a stock group
     ),
     cost_centres=("Head Office", "Branch"),
-    vouchers=(*VOUCHERS, *NAME_VOUCHERS, *FX_VOUCHERS),
+    vouchers=(*VOUCHERS, *NAME_VOUCHERS, *FX_VOUCHERS, *EDIT_LOG_VOUCHERS),
     voucher_types=(("Adjustment Journal", "Journal"),),  # a custom type under Journal
     godowns=(Godown(JOB_WORKER, external=True), Godown(PRINCIPAL, internal=True)),
     renamed_groups=(STOCK_IN_HAND,),
