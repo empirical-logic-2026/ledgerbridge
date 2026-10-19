@@ -1,4 +1,9 @@
-"""Tally objects → canonical records (schema.md Section 7). All Tally knowledge lives here.
+"""Tally objects → canonical records (schema.md Section 7): what Tally's data means.
+
+Where it fits: the sync stores Tally's objects unchanged (`parser.py`); the transform
+(`core/transform.py`) later calls `to_canonical` on each stored record and writes the
+canonical records it returns into the accounting tables. All Tally knowledge of meaning
+lives here: reserved groups, voucher types, signs, quantities, bills, godowns.
 
 Signs: canonical amount = −(Tally amount) for every amount (schema.md 7.1).
 Postings: connectors.tally.signs.postings implements the rules of schema.md 7.2.
@@ -7,11 +12,12 @@ Postings: connectors.tally.signs.postings implements the rules of schema.md 7.2.
 import re
 import xml.etree.ElementTree as ET  # noqa: N817
 from dataclasses import replace
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 from connectors.base import SourceRecord
 from connectors.tally import parser
+from connectors.tally.parser import text_of
 from connectors.tally.signs import postings, tally_amount, tally_foreign_amount
 from core.canonical import (
     NO_STANDARD_ACCOUNT,
@@ -166,11 +172,6 @@ class MappingError(ValueError):
 # --- small helpers ---------------------------------------------------------------------
 
 
-def _text(element: ET.Element, path: str) -> str | None:
-    value = element.findtext(path)
-    return value.strip() if value is not None and value.strip() else None
-
-
 def _foreign(text: str | None) -> Decimal | None:
     """A line's foreign currency amount, canonical sign (None in the base currency)."""
     value = tally_foreign_amount(text)
@@ -178,7 +179,7 @@ def _foreign(text: str | None) -> Decimal | None:
 
 
 def _flag(element: ET.Element, path: str) -> bool:
-    return (_text(element, path) or "").lower() == "yes"
+    return (text_of(element, path) or "").lower() == "yes"
 
 
 def _canonical(value: Decimal | None) -> Decimal:
@@ -186,13 +187,13 @@ def _canonical(value: Decimal | None) -> Decimal:
     return -value if value else Decimal(0)
 
 
+def _amount(element: ET.Element, path: str) -> Decimal:
+    """An amount field in the canonical sign (zero when empty)."""
+    return _canonical(tally_amount(text_of(element, path)))
+
+
 def quantity(text: str | None) -> tuple[Decimal, str | None]:
-    """A Tally quantity: (number, unit)."""
-    return _quantity(text)
-
-
-def _quantity(text: str | None) -> tuple[Decimal, str | None]:
-    """' 10 Nos' → (10, 'Nos'); ' 1.5 Kg' → (1.5, 'Kg')."""
+    """A Tally quantity, (number, unit): ' 10 Nos' → (10, 'Nos'); ' 1.5 Kg' → (1.5, 'Kg')."""
     if not text:
         return Decimal(0), None
     match = _NUMBER.search(text)
@@ -202,15 +203,17 @@ def _quantity(text: str | None) -> tuple[Decimal, str | None]:
     return Decimal(match.group(0)), unit
 
 
+def _entry_quantity(entry: ET.Element) -> tuple[Decimal, str | None]:
+    """An inventory entry's or batch's quantity: the actual quantity, else the billed one."""
+    return quantity(text_of(entry, "ACTUALQTY") or text_of(entry, "BILLEDQTY"))
+
+
 def _rate(text: str | None) -> Decimal | None:
     """'200.00/Nos' → 200.00."""
     if not text:
         return None
     match = _NUMBER.search(text)
-    try:
-        return Decimal(match.group(0)) if match else None
-    except InvalidOperation:
-        return None
+    return Decimal(match.group(0)) if match else None  # the pattern only matches numbers
 
 
 def _is_primary(name: str | None) -> bool:
@@ -218,7 +221,7 @@ def _is_primary(name: str | None) -> bool:
 
 
 def _parent(element: ET.Element) -> str | None:
-    parent = _text(element, "PARENT")
+    parent = text_of(element, "PARENT")
     return None if _is_primary(parent) else parent
 
 
@@ -248,18 +251,18 @@ def _state_code(name: str | None) -> str | None:
 
 
 def company(element: ET.Element, key: str) -> CanonicalCompany:
-    books_from = parser.tally_date(_text(element, "BOOKSFROM"))
-    starting = parser.tally_date(_text(element, "STARTINGFROM")) or books_from
-    gstin = _text(element, "GSTREGISTRATIONNUMBER")
+    books_from = parser.tally_date(text_of(element, "BOOKSFROM"))
+    starting = parser.tally_date(text_of(element, "STARTINGFROM")) or books_from
+    gstin = text_of(element, "GSTREGISTRATIONNUMBER")
     return CanonicalCompany(
         source_key=key,
         name=_name(element),
-        legal_name=_text(element, "BASICCOMPANYFORMALNAME"),
+        legal_name=text_of(element, "BASICCOMPANYFORMALNAME"),
         books_from=books_from,
         fy_start_month=starting.month if starting else 4,
-        state_code=_state_code(_text(element, "STATENAME")) or (gstin[:2] if gstin else None),
+        state_code=_state_code(text_of(element, "STATENAME")) or (gstin[:2] if gstin else None),
         gstin=gstin,
-        pan=_text(element, "INCOMETAXNUMBER"),
+        pan=text_of(element, "INCOMETAXNUMBER"),
     )
 
 
@@ -312,9 +315,9 @@ def _tax_type(element: ET.Element) -> tuple[str | None, tuple[str, ...]]:
     """(tax_type, warnings). Assumption (schema.md 7.3): Tally leaves fields at their default
     out of the export, and "Central Tax" is the default duty head, so ledgers created as
     Central Tax come back with it empty. Applied to GST ledgers only, and always reported."""
-    tax = _text(element, "TAXTYPE")
+    tax = text_of(element, "TAXTYPE")
     if tax == "GST":
-        head = _text(element, "GSTDUTYHEAD")
+        head = text_of(element, "GSTDUTYHEAD")
         if head is None:
             return GST_DUTY_HEADS["Central Tax"], (EMPTY_DUTY_HEAD_WARNING,)
         return GST_DUTY_HEADS.get(head, "other"), ()
@@ -322,35 +325,35 @@ def _tax_type(element: ET.Element) -> tuple[str | None, tuple[str, ...]]:
 
 
 def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalRecord]:
-    parent = _text(element, "PARENT")
+    parent = text_of(element, "PARENT")
     parent = PRIMARY if _is_primary(parent) else parent
-    credit_days = _NUMBER.search(_text(element, "BILLCREDITPERIOD") or "")
-    credit_limit = tally_amount(_text(element, "CREDITLIMIT"))
-    gstin = _text(element, "PARTYGSTIN") or _text(element, ".//LEDGSTREGDETAILS.LIST/GSTIN")
-    state = _text(element, "LEDSTATENAME") or _text(element, ".//LEDMAILINGDETAILS.LIST/STATE")
+    credit_days = _NUMBER.search(text_of(element, "BILLCREDITPERIOD") or "")
+    credit_limit = tally_amount(text_of(element, "CREDITLIMIT"))
+    gstin = text_of(element, "PARTYGSTIN") or text_of(element, ".//LEDGSTREGDETAILS.LIST/GSTIN")
+    state = text_of(element, "LEDSTATENAME") or text_of(element, ".//LEDMAILINGDETAILS.LIST/STATE")
     tax_type, warnings = _tax_type(element)
     name = _name(element)
     record = CanonicalLedger(
         source_key=key,
         name=name,
         group_name=parent,
-        opening_balance=_canonical(tally_amount(_text(element, "OPENINGBALANCE"))),
+        opening_balance=_amount(element, "OPENINGBALANCE"),
         is_bill_wise=_flag(element, "ISBILLWISEON"),
         is_cost_centre_applicable=_flag(element, "ISCOSTCENTRESON"),
         gstin=gstin,
         tax_type=tax_type,
         party=CanonicalParty(
             gstin=gstin,
-            pan=_text(element, "INCOMETAXNUMBER"),
+            pan=text_of(element, "INCOMETAXNUMBER"),
             state_code=_state_code(state) or (gstin[:2] if gstin else None),
-            country_code="IN" if (_text(element, "COUNTRYNAME") or "India") == "India" else None,
+            country_code="IN" if (text_of(element, "COUNTRYNAME") or "India") == "India" else None,
             credit_days=int(credit_days.group(0)) if credit_days else None,
             credit_limit=abs(credit_limit) if credit_limit else None,
-            email=_text(element, "EMAIL"),
-            phone=_text(element, "LEDGERMOBILE") or _text(element, "LEDGERPHONE"),
+            email=text_of(element, "EMAIL"),
+            phone=text_of(element, "LEDGERMOBILE") or text_of(element, "LEDGERPHONE"),
         ),
         default_standard_account_code=STANDARD_ACCOUNT_BY_TAX_TYPE.get(
-            _text(element, "TAXTYPE") or ""
+            text_of(element, "TAXTYPE") or ""
         ),
         warnings=warnings,
         aliases=_aliases(element, name),
@@ -364,7 +367,7 @@ def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
     transform resolves it), so e.g. a "Cash Sale 2" under "Cash Sale" under "Sales" is a
     sale, and one under "Sales Order" doesn't post to the books."""
     name = _name(element)
-    parent = _text(element, "PARENT")
+    parent = text_of(element, "PARENT")
     parent = None if parent == name else parent
     standard = next(
         (n for n in (_reserved(element), parent, name) if n in STANDARD_VOUCHER_TYPES), None
@@ -393,24 +396,24 @@ def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
 
 def unit(element: ET.Element, key: str) -> CanonicalUnit:
     symbol = _name(element)
-    places = _text(element, "DECIMALPLACES")
+    places = text_of(element, "DECIMALPLACES")
     return CanonicalUnit(
         source_key=key,
         symbol=symbol,
-        name=_text(element, "ORIGINALNAME") or symbol,
+        name=text_of(element, "ORIGINALNAME") or symbol,
         decimal_places=int(places) if places and places.isdigit() else 0,
     )
 
 
 def stock_item(element: ET.Element, key: str) -> CanonicalItem:
-    quantity, _ = _quantity(_text(element, "OPENINGBALANCE"))
+    opening_qty, _ = quantity(text_of(element, "OPENINGBALANCE"))
     return CanonicalItem(
         source_key=key,
         name=_name(element),
         group_name=_parent(element),
-        unit_name=_text(element, "BASEUNITS"),
-        opening_qty=quantity,
-        opening_value=_canonical(tally_amount(_text(element, "OPENINGVALUE"))),
+        unit_name=text_of(element, "BASEUNITS"),
+        opening_qty=opening_qty,
+        opening_value=_amount(element, "OPENINGVALUE"),
     )
 
 
@@ -420,23 +423,23 @@ def stock_item(element: ET.Element, key: str) -> CanonicalItem:
 def _line(entry: ET.Element) -> CanonicalLine:
     bills = tuple(
         CanonicalBill(
-            bill_type=BILL_TYPES.get(_text(bill, "BILLTYPE") or "", "on_account"),
-            name=_text(bill, "NAME"),
-            amount=_canonical(tally_amount(_text(bill, "AMOUNT"))),
+            bill_type=BILL_TYPES.get(text_of(bill, "BILLTYPE") or "", "on_account"),
+            name=text_of(bill, "NAME"),
+            amount=_amount(bill, "AMOUNT"),
         )
         for bill in entry.findall("BILLALLOCATIONS.LIST")
-        if _text(bill, "AMOUNT") or _text(bill, "NAME")
+        if text_of(bill, "AMOUNT") or text_of(bill, "NAME")
     )
     cost_allocations = tuple(
-        (name, _canonical(tally_amount(_text(alloc, "AMOUNT"))))
+        (name, _amount(alloc, "AMOUNT"))
         for category in entry.findall("CATEGORYALLOCATIONS.LIST")
         for alloc in category.findall("COSTCENTREALLOCATIONS.LIST")
-        if (name := _text(alloc, "NAME"))
+        if (name := text_of(alloc, "NAME"))
     )
     return CanonicalLine(
-        ledger_name=_text(entry, "LEDGERNAME") or "",
-        amount=_canonical(tally_amount(_text(entry, "AMOUNT"))),
-        amount_fc=_foreign(_text(entry, "AMOUNT")),
+        ledger_name=text_of(entry, "LEDGERNAME") or "",
+        amount=_amount(entry, "AMOUNT"),
+        amount_fc=_foreign(text_of(entry, "AMOUNT")),
         is_party_line=_flag(entry, "ISPARTYLEDGER"),
         bills=bills,
         cost_allocations=cost_allocations,
@@ -446,24 +449,24 @@ def _line(entry: ET.Element) -> CanonicalLine:
 def _inventory(entry: ET.Element, inward: bool | None = None) -> CanonicalInventoryLine | None:
     """One inventory entry. `inward` is given for stock journal entries (in: produced or
     received; out: consumed or sent), otherwise ISDEEMEDPOSITIVE decides."""
-    item = _text(entry, "STOCKITEMNAME")
+    item = text_of(entry, "STOCKITEMNAME")
     if not item:
         return None
-    quantity, unit_name = _quantity(_text(entry, "ACTUALQTY") or _text(entry, "BILLEDQTY"))
+    entry_qty, unit_name = _entry_quantity(entry)
     if inward is None:
         inward = _flag(entry, "ISDEEMEDPOSITIVE")
     batch = entry.find("BATCHALLOCATIONS.LIST")
-    discount = _rate(_text(entry, "DISCOUNT"))
-    tracked = _tracked(entry, abs(quantity))
+    discount = _rate(text_of(entry, "DISCOUNT"))
+    tracked = _tracked(entry, abs(entry_qty))
     return CanonicalInventoryLine(
         item_name=item,
-        quantity=abs(quantity) if inward else -abs(quantity),
+        quantity=abs(entry_qty) if inward else -abs(entry_qty),
         tracked_quantity=tracked if inward else -tracked,
-        amount=_canonical(tally_amount(_text(entry, "AMOUNT"))),
+        amount=_amount(entry, "AMOUNT"),
         unit_name=unit_name,
-        rate=_rate(_text(entry, "RATE")),
-        godown_name=_text(batch, "GODOWNNAME") if batch is not None else None,
-        batch_name=_text(batch, "BATCHNAME") if batch is not None else None,
+        rate=_rate(text_of(entry, "RATE")),
+        godown_name=text_of(batch, "GODOWNNAME") if batch is not None else None,
+        batch_name=text_of(batch, "BATCHNAME") if batch is not None else None,
         discount_pct=discount if discount else None,
     )
 
@@ -489,23 +492,23 @@ def _inventory_lines(entry: ET.Element, inward: bool | None) -> list[CanonicalIn
     if line is None:
         return []
     batches = entry.findall("BATCHALLOCATIONS.LIST")
-    godowns = {_text(b, "GODOWNNAME") for b in batches}
+    godowns = {text_of(b, "GODOWNNAME") for b in batches}
     if len(batches) < 2 or len(godowns) < 2:
         return [line]
     lines = []
     for batch in batches:
-        quantity, _ = _quantity(_text(batch, "ACTUALQTY") or _text(batch, "BILLEDQTY"))
-        if not quantity:
+        batch_qty, _ = _entry_quantity(batch)
+        if not batch_qty:
             return [line]  # quantities not split by batch: keep the entry whole
-        signed = abs(quantity) if line.quantity >= 0 else -abs(quantity)
-        amount = _canonical(tally_amount(_text(batch, "AMOUNT")))
+        signed = abs(batch_qty) if line.quantity >= 0 else -abs(batch_qty)
+        amount = _amount(batch, "AMOUNT")
         lines.append(
             replace(
                 line,
                 quantity=signed,
-                amount=amount if _text(batch, "AMOUNT") else line.amount * signed / line.quantity,
-                godown_name=_text(batch, "GODOWNNAME"),
-                batch_name=_text(batch, "BATCHNAME"),
+                amount=amount if text_of(batch, "AMOUNT") else line.amount * signed / line.quantity,
+                godown_name=text_of(batch, "GODOWNNAME"),
+                batch_name=text_of(batch, "BATCHNAME"),
                 tracked_quantity=signed if _tracking(batch) else Decimal(0),
             )
         )
@@ -513,11 +516,11 @@ def _inventory_lines(entry: ET.Element, inward: bool | None) -> list[CanonicalIn
 
 
 def _tracking(batch: ET.Element) -> str | None:
-    number = _text(batch, "TRACKINGNUMBER")
+    number = text_of(batch, "TRACKINGNUMBER")
     return None if number in (None, "", NOT_APPLICABLE) else number
 
 
-def _tracked(entry: ET.Element, quantity: Decimal) -> Decimal:
+def _tracked(entry: ET.Element, entry_qty: Decimal) -> Decimal:
     """How much of an inventory entry is tied to a tracking number (a delivery or receipt
     note, or a rejection), unsigned. Checked on the test company (2026-10-14): a sales,
     purchase, debit or credit note line with a tracking number never moves stock, whether
@@ -528,19 +531,16 @@ def _tracked(entry: ET.Element, quantity: Decimal) -> Decimal:
     if not tracked:
         return Decimal(0)
     if len(tracked) == len(batches):
-        return quantity
-    total = Decimal(0)
-    for batch in tracked:
-        part, _ = _quantity(_text(batch, "ACTUALQTY") or _text(batch, "BILLEDQTY"))
-        total += abs(part)
-    return min(total, quantity)
+        return entry_qty
+    total = sum((abs(_entry_quantity(batch)[0]) for batch in tracked), Decimal(0))
+    return min(total, entry_qty)
 
 
 def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
-    voucher_date = parser.tally_date(_text(element, "DATE"))
+    voucher_date = parser.tally_date(text_of(element, "DATE"))
     if voucher_date is None:
         raise MappingError("voucher without DATE")
-    voucher_type_name = _text(element, "VOUCHERTYPENAME")
+    voucher_type_name = text_of(element, "VOUCHERTYPENAME")
     if not voucher_type_name:
         raise MappingError("voucher without VOUCHERTYPENAME")
     inventory_entries: list[tuple[ET.Element, bool | None]] = [
@@ -558,17 +558,17 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
     return CanonicalVoucher(
         source_key=key,
         voucher_type_name=voucher_type_name,
-        voucher_number=_text(element, "VOUCHERNUMBER") or "",
+        voucher_number=text_of(element, "VOUCHERNUMBER") or "",
         voucher_date=voucher_date,
         lines=tuple(_line(entry) for entry in postings(element)),
         inventory=tuple(
             line for e, inward in inventory_entries for line in _inventory_lines(e, inward)
         ),
-        reference_number=_text(element, "REFERENCE"),
-        reference_date=parser.tally_date(_text(element, "REFERENCEDATE")),
-        effective_date=parser.tally_date(_text(element, "EFFECTIVEDATE")),
-        party_ledger_name=_text(element, "PARTYLEDGERNAME"),
-        narration=_text(element, "NARRATION"),
+        reference_number=text_of(element, "REFERENCE"),
+        reference_date=parser.tally_date(text_of(element, "REFERENCEDATE")),
+        effective_date=parser.tally_date(text_of(element, "EFFECTIVEDATE")),
+        party_ledger_name=text_of(element, "PARTYLEDGERNAME"),
+        narration=text_of(element, "NARRATION"),
         is_cancelled=_flag(element, "ISCANCELLED"),
         is_optional=_flag(element, "ISOPTIONAL"),
         is_post_dated=_flag(element, "ISPOSTDATED"),
@@ -704,7 +704,7 @@ def _records(record: SourceRecord, element: ET.Element) -> list[CanonicalRecord]
         case "cost_centre":
             return [
                 CanonicalCostCentre(
-                    key, _name(element), _parent(element), _text(element, "CATEGORY")
+                    key, _name(element), _parent(element), text_of(element, "CATEGORY")
                 )
             ]
         case "voucher":

@@ -1,6 +1,9 @@
-"""Builds Tally XML export requests (TDL collections).
+"""Builds the XML requests sent to Tally: what to export, for which company and dates.
 
-Only Export requests are ever built: the connector is read-only (CON-008).
+Where it fits: `connector.py` picks a collection below (a CollectionSpec: which Tally
+objects, which fields) and turns it into a request with `collection_request`, or asks for
+one of Tally's own reports with `report_request`; `client.py` sends it and `parser.py`
+reads the answer. Only Export requests are ever built: the connector is read-only (CON-008).
 
 Each collection fetches an explicit list of fields: only what the mapping
 (connectors/tally/mapping.py) reads, so exports stay small on years of data. Fetching
@@ -193,6 +196,14 @@ LEDGER_OPENING_BILLS = CollectionSpec(
     ("GUID", "NAME", "BILLALLOCATIONS.NAME", "BILLALLOCATIONS.OPENINGBALANCE"),
 )
 
+# One ledger's vouchers as Tally lists them (its standard collection type of a ledger's
+# vouchers; Child Of the ledger): the vouchers in the books (optional ones left out), with
+# the same fields as VOUCHERS. Used by `validate compare-ledger`.
+LEDGER_VOUCHERS = replace(
+    VOUCHERS, collection_id="LBLedgerVouchers", tally_type="Vouchers : Ledger"
+)
+
+
 # Masters whose OPENINGBALANCE (and OPENINGVALUE) Tally computes for the requested period:
 # it is the balance at the period's start, not the master's opening. Without a period Tally
 # uses its current period, so a company whose current period starts after the books begin
@@ -223,31 +234,33 @@ def tally_date(value: date) -> str:
     return value.strftime("%Y%m%d")
 
 
+def _dates(start: date, end: date) -> str:
+    """Tally's From and To date variables."""
+    return (
+        f'<SVFROMDATE TYPE="Date">{tally_date(start)}</SVFROMDATE>'
+        f'<SVTODATE TYPE="Date">{tally_date(end)}</SVTODATE>'
+    )
+
+
 LEDGER_VOUCHERS_REPORT = "Ledger Vouchers"  # one ledger's vouchers, as Tally shows them
 TRIAL_BALANCE = "Trial Balance"  # Tally's own report (an Export of data, read-only)
 
 
-def report_request(report: str, company: str, period: tuple[date, date]) -> str:
+def report_request(
+    report: str, company: str, period: tuple[date, date], ledger: str | None = None
+) -> str:
     """An export of one of Tally's own reports for a period (e.g. its Trial Balance), as
-    Tally shows it: lines of DSPACCNAME / DSPACCINFO. Read-only."""
-    start, end = period
+    Tally shows it: lines of DSPACCNAME / DSPACCINFO. `ledger` selects the ledger of a
+    ledger report. Read-only."""
+    ledger_name = f"<LEDGERNAME>{escape(ledger)}</LEDGERNAME>" if ledger is not None else ""
     return (
         "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>"
         f"<TYPE>Data</TYPE><ID>{escape(report)}</ID></HEADER><BODY><DESC><STATICVARIABLES>"
         "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
         f"<SVCURRENTCOMPANY>{escape(company)}</SVCURRENTCOMPANY>"
-        f'<SVFROMDATE TYPE="Date">{tally_date(start)}</SVFROMDATE>'
-        f'<SVTODATE TYPE="Date">{tally_date(end)}</SVTODATE>'
+        f"{_dates(*period)}{ledger_name}"
         "</STATICVARIABLES></DESC></BODY></ENVELOPE>"
     )
-
-
-# One ledger's vouchers as Tally lists them (its standard collection type of a ledger's
-# vouchers; Child Of the ledger): the vouchers in the books (optional ones left out), with
-# the same fields as VOUCHERS. Used by `validate compare-ledger`.
-LEDGER_VOUCHERS = replace(
-    VOUCHERS, collection_id="LBLedgerVouchers", tally_type="Vouchers : Ledger"
-)
 
 
 def ledger_report_request(company: str, ledger: str, period: tuple[date, date]) -> str:
@@ -255,17 +268,7 @@ def ledger_report_request(company: str, ledger: str, period: tuple[date, date]) 
     vouchers of the To date's month only (checked on the test company, 2026-10-16), and a
     calculated "Unadjusted Forex Gain/Loss" line dated on the To date for a foreign-currency
     ledger; only that line is read from it."""
-    start, end = period
-    return (
-        "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>"
-        f"<TYPE>Data</TYPE><ID>{LEDGER_VOUCHERS_REPORT}</ID></HEADER><BODY><DESC>"
-        "<STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
-        f"<SVCURRENTCOMPANY>{escape(company)}</SVCURRENTCOMPANY>"
-        f'<SVFROMDATE TYPE="Date">{tally_date(start)}</SVFROMDATE>'
-        f'<SVTODATE TYPE="Date">{tally_date(end)}</SVTODATE>'
-        f"<LEDGERNAME>{escape(ledger)}</LEDGERNAME>"
-        "</STATICVARIABLES></DESC></BODY></ENVELOPE>"
-    )
+    return report_request(LEDGER_VOUCHERS_REPORT, company, period, ledger=ledger)
 
 
 def keys_only(spec: CollectionSpec) -> CollectionSpec:
@@ -274,6 +277,12 @@ def keys_only(spec: CollectionSpec) -> CollectionSpec:
     return replace(
         spec, collection_id=f"{spec.collection_id}Keys", fetch=("GUID", "ALTERID", "DATE")
     )
+
+
+def names_only(spec: CollectionSpec) -> CollectionSpec:
+    """The same collection fetching only GUID and name (with alias names): which names
+    Tally lists now (diagnostics)."""
+    return replace(spec, collection_id=f"{spec.collection_id}Names", fetch=("GUID", "NAME"))
 
 
 def collection_request(
@@ -304,17 +313,14 @@ def collection_request(
         extra = f"<CHILDOF>{escape(child_of)}</CHILDOF>{extra}"
     formulae = []
     if period is not None:
-        end_exclusive = period[1] + timedelta(days=1)
-        static.append(f'<SVFROMDATE TYPE="Date">{tally_date(period[0])}</SVFROMDATE>')
-        static.append(f'<SVTODATE TYPE="Date">{tally_date(end_exclusive)}</SVTODATE>')
+        static.append(_dates(period[0], period[1] + timedelta(days=1)))  # exclusive end
         extra += f"<FILTER>{_PERIOD_FILTER}</FILTER>"
         formulae.append(
             f'<SYSTEM TYPE="Formulae" NAME="{_PERIOD_FILTER}">'
             "$Date &gt;= ##SVFromDate AND $Date &lt; ##SVToDate</SYSTEM>"
         )
     if balances_period is not None:
-        static.append(f'<SVFROMDATE TYPE="Date">{tally_date(balances_period[0])}</SVFROMDATE>')
-        static.append(f'<SVTODATE TYPE="Date">{tally_date(balances_period[1])}</SVTODATE>')
+        static.append(_dates(*balances_period))
     if since_alter_id is not None:
         extra += f"<FILTER>{_CHANGED_FILTER}</FILTER>"
         formulae.append(

@@ -1,4 +1,9 @@
-"""Confirms how Tally signs debit and credit amounts in its XML (schema.md Section 7).
+"""Tally amounts and postings, and the check of how Tally signs debits and credits.
+
+Where it fits: `tally_amount` and `postings` are used by `mapping.py` (amounts and the
+ledger lines of a voucher) and `connector.py`; the `check_*` functions back the developer
+tool `python -m connectors.tally.tools sign-check`, which confirmed the sign convention of
+schema.md Section 7.
 
 Every ledger posting carries ISDEEMEDPOSITIVE (Yes = debit) and a signed AMOUNT. If debits
 are always negative and credits always positive, canonical amount = -(Tally amount).
@@ -42,6 +47,10 @@ def tally_foreign_amount(text: str | None) -> Decimal | None:
         return None
     left = text.rsplit("=", 1)[0].split("@", 1)[0]
     return tally_amount(left)
+
+
+def _sign_word(amount: Decimal) -> str:
+    return "negative" if amount < 0 else "positive" if amount > 0 else "zero"
 
 
 def _first_present(voucher: ET.Element, tags: Iterable[str]) -> list[ET.Element]:
@@ -154,9 +163,10 @@ def check_vouchers(
             (report.debit if is_debit else report.credit).add(amount)
             ledger = (entry.findtext("LEDGERNAME") or "").strip()
             if is_anchor and ledger == anchor_ledger:
-                sign = "negative" if amount < 0 else "positive" if amount > 0 else "zero"
                 side = "debit" if is_debit else "credit"
-                report.anchor = f"line for the given ledger is a {side} and its AMOUNT is {sign}"
+                report.anchor = (
+                    f"line for the given ledger is a {side} and its AMOUNT is {_sign_word(amount)}"
+                )
         if total == 0:
             report.balanced_vouchers += 1
         else:
@@ -200,7 +210,7 @@ def check_opening_balances(
         total += amount
         name = (ledger.findtext("NAME") or ledger.get("NAME") or "").strip()
         if anchor_ledger is not None and name == anchor_ledger:
-            report.anchor = "negative" if amount < 0 else "positive" if amount > 0 else "zero"
+            report.anchor = _sign_word(amount)
     report.sums_to_zero = total == 0
     if anchor_ledger is not None and report.anchor is None:
         report.anchor = "not found (check ledger name)"
@@ -258,8 +268,9 @@ def check_balance_sides(ledgers: Iterable[ET.Element], anchors: Iterable[str] = 
                 report.disagree += 1
             if name in wanted and field_name == "CLOSINGBALANCE":
                 side = "Dr" if is_dr else "Cr"
-                sign = "negative" if amount < 0 else "positive" if amount > 0 else "zero"
-                report.anchors[name] = f"closing {abs(amount):,.2f} {side} (XML amount {sign})"
+                report.anchors[name] = (
+                    f"closing {abs(amount):,.2f} {side} (XML amount {_sign_word(amount)})"
+                )
     for name in wanted - report.anchors.keys():
         report.anchors[name] = "not found"
     return report

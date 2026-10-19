@@ -1,4 +1,10 @@
-"""Splits Tally XML responses into one record per object."""
+"""Reads Tally's XML answers: one element, and one stored record, per Tally object.
+
+Where it fits: `client.py` returns the raw bytes; `parse_response` decodes and cleans them
+(Tally writes characters and names that strict XML rejects) and raises Tally's own errors;
+`objects` picks out the objects; `parse_records` turns them into the SourceRecords the sync
+stores unchanged in `ledgerbridge_source.raw_records`. `mapping.py` reads them later.
+"""
 
 import re
 import xml.etree.ElementTree as ET  # noqa: N817
@@ -11,6 +17,7 @@ from connectors.tally.envelopes import CollectionSpec
 
 _CHAR_REF = re.compile(r"&#(x[0-9a-fA-F]+|[0-9]+);")
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_XML_DECLARATION = re.compile(r"^\s*<\?xml[^>]*\?>")
 
 
 def _valid_xml_char(code: int) -> bool:
@@ -38,8 +45,7 @@ def sanitize(text: str) -> str:
 # prefix"). Inside tags only, such names are rewritten as PREFIX<MARK>LOCAL before parsing and
 # written back when a payload is stored, so payloads keep their original names (pilot
 # 2026-10-13). The mark is a middle dot: valid inside XML names, never in Tally's own.
-_MARK = chr(0x00B7)
-PREFIX_MARK = _MARK  # in element names that had a prefix
+PREFIX_MARK = chr(0x00B7)  # in element names that had a prefix
 _TAG = re.compile(r"<(/?)([^\s/>!?]+)([^>]*)>")
 _ATTR = re.compile(r"(\s+)([^\s=/>]+)(\s*=\s*)(\"[^\"]*\"|'[^']*')")
 _RESERVED_PREFIXES = {"xml", "xmlns"}
@@ -58,16 +64,12 @@ def _rename(name: str) -> str:
     prefix, colon, local = name.partition(":")
     if not colon or prefix in _RESERVED_PREFIXES or not local:
         return name
-    return f"{prefix}{_MARK}{local}"
+    return f"{prefix}{PREFIX_MARK}{local}"
 
 
 def restore_name(name: str) -> str:
     """A parsed element's name as the source wrote it (UDF:FIELD, not the internal form)."""
-    return _restore(name)
-
-
-def _restore(name: str) -> str:
-    return name.replace(_MARK, ":", 1) if _MARK in name else name
+    return name.replace(PREFIX_MARK, ":", 1)
 
 
 def _rewrite_tags(text: str, rename: Callable[[str], str]) -> str:
@@ -83,7 +85,7 @@ _PREFIXED_ATTRIBUTE = re.compile(r"\s[A-Za-z_][\w.-]*:[\w.-]+\s*=\s*[\"']")
 
 
 def neutralise_prefixes(text: str) -> str:
-    """Undeclared prefixed names (e.g. UDF:FIELD) made parseable; see _MARK. Responses
+    """Undeclared prefixed names (e.g. UDF:FIELD) made parseable; see PREFIX_MARK. Responses
     without any prefixed name (most) are returned as they are, without rewriting."""
     if ":" not in text or not (_PREFIXED_ELEMENT.search(text) or _PREFIXED_ATTRIBUTE.search(text)):
         return text
@@ -93,7 +95,7 @@ def neutralise_prefixes(text: str) -> str:
 def parse_response(body: bytes) -> ET.Element:
     text = neutralise_prefixes(sanitize(decode_response(body)))
     # Drop any XML declaration: the text is already decoded.
-    text = re.sub(r"^\s*<\?xml[^>]*\?>", "", text)
+    text = _XML_DECLARATION.sub("", text)
     try:
         # Local, trusted source; Python's expat limits entity expansion.
         root = ET.fromstring(text)  # noqa: S314
@@ -120,11 +122,13 @@ def objects(root: ET.Element, tag: str) -> list[ET.Element]:
 
 
 def text_of(element: ET.Element, tag: str) -> str | None:
+    """A child's text without surrounding spaces; None when missing or blank."""
     value = element.findtext(tag)
     return value.strip() if value is not None and value.strip() else None
 
 
 def tally_date(value: str | None) -> date | None:
+    """Tally's YYYYMMDD date; None when missing or not a date."""
     if not value:
         return None
     try:
@@ -134,10 +138,12 @@ def tally_date(value: str | None) -> date | None:
 
 
 def object_name(element: ET.Element) -> str | None:
+    """An object's name: its NAME element, else its NAME attribute."""
     return text_of(element, "NAME") or element.get("NAME")
 
 
 def source_key(element: ET.Element) -> str:
+    """An object's permanent key: its GUID (REMOTEID where Tally gives no GUID element)."""
     key = text_of(element, "GUID") or element.get("REMOTEID")
     if not key:
         raise TallyError(f"{element.tag} without GUID in Tally response")
@@ -145,6 +151,7 @@ def source_key(element: ET.Element) -> str:
 
 
 def alter_id(element: ET.Element) -> int | None:
+    """Tally's change counter for the object (higher after every alteration)."""
     value = text_of(element, "ALTERID")
     return int(value) if value and value.lstrip("-").isdigit() else None
 
@@ -153,7 +160,7 @@ def payload(element: ET.Element) -> str:
     """The object's XML as received, with any prefixed names as Tally wrote them."""
     element.tail = None
     text = ET.tostring(element, encoding="unicode")
-    return _rewrite_tags(text, _restore) if _MARK in text else text
+    return _rewrite_tags(text, restore_name) if PREFIX_MARK in text else text
 
 
 def exact_name(element: ET.Element) -> str | None:
@@ -162,10 +169,10 @@ def exact_name(element: ET.Element) -> str | None:
     Company names go back to Tally in SVCURRENTCOMPANY, which must match exactly: a name
     with a trailing or double space must not be tidied (pilot run, 2026-10-12).
     """
-    value = element.findtext("NAME")
-    if value is None or not value.strip():
-        value = element.get("NAME")
-    return value if value is not None and value.strip() else None
+    for value in (element.findtext("NAME"), element.get("NAME")):
+        if value is not None and value.strip():
+            return value
+    return None
 
 
 def parse_companies(body: bytes) -> list[SourceEntity]:

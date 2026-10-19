@@ -1,10 +1,18 @@
-"""Tally connector: implements connectors.base.Connector over Tally's XML interface."""
+"""Tally connector: implements connectors.base.Connector over Tally's XML interface.
+
+Where it fits: the sync (`workers/sync.py`) asks it for the companies Tally has loaded and
+for their records, chunk by chunk (ADR-022), and stores them unchanged; validation and
+`validate analyse` ask it for Tally's own figures (balances, counts, stock, bills) to
+compare with ours. Each method builds a request (`envelopes.py`), sends it (`client.py`)
+and reads the answer (`parser.py`); what the records mean is in `mapping.py`. Every
+request is an export: the connector never changes anything in Tally (CON-008).
+"""
 
 import re
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Self
@@ -28,6 +36,19 @@ from core.config import get_settings
 from core.dates import EDUCATIONAL, EVERY_DAY, DateRule
 from core.names import normalise
 
+STOCK_IN_HAND = "Stock-in-Hand"  # Tally's reserved group for stock ledgers
+# Tally's trial balance line for foreign-currency ledgers' revaluation not posted yet.
+UNADJUSTED = "unadjusted forex gain/loss"
+
+# Patterns in a stored voucher that can explain a validation mismatch (payload_hints).
+_FOREX = re.compile(r"<AMOUNT[^>]*>[^<]*=")
+_QUANTITY = re.compile(r"<(?:ACTUALQTY|BILLEDQTY)[^>]*>([^<]*)<")
+_NUMBERS = re.compile(r"\d+(?:\.\d+)?")
+_GODOWN = re.compile(r"<GODOWNNAME[^>]*>([^<]*)<")
+_BATCH = re.compile(r"<BATCHNAME[^>]*>([^<]*)<")
+# A list element with content (Tally writes some lists empty in every voucher).
+_LIST_TAG = re.compile(r"<([A-Za-z][\w.:]*\.LIST)(?:\s[^>]*)?>\s*<(?!/)")
+
 
 def month_end(value: date) -> date:
     return (value.replace(day=1) + timedelta(days=32)).replace(day=1) - timedelta(days=1)
@@ -42,6 +63,45 @@ def month_periods(start: date, end: date) -> Iterator[Period]:
         current = next_month
 
 
+@dataclass(frozen=True)
+class _Group:
+    name: str
+    parent: str
+    reserved: str  # Tally's reserved name (kept when the group is renamed)
+    opening: Decimal  # canonical sign, for the requested period
+    closing: Decimal
+    reported: bool  # Tally gave a balance (empty for groups it doesn't total)
+
+
+@dataclass
+class _LedgerFigures:
+    """What closing_balances reads from Tally's ledger balances, by ledger GUID."""
+
+    closing: dict[str, Decimal] = field(default_factory=dict)  # canonical sign
+    openings: dict[str, Decimal] = field(default_factory=dict)  # at the books' beginning
+    currencies: dict[str, str] = field(default_factory=dict)
+    names: dict[str, str] = field(default_factory=dict)
+    carriers: set[str] = field(default_factory=set)  # directly under Primary (P&L A/c)
+    stock_keys: set[str] = field(default_factory=set)  # ledgers under Stock-in-Hand
+    stock_opening: Decimal = Decimal(0)  # their openings and closings, totalled
+    stock_closing: Decimal = Decimal(0)
+    # Openings that count in Tally's difference in opening balances (stock ledgers left
+    # out when the stock items' values replace them), and those directly under Primary.
+    counted_openings: Decimal = Decimal(0)
+    primary_openings: Decimal = Decimal(0)
+
+
+@dataclass(frozen=True)
+class ReportRow:
+    """One row of Tally's Ledger Vouchers report: the date and other account shown, the
+    voucher type (empty for a calculated line) and the canonical amount."""
+
+    on: str
+    account: str
+    voucher_type: str
+    amount: Decimal
+
+
 class TallyConnector:
     source_code = "tally"
     # Transform order: each type may refer to the ones before it.
@@ -50,6 +110,7 @@ class TallyConnector:
         *(spec.object_type for spec in envelopes.MASTER_SPECS),
         envelopes.VOUCHERS.object_type,
     )
+    master_types = tuple(spec.object_type for spec in envelopes.MASTER_SPECS)
 
     # The source's own predefined names per object type (Tally's reserved groups and voucher
     # types): the reference diagnostic says when a missing name is one of them.
@@ -66,6 +127,12 @@ class TallyConnector:
         # or "auto" (asked of Tally once); the connection's `educational` setting.
         self.educational = educational
         self._detected: bool | None = None
+        # Read once, kept for later dates: (company, ledger) -> (start, end, its vouchers'
+        # dates and amounts); company -> the opening difference Tally shows.
+        self._ledger_lines: dict[
+            tuple[str, str], tuple[date, date, list[tuple[date, Decimal]]]
+        ] = {}
+        self._opening_shown: dict[str, Decimal | None] = {}
 
     @classmethod
     def from_config(
@@ -80,6 +147,67 @@ class TallyConnector:
             ),
             educational=str(config.get("educational") or "auto"),
         )
+
+    @staticmethod
+    def default_config() -> dict[str, Any]:
+        # No timeout stored: a connection follows TALLY_TIMEOUT_SEC until one is set on it
+        # (connect --timeout-sec).
+        return {"url": get_settings().tally_url}
+
+    # --- talking to Tally ---------------------------------------------------------------
+
+    def _post(self, request_xml: str, timeout: float | None = None) -> bytes:
+        body = self.client.post(request_xml, timeout=timeout)
+        self._prefixes |= parser.undeclared_prefixes(body)
+        return body
+
+    def _company_post(
+        self, entity: SourceEntity, build: Callable[[str], str], timeout: float | None = None
+    ) -> bytes:
+        """Posts a request for one company, built with the company's name exactly as Tally
+        lists it. If Tally rejects the name (it may list a company slightly differently
+        later, e.g. spacing; pilot run 2026-10-12), looks up the company's current name by
+        its GUID and retries once."""
+        name = self._names.get(entity.key, entity.name)
+        body = self._post(build(name), timeout)
+        if not _rejected_company(body):
+            return body
+        current = next((e.name for e in self.list_entities() if e.key == entity.key), None)
+        if current is None or current == name:
+            return body  # parsing it raises Tally's own error
+        self._names[entity.key] = current
+        return self._post(build(current), timeout)
+
+    def _export(
+        self,
+        entity: SourceEntity,
+        spec: envelopes.CollectionSpec,
+        timeout: float | None = None,
+        **options: Any,
+    ) -> bytes:
+        """One collection export for a company; `options` as envelopes.collection_request."""
+        return self._company_post(
+            entity,
+            lambda name: envelopes.collection_request(spec, company=name, **options),
+            timeout,
+        )
+
+    def _export_objects(
+        self, entity: SourceEntity, spec: envelopes.CollectionSpec, **options: Any
+    ) -> list[ET.Element]:
+        """The objects of one collection export for a company."""
+        body = self._export(entity, spec, **options)
+        return parser.objects(parser.parse_response(body), spec.object_tag)
+
+    def _company_record(
+        self, entity: SourceEntity, timeout: float | None = None
+    ) -> list[SourceRecord]:
+        """The company's own record (Tally lists every loaded company)."""
+        body = self._post(envelopes.collection_request(envelopes.COMPANIES), timeout)
+        records = parser.parse_records(body, envelopes.COMPANIES, entity.key)
+        return [record for record in records if record.source_key == entity.key]
+
+    # --- the connection and its companies -----------------------------------------------
 
     def date_rule(self, entity: SourceEntity) -> DateRule:
         """In Educational mode TallyPrime gives reliable balances on the 1st, 2nd and 31st
@@ -106,17 +234,6 @@ class TallyConnector:
                 return value == "yes"
         return None
 
-    @staticmethod
-    def default_config() -> dict[str, Any]:
-        # No timeout stored: a connection follows TALLY_TIMEOUT_SEC until one is set on it
-        # (connect --timeout-sec).
-        return {"url": get_settings().tally_url}
-
-    def _post(self, request_xml: str, timeout: float | None = None) -> bytes:
-        body = self.client.post(request_xml, timeout=timeout)
-        self._prefixes |= parser.undeclared_prefixes(body)
-        return body
-
     def test_connection(self) -> ConnectionStatus:
         try:
             companies = self.list_entities()
@@ -128,6 +245,34 @@ class TallyConnector:
         """Companies currently loaded in Tally."""
         return parser.parse_companies(self._post(envelopes.collection_request(envelopes.COMPANIES)))
 
+    def ping(self) -> None:
+        """The company list with a short timeout: does Tally answer at all?"""
+        body = self.client.post(
+            envelopes.collection_request(envelopes.COMPANIES),
+            timeout=get_settings().tally_ping_timeout_sec,
+        )
+        parser.parse_response(body)
+
+    def probe_entity(self, entity: SourceEntity) -> int:
+        """Diagnostics: select the company by its name exactly as listed, the way every sync
+        request does, and count its groups. No retry, so a rejected name shows up as an
+        error. Read-only (an Export request)."""
+        body = self._post(
+            envelopes.collection_request(envelopes.keys_only(envelopes.GROUPS), company=entity.name)
+        )
+        return len(parser.objects(parser.parse_response(body), envelopes.GROUPS.object_tag))
+
+    @property
+    def xml_prefixes_seen(self) -> set[str]:
+        """Undeclared namespace prefixes met in Tally's answers (e.g. UDF from TDL
+        customisations): names only. Their fields are stored unchanged, not mapped yet."""
+        return set(self._prefixes)
+
+    def to_canonical(self, record: SourceRecord) -> list[CanonicalRecord]:
+        return mapping.to_canonical(record)
+
+    # --- records for the sync -------------------------------------------------------------
+
     def fetch_masters(
         self, entity: SourceEntity, markers: Markers | None = None
     ) -> Iterator[SourceRecord]:
@@ -135,24 +280,31 @@ class TallyConnector:
         on the first sync). Tally keeps one AlterID counter for masters, so each type's
         marker is the highest AlterID already stored for it."""
         markers = markers or {}
-        companies = self._post(envelopes.collection_request(envelopes.COMPANIES))
-        yield from (
-            record
-            for record in parser.parse_records(companies, envelopes.COMPANIES, entity.key)
-            if record.source_key == entity.key
-        )
+        yield from self._company_record(entity)
         for spec in envelopes.MASTER_SPECS:
-            since = _marker(markers, spec.object_type)
-            body = self._company_post(
+            body = self._export(
                 entity,
-                lambda name, spec=spec, since=since: envelopes.collection_request(
-                    spec,
-                    company=name,
-                    since_alter_id=since,
-                    balances_period=_period_for(spec, entity),
-                ),
+                spec,
+                since_alter_id=_marker(markers, spec.object_type),
+                balances_period=_period_for(spec, entity),
             )
             yield from parser.parse_records(body, spec, entity.key)
+
+    def fetch_transactions(
+        self,
+        entity: SourceEntity,
+        markers: Markers | None = None,
+        period: Period | None = None,
+    ) -> Iterator[SourceRecord]:
+        """With a voucher marker: one request for every voucher altered since, whatever its
+        date (an old voucher can be altered today). Otherwise month by month."""
+        since = _marker(markers or {}, envelopes.VOUCHERS.object_type)
+        if since is not None and period is None:
+            body = self._export(entity, envelopes.VOUCHERS, since_alter_id=since)
+            yield from parser.parse_records(body, envelopes.VOUCHERS, entity.key)
+            return
+        for body in self.voucher_bodies(entity, period):
+            yield from parser.parse_records(body, envelopes.VOUCHERS, entity.key)
 
     def voucher_periods(self, entity: SourceEntity, period: Period | None = None) -> list[Period]:
         if period is not None:
@@ -168,12 +320,7 @@ class TallyConnector:
     def voucher_bodies(self, entity: SourceEntity, period: Period | None = None) -> Iterator[bytes]:
         """Raw voucher export responses, one per calendar month."""
         for month in self.voucher_periods(entity, period):
-            yield self._company_post(
-                entity,
-                lambda name, month=month: envelopes.collection_request(
-                    envelopes.VOUCHERS, company=name, period=(month.start, month.end)
-                ),
-            )
+            yield self._export(entity, envelopes.VOUCHERS, period=(month.start, month.end))
 
     def voucher_elements(
         self, entity: SourceEntity, period: Period | None = None
@@ -181,14 +328,64 @@ class TallyConnector:
         for body in self.voucher_bodies(entity, period):
             yield from parser.objects(parser.parse_response(body), envelopes.VOUCHERS.object_tag)
 
-    def ledger_balance_elements(self, entity: SourceEntity) -> list[ET.Element]:
-        """Ledgers with opening/closing balances and Tally's own $$IsDr judgement, for
-        Tally's current period (no explicit dates, so Educational mode cannot reject them)."""
-        body = self._company_post(
+    # --- chunked fetching (ADR-022) ----------------------------------------------------
+
+    def fetch_plan(
+        self, entity: SourceEntity, markers: Markers | None, period: Period | None
+    ) -> list[Chunk]:
+        """The company record, each master type, then vouchers: by AlterID in one request
+        when there's a voucher marker, otherwise month by month."""
+        markers = markers or {}
+        chunks = [Chunk(envelopes.COMPANIES.object_type)]
+        chunks += [Chunk(spec.object_type) for spec in envelopes.MASTER_SPECS]
+        voucher = envelopes.VOUCHERS.object_type
+        if period is None and _marker(markers, voucher) is not None:
+            return [*chunks, Chunk(voucher)]
+        return chunks + [Chunk(voucher, month) for month in self.voucher_periods(entity, period)]
+
+    def fetch_chunk(
+        self,
+        entity: SourceEntity,
+        chunk: Chunk,
+        markers: Markers | None,
+        timeout: float | None = None,
+    ) -> list[SourceRecord]:
+        if chunk.object_type == envelopes.COMPANIES.object_type:
+            return self._company_record(entity, timeout)
+        spec = envelopes.SPEC_BY_OBJECT_TYPE[chunk.object_type]
+        period = (chunk.period.start, chunk.period.end) if chunk.period else None
+        body = self._export(
             entity,
-            lambda name: envelopes.collection_request(envelopes.LEDGER_BALANCES, company=name),
+            spec,
+            timeout,
+            period=period,
+            since_alter_id=_marker(markers or {}, chunk.object_type),
+            balances_period=_period_for(spec, entity),
         )
-        return parser.objects(parser.parse_response(body), envelopes.LEDGER_BALANCES.object_tag)
+        return list(parser.parse_records(body, spec, entity.key, period))
+
+    def chunk_keys(
+        self, entity: SourceEntity, chunk: Chunk, timeout: float | None = None
+    ) -> set[str]:
+        spec = envelopes.SPEC_BY_OBJECT_TYPE[chunk.object_type]
+        period = (chunk.period.start, chunk.period.end) if chunk.period else None
+        body = self._export(entity, envelopes.keys_only(spec), timeout, period=period)
+        return {r.source_key for r in parser.parse_records(body, spec, entity.key, period)}
+
+    def list_keys(self, entity: SourceEntity) -> dict[str, set[str]]:
+        """GUIDs of every master and voucher that exists now (GUID-only exports). Voucher
+        GUIDs are listed month by month: one listing of a large company would be too big."""
+        keys: dict[str, set[str]] = {}
+        for spec in envelopes.MASTER_SPECS:
+            listed = self._export_objects(entity, envelopes.keys_only(spec))
+            keys[spec.object_type] = {parser.source_key(element) for element in listed}
+        voucher = envelopes.VOUCHERS.object_type
+        keys[voucher] = set()
+        for month in self.voucher_periods(entity):
+            keys[voucher] |= self.chunk_keys(entity, Chunk(voucher, month))
+        return keys
+
+    # --- Tally's own figures, for validation (VAL-002, VAL-005 to VAL-008) --------------
 
     def closing_balances(self, entity: SourceEntity, as_of: date) -> SourceBalances:
         """Tally's own closing balances for the period books-from .. as_of (inclusive).
@@ -210,92 +407,106 @@ class TallyConnector:
         period = (entity.books_from, as_of)
         integrated = self._integrated(entity)
         groups = self._group_balances(entity, period)
-        in_stock_group = _stock_in_hand(groups)
-        ledgers: dict[str, Decimal] = {}
-        carriers: set[str] = set()
-        openings = Decimal(0)  # at the books' beginning: the period starts there
-        primary_ledgers = Decimal(0)  # openings of ledgers directly under Primary
-        stock_ledgers = [Decimal(0), Decimal(0)]  # Stock-in-Hand ledgers: opening, closing
-        stock_keys: set[str] = set()
-        ledger_openings: dict[str, Decimal] = {}
-        currencies: dict[str, str] = {}
-        names: dict[str, str] = {}
-        body = self._company_post(
-            entity,
-            lambda name: envelopes.collection_request(
-                envelopes.LEDGER_BALANCES, company=name, balances_period=period
-            ),
+        ledgers = self._ledger_figures(entity, period, _stock_in_hand(groups), integrated)
+        item_values = self._item_values(entity, period) if integrated else None
+        opening_stock, closing_stock, difference = _stock_and_difference(
+            ledgers, item_values, groups
         )
-        for element in parser.objects(parser.parse_response(body), "LEDGER"):
-            key = parser.source_key(element)
-            ledgers[key] = _canonical(element.findtext("CLOSINGBALANCE"))
-            opening = _canonical(element.findtext("OPENINGBALANCE"))
-            ledger_openings[key] = opening
-            parent = (element.findtext("PARENT") or "").strip()
-            currencies[key] = (element.findtext("CURRENCYNAME") or "").strip()
-            names[key] = parser.object_name(element) or ""
-            if parent in in_stock_group:
-                stock_keys.add(key)
-                stock_ledgers[0] += opening
-                stock_ledgers[1] += ledgers[key]
-                if integrated:
-                    continue  # replaced by the stock items' values
-            openings += opening
-            if parent in ("", mapping.PRIMARY):
-                carriers.add(key)
-                primary_ledgers += opening
-        item_values = None
-        if integrated:
-            body = self._company_post(
-                entity,
-                lambda name: envelopes.collection_request(
-                    envelopes.STOCK_VALUES, company=name, balances_period=period
-                ),
-            )
-            items = parser.objects(parser.parse_response(body), "STOCKITEM")
-            item_values = (
-                sum((_canonical(i.findtext("OPENINGVALUE")) for i in items), Decimal(0)),
-                sum((_canonical(i.findtext("CLOSINGVALUE")) for i in items), Decimal(0)),
-            )
-            opening_stock, closing_stock = item_values
-            difference = openings + opening_stock
-            stock_group = next(
-                (g for g in groups if g.reserved == STOCK_IN_HAND and g.reported), None
-            )
-            if stock_group is not None:  # Tally's own stock value
-                opening_stock, closing_stock = stock_group.opening, stock_group.closing
-        else:
-            opening_stock, closing_stock = stock_ledgers
-            difference = openings  # the stock ledgers' openings are in it
         primary = [g for g in groups if g.parent in ("", mapping.PRIMARY)]
         if any(g.reported for g in primary):  # Tally's own trial balance
-            difference = sum((g.opening for g in primary), primary_ledgers)
+            difference = sum((g.opening for g in primary), ledgers.primary_openings)
         shown = self.opening_difference_shown(entity)
         if shown is not None:  # what Tally itself displays, when it can be read
             difference = shown
-        group_openings: dict[str, Decimal] = {}
-        for g in primary:
-            if g.reported:
-                label = g.reserved or g.name
-                group_openings[label] = group_openings.get(label, Decimal(0)) + g.opening
-        foreign = _foreign(currencies, carriers)
+        foreign = _foreign(ledgers.currencies, ledgers.carriers)
         return SourceBalances(
             as_of=as_of,
-            ledgers=ledgers,
-            profit_carriers=frozenset(carriers),
+            ledgers=ledgers.closing,
+            profit_carriers=frozenset(ledgers.carriers),
             foreign_ledgers=frozenset(foreign),
-            book_values=self._book_values(entity, period, foreign, ledger_openings, names),
+            book_values=self._book_values(entity, period, foreign, ledgers.openings, ledgers.names),
             opening_stock=opening_stock,
             closing_stock=closing_stock,
             opening_difference=difference,
-            ledger_openings=ledger_openings,
-            stock_ledger_openings=stock_ledgers[0],
-            stock_ledgers=frozenset(stock_keys),
+            ledger_openings=ledgers.openings,
+            stock_ledger_openings=ledgers.stock_opening,
+            stock_ledgers=frozenset(ledgers.stock_keys),
             integrated=integrated,
             item_opening_value=item_values[0] if item_values else None,
-            group_openings=group_openings,
+            group_openings=_group_openings(primary),
             reserved_groups=frozenset(g.reserved for g in primary if g.reserved),
         )
+
+    def _ledger_figures(
+        self,
+        entity: SourceEntity,
+        period: tuple[date, date],
+        stock_groups: set[str],
+        integrated: bool,
+    ) -> _LedgerFigures:
+        """Every ledger's opening, closing, currency and name for the period, and the
+        totals the opening difference and the stock need."""
+        figures = _LedgerFigures()
+        for element in self._export_objects(
+            entity, envelopes.LEDGER_BALANCES, balances_period=period
+        ):
+            key = parser.source_key(element)
+            closing = _canonical(element.findtext("CLOSINGBALANCE"))
+            opening = _canonical(element.findtext("OPENINGBALANCE"))
+            parent = (element.findtext("PARENT") or "").strip()
+            figures.closing[key] = closing
+            figures.openings[key] = opening
+            figures.currencies[key] = (element.findtext("CURRENCYNAME") or "").strip()
+            figures.names[key] = parser.object_name(element) or ""
+            if parent in stock_groups:
+                figures.stock_keys.add(key)
+                figures.stock_opening += opening
+                figures.stock_closing += closing
+                if integrated:
+                    continue  # replaced by the stock items' values
+            figures.counted_openings += opening
+            if parent in ("", mapping.PRIMARY):
+                figures.carriers.add(key)
+                figures.primary_openings += opening
+        return figures
+
+    def _item_values(
+        self, entity: SourceEntity, period: tuple[date, date]
+    ) -> tuple[Decimal, Decimal]:
+        """The stock items' opening and closing values together (canonical sign)."""
+        items = self._export_objects(entity, envelopes.STOCK_VALUES, balances_period=period)
+        return (
+            sum((_canonical(i.findtext("OPENINGVALUE")) for i in items), Decimal(0)),
+            sum((_canonical(i.findtext("CLOSINGVALUE")) for i in items), Decimal(0)),
+        )
+
+    def _group_balances(self, entity: SourceEntity, period: tuple[date, date]) -> list[_Group]:
+        """Every group with its parent, reserved name and Tally's own opening and closing
+        for the period."""
+        groups = []
+        for group in self._export_objects(entity, envelopes.GROUP_BALANCES, balances_period=period):
+            opening, closing = group.findtext("OPENINGBALANCE"), group.findtext("CLOSINGBALANCE")
+            groups.append(
+                _Group(
+                    parser.object_name(group) or "",
+                    (group.findtext("PARENT") or "").strip(),
+                    (group.get("RESERVEDNAME") or "").strip(),
+                    _canonical(opening),
+                    _canonical(closing),
+                    bool((opening or "").strip() or (closing or "").strip()),
+                )
+            )
+        return groups
+
+    def _integrated(self, entity: SourceEntity) -> bool:
+        """Whether the company integrates accounts with inventory (ISINTEGRATED; Tally's
+        default, so assumed when not reported)."""
+        body = self._post(envelopes.collection_request(envelopes.COMPANIES))
+        for company in parser.objects(parser.parse_response(body), envelopes.COMPANIES.object_tag):
+            if parser.source_key(company) == entity.key:
+                flag = (company.findtext("ISINTEGRATED") or "").strip()
+                return flag != "No"
+        return True
 
     def _book_values(
         self,
@@ -322,15 +533,16 @@ class TallyConnector:
         from its ledger-voucher collection read month by month once and kept for later
         dates (validation asks for the as-of date, then every year end)."""
         start, end = period
-        cache = self.__dict__.setdefault("_ledger_lines", {})
-        known = cache.get((entity.key, ledger))
-        if known is None or known[0] != start or known[1] < end:
-            fetched: list[tuple[date, Decimal]] = []
-            for element in self.ledger_vouchers(entity, ledger, start, month_end(end)):
-                fetched.append(_on_ledger(element, ledger))
-            known = (start, month_end(end), fetched)
-            cache[(entity.key, ledger)] = known
-        return sum((amount for on, amount in known[2] if on <= end), Decimal(0))
+        cached = self._ledger_lines.get((entity.key, ledger))
+        if cached is None or cached[0] != start or cached[1] < end:
+            read_to = month_end(end)
+            lines = [
+                _on_ledger(element, ledger)
+                for element in self.ledger_vouchers(entity, ledger, start, read_to)
+            ]
+            cached = (start, read_to, lines)
+            self._ledger_lines[(entity.key, ledger)] = cached
+        return sum((amount for on, amount in cached[2] if on <= end), Decimal(0))
 
     def opening_difference_shown(self, entity: SourceEntity) -> Decimal | None:
         """The difference in opening balances as Tally itself displays it: the "Difference
@@ -339,31 +551,29 @@ class TallyConnector:
         None when the report can't be read. Read once per company (pilot 2026-10-16: a
         company not integrated with inventory whose trial balance and balance sheet show no
         difference, while its group openings didn't total zero)."""
-        cache = self.__dict__.setdefault("_opening_shown", {})
-        if entity.key not in cache:
-            value = None
-            if entity.books_from is not None:
-                books = entity.books_from
-                try:
-                    if books.day not in (1, 2):  # Educational mode: a reliable date
-                        books = self.date_rule(entity).on_or_after(books)
-                    body = self._company_post(
-                        entity,
-                        lambda name: envelopes.report_request(
-                            envelopes.TRIAL_BALANCE, name, (books, books)
-                        ),
-                    )
-                    lines = report_lines(body)
-                    # No lines at all: not a trial balance (e.g. an unknown report).
-                    value = (
-                        sum((a for name, a in lines if _is_difference(name)), Decimal(0))
-                        if lines
-                        else None
-                    )
-                except Exception:  # noqa: BLE001 - unreadable: the computed figure is used
-                    value = None
-            cache[entity.key] = value
-        return cache[entity.key]
+        if entity.key not in self._opening_shown:
+            self._opening_shown[entity.key] = self._read_opening_difference(entity)
+        return self._opening_shown[entity.key]
+
+    def _read_opening_difference(self, entity: SourceEntity) -> Decimal | None:
+        if entity.books_from is None:
+            return None
+        books = entity.books_from
+        try:
+            if books.day not in (1, 2):  # Educational mode: a reliable date
+                books = self.date_rule(entity).on_or_after(books)
+            body = self._company_post(
+                entity,
+                lambda name: envelopes.report_request(
+                    envelopes.TRIAL_BALANCE, name, (books, books)
+                ),
+            )
+            lines = report_lines(body)
+        except Exception:  # noqa: BLE001 - unreadable: the computed figure is used
+            return None
+        if not lines:  # no lines at all: not a trial balance (e.g. an unknown report)
+            return None
+        return sum((amount for name, amount in lines if _is_difference(name)), Decimal(0))
 
     def unadjusted_forex(
         self, entity: SourceEntity, ledger: str, period: tuple[date, date]
@@ -387,56 +597,26 @@ class TallyConnector:
         mode answers): read-only, for `validate compare-ledger`."""
         out: list[ET.Element] = []
         for month in month_periods(start, end):
-            body = self._company_post(
+            for element in self._export_objects(
                 entity,
-                lambda name, month=month: envelopes.collection_request(
-                    envelopes.LEDGER_VOUCHERS,
-                    company=name,
-                    period=(month.start, month.end),
-                    child_of=ledger,
-                ),
-            )
-            for element in parser.objects(parser.parse_response(body), "VOUCHER"):
+                envelopes.LEDGER_VOUCHERS,
+                period=(month.start, month.end),
+                child_of=ledger,
+            ):
                 dated = parser.tally_date(parser.text_of(element, "DATE"))
                 if dated is None or start <= dated <= end:
                     out.append(element)
         return out
 
-    def _group_balances(self, entity: SourceEntity, period: tuple[date, date]) -> list["_Group"]:
-        """Every group with its parent, reserved name and Tally's own opening and closing
-        for the period."""
-        body = self._company_post(
-            entity,
-            lambda name: envelopes.collection_request(
-                envelopes.GROUP_BALANCES, company=name, balances_period=period
-            ),
+    def ledger_balance_elements(self, entity: SourceEntity) -> list[ET.Element]:
+        """Ledgers with opening/closing balances and Tally's own $$IsDr judgement, for
+        Tally's current period (no explicit dates, so Educational mode cannot reject them)."""
+        return self._export_objects(entity, envelopes.LEDGER_BALANCES)
+
+    def ledger_elements(self, entity: SourceEntity) -> list[ET.Element]:
+        return self._export_objects(
+            entity, envelopes.LEDGERS, balances_period=_period_for(envelopes.LEDGERS, entity)
         )
-        groups = []
-        for group in parser.objects(parser.parse_response(body), envelopes.GROUPS.object_tag):
-            opening, closing = group.findtext("OPENINGBALANCE"), group.findtext("CLOSINGBALANCE")
-            groups.append(
-                _Group(
-                    parser.object_name(group) or "",
-                    (group.findtext("PARENT") or "").strip(),
-                    (group.get("RESERVEDNAME") or "").strip(),
-                    _canonical(opening),
-                    _canonical(closing),
-                    bool((opening or "").strip() or (closing or "").strip()),
-                )
-            )
-        return groups
-
-    def _integrated(self, entity: SourceEntity) -> bool:
-        """Whether the company integrates accounts with inventory (ISINTEGRATED; Tally's
-        default, so assumed when not reported)."""
-        body = self._post(envelopes.collection_request(envelopes.COMPANIES))
-        for company in parser.objects(parser.parse_response(body), envelopes.COMPANIES.object_tag):
-            if parser.source_key(company) == entity.key:
-                flag = (company.findtext("ISINTEGRATED") or "").strip()
-                return flag != "No"
-        return True
-
-    # --- figures that prove the books complete (VAL-005 to VAL-008) ---------------------
 
     def voucher_counts(
         self, entity: SourceEntity, start: date, end: date
@@ -445,14 +625,8 @@ class TallyConnector:
         listing per month (whole months, so Educational mode answers them)."""
         counts: Counter[tuple[date, str]] = Counter()
         for month in month_periods(start.replace(day=1), month_end(end)):
-            body = self._company_post(
-                entity,
-                lambda name, month=month: envelopes.collection_request(
-                    envelopes.VOUCHER_COUNTS, company=name, period=(month.start, month.end)
-                ),
-            )
-            for element in parser.objects(
-                parser.parse_response(body), envelopes.VOUCHER_COUNTS.object_tag
+            for element in self._export_objects(
+                entity, envelopes.VOUCHER_COUNTS, period=(month.start, month.end)
             ):
                 dated = parser.tally_date(parser.text_of(element, "DATE"))
                 if dated is None or not start <= dated <= end:
@@ -465,14 +639,10 @@ class TallyConnector:
         """Stock item GUID -> Tally's closing quantity as of `as_of` (from books-from)."""
         if entity.books_from is None:
             raise TallyError(f"Company '{entity.name}' has no books-from date")
-        body = self._company_post(
-            entity,
-            lambda name: envelopes.collection_request(
-                envelopes.STOCK_VALUES, company=name, balances_period=(entity.books_from, as_of)
-            ),
-        )
         quantities = {}
-        for element in parser.objects(parser.parse_response(body), "STOCKITEM"):
+        for element in self._export_objects(
+            entity, envelopes.STOCK_VALUES, balances_period=(entity.books_from, as_of)
+        ):
             quantity, _ = mapping.quantity(parser.text_of(element, "CLOSINGBALANCE"))
             quantities[parser.source_key(element)] = quantity
         return quantities
@@ -487,16 +657,12 @@ class TallyConnector:
             raise TallyError(f"Company '{entity.name}' has no books-from date")
         out: dict[tuple[str, str], tuple[Decimal, Decimal]] = {}
         for item in items:
-            body = self._company_post(
+            for batch in self._export_objects(
                 entity,
-                lambda name, item=item: envelopes.collection_request(
-                    envelopes.BATCHES,
-                    company=name,
-                    balances_period=(entity.books_from, as_of),
-                    child_of=item,
-                ),
-            )
-            for batch in parser.objects(parser.parse_response(body), envelopes.BATCHES.object_tag):
+                envelopes.BATCHES,
+                balances_period=(entity.books_from, as_of),
+                child_of=item,
+            ):
                 godown = parser.text_of(batch, "GODOWNNAME") or ""
                 opening, _ = mapping.quantity(parser.text_of(batch, "OPENINGBALANCE"))
                 closing, _ = mapping.quantity(parser.text_of(batch, "CLOSINGBALANCE"))
@@ -510,32 +676,21 @@ class TallyConnector:
         """(outstanding bills now, opening bills): party ledger name -> total, canonical
         sign. Tally reports bills outstanding as of its latest date, whatever the period."""
         outstanding: Counter[str] = Counter()
-        body = self._company_post(
-            entity, lambda name: envelopes.collection_request(envelopes.BILLS, company=name)
-        )
-        for bill in parser.objects(parser.parse_response(body), envelopes.BILLS.object_tag):
+        for bill in self._export_objects(entity, envelopes.BILLS):
             party = parser.text_of(bill, "PARENT") or ""
             outstanding[party] += _canonical(bill.findtext("CLOSINGBALANCE"))
         opening: Counter[str] = Counter()
-        body = self._company_post(
+        for ledger in self._export_objects(
             entity,
-            lambda name: envelopes.collection_request(
-                envelopes.LEDGER_OPENING_BILLS,
-                company=name,
-                balances_period=_period_for(envelopes.LEDGER_OPENING_BILLS, entity),
-            ),
-        )
-        for ledger in parser.objects(parser.parse_response(body), "LEDGER"):
-            bills = ledger.findall("BILLALLOCATIONS.LIST")
-            if bills:
-                name = parser.object_name(ledger) or ""
-                for bill in bills:
-                    opening[name] += _canonical(bill.findtext("OPENINGBALANCE"))
+            envelopes.LEDGER_OPENING_BILLS,
+            balances_period=_period_for(envelopes.LEDGER_OPENING_BILLS, entity),
+        ):
+            name = parser.object_name(ledger) or ""
+            for bill in ledger.findall("BILLALLOCATIONS.LIST"):
+                opening[name] += _canonical(bill.findtext("OPENINGBALANCE"))
         return dict(outstanding), dict(opening)
 
     # --- diagnostics: what the source lists now (read-only) -----------------------------
-
-    master_types = tuple(spec.object_type for spec in envelopes.MASTER_SPECS)
 
     # Lists the mapping reads in a voucher; others are reported by `validate analyse`.
     _READ_LISTS = frozenset((
@@ -590,6 +745,7 @@ class TallyConnector:
             return []
         root = voucher[0]
         read = postings(root)
+        # Lines read, by (ledger, amount): a copy of one in another list is not "unread".
         remaining = Counter(
             ((e.findtext("LEDGERNAME") or "").strip(), tally_amount(e.findtext("AMOUNT")))
             for e in read
@@ -619,24 +775,14 @@ class TallyConnector:
         """GUIDs of every master of a type that Tally lists now (are our requests
         complete?)."""
         spec = envelopes.SPEC_BY_OBJECT_TYPE[object_type]
-        body = self._company_post(
-            entity,
-            lambda name: envelopes.collection_request(envelopes.keys_only(spec), company=name),
-        )
-        return {
-            parser.source_key(element)
-            for element in parser.objects(parser.parse_response(body), spec.object_tag)
-        }
+        listed = self._export_objects(entity, envelopes.keys_only(spec))
+        return {parser.source_key(element) for element in listed}
 
     def master_names(self, entity: SourceEntity, object_type: str) -> set[str]:
         """Names (and alias names) of every master of a type that Tally lists now."""
         spec = envelopes.SPEC_BY_OBJECT_TYPE[object_type]
-        listing = replace(spec, collection_id=f"{spec.collection_id}Names", fetch=("GUID", "NAME"))
-        body = self._company_post(
-            entity, lambda name: envelopes.collection_request(listing, company=name)
-        )
         names: set[str] = set()
-        for element in parser.objects(parser.parse_response(body), spec.object_tag):
+        for element in self._export_objects(entity, envelopes.names_only(spec)):
             names.add(parser.object_name(element) or "")
             names.update(
                 (n.text or "").strip() for n in element.findall("LANGUAGENAME.LIST/NAME.LIST/NAME")
@@ -646,185 +792,37 @@ class TallyConnector:
                 names.add(reserved)
         return names - {""}
 
-    def ledger_elements(self, entity: SourceEntity) -> list[ET.Element]:
-        body = self._company_post(
-            entity,
-            lambda name: envelopes.collection_request(
-                envelopes.LEDGERS,
-                company=name,
-                balances_period=_period_for(envelopes.LEDGERS, entity),
-            ),
-        )
-        return parser.objects(parser.parse_response(body), envelopes.LEDGERS.object_tag)
 
-    def fetch_transactions(
-        self,
-        entity: SourceEntity,
-        markers: Markers | None = None,
-        period: Period | None = None,
-    ) -> Iterator[SourceRecord]:
-        """With a voucher marker: one request for every voucher altered since, whatever its
-        date (an old voucher can be altered today). Otherwise month by month."""
-        since = _marker(markers or {}, envelopes.VOUCHERS.object_type)
-        if since is not None and period is None:
-            body = self._company_post(
-                entity,
-                lambda name: envelopes.collection_request(
-                    envelopes.VOUCHERS, company=name, since_alter_id=since
-                ),
-            )
-            yield from parser.parse_records(body, envelopes.VOUCHERS, entity.key)
-            return
-        for body in self.voucher_bodies(entity, period):
-            yield from parser.parse_records(body, envelopes.VOUCHERS, entity.key)
-
-    # --- chunked fetching (ADR-022) ----------------------------------------------------
-
-    def fetch_plan(
-        self, entity: SourceEntity, markers: Markers | None, period: Period | None
-    ) -> list[Chunk]:
-        """The company record, each master type, then vouchers: by AlterID in one request
-        when there's a voucher marker, otherwise month by month."""
-        markers = markers or {}
-        chunks = [Chunk(envelopes.COMPANIES.object_type)]
-        chunks += [Chunk(spec.object_type) for spec in envelopes.MASTER_SPECS]
-        voucher = envelopes.VOUCHERS.object_type
-        if period is None and _marker(markers, voucher) is not None:
-            return [*chunks, Chunk(voucher)]
-        return chunks + [Chunk(voucher, month) for month in self.voucher_periods(entity, period)]
-
-    def fetch_chunk(
-        self,
-        entity: SourceEntity,
-        chunk: Chunk,
-        markers: Markers | None,
-        timeout: float | None = None,
-    ) -> list[SourceRecord]:
-        markers = markers or {}
-        if chunk.object_type == envelopes.COMPANIES.object_type:
-            body = self._post(envelopes.collection_request(envelopes.COMPANIES), timeout)
-            return [
-                r
-                for r in parser.parse_records(body, envelopes.COMPANIES, entity.key)
-                if r.source_key == entity.key
-            ]
-        spec = envelopes.SPEC_BY_OBJECT_TYPE[chunk.object_type]
-        since = _marker(markers, chunk.object_type)
-        period = (chunk.period.start, chunk.period.end) if chunk.period else None
-        body = self._company_post(
-            entity,
-            lambda name: envelopes.collection_request(
-                spec,
-                company=name,
-                period=period,
-                since_alter_id=since,
-                balances_period=_period_for(spec, entity),
-            ),
-            timeout,
-        )
-        return list(parser.parse_records(body, spec, entity.key, period))
-
-    def chunk_keys(
-        self, entity: SourceEntity, chunk: Chunk, timeout: float | None = None
-    ) -> set[str]:
-        spec = envelopes.SPEC_BY_OBJECT_TYPE[chunk.object_type]
-        period = (chunk.period.start, chunk.period.end) if chunk.period else None
-        body = self._company_post(
-            entity,
-            lambda name: envelopes.collection_request(
-                envelopes.keys_only(spec), company=name, period=period
-            ),
-            timeout,
-        )
-        return {r.source_key for r in parser.parse_records(body, spec, entity.key, period)}
-
-    def ping(self) -> None:
-        """The company list with a short timeout: does Tally answer at all?"""
-        body = self.client.post(
-            envelopes.collection_request(envelopes.COMPANIES),
-            timeout=get_settings().tally_ping_timeout_sec,
-        )
-        parser.parse_response(body)
-
-    def list_keys(self, entity: SourceEntity) -> dict[str, set[str]]:
-        """GUIDs of every master and voucher that exists now (GUID-only exports). Voucher
-        GUIDs are listed month by month: one listing of a large company would be too big."""
-        keys: dict[str, set[str]] = {}
-        for spec in envelopes.MASTER_SPECS:
-            body = self._company_post(
-                entity,
-                lambda name, spec=spec: envelopes.collection_request(
-                    envelopes.keys_only(spec), company=name
-                ),
-            )
-            keys[spec.object_type] = {
-                parser.source_key(element)
-                for element in parser.objects(parser.parse_response(body), spec.object_tag)
-            }
-        voucher = envelopes.VOUCHERS.object_type
-        keys[voucher] = set()
-        for month in self.voucher_periods(entity):
-            keys[voucher] |= self.chunk_keys(entity, Chunk(voucher, month))
-        return keys
-
-    def to_canonical(self, record: SourceRecord) -> list[CanonicalRecord]:
-        return mapping.to_canonical(record)
-
-    @property
-    def xml_prefixes_seen(self) -> set[str]:
-        """Undeclared namespace prefixes met in Tally's answers (e.g. UDF from TDL
-        customisations): names only. Their fields are stored unchanged, not mapped yet."""
-        return set(self._prefixes)
-
-    def probe_entity(self, entity: SourceEntity) -> int:
-        """Diagnostics: select the company by its name exactly as listed, the way every sync
-        request does, and count its groups. No retry, so a rejected name shows up as an
-        error. Read-only (an Export request)."""
-        body = self._post(
-            envelopes.collection_request(envelopes.keys_only(envelopes.GROUPS), company=entity.name)
-        )
-        return len(parser.objects(parser.parse_response(body), envelopes.GROUPS.object_tag))
-
-    def _company_post(
-        self, entity: SourceEntity, build: Callable[[str], str], timeout: float | None = None
-    ) -> bytes:
-        """Posts a request for one company, built with the company's name exactly as Tally
-        lists it. If Tally rejects the name (it may list a company slightly differently
-        later, e.g. spacing; pilot run 2026-10-12), looks up the company's current name by
-        its GUID and retries once."""
-        name = self._names.get(entity.key, entity.name)
-        body = self._post(build(name), timeout)
-        if not _rejected_company(body):
-            return body
-        current = next((e.name for e in self.list_entities() if e.key == entity.key), None)
-        if current is None or current == name:
-            return body  # parsing it raises Tally's own error
-        self._names[entity.key] = current
-        return self._post(build(current), timeout)
+# --- helpers: reading Tally's figures ---------------------------------------------------
 
 
-_FOREX = re.compile(r"<AMOUNT[^>]*>[^<]*=")
-_QUANTITY = re.compile(r"<(?:ACTUALQTY|BILLEDQTY)[^>]*>([^<]*)<")
-_NUMBERS = re.compile(r"\d+(?:\.\d+)?")
-_GODOWN = re.compile(r"<GODOWNNAME[^>]*>([^<]*)<")
-_BATCH = re.compile(r"<BATCHNAME[^>]*>([^<]*)<")
-# A list element with content (Tally writes some lists empty in every voucher).
-_LIST_TAG = re.compile(r"<([A-Za-z][\w.:]*\.LIST)(?:\s[^>]*)?>\s*<(?!/)")
+def _stock_and_difference(
+    ledgers: _LedgerFigures,
+    item_values: tuple[Decimal, Decimal] | None,
+    groups: Iterable[_Group],
+) -> tuple[Decimal, Decimal, Decimal]:
+    """(opening stock, closing stock, opening difference) as Tally counts them. Not
+    integrated (no item values): the Stock-in-Hand ledgers are the stock and their openings
+    are in the difference. Integrated: the items' values are the stock (Tally's own
+    Stock-in-Hand group total when it reports one) and the opening stock is in the
+    difference."""
+    if item_values is None:
+        return ledgers.stock_opening, ledgers.stock_closing, ledgers.counted_openings
+    difference = ledgers.counted_openings + item_values[0]
+    stock_group = next((g for g in groups if g.reserved == STOCK_IN_HAND and g.reported), None)
+    if stock_group is not None:  # Tally's own stock value
+        return stock_group.opening, stock_group.closing, difference
+    return item_values[0], item_values[1], difference
 
 
-STOCK_IN_HAND = "Stock-in-Hand"  # Tally's reserved group for stock ledgers
-# Tally's trial balance line for foreign-currency ledgers' revaluation not posted yet.
-UNADJUSTED = "unadjusted forex gain/loss"
-
-
-@dataclass(frozen=True)
-class _Group:
-    name: str
-    parent: str
-    reserved: str  # Tally's reserved name (kept when the group is renamed)
-    opening: Decimal  # canonical sign, for the requested period
-    closing: Decimal
-    reported: bool  # Tally gave a balance (empty for groups it doesn't total)
+def _group_openings(primary: Iterable[_Group]) -> dict[str, Decimal]:
+    """Openings of the primary groups Tally reports, by reserved name (else name)."""
+    openings: dict[str, Decimal] = {}
+    for group in primary:
+        if group.reported:
+            label = group.reserved or group.name
+            openings[label] = openings.get(label, Decimal(0)) + group.opening
+    return openings
 
 
 def _foreign(currencies: Mapping[str, str], carriers: Iterable[str]) -> set[str]:
@@ -837,17 +835,6 @@ def _foreign(currencies: Mapping[str, str], carriers: Iterable[str]) -> set[str]
         used = Counter(c for c in currencies.values() if c)
         base = used.most_common(1)[0][0] if used else None
     return {k for k, c in currencies.items() if c and base is not None and c != base}
-
-
-@dataclass(frozen=True)
-class ReportRow:
-    """One row of Tally's Ledger Vouchers report: the date and other account shown, the
-    voucher type (empty for a calculated line) and the canonical amount."""
-
-    on: str
-    account: str
-    voucher_type: str
-    amount: Decimal
 
 
 def _on_ledger(element: ET.Element, ledger: str) -> tuple[date, Decimal]:
@@ -880,14 +867,9 @@ def report_lines(body: bytes) -> list[tuple[str, Decimal]]:
         if element.tag == "DSPACCNAME":
             name = (element.findtext("DSPDISPNAME") or "").strip()
         elif element.tag == "DSPACCINFO" and name is not None:
-            total = sum(
-                (
-                    tally_amount(element.findtext(path)) or Decimal(0)
-                    for path in ("DSPCLDRAMT/DSPCLDRAMTA", "DSPCLCRAMT/DSPCLCRAMTA")
-                ),
-                Decimal(0),
-            )
-            lines.append((name, -total if total else Decimal(0)))
+            debit = tally_amount(element.findtext("DSPCLDRAMT/DSPCLDRAMTA")) or Decimal(0)
+            credit = tally_amount(element.findtext("DSPCLCRAMT/DSPCLCRAMTA")) or Decimal(0)
+            lines.append((name, _canonical_total(debit + credit)))
             name = None
     return lines
 
@@ -900,16 +882,15 @@ def report_rows(body: bytes) -> list[ReportRow]:
     for element in parser.parse_response(body).iter():
         if element.tag in ("DSPVCHDATE", "DSPVCHLEDACCOUNT", "DSPVCHTYPE", "DSPVCHDRAMT"):
             current[element.tag] = (element.text or "").strip()
-        elif element.tag == "DSPVCHCRAMT":
-            total = (tally_amount(current.get("DSPVCHDRAMT")) or Decimal(0)) + (
-                tally_amount(element.text) or Decimal(0)
-            )
+        elif element.tag == "DSPVCHCRAMT":  # the row's last column
+            debit = tally_amount(current.get("DSPVCHDRAMT")) or Decimal(0)
+            credit = tally_amount(element.text) or Decimal(0)
             rows.append(
                 ReportRow(
                     current.get("DSPVCHDATE", ""),
                     current.get("DSPVCHLEDACCOUNT", ""),
                     current.get("DSPVCHTYPE", ""),
-                    -total if total else Decimal(0),
+                    _canonical_total(debit + credit),
                 )
             )
             current = {}
@@ -922,7 +903,7 @@ def _stock_in_hand(groups: Iterable[_Group]) -> set[str]:
     parents = {g.name: g.parent for g in groups}
     stock = {g.name for g in groups if g.reserved == STOCK_IN_HAND}
     found = True
-    while found:
+    while found:  # add children of groups found, until no more are found
         found = False
         for name, parent in parents.items():
             if parent in stock and name not in stock:
@@ -942,7 +923,11 @@ def _period_for(spec: envelopes.CollectionSpec, entity: SourceEntity) -> tuple[d
 
 def _canonical(text: str | None) -> Decimal:
     """Tally amount → canonical sign (schema.md 7.1); empty means zero."""
-    value = tally_amount(text)
+    return _canonical_total(tally_amount(text))
+
+
+def _canonical_total(value: Decimal | None) -> Decimal:
+    """A Tally-signed value → canonical sign; zero (never -0) when empty or zero."""
     return -value if value else Decimal(0)
 
 
@@ -958,5 +943,6 @@ def _rejected_company(body: bytes) -> bool:
 
 
 def _marker(markers: Markers, object_type: str) -> int | None:
+    """A stored AlterID marker as a number (None when there is none)."""
     value = markers.get(object_type)
     return int(value) if value is not None and value.lstrip("-").isdigit() else None

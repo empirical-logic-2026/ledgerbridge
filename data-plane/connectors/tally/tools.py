@@ -1,4 +1,8 @@
-"""Tally developer tools (test environment only).
+"""Tally developer tools (test environment only): record fixtures, check sign conventions.
+
+Where it fits: not part of the sync. `capture-fixtures` records Tally's answers for the
+test company into tests/fixtures/tally (replayed by fixtures.FixtureTransport);
+`sign-check` runs the checks in signs.py against Tally or the fixtures.
 
     python -m connectors.tally.tools capture-fixtures --company "LedgerBridge Test Co"
     python -m connectors.tally.tools sign-check --company "LedgerBridge Test Co"
