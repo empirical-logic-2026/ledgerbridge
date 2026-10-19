@@ -4,7 +4,7 @@
 
 .EXAMPLE
     ./deploy/stack.ps1 -Env test up -d --build
-    ./deploy/stack.ps1 -Env test --profile workers up -d
+    ./deploy/stack.ps1 -Env test run --rm migrate      (the one-off migrate service, profile tools)
     ./deploy/stack.ps1 -Env test down
 
 .NOTES

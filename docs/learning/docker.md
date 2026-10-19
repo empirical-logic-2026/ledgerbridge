@@ -61,6 +61,8 @@ Note that the API is `8001` on your PC but `8000` inside its container. The host
 | `./dev.ps1 test` | Runs tests on your PC, not in Docker. It connects to the test containers through the host ports. Refuses `-Env pilot`. |
 | `./dev.ps1 down` | `stack.ps1 down`: removes containers and the network, **keeps volumes**. |
 
+In `dev.ps1` these patterns each live in one small function: `Start-Followed` (start a job with `exec -d`, then follow it with `exec -T ... watch`), `Invoke-StackCaptured` (run `exec -T` and keep its output instead of printing it, for `report` and `validate compare-ledger`) and `Invoke-ToolContainer` (`docker run --rm` of a tool image such as mermaid-cli or pandoc, judged by its exit code).
+
 Why run commands *inside* the container (`exec`) rather than on your PC? The container already has the selected environment's settings loaded through `env_file:`. Tools on your PC always default to `.env.test`, which would be wrong for `-Env pilot`.
 
 `exec -T` means "run a command in a container that's already running, without a terminal (TTY)". `-T` makes the output plain text, so scripts can capture it.
@@ -474,6 +476,7 @@ See it: the PR's checks, "Details" on a job, then the step "Initialize container
 
 | Date | Change |
 | --- | --- |
+| 2026-10-19 | Section 3: `dev.ps1`'s repeated Docker patterns are now one function each (`Start-Followed`, `Invoke-StackCaptured`, `Invoke-ToolContainer`); the Docker commands themselves are unchanged. `stack.ps1`'s example now shows the `migrate` service of the `tools` profile (the `workers` profile it showed doesn't exist). |
 | 2026-10-19 | Section 11: Docker in the automated checks (service containers, a job in a container, throwaway tool containers, building and scanning our image). |
 | 2026-10-09 | First version: M0 stack, plus the M1 MySQL init script and `TALLY_URL` override. |
 | 2026-10-09 | Added `dev.ps1` (section 3). `stack.ps1` is now a simple script and checks exit codes. The init script uses the `mysql` client. Test API moved to host port 8001. Fixed the MySQL example commands for PowerShell 5.1. |

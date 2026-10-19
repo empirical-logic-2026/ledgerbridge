@@ -110,7 +110,7 @@ ledgerbridge/
 | --- | --- |
 | `README.md` | The front page of the project: what it is, how to start it, and a table of everyday `dev.ps1` commands. |
 | `CLAUDE.md` | Instructions for Claude Code (the AI assistant that writes much of the code): project rules, commands, security and client-data rules, the git workflow. Also a good summary of the rules for people. |
-| `dev.ps1` | The everyday command script (PowerShell): `up`, `down`, `status`, `sync`, `validate`, `transform`, `summary`, `test` and more. Each command either runs Docker through `deploy/stack.ps1` or a Python command inside a container. Run `./dev.ps1 help` for the list. |
+| `dev.ps1` | The everyday command script (PowerShell): `up`, `down`, `status`, `sync`, `validate`, `transform`, `summary`, `test` and more. Each command either runs Docker through `deploy/stack.ps1` or a Python command inside a container. Small functions at the top hold what commands share: `Invoke-Stack` / `Invoke-Checked` (run in the stack, reporting exit codes plainly), `Start-Followed` (a background job, followed), `Invoke-StackCaptured` (output kept, for files), `Invoke-ToolContainer` (mermaid-cli, pandoc), `Save-Utf8`. Run `./dev.ps1 help` for the list. |
 | `.env.test.example`, `.env.pilot.example` | Templates for the settings of each environment (database users and ports, Tally address, timeouts). The real files, `.env.test` and `.env.pilot`, hold passwords and are never committed. |
 | `.gitignore` | Which files git must never track (env files, generated folders). |
 | `.gitattributes` | Keeps shell scripts with Linux line endings, because they run inside Linux containers. |
@@ -385,6 +385,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-19 | 0.20 | `dev.ps1`: shared helpers for background jobs, captured output and tool containers. |
 | 2026-10-19 | 0.19 | `workers/` lighter review: every module says where it fits. |
 | 2026-10-19 | 0.18 | `core/validation.py`, `workers/analyse.py` after the simplicity review. |
 | 2026-10-19 | 0.17 | `core/transform.py`, `fit.py` after the simplicity review. |

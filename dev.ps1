@@ -7,6 +7,10 @@
     Commands that need project settings run inside the api container, so they always use the
     selected environment's env file (.env.test or .env.pilot) via deploy/stack.ps1.
 
+    Where it fits: the front door for people. Each command checks its arguments and the
+    environment, then runs `python -m workers.cli <command>` in the api container (or a
+    docker compose command, or a throwaway tool container), all through deploy/stack.ps1.
+
 .EXAMPLE
     ./dev.ps1 up
     ./dev.ps1 status
@@ -244,6 +248,48 @@ function Show-Health {
     }
 }
 
+function Start-Followed([string]$Kind, [string]$Job, [object[]]$Arguments) {
+    # Starts a workers.cli job in the background inside the api container, then follows its
+    # output here. Closing this window never stops the job (ADR-024).
+    Invoke-Stack exec -d api @Arguments
+    Write-Host "Started $Kind job $Job in the background. Following it; closing this window doesn't stop it (follow again with: ./dev.ps1 sync watch -Env $Env)."
+    Invoke-Checked exec -T api python -m workers.cli watch --connection $connection --job $Job
+}
+
+function Invoke-StackCaptured([object[]]$Arguments) {
+    # Runs a command in the stack without printing it: its output lines (read as UTF-8) and
+    # exit code, for output that is saved to a file or split before it is shown.
+    $encoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& $stack -Env $Env @Arguments)
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = 'Stop'
+    }
+    finally { [Console]::OutputEncoding = $encoding }
+    return @{ Output = $output; Code = $code }
+}
+
+function Save-Utf8([string]$Path, [object[]]$Lines) {
+    # The lines joined by line feeds, as UTF-8 without a byte-order mark.
+    [System.IO.File]::WriteAllText($Path, (($Lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
+}
+
+function Invoke-ToolContainer([object[]]$Arguments, [string]$What) {
+    # `docker run --rm ...` of a tool image (mermaid-cli, pandoc). The tools write notices to
+    # stderr; under 'Stop', Windows PowerShell 5.1 turns those into errors, so rely on the
+    # exit code instead (as deploy/stack.ps1 does).
+    $ErrorActionPreference = 'Continue'
+    $output = & docker @Arguments 2>&1
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    if ($code -ne 0) {
+        $output | Select-Object -Last 5 | ForEach-Object { Write-Host "  $_" }
+        throw "$What failed (exit $code)"
+    }
+}
+
 function Invoke-Uv {
     # uv may only be installed as a Python module. `python` on PATH can be the Windows Store
     # alias, so prefer the Python install manager's copy when it exists.
@@ -330,17 +376,9 @@ switch ($Command) {
         New-Item -ItemType Directory -Force -Path $folder | Out-Null
         $file = Join-Path $folder ('report-{0:yyyy-MM-dd-HHmmss}.md' -f (Get-Date))
         # The full report (with details) as Markdown, read as UTF-8 and saved without a BOM.
-        $encoding = [Console]::OutputEncoding
-        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-        try {
-            $ErrorActionPreference = 'Continue'
-            $markdown = & $stack -Env $Env exec -T api @reportArgs --format markdown
-            $code = $LASTEXITCODE
-            $ErrorActionPreference = 'Stop'
-        }
-        finally { [Console]::OutputEncoding = $encoding }
-        if ($code -gt 1) { throw "The report failed (exit $code): see the message above." }
-        [System.IO.File]::WriteAllText($file, (($markdown -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
+        $markdown = Invoke-StackCaptured (@('exec', '-T', 'api') + $reportArgs + @('--format', 'markdown'))
+        if ($markdown.Code -gt 1) { throw "The report failed (exit $($markdown.Code)): see the message above." }
+        Save-Utf8 $file $markdown.Output
         if ($Details) { $reportArgs += '--details' }
         $stackArgs = @(Add-ColorArgs (@('exec', '-T', 'api') + $reportArgs))
         & $stack -Env $Env @stackArgs
@@ -417,9 +455,7 @@ switch ($Command) {
         }
         $job = [guid]::NewGuid().ToString()
         $syncArgs += @('--job', $job)
-        Invoke-Stack exec -d api @syncArgs
-        Write-Host "Started sync job $job in the background. Following it; closing this window doesn't stop it (follow again with: ./dev.ps1 sync watch -Env $Env)."
-        Invoke-Checked exec -T api python -m workers.cli watch --connection $connection --job $job
+        Start-Followed 'sync' $job $syncArgs
     }
     'validate' {
         # Validation as of today (M4): voucher balance, trial balance and closing balances
@@ -436,24 +472,16 @@ switch ($Command) {
             $compareArgs = @('python', '-m', 'workers.cli', 'compare-ledger', '--connection', $connection, '--ledger', "$Ledger", '--private')
             if ($From) { $compareArgs += @('--from', $From) }
             if ($To) { $compareArgs += @('--to', $To) }
-            $encoding = [Console]::OutputEncoding
-            [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-            try {
-                $ErrorActionPreference = 'Continue'
-                $output = @(& $stack -Env $Env exec -T api @compareArgs)
-                $code = $LASTEXITCODE
-                $ErrorActionPreference = 'Stop'
-            }
-            finally { [Console]::OutputEncoding = $encoding }
+            $result = Invoke-StackCaptured (@('exec', '-T', 'api') + $compareArgs)
             $marker = "PRIVATE`t"
-            $private = @($output | Where-Object { "$_".StartsWith($marker) } | ForEach-Object { "$_".Substring($marker.Length) })
-            $output | Where-Object { -not "$_".StartsWith($marker) } | ForEach-Object { Write-Host $_ }
-            if ($code -ne 0) { throw "compare-ledger failed (exit $code): see the message above." }
+            $private = @($result.Output | Where-Object { "$_".StartsWith($marker) } | ForEach-Object { "$_".Substring($marker.Length) })
+            $result.Output | Where-Object { -not "$_".StartsWith($marker) } | ForEach-Object { Write-Host $_ }
+            if ($result.Code -ne 0) { throw "compare-ledger failed (exit $($result.Code)): see the message above." }
             if ($private.Count -gt 0) {
                 $folder = Join-Path (Join-Path (Join-Path $root 'reports') $Env) 'private'
                 New-Item -ItemType Directory -Force -Path $folder | Out-Null
                 $file = Join-Path $folder ('compare-ledger-{0}-{1:yyyy-MM-dd-HHmmss}.tsv' -f $Ledger, (Get-Date))
-                [System.IO.File]::WriteAllText($file, (($private -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
+                Save-Utf8 $file $private
                 Write-Host ''
                 Write-Host "Details (dates, voucher numbers, amounts; local only, never share): $file"
             }
@@ -466,9 +494,7 @@ switch ($Command) {
             $job = [guid]::NewGuid().ToString()
             $analyseArgs = @('python', '-m', 'workers.cli', 'validate-analyse', '--connection', $connection, '--job', $job)
             foreach ($name in $Company) { $analyseArgs += @('--entity', $name) }
-            Invoke-Stack exec -d api @analyseArgs
-            Write-Host "Started analysis job $job in the background. Following it; closing this window doesn't stop it (follow again with: ./dev.ps1 sync watch -Env $Env)."
-            Invoke-Checked exec -T api python -m workers.cli watch --connection $connection --job $job
+            Start-Followed 'analysis' $job $analyseArgs
             return
         }
         $validateArgs = @('python', '-m', 'workers.cli', 'validate', '--connection', $connection, '--source', 'tally')
@@ -492,9 +518,7 @@ switch ($Command) {
         foreach ($name in $Company) { $retryArgs += @('--entity', $name) }
         if ($NoValidate -and $Service -ne 'explain') { $retryArgs += '--no-validate' }
         if ($CheckSource -and $Service -eq 'explain') { $retryArgs += '--check-source' }
-        Invoke-Stack exec -d api @retryArgs
-        Write-Host "Started transform job $job in the background. Following it; closing this window doesn't stop it (follow again with: ./dev.ps1 sync watch -Env $Env)."
-        Invoke-Checked exec -T api python -m workers.cli watch --connection $connection --job $job
+        Start-Followed 'transform' $job $retryArgs
     }
     'fields' {
         # The field catalogue: fields with no column (e.g. Tally UDFs), per entity. Field
@@ -552,16 +576,7 @@ switch ($Command) {
                     '-i', "/data/$name.mmd", '-o', "/data/$name.$format", '-b', 'white',
                     '-c', '/data/mermaid-config.json')
                 if ($format -eq 'png') { $render += @('-s', '2') }
-                # mermaid-cli writes notices to stderr; under 'Stop', Windows PowerShell 5.1
-                # turns them into errors, so rely on the exit code (as deploy/stack.ps1 does).
-                $ErrorActionPreference = 'Continue'
-                $output = & docker @render 2>&1
-                $code = $LASTEXITCODE
-                $ErrorActionPreference = 'Stop'
-                if ($code -ne 0) {
-                    $output | Select-Object -Last 5 | ForEach-Object { Write-Host "  $_" }
-                    throw "Rendering $name.$format failed (exit $code)"
-                }
+                Invoke-ToolContainer $render "Rendering $name.$format"
             }
             Write-Host "Rendered $name (svg, png)"
         }
@@ -588,15 +603,7 @@ switch ($Command) {
                 if ($format -eq 'pdf') {
                     $convert += @('--pdf-engine=xelatex', '-V', 'geometry:margin=1.6cm', '-V', 'fontsize=10pt')
                 }
-                # pandoc writes warnings to stderr; rely on the exit code (as `diagrams` does).
-                $ErrorActionPreference = 'Continue'
-                $output = & docker @convert 2>&1
-                $code = $LASTEXITCODE
-                $ErrorActionPreference = 'Stop'
-                if ($code -ne 0) {
-                    $output | Select-Object -Last 5 | ForEach-Object { Write-Host "  $_" }
-                    throw "Exporting $name.$format failed (exit $code)"
-                }
+                Invoke-ToolContainer $convert "Exporting $name.$format"
             }
             Write-Host "Exported $name (docx, pdf)"
         }
