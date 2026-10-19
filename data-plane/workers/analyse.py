@@ -31,6 +31,11 @@ party or item names, and never amounts.
   vouchers, alternate or compound units, several
   godowns or batches; and, per voucher type, what the stored vouchers contain that the
   mapping doesn't read.
+
+Where it fits: `./dev.ps1 validate analyse` runs it after validation reports mismatches. It
+reads our balances through core/validation.py (the same figures validation compares) and
+the source's through the connector, read-only. Everything it learns is printed as lines;
+nothing is stored.
 """
 
 from collections import Counter, defaultdict
@@ -91,6 +96,7 @@ def _type(standard: str | None, base: str | None) -> str:
 
 
 def _category(deleted: bool, cancelled: bool, optional: bool) -> str | None:
+    """Why a voucher doesn't count in the books, or None when it does."""
     if deleted:
         return "deleted"
     if cancelled:
@@ -121,7 +127,14 @@ def fy_start(on: date, fy_start_month: int) -> date:
     return date(year, fy_start_month, 1)
 
 
+def _has_balances(source: Any) -> bool:
+    """Whether the source's balances were read (a SourceBalances, not an error or None)."""
+    return hasattr(source, "ledgers")
+
+
 class Analyser:
+    """The analysis of one entity as of a date: `run` returns the report's lines."""
+
     def __init__(
         self,
         session: Session,
@@ -145,7 +158,25 @@ class Analyser:
         self.row = self.validator.entity
         self.lines: list[str] = []
         self.year_end_diffs: dict[str, dict[date, Decimal]] = {}  # key -> year end -> diff
-        self.mismatched: dict[str, Decimal] = {}
+        self.mismatched: dict[str, Decimal] = {}  # key -> difference as of the date
+        self.unexplained_keys: list[str] = []
+        self.ours_today: dict[str, Any] = {}  # key -> our balance as of the date
+        # Ledger profiles: anonymous letters, and each ledger's row and primary group.
+        self.letters: dict[str, str] = {}
+        self.profile_rows: dict[int, tuple[Any, ...]] = {}
+        self.profile_primary: dict[int, str] = {}
+        # Read once and kept: our balances and the source's at a date, the differences
+        # then, and how many extra dates have been asked of the source (at most PROBES).
+        self._year_cache: dict[date, dict[str, Any]] = {}
+        self._sources: dict[date, Any] = {}
+        self._diffs: dict[date, dict[str, Decimal] | None] = {}
+        self.probes = 0
+        self._deleted: set[int] | None = None
+        self._named: Counter[str] | None = None
+        self._kinds_by_name: dict[str, str] | None = None
+        self._effective_known: bool | None = None
+        self._opening_bills_read = False
+        self._opening_bills: dict[str, Decimal] | None = None
 
     def close(self, a: Decimal, b: Decimal) -> bool:
         return abs(Decimal(a) - Decimal(b)) <= self.tolerance
@@ -265,23 +296,15 @@ class Analyser:
     def _before(self, ledger_id: int, start: date) -> Decimal:
         return sum((t for month, t in self.monthly.get(ledger_id, []) if month < start), ZERO)
 
+    def _reserved_groups(self) -> dict[str, str]:
+        """The source's reserved group names, by their case-folded form."""
+        names = (getattr(self.connector, "reserved_names", None) or {}).get("group", ())
+        return {n.casefold(): n for n in names}
+
     def _primary_groups(self) -> dict[int, str]:
         """Ledger id -> its primary group, by the source's reserved name or "custom"."""
-        reserved = {
-            n.casefold()
-            for n in (getattr(self.connector, "reserved_names", None) or {}).get("group", ())
-        }
-        groups = {
-            gid: (parent, name, (extra or {}).get("_aliases") or [])
-            for gid, parent, name, extra in self.session.execute(
-                select(
-                    A.AccountGroup.id,
-                    A.AccountGroup.parent_id,
-                    A.AccountGroup.name,
-                    A.AccountGroup.extra,
-                ).where(A.AccountGroup.entity_id == self.entity_id)
-            )
-        }
+        reserved = self._reserved_groups()
+        groups = self._group_tree()
 
         def top(gid: int) -> str:
             seen = set()
@@ -361,9 +384,8 @@ class Analyser:
 
     def _ledgers(self) -> None:
         self.out("Ledger closing balances as of the validation date:")
-        if not hasattr(self.source, "ledgers"):
+        if not _has_balances(self.source):
             self.out(f"  the source's balances couldn't be read ({type(self.source).__name__})")
-            self.mismatched: dict[str, Decimal] = {}
             return
         carriers = self.source.profit_carriers
         ours = {lb.source_key: lb for lb in self.validator.ledger_balances(self.as_of)}
@@ -374,8 +396,6 @@ class Analyser:
         pairs: Counter[str] = Counter()
         by_group: dict[str, Counter[str]] = defaultdict(Counter)
         primary = self._primary_groups()
-        self.mismatched = {}
-        self.unexplained_keys: list[str] = []
         explained = by_pair = 0
         twice = "the opening balance is counted twice here, or the source leaves it out"
         at_stock = self._at_stock_value(self.as_of)
@@ -524,7 +544,7 @@ class Analyser:
     def _first_year_end(self, key: str) -> str:
         for year_end in self.year_ends:
             source = self.source_years.get(year_end)
-            if not hasattr(source, "ledgers"):
+            if not _has_balances(source):
                 continue
             theirs = source.ledgers.get(key)
             ours = self._year_balances(year_end).get(key)
@@ -532,11 +552,11 @@ class Analyser:
                 return f"first differs at the year end {year_end}"
         return "first differs in the current financial year (every year end matches)"
 
-    def _year_balances(self, year_end: date) -> dict[str, Any]:
-        cache = self.__dict__.setdefault("_year_cache", {})
-        if year_end not in cache:
-            cache[year_end] = {lb.source_key: lb for lb in self.validator.ledger_balances(year_end)}
-        return cache[year_end]
+    def _year_balances(self, on: date) -> dict[str, Any]:
+        """Our balances as of a date, by source key (read once)."""
+        if on not in self._year_cache:
+            self._year_cache[on] = {lb.source_key: lb for lb in self.validator.ledger_balances(on)}
+        return self._year_cache[on]
 
     def _year_ends(self) -> None:
         if not self.year_ends:
@@ -545,19 +565,20 @@ class Analyser:
         self.out("Ledger balances at each financial year end:")
         for year_end in self.year_ends:
             source = self.source_years.get(year_end)
-            if not hasattr(source, "ledgers"):
+            if not _has_balances(source):
                 self.out(f"  {year_end}: the source's balances couldn't be read")
                 continue
             ours = self._year_balances(year_end)
             start = fy_start(year_end, self.row.fy_start_month)
             differ, fits = 0, Counter()
-            at_stock = self._at_stock_value(year_end) | self._at_book_value(year_end)
+            # Compared as validation does: at the stock value, or at the book value.
+            explained = self._at_stock_value(year_end) | self._at_book_value(year_end)
             for key, lb in ours.items():
                 theirs = source.ledgers.get(key)
                 if (
                     theirs is None
                     or key in source.profit_carriers
-                    or key in at_stock
+                    or key in explained
                     or self.close(theirs, lb.balance)
                 ):
                     continue
@@ -580,7 +601,7 @@ class Analyser:
     # --- profit carrier ------------------------------------------------------------------
 
     def _profit_carrier(self) -> None:
-        if not hasattr(self.source, "ledgers") or not self.source.profit_carriers:
+        if not _has_balances(self.source) or not self.source.profit_carriers:
             return
         self.out("Profit carrier (e.g. Profit & Loss A/c):")
         ours = self.ours_today
@@ -965,9 +986,7 @@ class Analyser:
         keys = list(dict.fromkeys([*self.mismatched, *self.year_end_diffs]))
         if not keys:
             return
-        ours = getattr(self, "ours_today", {}) or {
-            lb.source_key: lb for lb in self.validator.ledger_balances(self.as_of)
-        }
+        ours = self.ours_today or self._year_balances(self.as_of)
         rows = {
             lid: (kind, currency, bill_wise, group_id)
             for lid, kind, currency, bill_wise, group_id in self.session.execute(
@@ -980,14 +999,7 @@ class Analyser:
                 ).where(A.Ledger.entity_id == self.entity_id)
             )
         }
-        stock_opening = Decimal(
-            self.session.scalar(
-                select(func.coalesce(func.sum(A.Item.opening_value), 0)).where(
-                    A.Item.entity_id == self.entity_id, A.Item.is_deleted.is_(False)
-                )
-            )
-            or 0
-        )
+        stock_opening = self._stored_items_opening()
         source_openings = getattr(self.source, "ledger_openings", {}) or {}
         source_stock = getattr(self.source, "opening_stock", None)
         stock_keys = getattr(self.source, "stock_ledgers", frozenset()) or frozenset()
@@ -1009,40 +1021,19 @@ class Analyser:
             if lb is None:
                 continue
             kind, currency, bill_wise, group_id = rows.get(lb.id, (None, None, False, None))
-            where = [f"primary group {primary.get(lb.id, 'unknown group')}"]
-            renamed, direct = self._placement(tree, group_id)
-            if renamed:
-                where.append(f"under Tally's reserved group {renamed} (renamed)")
-            if direct:
-                where.append("directly under its primary group")
+            where = self._where(lb.id, group_id, primary, tree)
             facts = [f"kind {kind or 'unknown'}", f"nature {lb.nature or 'unknown'}"]
             if currency and currency != "INR":
                 facts.append("foreign currency")
             if bill_wise:
                 facts.append("bill-wise")
-            opening = "zero" if not lb.opening else ("debit" if lb.opening > 0 else "credit")
             theirs = source_openings.get(key)
-            if theirs is None:
-                compared = "the source's opening unknown"
-            elif self.close(theirs, lb.opening):
-                compared = "equal to the source's"
-            else:
-                compared = "different from the source's"
-            facts.append(f"stored opening {opening}, {compared}")
+            facts.append(self._opening_fact(lb.opening, theirs))
             posted = sorted({*self.counted.get(lb.id, {}), *self.excluded.get(lb.id, {})})
             facts.append("posted by: " + (", ".join(posted) if posted else "no vouchers"))
-            dated = dict(self.year_end_diffs.get(key, {}))
-            if key in self.mismatched:
-                dated[self.as_of] = self.mismatched[key]
-            amounts = set(dated.values())
+            dated = dated_by_key[key]
             ends = [d for d in self.year_ends if d in dated]
-            when = (
-                f"differs {'today and ' if self.as_of in dated else ''}at "
-                f"{len(ends)} of {len(self.year_ends)} year ends"
-                + (f" (first {ends[0]}, last {ends[-1]})" if ends else "")
-            )
-            if len(dated) > 1:
-                when += ", by the same amount" if len(amounts) == 1 else ", by changing amounts"
+            when = self._when(dated, ends)
             tests = (
                 ("its stored opening", lb.opening),
                 ("minus its stored opening", -lb.opening),
@@ -1114,6 +1105,46 @@ class Analyser:
         if len(keys) > PROFILE_LEDGERS:
             self.out(f"  ({len(keys) - PROFILE_LEDGERS:,} more not profiled)")
 
+    def _where(
+        self,
+        ledger_id: int,
+        group_id: int | None,
+        primary: dict[int, str],
+        tree: dict[int, tuple[int | None, str, list[str]]],
+    ) -> list[str]:
+        """Where a profiled ledger sits: its primary group, a renamed reserved group above
+        it, and whether it's directly under its primary group."""
+        where = [f"primary group {primary.get(ledger_id, 'unknown group')}"]
+        renamed, direct = self._placement(tree, group_id)
+        if renamed:
+            where.append(f"under Tally's reserved group {renamed} (renamed)")
+        if direct:
+            where.append("directly under its primary group")
+        return where
+
+    def _opening_fact(self, ours: Decimal, theirs: Decimal | None) -> str:
+        """The stored opening's side, and how it compares with the source's."""
+        side = "zero" if not ours else ("debit" if ours > 0 else "credit")
+        if theirs is None:
+            compared = "the source's opening unknown"
+        elif self.close(theirs, ours):
+            compared = "equal to the source's"
+        else:
+            compared = "different from the source's"
+        return f"stored opening {side}, {compared}"
+
+    def _when(self, dated: dict[date, Decimal], ends: list[date]) -> str:
+        """When a ledger differs: today, at how many year ends, by the same amount or not."""
+        when = (
+            f"differs {'today and ' if self.as_of in dated else ''}at "
+            f"{len(ends)} of {len(self.year_ends)} year ends"
+            + (f" (first {ends[0]}, last {ends[-1]})" if ends else "")
+        )
+        if len(dated) > 1:
+            same = len(set(dated.values())) == 1
+            when += ", by the same amount" if same else ", by changing amounts"
+        return when
+
     def _opposite_of(self, key: str, dated_by_key: dict[str, dict[date, Decimal]]) -> list[str]:
         """Other differing ledgers whose difference is this one's opposite at every date both
         differ (one amount posted to the wrong one of the two)."""
@@ -1157,7 +1188,7 @@ class Analyser:
             return "lines of any voucher then equal to the difference: none"
         differing = {
             lb.id: k
-            for k, lb in (getattr(self, "ours_today", {}) or {}).items()
+            for k, lb in self.ours_today.items()
             if k in self.mismatched or k in self.year_end_diffs
         }
         found: Counter[str] = Counter()
@@ -1201,10 +1232,7 @@ class Analyser:
         if voucher is None or not 0 < line_no <= len(voucher.lines):
             return "unknown (line not found)"
         used = voucher.lines[line_no - 1].ledger_name
-        name, extra = self.session.execute(
-            select(A.Ledger.name, A.Ledger.extra).where(A.Ledger.id == ledger_id)
-        ).one()
-        aliases = list((extra or {}).get("_aliases") or [])
+        name, *aliases = self._names_of(ledger_id)
         shared = self._ledgers_named().get(normalise(used), 0)
         note = f" (the name fits {shared:,} ledger rows here)" if shared > 1 else ""
         if used == name:
@@ -1215,8 +1243,15 @@ class Analyser:
             return "after normalisation" + note
         return "otherwise" + note
 
+    def _names_of(self, ledger_id: int) -> list[str]:
+        """A ledger's name, then its aliases."""
+        name, extra = self.session.execute(
+            select(A.Ledger.name, A.Ledger.extra).where(A.Ledger.id == ledger_id)
+        ).one()
+        return [name, *((extra or {}).get("_aliases") or [])]
+
     def _deleted_ledgers(self) -> set[int]:
-        if "_deleted" not in self.__dict__:
+        if self._deleted is None:
             self._deleted = set(
                 self.session.scalars(
                     select(A.Ledger.id).where(
@@ -1228,8 +1263,8 @@ class Analyser:
 
     def _ledgers_named(self) -> Counter[str]:
         """Ledger rows (deleted ones too) per normalised name or alias."""
-        if "_named" not in self.__dict__:
-            self._named: Counter[str] = Counter()
+        if self._named is None:
+            self._named = Counter()
             for name, extra in self.session.execute(
                 select(A.Ledger.name, A.Ledger.extra).where(A.Ledger.entity_id == self.entity_id)
             ):
@@ -1240,10 +1275,7 @@ class Analyser:
     def _named_elsewhere(self, ledger_id: int) -> str:
         """The stored vouchers that name the ledger (by its name or an alias) against those
         with lines on it here, and where it's named in lists the mapping doesn't read."""
-        name, extra = self.session.execute(
-            select(A.Ledger.name, A.Ledger.extra).where(A.Ledger.id == ledger_id)
-        ).one()
-        names = [name, *((extra or {}).get("_aliases") or [])]
+        names = self._names_of(ledger_id)
         unread = getattr(self.connector, "unread_postings", None)
         if unread is None:
             return ""
@@ -1385,37 +1417,35 @@ class Analyser:
             return self.source
         if on in self.source_years:
             return self.source_years[on]
-        cache = self.__dict__.setdefault("_sources", {})
-        if on not in cache:
-            self.probes = getattr(self, "probes", 0) + 1
-            cache[on] = self._read("closing_balances", self.entity, on)
-        return cache[on]
+        if on not in self._sources:
+            self.probes += 1
+            self._sources[on] = self._read("closing_balances", self.entity, on)
+        return self._sources[on]
 
     def _diffs_at(self, on: date) -> dict[str, Decimal] | None:
         """Ledgers that differ as of a date (source key -> theirs minus ours; profit carriers
         left out), or None when the source's balances couldn't be read."""
-        cache = self.__dict__.setdefault("_diffs", {})
-        if on not in cache:
+        if on not in self._diffs:
             source = self._source_at(on)
-            if not hasattr(source, "ledgers"):
-                cache[on] = None
+            if not _has_balances(source):
+                self._diffs[on] = None
             else:
-                at_stock = self._at_stock_value(on) | self._at_book_value(on)
-                cache[on] = {
+                explained = self._at_stock_value(on) | self._at_book_value(on)
+                self._diffs[on] = {
                     key: source.ledgers[key] - lb.balance
                     for key, lb in self._year_balances(on).items()
                     if key in source.ledgers
                     and key not in source.profit_carriers
-                    and key not in at_stock
+                    and key not in explained
                     and not self.close(source.ledgers[key], lb.balance)
                 }
-        return cache[on]
+        return self._diffs[on]
 
     def _at_stock_value(self, on: date) -> set[str]:
         """Stock ledgers the source reports at its closing stock value as of a date: treated
         as explained, as validation compares them with that value (LB-VAL-021)."""
         source = self._source_at(on)
-        if not hasattr(source, "ledgers"):
+        if not _has_balances(source):
             return set()
         ours = {key: lb.balance for key, lb in self._year_balances(on).items()}
         return at_stock_value(ours, source, self.tolerance)
@@ -1424,7 +1454,7 @@ class Analyser:
         """Foreign-currency ledgers equal to the source's book value as of a date (their
         revaluation at current rates left out): explained, as in validation (LB-VAL-022)."""
         source = self._source_at(on)
-        if not hasattr(source, "ledgers"):
+        if not _has_balances(source):
             return set()
         ours = {key: lb.balance for key, lb in self._year_balances(on).items()}
         found: set[str] = set()
@@ -1436,9 +1466,8 @@ class Analyser:
     def _book_fact(self, key: str) -> str:
         """For a foreign-currency ledger that differs: whether the source gives a book value
         for it (alone or with others of its group) and whether ours equals it."""
-        source = self.source
-        ours = {k: lb.balance for k, lb in (getattr(self, "ours_today", {}) or {}).items()}
-        for keys, (book, mine) in at_book_value(ours, source).items():
+        ours = {k: lb.balance for k, lb in self.ours_today.items()}
+        for keys, (book, mine) in at_book_value(ours, self.source).items():
             if key in keys:
                 alone = "its" if len(keys) == 1 else f"its group's ({len(keys):,} ledgers)"
                 state = "equals" if self.close(book, mine) else "differs from"
@@ -1461,7 +1490,7 @@ class Analyser:
 
     def _checked(self, key: str) -> list[tuple[date, bool]]:
         """Dates already compared, in order, with whether the ledger differs then."""
-        dates = {*self.year_ends, self.as_of, *self.__dict__.get("_diffs", {})}
+        dates = {*self.year_ends, self.as_of, *self._diffs}
         out = []
         for on in sorted(dates):
             diffs = self._diffs_at(on)
@@ -1482,8 +1511,8 @@ class Analyser:
         while low < high:
             middle = (low + high) // 2
             probe = candidates[middle]
-            known = probe in self.__dict__.get("_diffs", {})
-            if not known and getattr(self, "probes", 0) >= PROBES:
+            known = probe in self._diffs
+            if not known and self.probes >= PROBES:
                 break
             diffs = self._diffs_at(probe)
             if diffs is None:
@@ -1598,7 +1627,7 @@ class Analyser:
         """Vouchers posting to the ledger whose effective date isn't their date, and how many
         have the two on different sides of a date compared (the source counts by the date:
         checked on the test company, 2026-10-15)."""
-        if "_effective_known" not in self.__dict__:
+        if self._effective_known is None:
             self._effective_known = bool(
                 self.session.scalar(
                     select(func.count())
@@ -1637,9 +1666,10 @@ class Analyser:
 
     def _opening_bills_of(self, ledger_id: int) -> Decimal | None:
         """The source's opening bills of a bill-wise ledger, totalled (canonical sign)."""
-        if "_opening_bills" not in self.__dict__:
+        if not self._opening_bills_read:
             found = self._read("bill_outstanding", self.entity)
             self._opening_bills = found[1] if isinstance(found, tuple) else None
+            self._opening_bills_read = True
         if self._opening_bills is None:
             return None
         name = self.session.scalar(select(A.Ledger.name).where(A.Ledger.id == ledger_id))
@@ -1670,6 +1700,7 @@ class Analyser:
         )
 
     def _group_tree(self) -> dict[int, tuple[int | None, str, list[str]]]:
+        """Group id -> (parent id, name, aliases)."""
         return {
             gid: (parent, name, list((extra or {}).get("_aliases") or []))
             for gid, parent, name, extra in self.session.execute(
@@ -1687,10 +1718,7 @@ class Analyser:
     ) -> tuple[str | None, bool]:
         """(the reserved name of a renamed reserved group above the ledger, whether the
         ledger sits directly under its primary group)."""
-        reserved = {
-            n.casefold(): n
-            for n in (getattr(self.connector, "reserved_names", None) or {}).get("group", ())
-        }
+        reserved = self._reserved_groups()
         renamed, seen, gid = None, set(), group_id
         direct = gid in tree and tree[gid][0] is None
         while gid in tree and gid not in seen:
@@ -1715,14 +1743,7 @@ class Analyser:
         stock_ledgers = getattr(self.source, "stock_ledger_openings", None) or ZERO
         source_stock = getattr(self.source, "opening_stock", None) or ZERO
         items = getattr(self.source, "item_opening_value", None)
-        stored_items = Decimal(
-            self.session.scalar(
-                select(func.coalesce(func.sum(A.Item.opening_value), 0)).where(
-                    A.Item.entity_id == self.entity_id, A.Item.is_deleted.is_(False)
-                )
-            )
-            or 0
-        )
+        stored_items = self._stored_items_opening()
         items = stored_items if items is None else items
         amounts = (
             ("the stock items' opening value", items),
@@ -1773,6 +1794,15 @@ class Analyser:
             + self._fitting(computed - difference, amounts)
         )
 
+    def _stored_items_opening(self) -> Decimal:
+        """The stock items' opening value stored here, totalled."""
+        total = self.session.scalar(
+            select(func.coalesce(func.sum(A.Item.opening_value), 0)).where(
+                A.Item.entity_id == self.entity_id, A.Item.is_deleted.is_(False)
+            )
+        )
+        return Decimal(total or 0)
+
     def _opening_by_group(
         self, difference: Decimal, amounts: Iterable[tuple[str, Decimal]]
     ) -> None:
@@ -1796,7 +1826,7 @@ class Analyser:
                 + self._fitting(difference, [(f"primary group {k}", v) for k, v in theirs.items()])
             )
         source_openings = getattr(self.source, "ledger_openings", {}) or {}
-        ours = getattr(self, "ours_today", {}) or {}
+        ours = self.ours_today
         primary = self._primary_groups()
         ledgers: Counter[str] = Counter()
         for key, opening in source_openings.items():
@@ -1917,8 +1947,8 @@ class Analyser:
         unread = getattr(self.connector, "unread_postings", None)
         if unread is None or not payload:
             return Counter()
-        if "_kinds_by_name" not in self.__dict__:
-            self._kinds_by_name: dict[str, str] = {}
+        if self._kinds_by_name is None:
+            self._kinds_by_name = {}
             for name, extra, kind in self.session.execute(
                 select(A.Ledger.name, A.Ledger.extra, A.Ledger.ledger_kind).where(
                     A.Ledger.entity_id == self.entity_id
