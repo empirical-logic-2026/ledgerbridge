@@ -96,6 +96,13 @@ AREAS = (
         ("entities", "branches"),
     ),
     Area(
+        "er-source-statements",
+        "Source figures and statements: stock values, foreign-currency revaluations "
+        "(ledgerbridge_accounting) and statement lines (ledgerbridge_reporting)",
+        ("stock_values", "fx_revaluation_snapshots", "statement_lines"),
+        ("entities", "ledgers", "connections"),
+    ),
+    Area(
         "er-overview",
         "Overview: the main tables",
         ("entities", "entity_sources", "account_groups", "ledgers", "parties", "voucher_types",
@@ -112,6 +119,8 @@ SCHEMA_GROUPS = (
     (ACCOUNTING, "masters", AREAS[1].tables),
     (ACCOUNTING, "transactions", AREAS[2].tables),
     (ACCOUNTING, "field catalogue", ("source_fields",)),
+    (ACCOUNTING, "source figures", ("stock_values", "fx_revaluation_snapshots")),
+    (REPORTING, "statements, ours and the source's (views on top)", ("statement_lines",)),
     (SYSTEM, "connections and sync", (
         "sources", "agents", "connections", "sync_markers", "sync_runs", "sync_logs",
         "sync_checkpoints", "sync_slow_periods", "sync_unverified_ranges", "import_batches",
@@ -262,10 +271,11 @@ def schema_diagram() -> str:
         targets = ["mysql"] if dbs == ALL_DATABASES else list(dbs)
         for db in targets:
             lines.append(f'    {key} {arrow}|"{access}"| {db}')
-    lines += [
-        "    classDef planned fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:5 5,color:#4b5563",
-        f"    class {REPORTING}_planned planned",
-    ]
+    lines.append(
+        "    classDef planned fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:5 5,color:#4b5563"
+    )
+    if not any(d == REPORTING for d, _, _ in SCHEMA_GROUPS):
+        lines.append(f"    class {REPORTING}_planned planned")
     return "\n".join(lines) + "\n"
 
 

@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator
 from datetime import date, datetime
 
 from connectors.base import SourceEntity, SourceRecord
-from connectors.tally.client import TallyError, decode_response
+from connectors.tally.client import TallyError, TallyRejectedError, decode_response
 from connectors.tally.envelopes import CollectionSpec
 
 _CHAR_REF = re.compile(r"&#(x[0-9a-fA-F]+|[0-9]+);")
@@ -105,7 +105,7 @@ def parse_response(body: bytes) -> ET.Element:
     if error:
         raise TallyError(f"Tally reported an error: {error.strip()[:200]}")
     if root.tag == "RESPONSE":
-        raise TallyError(f"Tally rejected the request: {(root.text or '').strip()[:200]}")
+        raise TallyRejectedError(f"Tally rejected the request: {(root.text or '').strip()[:200]}")
     return root
 
 

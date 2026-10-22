@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.32 (Draft) |
+| Version | 0.33 (Draft) |
 | Date | 2026-10-16 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -473,7 +473,7 @@ One row per voucher line with a foreign amount, written by the transform in the 
 | unrealised_gain_loss | DECIMAL(20,4) | The source's calculated "Unadjusted Forex Gain/Loss" for the ledger (canonical sign: credit = gain). |
 | connection_id, read_at, origin | | When and from where it was read ([SRC] style). |
 
-Unique `(ledger_id, as_of)`; a later read for the same date replaces the row. Written by the sync after each full sync and by validation for its dates; **never** turned into voucher lines and never part of a base-currency balance.
+Unique `(ledger_id, as_of)`; a later read for the same date replaces the row. **Built in migration 0017 (ADR-040)**, ahead of M4b: written by validation for its dates and by `./dev.ps1 statements` for every month end and year end, with `book_value` = our balance (validated equal to the source's book value, VAL-013) and `unrealised_gain_loss` = book − revalued (canonical: a debit is a loss); `currency_code` and `balance_fc` stay empty until M4b maps the currencies. **Never** turned into voucher lines and never part of a base-currency balance.
 
 #### `ledgerbridge_accounting.fx_realised` (FX-005)
 
@@ -483,6 +483,18 @@ Unique `(ledger_id, as_of)`; a later read for the same date replaces the row. Wr
 - `bill_settlement` (**derived here**): for a bill settled against a foreign-currency bill at another rate: base amount of the settlement less the settled part's base amount at the bill's original rate.
 
 Rebuilt for a voucher whenever the voucher or the bill it settles changes.
+
+### 4.9 Source figures (DAT-013, ADR-033, ADR-040; migration 0017)
+
+Figures the source calculates itself and no voucher holds, stored with the date they are for and when they were read. Our statements take them from here (Section 6); they never change a ledger balance.
+
+#### `ledgerbridge_accounting.stock_values`
+
+`id, entity_id, connection_id, origin, as_of DATE, scope ENUM('total','stock_group','godown'), scope_name VARCHAR(255) ('' for total), opening_value DECIMAL(20,4) NULL, closing_value DECIMAL(20,4) NULL, integrated BOOL NULL (total rows), read_at, created_at, updated_at`. Unique `(entity_id, as_of, scope, scope_name)`; a later read for the same date replaces the date's rows.
+
+- `total`: the stock the source's own Profit and Loss uses for the period from the books' beginning to `as_of` (Tally: its export's *Opening Stock* and *Less: Closing Stock* lines). With accounts integrated with inventory that is the items' value; without, the stock ledgers' balances (recorded on the test company, 2026-10-22).
+- `stock_group`, `godown`: the opening and closing value the source gives each (Tally: `OPENINGVALUE`, `CLOSINGVALUE` of the StockGroup and Godown collections); a job worker's godown has none.
+- Canonical sign (stock is a debit). Written by validation (as-of date and year ends; checked against the value stored before, LB-VAL-023) and `./dev.ps1 statements` (every month end and year end).
 
 ## 5. `ledgerbridge_system`
 
@@ -518,6 +530,9 @@ Rebuilt for a voucher whenever the voucher or the bill it settles changes.
 | `opening_difference` | **warning**, shown prominently in status and the API | Opening balances don't total zero (Tally allows this as "Difference in opening balances"; it must be fixed in the books). | `entity` / 0 / the difference |
 | `tb_unbalanced` | error | The trial balance at `as_of`, or at a financial year end before it, doesn't total the opening difference (i.e. the movements don't balance). | `entity` / the opening difference / the total |
 | `stock_ledger_at_stock_value` | info | The source reports its stock ledgers at its closing stock value as of the date (not their own postings): compared with that value (VAL-012). | `entity` / closing stock value / the stock ledgers' balances |
+| `stock_value_mismatch` | error | The source's stock value as of a date differs from the one stored for that date (LB-VAL-023): vouchers on or before it changed in the source after it was stored. |
+| `statement_mismatch` | error | A line or total of our Trial Balance, Profit & Loss or Balance Sheet differs from the source's own report at the as-of date or a year end (LB-VAL-024); `object_id` is `<statement>@<date>:<line key>:<part>`. |
+| `statements_unavailable` / `statements_not_supported` | error / info | The source's statements couldn't be read for a date (LB-VAL-025), or it doesn't offer them (a note). |
 | `foreign_ledgers_at_book_value` | info | Foreign-currency ledgers were compared with the source's book value, not their revalued closing balances (VAL-013). | `entity` / - / - |
 | `closing_mismatch` | error | A ledger's balance differs from the source's own closing balance by more than the tolerance (default 0, exact). | `ledger` / source balance / ours |
 | `ledger_missing` | error | A ledger exists in the source but not here, or here (not deleted) but not in the source. | `ledger` / source balance or NULL / ours or NULL |
@@ -568,6 +583,9 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 
 | Object | Type | Purpose |
 | --- | --- | --- |
+| `ledgerbridge_reporting.statement_lines` | Table | **Built (migration 0017, ADR-040).** `entity_id, as_of, statement ENUM('trial_balance','profit_loss','balance_sheet'), figures ENUM('ours','source'), line_no, section NULL ('assets'/'liabilities', 'gross'/'net'), label, match_key, level ENUM('main','sub','detail'), amount (canonical), debit NULL, credit NULL (trial balance), refreshed_at`. Ours and the source's for each date stored (month ends, year ends, validation dates); `match_key` is the label as both sides are compared (e.g. without "Add: "); `detail` lines (Gross Profit, Net Profit, the two parts of Profit & Loss A/c, a difference in opening balances) are ours only and never compared. Unique `(entity_id, as_of, statement, figures, line_no)`. |
+| `ledgerbridge_reporting.v_trial_balance`, `v_profit_loss`, `v_balance_sheet` | View | **Built (0017).** Our statement lines as of each stored date, laid out as the source's (RPT-012). |
+| `ledgerbridge_reporting.v_statement_check` | View | **Built (0017).** Per entity, date, statement and line: ours, the source's and the difference (`detail` lines left out). |
 | `ledgerbridge_reporting.agg_ledger_daily` | Table | `entity_id, ledger_id, date, debit, credit, net`, refreshed incrementally. |
 | `ledgerbridge_reporting.v_ledger_balances` | View | Opening + movements → closing per ledger per period. |
 | `ledgerbridge_reporting.v_trial_balance` | View | Trial balance per entity and period. |
@@ -785,6 +803,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-22 | 0.33 | Section 4.9 source figures (`stock_values`), `fx_revaluation_snapshots` built; Section 6 `statement_lines` and the statement views; Section 5.2 statement and stock value checks (migration 0017, ADR-040). |
 | 2026-10-22 | 0.32 | Section 5.2: an issue is resolved only by a run that ran its check. |
 | 2026-10-19 | 0.31 | Section 7.5: TallyPrime Edit Log exports the same; no edit history in the export. |
 | 2026-10-16 | 0.30 | Section 7.5: foreign-currency book value from the source's own vouchers; the opening difference from Tally's trial balance line (ADR-038). |

@@ -34,7 +34,7 @@ def _connector(transport: httpx.BaseTransport | None = None) -> TallyConnector:
     return TallyConnector.from_config(TallyConnector.default_config(), transport=transport)
 
 
-def capture_fixtures(company: str, directory: Path) -> int:
+def capture_fixtures(company: str, directory: Path, guid_prefix: str = "") -> int:
     settings = get_settings()
     if settings.app_env != "test":
         print("capture-fixtures runs only with APP_ENV=test", file=sys.stderr)
@@ -51,6 +51,12 @@ def capture_fixtures(company: str, directory: Path) -> int:
         )
         return 2
     entity = entities[0]
+    if guid_prefix and not entity.key.startswith(guid_prefix):
+        # Another company of the same name (e.g. a new empty one) is loaded.
+        print(
+            "Refusing: the loaded company's GUID doesn't start with --guid-prefix", file=sys.stderr
+        )
+        return 2
 
     directory.mkdir(parents=True, exist_ok=True)
     files: dict[str, str] = {}
@@ -143,6 +149,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     capture = sub.add_parser("capture-fixtures", help="record responses for the test company")
     capture.add_argument("--company", required=True)
     capture.add_argument("--dir", type=Path, default=DEFAULT_DIR)
+    capture.add_argument(
+        "--guid-prefix", default="", help="refuse unless the company's GUID starts with this"
+    )
 
     signs = sub.add_parser("sign-check", help="confirm how Tally signs debits and credits")
     source = signs.add_mutually_exclusive_group(required=True)
@@ -164,7 +173,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = root.parse_args(argv)
     if args.command == "capture-fixtures":
-        return capture_fixtures(args.company, args.dir)
+        return capture_fixtures(args.company, args.dir, args.guid_prefix)
     return sign_check(
         args.company,
         args.fixtures,

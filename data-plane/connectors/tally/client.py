@@ -23,6 +23,11 @@ class TallyError(RuntimeError):
     """Tally could not be reached or rejected a request."""
 
 
+class TallyRejectedError(TallyError):
+    """Tally answered that it doesn't know the request (e.g. a report its release doesn't
+    offer, or one a recording doesn't hold)."""
+
+
 class TallyUnreachableError(TallyError):
     """Tally couldn't be reached at all (no connection), even after the retries: closed,
     another port, or a firewall. Not a slow answer, so the sync doesn't split requests."""

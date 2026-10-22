@@ -85,6 +85,19 @@ TABLES: dict[str, tuple[str, str]] = {
     "dimension_values": ("The values of a dimension.", "Transform, for promoted fields."),
     "source_fields": ("Field catalogue (ADR-025): every source field that has no column, kept "
                       "in `extra`, with counts and an inferred type.", "Transform."),
+    "stock_values": ("The source's own stock value as of a date (DAT-013, ADR-040): the "
+                     "total its Profit and Loss uses, and by stock group and godown.",
+                     "Validation (as-of date, year ends) and `./dev.ps1 statements` (every "
+                     "month end and year end)."),
+    "fx_revaluation_snapshots": ("Each foreign-currency ledger's balance as the source reports "
+                                 "it (revalued at current rates) against its book value "
+                                 "(FX-004, ADR-037, ADR-040).",
+                                 "Validation and `./dev.ps1 statements`, for each date."),
+    "statement_lines": ("Trial Balance, Profit & Loss and Balance Sheet lines, ours and the "
+                        "source's, as of each stored date (RPT-012, ADR-040); the views "
+                        "v_trial_balance, v_profit_loss, v_balance_sheet and "
+                        "v_statement_check read them.",
+                        "Validation and `./dev.ps1 statements` (core/statements.py)."),
     "vouchers": ("Vouchers (transactions) with their type, number, date, party and flags.",
                  "Transform, from voucher records; replaced as a whole with their child rows "
                  "(schema.md 8 rule 7)."),
@@ -161,6 +174,15 @@ COLUMNS: dict[tuple[str, str], str] = {
                                            "less the part tracked to a note.",
     ("godowns", "holding"): "own / ours_with_third_party (a job worker's) / third_party_with_us.",
     ("validation_issues", "check_code"): "The check (see the error catalogue, LB-VAL-xxx).",
+    ("stock_values", "scope"): "total (what the source's profit uses), stock_group or godown.",
+    ("stock_values", "integrated"): "Whether the source integrates accounts with inventory "
+                                    "(total rows).",
+    ("fx_revaluation_snapshots", "unrealised_gain_loss"): "Book value less revalued value "
+                                                          "(a debit is an unrealised loss).",
+    ("statement_lines", "figures"): "ours (built here) or source (the source's own report).",
+    ("statement_lines", "match_key"): "The label as both sides are compared.",
+    ("statement_lines", "level"): "main, sub (inside a block) or detail (ours only, never "
+                                  "compared).",
     ("validation_runs", "thorough"): "Whether the source's controls (counts, stock, "
                                      "bills, year ends) were compared.",
 }  # fmt: skip

@@ -158,6 +158,18 @@ STOCK_VALUES = CollectionSpec(
     ("GUID", "NAME", "OPENINGVALUE", "CLOSINGVALUE", "CLOSINGBALANCE"),
 )
 
+# Stock groups and godowns with Tally's own stock value for a period: the opening and
+# closing value of the stock in each (recorded on the test company, 2026-10-22; a job
+# worker's godown has none, as its stock is outside Tally's balances).
+STOCK_GROUP_VALUES = CollectionSpec(
+    "LBStockGroupValues", "StockGroup", "STOCKGROUP", "stock_group_value",
+    ("NAME", "PARENT", "OPENINGVALUE", "CLOSINGVALUE"),
+)  # fmt: skip
+GODOWN_VALUES = CollectionSpec(
+    "LBGodownValues", "Godown", "GODOWN", "godown_value",
+    ("NAME", "PARENT", "OPENINGVALUE", "CLOSINGVALUE"),
+)  # fmt: skip
+
 # Groups with Tally's own totals for a period: its primary groups' openings are the trial
 # balance's (their sum is Tally's difference in opening balances), and with accounts
 # integrated with inventory its Stock-in-Hand group holds the stock value Tally uses
@@ -243,7 +255,9 @@ def _dates(start: date, end: date) -> str:
 
 
 LEDGER_VOUCHERS_REPORT = "Ledger Vouchers"  # one ledger's vouchers, as Tally shows them
-TRIAL_BALANCE = "Trial Balance"  # Tally's own report (an Export of data, read-only)
+TRIAL_BALANCE = "Trial Balance"  # Tally's own reports (an Export of data, read-only)
+BALANCE_SHEET = "Balance Sheet"
+PROFIT_AND_LOSS = "Profit and Loss"
 
 
 def report_request(

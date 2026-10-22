@@ -52,6 +52,7 @@ Note that the API is `8001` on your PC but `8000` inside its container. The host
 | `./dev.ps1 extract -Company "..."` | The same pattern with `workers.cli extract` (raw records only). |
 | `./dev.ps1 sync -Company "..."` | `stack.ps1 exec -d api python -m workers.cli sync ... --job <id>`: starts the sync **detached** (`-d`) inside the api container, so it keeps running whatever happens to your terminal. The sync writes its output to the database under the job id. `dev.ps1` then runs `exec -T api python -m workers.cli watch --job <id>` to print that output as it arrives. The worker container also runs syncs on a schedule (section 6.7). |
 | `./dev.ps1 transform retry` / `rebuild` / `explain`, `./dev.ps1 validate analyse` | Like `sync`: `exec -d api python -m workers.cli transform-retry ... --job <id>` starts it detached, then `exec -T ... watch` follows it. It reads only the database, never Tally. |
+| `./dev.ps1 statements` | Like `validate analyse`: `exec -d api python -m workers.cli statements ... --job <id>` starts it detached, then `exec -T ... watch` follows it. Inside the container it reads Tally's reports through `host.docker.internal:9000` and writes the statements to MySQL. |
 | `./dev.ps1 report` | `exec -T api python -m workers.cli report --format markdown`: the output is captured by `dev.ps1` and saved on your PC under `reports/<env>/` (the container can't write there: its files are its own); then `exec -T` again for the text version on screen. |
 | Colours | When your terminal shows colours (and the output isn't redirected, and neither `-NoColor` nor `NO_COLOR` is set), `dev.ps1` turns `exec -T api ...` into `exec -T -e LB_COLOR=1 api ...`: `-e` sets an environment variable for that one command inside the container. Inside the container the output is a pipe, so the program can't tell by itself whether colours would show. |
 | `./dev.ps1 fields`, `./dev.ps1 promote-field ...` | `exec -T api python -m workers.cli fields` / `promote-field ...`: short commands, run attached. |
@@ -476,6 +477,7 @@ See it: the PR's checks, "Details" on a job, then the step "Initialize container
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | Section 3: `./dev.ps1 statements`, a background job like `validate analyse`. |
 | 2026-10-19 | Section 3: `dev.ps1`'s repeated Docker patterns are now one function each (`Start-Followed`, `Invoke-StackCaptured`, `Invoke-ToolContainer`); the Docker commands themselves are unchanged. `stack.ps1`'s example now shows the `migrate` service of the `tools` profile (the `workers` profile it showed doesn't exist). |
 | 2026-10-19 | Section 11: Docker in the automated checks (service containers, a job in a container, throwaway tool containers, building and scanning our image). |
 | 2026-10-09 | First version: M0 stack, plus the M1 MySQL init script and `TALLY_URL` override. |

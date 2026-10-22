@@ -23,6 +23,7 @@ result. The worker's schedule (workers/celery_app.py) runs the same sync code wi
     python -m workers.cli transform-explain --connection tally-pilot [--check-source]
     python -m workers.cli fields [--entity-id 3]
     python -m workers.cli validate-analyse --connection tally-pilot [--entity NAME]
+    python -m workers.cli statements --connection tally-pilot [--entity NAME] [--from D]
     python -m workers.cli compare-ledger --connection tally-pilot --ledger 88 [--from D --to D]
     python -m workers.cli promote-field --field-id 12 --code SALESMAN --name "Salesman"
 
@@ -120,6 +121,8 @@ from workers.runs import (
     install_tee,
     reap_stale_runs,
 )
+from workers.statements import fill as fill_statements
+from workers.statements import statement_dates
 from workers.sync import (
     DELETION_CHECK,
     EntityOutcome,
@@ -260,6 +263,20 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also print the details (dates, voucher numbers, amounts) as lines starting "
         "PRIVATE<TAB>, for dev.ps1 to write to reports/<env>/private/ and never show",
+    )
+
+    statements_parser = sub.add_parser(
+        "statements",
+        help="store the source's stock values and statements at every month end and year end, "
+        "build ours and compare them (counts only); reads the source's figures",
+    )
+    connection_args(statements_parser)
+    statements_parser.add_argument("--entity", action="append", help="entity name (repeatable)")
+    statements_parser.add_argument(
+        "--from", dest="start", type=date.fromisoformat, help="from this date (default: books)"
+    )
+    statements_parser.add_argument(
+        "--job", help="job id: also write the output to sync_logs, for `watch`"
     )
 
     explain = sub.add_parser(
@@ -448,6 +465,7 @@ JOB_COMMANDS = (
     "transform-rebuild",
     "transform-explain",
     "validate-analyse",
+    "statements",
 )
 
 
@@ -497,6 +515,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _validate_analyse(session, args)
     if args.command == "compare-ledger":
         return _compare_ledger(session, args)
+    if args.command == "statements":
+        return _statements(session, args)
     if args.command == "summary":
         return _summary(session)
     if args.command == "report":
@@ -1424,6 +1444,59 @@ def _validate_analyse(session: Session, args: argparse.Namespace) -> int:
             print(line, flush=True)
     print("Result: analyse finished")
     return 0
+
+
+def _statements(session: Session, args: argparse.Namespace) -> int:
+    """Stock values and statements at every month end and year end (workers/statements.py):
+    the source's stored, ours built and compared. Counts and statement names only."""
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    connector = connector_for(session, connection)
+    entities = select_entities(connector, connection, args.entity)
+    ids = entity_ids_for(session, connection.id, [e.key for e in entities])
+    labels = Labels(session, connection)
+    rule = date_rule(connector, entities[0]) if entities else EVERY_DAY
+    as_of = rule.on_or_before(date.today())
+    code = 0
+    for entity in entities:
+        if entity.key not in ids:
+            print(f"{labels.for_key(entity.key)}: not transformed yet, nothing to fill")
+            continue
+        label = labels.for_key(entity.key, ids[entity.key])
+        row = session.get_one(A.Entity, ids[entity.key])
+        books = entity.books_from or row.books_from
+        if books is None:
+            print(f"{label}: no books-from date, nothing to fill")
+            continue
+        dates = statement_dates(books, row.fy_start_month, as_of, rule, args.start)
+        _progress(f"{label}: statements at {len(dates):,} dates ({dates[0]} to {dates[-1]})")
+        result = fill_statements(
+            session, connection, connector, entity, ids[entity.key], dates,
+            lambda message, label=label: _progress(f"{label}: {message}"),
+        )  # fmt: skip
+        if result.not_offered:
+            print(f"{label}: the source doesn't offer its statements; nothing compared")
+            continue
+        differing = ", ".join(
+            f"{k.replace('_', ' ')} {n:,}" for k, n in result.by_statement.items()
+        )
+        print(
+            f"{label}: statements stored at {result.dates:,} dates; "
+            + (
+                f"they differ from the source at {len(result.differing):,} dates "
+                f"({differing}) [statement_mismatch, LB-VAL-024]: see "
+                "ledgerbridge_reporting.v_statement_check"
+                if result.differing
+                else "every line and total matches the source"
+            )
+            + (f"; {result.unreadable:,} dates couldn't be read" if result.unreadable else "")
+        )
+        if result.differing or result.unreadable:
+            code = 1
+    print("Result: statements finished")
+    return code
 
 
 def _compare_ledger(session: Session, args: argparse.Namespace) -> int:

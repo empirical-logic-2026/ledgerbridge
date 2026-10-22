@@ -150,6 +150,7 @@ ledgerbridge/
 | `tally/mapping.py` | Turns one Tally object into the standard accounting record: groups, ledgers, voucher types, vouchers and their lines, with Tally's signs and reserved names. All Tally knowledge about meaning lives here. `to_canonical` is the entry point the transform calls; small helpers (`_amount`, `quantity`, `_entry_quantity`) read amounts and quantities the same way everywhere. |
 | `tally/signs.py` | Reading Tally amounts (`tally_amount`, including foreign-currency amounts) and a voucher's complete ledger lines (`postings`); and the checks behind `sign-check` that confirmed debits are negative in Tally's XML. |
 | `tally/fixtures.py` | `FixtureTransport` plays back recorded Tally answers in tests and CI, so they run without Tally. |
+| `tally/reports.py` | Reads Tally's own Trial Balance, Balance Sheet and Profit and Loss exports into statement lines (canonical sign), and the opening and closing stock its Profit and Loss uses. |
 | `tally/tools.py` | Developer tools for the test company only: record fixtures, run the sign check. |
 
 **`core/`: the source-independent heart.** Nothing here knows about Tally.
@@ -158,7 +159,8 @@ ledgerbridge/
 | --- | --- |
 | `config.py` | All settings (database users, ports, Tally address, timeouts, tolerances), read from the environment's `.env` file. |
 | `db.py` | Opens database connections, one kind per database user (app, migrator, report, AI), each with only the rights it needs. |
-| `models/` | The database tables as Python classes, one file per database: `source.py` (raw layer), `accounting.py` (the standard accounting model), `system.py` (connections, sync runs, validation, users, alerts, settings); `base.py` (shared column types and the source-tracking columns); `schemas.py` (the four database names). The tables are described for people in [schema.md](schema.md). |
+| `models/` | The database tables as Python classes, one file per database: `source.py` (raw layer), `accounting.py` (the standard accounting model, with the source figures `stock_values` and `fx_revaluation_snapshots`), `reporting.py` (statement lines for the reporting views), `system.py` (connections, sync runs, validation, users, alerts, settings); `base.py` (shared column types and the source-tracking columns); `schemas.py` (the four database names). The tables are described for people in [schema.md](schema.md). |
+| `statements.py` | The Trial Balance, Profit & Loss and Balance Sheet laid out as the source's, built from our ledgers and the source's own stock and revaluation figures (`build`), compared with the source's line by line (`compare`), both stored in `ledgerbridge_reporting.statement_lines` (`refresh`). |
 | `canonical.py` | The standard ("canonical") records every connector produces: company, group, ledger, voucher, voucher line and so on. |
 | `raw_store.py` | Stores what a source sends, unchanged, in the raw records table, skipping copies that haven't changed. |
 | `transform.py` | Turns raw records into the accounting tables: in batches, in the right order (groups before ledgers before vouchers), updating rather than duplicating, replacing a voucher's lines as a whole, and failing only the record at fault. `Transformer.run` drives it per entity; one writer per kind of record (`_groups`, `_ledgers`, `_simple` for the small masters, `_vouchers`), with `_item_rows` fitting a record's rows, `_voucher_refs` resolving a voucher's names, `_prepare` building its rows and `_insert_children` writing lines, bills, cost allocations, tax lines and dimensions. `mark_deleted` soft-deletes rows whose source object is gone. |
@@ -189,6 +191,7 @@ ledgerbridge/
 | `references.py` | The `transform explain` diagnostic: why names didn't resolve, in counts and kinds only. |
 | `report.py` | The health report (`./dev.ps1 report`): overall verdict, sections, problems with meaning, likely cause and next step; and the validation layout every command shares, compared with the previous run. Counts and codes only. |
 | `style.py` | Colours status words (green, yellow, red) when `dev.ps1` says the terminal supports it; plain text otherwise. |
+| `statements.py` | `./dev.ps1 statements`: the stock values and statements at every month end and year end, read from the source, stored and compared (counts only). |
 | `compare.py` | `validate compare-ledger`: one ledger's vouchers in the source against ours, voucher by voucher; counts printed, details only as private lines for a local file. |
 | `analyse.py` | The `validate analyse` diagnostic: tests explanations for every validation mismatch (ledgers, year ends, profit carrier, unbalanced vouchers, trial balance, bills, stock) and counts which fit. `Analyser.run` lists the sections in order; everything read once (balances by date, the source's figures, ledger names) is kept in caches set up in `__init__`; each differing ledger gets an anonymous profile (`_profiles`, with `_where`, `_opening_fact`, `_when`). |
 
@@ -385,6 +388,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-22 | 0.21 | `core/statements.py`, `core/models/reporting.py`, `connectors/tally/reports.py`, `workers/statements.py`, migration 0017; `tests/test_statements.py` with `tests/stock_replay.py`. |
 | 2026-10-19 | 0.20 | `dev.ps1`: shared helpers for background jobs, captured output and tool containers. |
 | 2026-10-19 | 0.19 | `workers/` lighter review: every module says where it fits. |
 | 2026-10-19 | 0.18 | `core/validation.py`, `workers/analyse.py` after the simplicity review. |

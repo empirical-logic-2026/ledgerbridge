@@ -53,11 +53,13 @@ def test_upgrade_downgrade_upgrade_creates_every_model_table() -> None:
     assert _tables() == _model_tables() | {f"{SYSTEM}.alembic_version"}
 
 
-def test_expected_table_counts_and_empty_reporting_database() -> None:
+def test_expected_table_counts() -> None:
+    """The reporting database holds only `statement_lines` (migration 0017, ADR-040); its
+    views aren't tables."""
     command.upgrade(_config(), "head")
     tables = _tables()
     count = {schema: sum(t.startswith(f"{schema}.") for t in tables) for schema in ALL}
-    assert count == {SOURCE: 1, ACCOUNTING: 26, REPORTING: 0, SYSTEM: 26}  # 25 + alembic_version
+    assert count == {SOURCE: 1, ACCOUNTING: 28, REPORTING: 1, SYSTEM: 26}  # 25 + alembic_version
     assert f"{ACCOUNTING}.bank_statement_lines" not in tables  # phase 2
 
 

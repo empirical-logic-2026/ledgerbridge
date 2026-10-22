@@ -35,11 +35,12 @@ from decimal import Decimal
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
-from connectors.base import SourceBalances, SourceControls
+from connectors.base import SourceBalances, SourceControls, SourceStatements
+from core import statements
 from core.models import accounting as A  # noqa: N812
 from core.models.base import utcnow
 from core.models.source import RawRecord
-from core.models.system import ValidationIssue, ValidationRun
+from core.models.system import Connection, ValidationIssue, ValidationRun
 from core.problems import title
 
 ZERO = Decimal(0)
@@ -54,6 +55,8 @@ CONSEQUENCES = (
     "voucher_count_mismatch",
     "stock_quantity_mismatch",
     "bills_mismatch",
+    "statement_mismatch",
+    "stock_value_mismatch",
 )
 
 # Issue codes by check. An earlier issue is resolved only when this run ran its check and
@@ -78,10 +81,12 @@ BILLS_READ = (
     "bills_not_compared",
 )
 BILLS_COMPARED = (*BILLS_READ, "bills_mismatch")
+STATEMENTS_READ = ("statements_unavailable", "statements_not_supported")
+STATEMENTS_COMPARED = (*STATEMENTS_READ, "statement_mismatch", "stock_value_mismatch")
 # Codes from no known check (older runs): resolved as before when not found again.
 KNOWN_CODES = frozenset(
     (*ALWAYS_CHECKED, *CLOSING_COMPARED, *YEAR_END_COMPARED, *COUNTS_COMPARED,
-     *STOCK_COMPARED, *BILLS_COMPARED)
+     *STOCK_COMPARED, *BILLS_COMPARED, *STATEMENTS_COMPARED)
 )  # fmt: skip
 
 
@@ -308,6 +313,10 @@ class Validator:
             self._cover(STOCK_COMPARED if _read(controls.stock_quantities) else STOCK_READ)
             self._bills(controls.bill_outstanding, controls.opening_bills)
             self._cover(self._bills_covered(controls))
+            if controls.statements:
+                self._statements(controls.statements)
+                read = all(isinstance(s, SourceStatements) for s in controls.statements.values())
+                self._cover(STATEMENTS_COMPARED if read else STATEMENTS_READ)
         report.root_cause = self._root_cause()
 
         report.findings = self.findings
@@ -320,6 +329,68 @@ class Validator:
     def _fail(self, finding: Finding) -> None:
         """Records a finding: a failed check (error), a warning or a note (info)."""
         self.findings.append(finding)
+
+    def _statements(self, figures: Mapping[date, SourceStatements | Exception]) -> None:
+        """VAL-015, RPT-012 (ADR-040): at each date, the source's stock value against the
+        one stored for it, then our Trial Balance, Profit & Loss and Balance Sheet against
+        the source's own, line by line and in total. Both sides are stored for the views
+        (core/statements.py)."""
+        if self.connection_id is None:
+            return
+        connection = self.session.get(Connection, self.connection_id)
+        origin = str((connection.config if connection else {}).get("origin", "live"))
+        for on, source in sorted(figures.items()):
+            if not isinstance(source, SourceStatements):
+                self._unavailable("statements", source, f"at {on}")
+                continue
+            result = statements.refresh(
+                self.session, self.entity.id, self.connection_id, origin, source, self.tolerance
+            )
+            self._stock_value(on, result.stock_before, source)
+            self.passed += result.compared - len(result.differences)
+            for difference in result.differences:
+                self._fail(
+                    Finding(
+                        "statement_mismatch",
+                        "error",
+                        "statement",
+                        f"{difference.statement}@{on.isoformat()}:{difference.key}"[:64],
+                        difference.source,
+                        difference.ours,
+                        f"{difference.statement.replace('_', ' ').capitalize()} as of {on}: "
+                        f"'{difference.label}' differs from the source.",
+                    )
+                )
+
+    def _stock_value(
+        self,
+        on: date,
+        stored: tuple[Decimal | None, Decimal | None] | None,
+        source: SourceStatements,
+    ) -> None:
+        """The stock value stored for a date (from an earlier read) against the source's
+        now; nothing to compare the first time a date is read."""
+        if stored is None:
+            return
+        same = all(
+            (a is None and b is None)
+            or (a is not None and b is not None and abs(a - b) <= self.tolerance)
+            for a, b in zip(stored, (source.opening_stock, source.closing_stock), strict=True)
+        )
+        if same:
+            self.passed += 1
+            return
+        self._fail(
+            Finding(
+                "stock_value_mismatch",
+                "error",
+                "entity",
+                f"{self.entity.id}@{on.isoformat()}",
+                source.closing_stock,
+                stored[1],
+                f"The source's stock value as of {on} differs from the one stored for that date.",
+            )
+        )
 
     def _cover(self, codes: tuple[str, ...]) -> None:
         self.covered.update(codes)

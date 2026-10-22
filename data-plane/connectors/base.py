@@ -130,6 +130,56 @@ class SourceBalances:
     reserved_groups: frozenset[str] = frozenset()
 
 
+STATEMENTS = ("trial_balance", "profit_loss", "balance_sheet")
+
+
+@dataclass(frozen=True)
+class StatementLine:
+    """One line of a financial statement as the source shows it (or as we build it).
+
+    `level`: "main" (a group or total line), "sub" (a line inside a block, e.g. Opening
+    Stock in Cost of Sales) or "detail" (our own extra lines, e.g. Gross Profit: never
+    compared with the source). `amount` uses the canonical sign (debit positive); trial
+    balance lines also give their debit and credit totals (both positive)."""
+
+    statement: str  # one of STATEMENTS
+    label: str
+    level: str
+    amount: Decimal
+    debit: Decimal | None = None
+    credit: Decimal | None = None
+
+
+@dataclass(frozen=True)
+class StockFigure:
+    """The source's stock value for a scope: "total" (what its profit uses), or one
+    "stock_group" or "godown" by name. Canonical sign (stock is a debit)."""
+
+    scope: str
+    name: str
+    opening: Decimal | None
+    closing: Decimal | None
+
+
+@dataclass(frozen=True)
+class SourceStatements:
+    """The source's own statements for the period from the books' beginning to `as_of`,
+    and the figures our statements take from the source (ADR-033, ADR-040): the opening
+    and closing stock its profit uses, the stock by group and godown, the closing balance
+    it reports for each foreign-currency ledger (revalued at current rates), the ledgers
+    whose balance carries the computed profit, and whether accounts are integrated with
+    inventory. Amounts use the canonical sign."""
+
+    as_of: date
+    lines: tuple[StatementLine, ...]
+    opening_stock: Decimal | None
+    closing_stock: Decimal | None
+    stock: tuple[StockFigure, ...] = ()
+    revalued: Mapping[str, Decimal] = field(default_factory=dict)  # ledger key -> balance
+    profit_carriers: frozenset[str] = frozenset()
+    integrated: bool | None = None
+
+
 @dataclass(frozen=True)
 class SourceControls:
     """The source's own figures that prove the books complete, beyond closing balances
@@ -141,13 +191,15 @@ class SourceControls:
     - `stock_quantities`: stock item source_key -> closing quantity as of the date;
     - `bill_outstanding`: party ledger name -> total of its outstanding bills, as the source
       reports them now; `opening_bills`: party ledger name -> total of its opening bills;
-    - `year_ends`: each financial year end before the as-of date -> closing balances then.
+    - `year_ends`: each financial year end before the as-of date -> closing balances then;
+    - `statements`: the as-of date and each year end -> the source's own statements then.
     """
 
     voucher_counts: Mapping[tuple[date, str], int] | Exception | None = None
     stock_quantities: Mapping[str, Decimal] | Exception | None = None
     bill_outstanding: Mapping[str, Decimal] | Exception | None = None
     opening_bills: Mapping[str, Decimal] | Exception | None = None
+    statements: Mapping[date, "SourceStatements | Exception"] = field(default_factory=dict)
     year_ends: Mapping[date, "SourceBalances | Exception"] = field(default_factory=dict)
 
 
