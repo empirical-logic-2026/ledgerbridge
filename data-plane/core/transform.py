@@ -887,8 +887,6 @@ class Transformer:
         extra_cols = [getattr(model, v) for v in values]
         with_aliases = model in ALIASED
         deleted_col = getattr(model, "is_deleted", None)
-        index = NameIndex()
-        placeholders = False
         query = select(
             col,
             model.id,
@@ -896,18 +894,30 @@ class Transformer:
             deleted_col if deleted_col is not None else col,
             *extra_cols,
         )
-        deleted = []
+        live: list[tuple[str, list[str], Any]] = []  # (name, aliases, value)
+        deleted: list[tuple[str, list[str], Any]] = []
+        placeholders: list[tuple[int, list[str], Any, bool]] = []  # names too long
         for name, row_id, extra, is_deleted, *rest in self.session.execute(
             query.where(model.entity_id == self.entity_id)
         ):
             value = (row_id, *rest) if values else row_id
-            if name == PLACEHOLDER:
-                placeholders = True
-                continue
             aliases = ((extra or {}).get(ALIASES) or []) if with_aliases else []
-            if deleted_col is not None and bool(is_deleted):
-                deleted.append((name, aliases, value))
-                continue
+            gone = deleted_col is not None and bool(is_deleted)
+            if name == PLACEHOLDER:
+                placeholders.append((row_id, aliases, value, gone))
+            else:
+                (deleted if gone else live).append((name, aliases, value))
+        if placeholders:  # rare: read extra only for these rows, then treat them alike
+            full = dict(
+                self.session.execute(
+                    select(model.id, model.extra).where(model.id.in_([p[0] for p in placeholders]))
+                ).all()
+            )
+            for row_id, aliases, value, gone in placeholders:
+                name = ((full.get(row_id) or {}).get(UNFIT) or {}).get(column, PLACEHOLDER)
+                (deleted if gone else live).append((name, aliases, value))
+        index = NameIndex()
+        for name, aliases, value in live:
             index.add(name, value)
             for alias in aliases:
                 index.add_alias(alias, value)
@@ -917,14 +927,6 @@ class Transformer:
             for alias in aliases:
                 if normalise(alias) not in index.normalised:
                     index.add_alias(alias, value)
-        if placeholders:  # rare: read extra only for these rows
-            for row_id, extra, *rest in self.session.execute(
-                select(model.id, model.extra, *extra_cols).where(
-                    model.entity_id == self.entity_id, col == PLACEHOLDER
-                )
-            ):
-                name = ((extra or {}).get(UNFIT) or {}).get(column, PLACEHOLDER)
-                index.add(name, (row_id, *rest) if values else row_id)
         return index
 
     def _ref(

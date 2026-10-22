@@ -1642,8 +1642,9 @@ class Analyser:
             return "effective dates not stored yet (run transform rebuild)"
         dates = [on for on, _ in self._checked(key)]
         differ = across = 0
-        for dated, effective in self.session.execute(
-            select(A.Voucher.voucher_date, A.Voucher.effective_date)
+        # One row per voucher (its id makes two vouchers with the same dates two rows).
+        for _, dated, effective in self.session.execute(
+            select(A.Voucher.id, A.Voucher.voucher_date, A.Voucher.effective_date)
             .join(A.VoucherLine, A.VoucherLine.voucher_id == A.Voucher.id)
             .where(
                 A.VoucherLine.ledger_id == ledger_id,

@@ -56,6 +56,39 @@ CONSEQUENCES = (
     "bills_mismatch",
 )
 
+# Issue codes by check. An earlier issue is resolved only when this run ran its check and
+# didn't find it again (`_store`). *_READ: the check was attempted but the source's figures
+# couldn't be read (or aren't offered), so only those notes are covered; *_COMPARED: the
+# comparison ran.
+ALWAYS_CHECKED = ("voucher_unbalanced", "opening_difference", "tb_unbalanced")
+CLOSING_READ = ("closing_unavailable", "closing_not_supported")
+CLOSING_COMPARED = (
+    *CLOSING_READ, "closing_mismatch", "profit_carrier_mismatch", "ledger_missing",
+    "stock_ledger_at_stock_value", "foreign_ledgers_at_book_value",
+)  # fmt: skip
+YEAR_END_READ = ("year_end_balances_unavailable", "year_end_balances_not_supported")
+YEAR_END_COMPARED = (*YEAR_END_READ, "year_end_mismatch")
+COUNTS_READ = ("voucher_counts_unavailable", "voucher_counts_not_supported")
+COUNTS_COMPARED = (*COUNTS_READ, "voucher_count_mismatch")
+STOCK_READ = ("stock_quantities_unavailable", "stock_quantities_not_supported")
+STOCK_COMPARED = (*STOCK_READ, "stock_quantity_mismatch", "stock_values_not_compared")
+BILLS_READ = (
+    "bill_outstanding_unavailable",
+    "bill_outstanding_not_supported",
+    "bills_not_compared",
+)
+BILLS_COMPARED = (*BILLS_READ, "bills_mismatch")
+# Codes from no known check (older runs): resolved as before when not found again.
+KNOWN_CODES = frozenset(
+    (*ALWAYS_CHECKED, *CLOSING_COMPARED, *YEAR_END_COMPARED, *COUNTS_COMPARED,
+     *STOCK_COMPARED, *BILLS_COMPARED)
+)  # fmt: skip
+
+
+def _read(figures: object) -> bool:
+    """Whether the source's figures for a check were read (not missing or an error)."""
+    return figures is not None and not isinstance(figures, Exception)
+
 
 @dataclass
 class RootCause:
@@ -235,6 +268,8 @@ class Validator:
         self.connection_id = connection_id
         self.findings: list[Finding] = []
         self.passed = 0
+        # Issue codes whose checks this run ran: only their earlier issues can be resolved.
+        self.covered: set[str] = set(ALWAYS_CHECKED)
 
     # --- driver -----------------------------------------------------------------------
 
@@ -262,12 +297,17 @@ class Validator:
         report.opening_difference = self._opening_difference(ledgers, source)
         self._trial_balance(report.opening_difference)
         self._closing(ledgers, source)
+        self._cover(CLOSING_COMPARED if _read(source) else CLOSING_READ)
         if controls is not None:
             for year_end, balances in sorted(controls.year_ends.items()):
                 self._closing(self._ledger_balances(year_end), balances, year_end)
+                self._cover(YEAR_END_COMPARED if _read(balances) else YEAR_END_READ)
             self._voucher_counts(controls.voucher_counts)
+            self._cover(COUNTS_COMPARED if _read(controls.voucher_counts) else COUNTS_READ)
             self._stock_quantities(controls.stock_quantities)
+            self._cover(STOCK_COMPARED if _read(controls.stock_quantities) else STOCK_READ)
             self._bills(controls.bill_outstanding, controls.opening_bills)
+            self._cover(self._bills_covered(controls))
         report.root_cause = self._root_cause()
 
         report.findings = self.findings
@@ -280,6 +320,17 @@ class Validator:
     def _fail(self, finding: Finding) -> None:
         """Records a finding: a failed check (error), a warning or a note (info)."""
         self.findings.append(finding)
+
+    def _cover(self, codes: tuple[str, ...]) -> None:
+        self.covered.update(codes)
+
+    def _bills_covered(self, controls: SourceControls) -> tuple[str, ...]:
+        """The bill codes this run covers: bills are compared only as of today or later."""
+        if self.as_of < date.today():
+            return ("bills_not_compared",)
+        if _read(controls.bill_outstanding) and _read(controls.opening_bills):
+            return BILLS_COMPARED
+        return BILLS_READ
 
     def _note(self, check_code: str, object_id: str, message: str) -> None:
         """An information finding about the entity (no amounts)."""
@@ -644,13 +695,16 @@ class Validator:
         if theirs is None or isinstance(theirs, Exception):
             self._unavailable("voucher_counts", theirs)
             return
-        types = dict(
-            self.session.execute(
-                select(A.VoucherType.id, A.VoucherType.name).where(
-                    A.VoucherType.entity_id == self.entity.id
-                )
-            ).all()
-        )
+        rows = self.session.execute(
+            select(A.VoucherType.id, A.VoucherType.name, A.VoucherType.is_deleted).where(
+                A.VoucherType.entity_id == self.entity.id
+            )
+        ).all()
+        types = {type_id: name for type_id, name, _ in rows}
+        # A finding names the type by id: when a deleted type and a live one share a name,
+        # the live one (a type deleted and created again keeps its name).
+        ids = {name: type_id for type_id, name, deleted in rows if deleted}
+        ids.update({name: type_id for type_id, name, deleted in rows if not deleted})
         ours: Counter[tuple[date, str]] = Counter()
         for voucher_date, type_id, count in self.session.execute(
             select(A.Voucher.voucher_date, A.Voucher.voucher_type_id, func.count())
@@ -662,7 +716,6 @@ class Validator:
             .group_by(A.Voucher.voucher_date, A.Voucher.voucher_type_id)
         ):
             ours[(voucher_date.replace(day=1), types.get(type_id, ""))] += count
-        ids = {name: type_id for type_id, name in types.items()}
         for month, kind in sorted(set(ours) | set(theirs)):
             expected, actual = theirs.get((month, kind), 0), ours.get((month, kind), 0)
             if expected == actual:
@@ -874,7 +927,14 @@ class Validator:
                 ValidationIssue.resolved_at.is_(None),
             )
         ).all()
-        fixed = [i for i, code, kind, oid in earlier if (code, kind, oid) not in current]
+        # An issue is resolved only when its check ran again and didn't find it (a quick
+        # validation, or a control the source couldn't give, leaves earlier issues open).
+        fixed = [
+            i
+            for i, code, kind, oid in earlier
+            if (code, kind, oid) not in current
+            and (code in self.covered or code not in KNOWN_CODES)
+        ]
         if fixed:
             self.session.execute(
                 update(ValidationIssue)

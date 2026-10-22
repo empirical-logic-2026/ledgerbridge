@@ -324,3 +324,69 @@ def test_api_binds_to_localhost_only() -> None:
             in_ports = False
     assert any(p.endswith(":8000") for p in published)
     assert all(p.startswith("127.0.0.1:") for p in published), published
+
+
+def test_a_check_that_didnt_run_leaves_its_earlier_issues_open(
+    db: Session, synced: S.Connection, connector: TallyConnector
+) -> None:
+    """A quick validation (no source controls) doesn't compare voucher counts: a voucher
+    count mismatch found before stays open (quick runs used to mark it resolved), until a
+    thorough validation compares the counts again and no longer finds it."""
+    from connectors.base import SourceControls
+
+    as_of = date(2026, 10, 2)
+    entity_id = db.scalars(select(A.Entity)).one().id
+    entity = connector.list_entities()[0]
+    source = connector.closing_balances(entity, as_of)
+    tallys = connector.voucher_counts(entity, entity.books_from, as_of)
+    wrong = dict(tallys)
+    first = sorted(wrong)[0]
+    wrong[first] += 1
+
+    def validate(controls: SourceControls | None) -> None:
+        Validator(db, entity_id, as_of, connection_id=synced.id).run(source, controls=controls)
+
+    def open_count_issues() -> int:
+        found = db.scalars(
+            select(S.ValidationIssue).where(
+                S.ValidationIssue.check_code == "voucher_count_mismatch",
+                S.ValidationIssue.resolved_at.is_(None),
+            )
+        )
+        return len(found.all())
+
+    validate(SourceControls(voucher_counts=wrong))
+    assert open_count_issues() == 1
+    validate(None)  # quick: counts not compared
+    assert open_count_issues() == 1
+    validate(SourceControls(voucher_counts=RuntimeError("unreadable")))  # not compared either
+    assert open_count_issues() == 1
+    validate(SourceControls(voucher_counts=tallys))  # compared, and they match
+    assert open_count_issues() == 0
+
+
+def test_a_count_finding_names_the_live_voucher_type(
+    db: Session, synced: S.Connection, connector: TallyConnector
+) -> None:
+    """A voucher type deleted and created again keeps its name: a voucher count mismatch
+    names the live type (it could name the deleted one)."""
+    from connectors.base import SourceControls
+
+    as_of = date(2026, 10, 2)
+    sales = db.scalars(select(A.VoucherType).where(A.VoucherType.name == "Sales")).one()
+    copy = {
+        c.name: getattr(sales, c.key)
+        for c in A.VoucherType.__table__.columns
+        if c.name not in ("id",)
+    }
+    db.add(A.VoucherType(**{**copy, "source_key": "deleted-sales", "is_deleted": True}))
+    db.commit()
+    entity = connector.list_entities()[0]
+    counts = dict(connector.voucher_counts(entity, entity.books_from, as_of))
+    month = next(key for key in sorted(counts) if key[1] == "Sales")
+    counts[month] += 1
+    report = Validator(db, sales.entity_id, as_of, connection_id=synced.id).run(
+        connector.closing_balances(entity, as_of), controls=SourceControls(voucher_counts=counts)
+    )
+    (finding,) = [f for f in report.findings if f.check_code == "voucher_count_mismatch"]
+    assert finding.object_id == f"{month[0]:%Y-%m}:{sales.id}"
