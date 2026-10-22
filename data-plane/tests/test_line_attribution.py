@@ -116,3 +116,33 @@ def test_tally_stores_a_voucher_naming_an_alias_under_the_ledgers_name() -> None
     names = [line.ledger_name for line in mapping.voucher(voucher, "k").lines]
     assert "Party Kilo" in names and "Kilo Alias" not in names
     assert index.resolve("Party Kilo").how == EXACT
+
+
+def test_a_deleted_ledger_with_a_too_long_name_never_takes_a_live_ones_name(
+    db: Session, synced: S.Connection, connector: TallyConnector
+) -> None:
+    """A name too long for its column is stored in extra (ADR-025). Such a row deleted in
+    the source used to be indexed after every other, so it took the exact match from the
+    live ledger of the same name."""
+    from core.fit import PLACEHOLDER, UNFIT
+
+    cash = db.scalars(select(A.Ledger).where(A.Ledger.name == "Cash")).one()
+    copy = {
+        c.name: getattr(cash, c.key) for c in A.Ledger.__table__.columns if c.name not in ("id",)
+    }
+    db.add(
+        A.Ledger(
+            **{
+                **copy,
+                "source_key": "deleted-long-twin",
+                "is_deleted": True,
+                "name": PLACEHOLDER,
+                "extra": {UNFIT: {"name": "Cash"}},
+            }
+        )
+    )
+    db.commit()
+    transformer = Transformer(db, synced.id, connector)
+    transformer.entity_id = cash.entity_id
+    index = transformer._by_name(A.Ledger, "name", "party_id", "tax_type")
+    assert index.resolve("Cash").value[0] == cash.id

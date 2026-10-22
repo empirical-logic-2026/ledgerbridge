@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.2 |
+| Version | 1.3 |
 | Date | 2026-10-19 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
@@ -260,7 +260,7 @@ Rules are built generically (PIL-003): Tally specifics live in `data-plane/conne
 
 ## 12. Custom fields and the `extra` column
 
-- **What:** every field Tally sends that has no column (e.g. UDFs from TDL customisations, `UDF:` prefixed tags) is kept in the row's `extra` JSON and catalogued (`source_fields`, with counts and an inferred type); a catalogued voucher field can be promoted to a reporting dimension (`promote-field`). A value too long or otherwise unfit for its column is kept in full in `extra` (never truncated) and reported (LB-TRF-003). Undeclared XML prefixes are parsed and kept as written.
+- **What:** every field Tally sends that has no column (e.g. UDFs from TDL customisations, `UDF:` prefixed tags) is kept in the row's `extra` JSON and catalogued (`source_fields`, with counts and an inferred type); a catalogued voucher field can be promoted to a reporting dimension (`promote-field`). A value too long or otherwise unfit for its column is kept in full in `extra` (never truncated) and reported (LB-TRF-003); a value with characters MySQL can't store is cleaned, and if it is then still too long it is kept in `extra` too. Names kept in `extra` because they were too long are found by those names, with the same rule as every name: a deleted row never takes a live row's name (ADR-034). Undeclared XML prefixes are parsed and kept as written.
 - **Why:** pilot: UDF prefixes broke parsing; values longer than their column failed records.
 - **Code:** `core/transform.py` (`_fit`, `_with_extra`, `_Catalogue`), `connectors/tally/mapping.py` (`unmapped_fields`, `USED_FIELDS`), `connectors/tally/parser.py`.
 - **Tests:** `tests/test_retransform.py`, `tests/test_fit_integration.py`, `tests/test_pilot_robustness.py`.
@@ -328,6 +328,7 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-22 | 1.3 | Values with invalid characters that are too long; long names of deleted rows. |
 | 2026-10-19 | 1.2 | Rule 6.2: entries with no quantity of their own across several godowns. |
 | 2026-10-19 | 1.1 | Rule 1.6: TallyPrime Edit Log. |
 | 2026-10-16 | 1.0 | First edition: every conversion and validation rule up to PR #33, with flowcharts. |

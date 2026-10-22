@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.31 (Draft) |
+| Version | 0.32 (Draft) |
 | Date | 2026-10-16 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -533,7 +533,7 @@ Rebuilt for a voucher whenever the voucher or the bill it settles changes.
 
 The year-end, count, stock and bill checks run in **thorough** validations (`validate`, full syncs, `transform retry`); scheduled incremental syncs skip them. When raw records of the entity failed to transform, the report's **root cause** (VAL-009) lists them by object type and counts the failures above that are likely their consequences.
 
-A run is `failed` when any error-severity issue is recorded, else `passed`. `checks_passed` and `checks_failed` count individual checks (per voucher, ledger and date). An issue (same `check_code`, `object_type`, `object_id`) that is absent from a later run gets `resolved_at` on its earlier rows; the open issues are the latest run's.
+A run is `failed` when any error-severity issue is recorded, else `passed`. `checks_passed` and `checks_failed` count individual checks (per voucher, ledger and date). An issue (same `check_code`, `object_type`, `object_id`) that is absent from a later run gets `resolved_at` on its earlier rows, **but only when that run ran the issue's check**: a quick validation (no voucher counts, stock, bills or year ends), a validation as of a date before today (no bills) or a control the source couldn't give leaves the earlier issues of those checks open (`core/validation.py`: `covered`).
 
 ### 5.3 Security (ACC-*)
 
@@ -785,6 +785,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-22 | 0.32 | Section 5.2: an issue is resolved only by a run that ran its check. |
 | 2026-10-19 | 0.31 | Section 7.5: TallyPrime Edit Log exports the same; no edit history in the export. |
 | 2026-10-16 | 0.30 | Section 7.5: foreign-currency book value from the source's own vouchers; the opening difference from Tally's trial balance line (ADR-038). |
 | 2026-10-16 | 0.29 | Section 4.8 Foreign currency (proposed for M4b): currency columns on ledgers, voucher lines and bill allocations, `currency_sources`, `fx_transactions`, `exchange_rates` with each rate's source, `fx_revaluation_snapshots` (source-calculated), `fx_realised`; foreign-currency views in Section 6 (M6); `forex.view` (FX-001 to FX-013, ADR-037). |

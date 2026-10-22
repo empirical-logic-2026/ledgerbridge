@@ -137,3 +137,30 @@ def test_tally_counts_by_the_voucher_date_not_the_effective_date() -> None:
     assert _balance("Customer Beta Retail", date(2026, 8, 31)) == _balance(
         "Customer Beta Retail", date(2026, 9, 1)
     )
+
+
+def test_vouchers_with_the_same_dates_are_each_counted(db: Session, synced: S.Connection) -> None:
+    """`validate analyse` counts the vouchers whose effective date isn't their date: two
+    vouchers with the same two dates are two vouchers (they used to count as one)."""
+    from workers.analyse import Analyser
+
+    cash = db.scalars(select(A.Ledger).where(A.Ledger.name == "Cash")).one()
+    vouchers = db.scalars(
+        select(A.Voucher)
+        .join(A.VoucherLine, A.VoucherLine.voucher_id == A.Voucher.id)
+        .where(A.VoucherLine.ledger_id == cash.id)
+        .distinct()
+        .limit(2)
+    ).all()
+    assert len(vouchers) == 2
+    for voucher in vouchers:
+        voucher.voucher_date, voucher.effective_date = date(2026, 5, 10), date(2026, 6, 1)
+    db.commit()
+    analyser = object.__new__(Analyser)
+    analyser.session, analyser.entity_id = db, cash.entity_id
+    analyser._effective_known = True
+    analyser._checked = lambda key: []  # no dates compared
+    found = analyser._effective_across(cash.source_key, cash.id)
+    assert found is not None and found.startswith(
+        "vouchers whose effective date isn't their date 2,"
+    )

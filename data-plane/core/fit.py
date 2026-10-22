@@ -159,16 +159,25 @@ def _missing(spec: _Spec) -> Any:
 
 
 def _text_problem(spec: _Spec, text: str) -> tuple[str, Any] | None:
+    # Required text gets a placeholder when it can't be stored: the full value is in extra.
+    missing = None if spec.nullable else PLACEHOLDER
     if _SURROGATE.search(text):
-        return f"invalid characters (length {len(text)})", _SURROGATE.sub(REPLACEMENT, text)
+        cleaned = _SURROGATE.sub(REPLACEMENT, text)
+        too_long = _too_long(spec, cleaned)  # the cleaned text must fit too
+        if too_long is None:
+            return f"invalid characters (length {len(text)})", cleaned
+        return f"invalid characters and {too_long}", missing
+    too_long = _too_long(spec, text)
+    return None if too_long is None else (too_long, missing)
+
+
+def _too_long(spec: _Spec, text: str) -> str | None:
+    """How a text exceeds its column, or None when it fits."""
     if spec.length is not None and len(text) > spec.length:
-        kind = f"too long (length {len(text)}, column allows {spec.length})"
-    elif spec.length is None and len(text.encode("utf-8")) > TEXT_BYTES:
-        kind = f"too long ({len(text.encode('utf-8'))} bytes, column allows {TEXT_BYTES})"
-    else:
-        return None
-    # Required text gets a placeholder: the full value is in extra.
-    return kind, None if spec.nullable else PLACEHOLDER
+        return f"too long (length {len(text)}, column allows {spec.length})"
+    if spec.length is None and len(text.encode("utf-8")) > TEXT_BYTES:
+        return f"too long ({len(text.encode('utf-8'))} bytes, column allows {TEXT_BYTES})"
+    return None
 
 
 def _number_problem(spec: _Spec, value: Any) -> tuple[str, Any] | None:
