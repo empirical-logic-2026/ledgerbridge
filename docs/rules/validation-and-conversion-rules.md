@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.4 |
-| Date | 2026-10-19 |
+| Version | 1.5 |
+| Date | 2026-10-22 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
 The rulebook: every rule LedgerBridge follows when it converts Tally data and validates it against Tally's own figures. For each rule: **what** it is, **why** (what the pilot showed, in counts only), **how it was proven** (a Tally report, or an experiment on LedgerBridge Test Co reproduced by the seeder), **where** it lives in the code, which **tests** cover it, and its **ADR** in [architecture.md](../architecture.md). The tables and columns named here are described in the [schema reference](../database/schema-reference.md); the problem codes (LB-xxx) in the [error catalogue](../error-catalogue.md).
@@ -263,6 +263,7 @@ Rules are built generically (PIL-003): Tally specifics live in `data-plane/conne
 
 - **What:** every field Tally sends that has no column (e.g. UDFs from TDL customisations, `UDF:` prefixed tags) is kept in the row's `extra` JSON and catalogued (`source_fields`, with counts and an inferred type); a catalogued voucher field can be promoted to a reporting dimension (`promote-field`). A value too long or otherwise unfit for its column is kept in full in `extra` (never truncated) and reported (LB-TRF-003); a value with characters MySQL can't store is cleaned, and if it is then still too long it is kept in `extra` too. Names kept in `extra` because they were too long are found by those names, with the same rule as every name: a deleted row never takes a live row's name (ADR-034). Undeclared XML prefixes are parsed and kept as written.
 - **Why:** pilot: UDF prefixes broke parsing; values longer than their column failed records.
+- **Known limitation:** the catalogue keys a field by its path cut to 255 characters (`source_fields.field_path`), so two paths that differ only after the 255th character are counted as one field. Values are unaffected (they are kept in full in `extra`); only the catalogue's counts merge. Not seen in the test company or the pilot; fixing it needs a schema change (a hash of the full path as the key), left until such paths appear (developer's decision, 2026-10-22).
 - **Code:** `core/transform.py` (`_fit`, `_with_extra`, `_Catalogue`), `connectors/tally/mapping.py` (`unmapped_fields`, `USED_FIELDS`), `connectors/tally/parser.py`.
 - **Tests:** `tests/test_retransform.py`, `tests/test_fit_integration.py`, `tests/test_pilot_robustness.py`.
 - **ADR:** ADR-025.
@@ -283,11 +284,11 @@ On the fetch side: requests time out and wait for a busy source before declaring
 
 ## 14. Educational mode: reliable dates only
 
-- **What:** TallyPrime in Educational mode gives correct balances only on the 1st, 2nd and 31st of a month. Validation runs as of the latest such date on or before the date asked; year ends and month ends move to the next one (a 30 June year end is checked on 1 July); the output names the dates used. The connection setting `educational` (auto / yes / no) decides; auto asks Tally (`$$LicenseInfo:IsEducationalMode`). Voucher listings always request whole months.
-- **Statements are stricter:** on the 1st, Tally's own Trial Balance, Profit and Loss and computed profit don't agree with its own ledger balances that day (test company, 2026-10-22: as of 1 October its ledgers equalled ours, while its reports and its Profit & Loss A/c balance didn't; the 2nd and the 31st agreed). Statements therefore move a date on the 1st to the 2nd (`DateRule.for_statements`). Year-end checks still use the 1st; their profit carrier comparison may be affected in Educational mode (open point).
+- **What:** TallyPrime in Educational mode gives correct balances only on the 1st, 2nd and 31st of a month. Validation runs as of the latest such date on or before the date asked; the analysis's month ends move to the next one (a 30 June month end is compared on 1 July); the output names the dates used. The connection setting `educational` (auto / yes / no) decides; auto asks Tally (`$$LicenseInfo:IsEducationalMode`). Voucher listings always request whole months.
+- **Statements are stricter:** on the 1st, Tally's own Trial Balance, Profit and Loss and computed profit don't agree with its own ledger balances that day (test company, 2026-10-22: as of 1 October its ledgers equalled ours, while its reports and its Profit & Loss A/c balance didn't; the 2nd and the 31st agreed). Statements and year-end checks (whose profit carrier comparison uses Tally's computed profit) therefore use `DateRule.period_end`: the 31st where the month has one, otherwise the 2nd of the next month, never the 1st (a 31 March year end is checked on 31 March, a 30 June one on 2 July; developer's decision, 2026-10-22). A year end whose date is after the as-of date waits for the next validation.
 - **Why:** on the test company a balance requested for the 30th included later vouchers; the pilot runs in Educational mode.
-- **Code:** `core/dates.py` (`DateRule`), `connectors/tally/connector.py` (`date_rule`, `is_educational`), `workers/validate.py`.
-- **Tests:** `tests/test_dates.py`.
+- **Code:** `core/dates.py` (`DateRule`, `period_end`), `connectors/tally/connector.py` (`date_rule`, `is_educational`), `workers/validate.py` (`source_controls`), `workers/analyse.py`, `workers/statements.py`.
+- **Tests:** `tests/test_dates.py` (`test_period_ends_use_the_31st_or_the_2nd_never_the_1st`, `test_a_30_june_year_end_is_checked_on_2_july`).
 - **ADR:** ADR-032.
 
 ---
@@ -366,6 +367,7 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-22 | 1.5 | Section 14: year-end checks use the 31st or the 2nd, never the 1st, like statements; Section 12: the 255-character field path limitation. |
 | 2026-10-22 | 1.4 | Section 16: statements from the source's own figures; rule 7 without integration; checks LB-VAL-023 to LB-VAL-025. |
 | 2026-10-22 | 1.3 | Values with invalid characters that are too long; long names of deleted rows. |
 | 2026-10-19 | 1.2 | Rule 6.2: entries with no quantity of their own across several godowns. |

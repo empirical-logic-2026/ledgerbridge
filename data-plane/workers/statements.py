@@ -46,7 +46,7 @@ def statement_dates(
         *month_ends(start or books_from, as_of),
         *financial_year_ends(books_from, fy_start_month, as_of),
     }
-    used = {rule.for_statements(on) for on in wanted if on >= (start or books_from)}
+    used = {rule.period_end(on) for on in wanted if on >= (start or books_from)}
     return sorted({on for on in used if on <= as_of} | {as_of})
 
 

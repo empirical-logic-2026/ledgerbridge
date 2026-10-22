@@ -11,7 +11,9 @@ The source's own statements and computed profit are stricter: on the 1st, TallyP
 Educational mode was seen to report a Trial Balance, Profit and Loss and profit that don't
 agree with its own ledger balances that day (test company, 2026-10-22: as of 1 October its
 ledgers equalled ours while its reports and Profit & Loss A/c didn't; the 2nd and the 31st
-agreed). Statements therefore use `for_statements`: the 1st moves to the 2nd.
+agreed). Statements and year-end checks (which include the profit carriers) therefore use
+`period_end`: the 31st where the month has one, otherwise the 2nd of the next month, never
+the 1st.
 """
 
 from dataclasses import dataclass
@@ -44,9 +46,9 @@ class DateRule:
             on += timedelta(days=1)
         return on
 
-    def for_statements(self, on: date) -> date:
-        """A date for the source's own statements: a reliable date, never the 1st when dates
-        are restricted (it moves to the 2nd, see the module docstring)."""
+    def period_end(self, on: date) -> date:
+        """A date for a period end (statements, year ends): a reliable date, never the 1st
+        when dates are restricted (it moves to the 2nd, see the module docstring)."""
         on = self.on_or_after(on)
         if self.restricted and on.day == 1 and self.reliable(on + timedelta(days=1)):
             return on + timedelta(days=1)

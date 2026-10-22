@@ -111,6 +111,7 @@ The test company was opened in TallyPrime Edit Log (migrated, same GUID). Every 
 | Accountant sign-off | An accountant confirms the converted books match the client's (OPEN-001). |
 | Windows Application Control on the developer's machine | Blocks `.venv\Scripts\*.exe`, so `./dev.ps1 test` can't run; tests run with the base interpreter meanwhile. |
 | Foreign-currency data layer | Designed (FX-001 to FX-013, ADR-037), planned for M4b; needs a foreign-currency voucher and a rate entered in TallyPrime first, to copy their exported fields. |
+| Long field paths | The field catalogue keys a field by its path cut to 255 characters, so two paths differing only after that are counted as one (values are unaffected). Left until such paths appear; the fix is a schema change (rulebook Section 12). |
 | Onboarding robustness | Making the first sync of a new company smooth end to end (connect, full sync, validation, report) without manual steps. |
 
 ## Change log
