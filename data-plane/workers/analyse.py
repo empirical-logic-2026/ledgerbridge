@@ -196,14 +196,14 @@ class Analyser:
     # --- driver -----------------------------------------------------------------------
 
     def run(self) -> list[str]:
-        # Year ends at the source's next reliable date (Educational mode, core/dates.py).
+        # Year ends at the source's next reliable period end (Educational mode, core/dates.py).
         self.year_ends = sorted(
             {
                 used
                 for ye in financial_year_ends(
                     self.row.books_from, self.row.fy_start_month, self.as_of
                 )
-                if (used := self.rule.on_or_after(ye)) <= self.as_of
+                if (used := self.rule.period_end(ye)) <= self.as_of
             }
         )
         self.out(self._dates_used())

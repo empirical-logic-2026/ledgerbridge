@@ -1,7 +1,9 @@
 """Reliable dates (core/dates.py): TallyPrime in Educational mode gives correct balances on
 the 1st, 2nd and 31st of a month only (the test company, 2026-10-15: a balance for the 30th
-included later vouchers). Validation then runs as of the latest reliable date, and year
-and month ends move to the next reliable one; the output shows the dates used."""
+included later vouchers). Validation then runs as of the latest reliable date, and month
+ends move to the next reliable one; year ends and statements use the 31st, or else the 2nd
+(never the 1st: Tally's computed profit there disagrees with its ledgers, 2026-10-22). The
+output shows the dates used."""
 
 from datetime import date
 from types import SimpleNamespace
@@ -49,6 +51,21 @@ def test_month_and_year_ends_move_forward_to_a_reliable_date(end: date, used: da
     assert EVERY_DAY.on_or_after(end) == end
 
 
+@pytest.mark.parametrize(
+    ("end", "used"),
+    [
+        (date(2021, 3, 31), date(2021, 3, 31)),  # the 31st itself where it exists
+        (date(2026, 6, 30), date(2026, 7, 2)),  # otherwise the 2nd, never the 1st
+        (date(2026, 2, 28), date(2026, 3, 2)),
+        (date(2024, 2, 29), date(2024, 3, 2)),
+        (date(2026, 10, 2), date(2026, 10, 2)),
+    ],
+)
+def test_period_ends_use_the_31st_or_the_2nd_never_the_1st(end: date, used: date) -> None:
+    assert EDUCATIONAL.period_end(end) == used
+    assert EVERY_DAY.period_end(end) == end
+
+
 def test_the_connection_setting_decides_and_auto_asks_tally() -> None:
     def tally(answer: str) -> httpx.MockTransport:
         def respond(request: httpx.Request) -> httpx.Response:
@@ -91,7 +108,7 @@ def test_validation_runs_as_of_the_latest_reliable_date(
     )  # fmt: skip
 
 
-def test_a_30_june_year_end_is_checked_on_1_july() -> None:
+def test_a_30_june_year_end_is_checked_on_2_july() -> None:
     asked: list[date] = []
 
     class Source:
@@ -110,9 +127,9 @@ def test_a_30_june_year_end_is_checked_on_1_july() -> None:
         EDUCATIONAL,
         said.append,  # type: ignore[arg-type]
     )
-    assert sorted(controls.year_ends) == [date(2025, 7, 1), date(2026, 7, 1)]
-    assert asked == [date(2025, 7, 1), date(2026, 7, 1)]
-    assert "year end 2025-06-30 checked as of 2025-07-01" in said[0]
+    assert sorted(controls.year_ends) == [date(2025, 7, 2), date(2026, 7, 2)]
+    assert asked == [date(2025, 7, 2), date(2026, 7, 2)]
+    assert "year end 2025-06-30 checked as of 2025-07-02" in said[0]
     controls = source_controls(Source(), entity, row, date(2026, 10, 2))  # type: ignore[arg-type]
     assert sorted(controls.year_ends) == [date(2025, 6, 30), date(2026, 6, 30)]
 
@@ -132,6 +149,6 @@ def test_analyse_shows_the_dates_used() -> None:
     analyser = object.__new__(Analyser)
     analyser.rule = EDUCATIONAL
     analyser.as_of = date(2026, 10, 2)
-    analyser.year_ends = [date(2025, 7, 1)]
+    analyser.year_ends = [date(2025, 7, 2)]
     line = analyser._dates_used()
-    assert line.startswith("Dates used: as of 2026-10-02; year ends 2025-07-01; Educational")
+    assert line.startswith("Dates used: as of 2026-10-02; year ends 2025-07-02; Educational")
