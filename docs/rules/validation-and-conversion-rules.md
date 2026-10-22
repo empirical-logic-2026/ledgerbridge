@@ -184,7 +184,7 @@ Rules are built generically (PIL-003): Tally specifics live in `data-plane/conne
 
 ## 7. Stock ledgers at the stock value
 
-- **What:** with accounts integrated with inventory (`ISINTEGRATED`), Tally's trial balance, balance sheet and profit use the stock items' values and leave out every ledger under its reserved Stock-in-Hand group (renamed or not); the group's own opening and closing are the stock value Tally uses. Tally refuses vouchers on such a ledger. When Tally reports a stock ledger at its closing stock value (not its own opening and postings), validation compares it with that value and notes LB-VAL-021; otherwise ledger by ledger.
+- **What:** with accounts integrated with inventory (`ISINTEGRATED=Yes`), Tally's trial balance, balance sheet and profit use the stock items' values and leave out every ledger under its reserved Stock-in-Hand group (renamed or not); the group's own opening and closing are the stock value Tally uses. Tally refuses vouchers on such a ledger. The stock-ledger-at-stock-value exception applies only when integrated; otherwise validation compares each ledger normally. When integrated and Tally reports a stock ledger at its closing stock value (not its own opening and postings), validation compares it with that value and notes LB-VAL-021.
 - **Why:** pilot: in two companies the Stock-in-Hand ledger's balance was the closing stock value at every date.
 - **Proven:** the test company: a renamed Stock-in-Hand group with one ledger (its opening kept in its own balance, left out of the trial balance); the group equal to the items' value at each date; a voucher on the ledger refused.
 - **Code:** `connectors/tally/connector.py` (`closing_balances`, `_stock_in_hand`), `core/validation.py` (`at_stock_value`, `_at_stock_value`).
@@ -328,6 +328,7 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-22 | 1.4 | Rule 7: apply the stock-ledger-at-stock-value exception only when accounts are integrated. |
 | 2026-10-22 | 1.3 | Values with invalid characters that are too long; long names of deleted rows. |
 | 2026-10-19 | 1.2 | Rule 6.2: entries with no quantity of their own across several godowns. |
 | 2026-10-19 | 1.1 | Rule 1.6: TallyPrime Edit Log. |

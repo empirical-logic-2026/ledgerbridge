@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.32 (Draft) |
-| Date | 2026-10-16 |
+| Version | 0.35 (Draft) |
+| Date | 2026-10-22 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
 This document describes the database inside each **client deployment**. The control plane has its own small database (users, clients, licences), described in `docs/architecture.md` Section 3.
@@ -105,14 +105,16 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 | `0007` | Pilot | `ledgerbridge_system.sync_checkpoints`, `ledgerbridge_system.sync_slow_periods` (Section 5.1, ADR-022) |
 | `0008` | Pilot | `ledgerbridge_system.sync_unverified_ranges` (Section 5.1, ADR-023) |
 | `0009` | Pilot | `ledgerbridge_system.sync_runs`: status `interrupted`, `heartbeat_at`, `pid`, `host`; `ledgerbridge_system.sync_logs` (Section 5.1, ADR-024) |
-| `0015` | Pilot | `ledgerbridge_accounting.godowns.holding` (ADR-031) |
-| `0014` | Pilot | `ledgerbridge_accounting.inventory_lines.stock_quantity` (ADR-029) |
-| `0013` | Pilot | `ledgerbridge_system.validation_runs.thorough` |
-| `0012` | Pilot | `ledgerbridge_accounting.voucher_types.moves_stock` |
-| `0011` | Pilot | `ledgerbridge_accounting.voucher_types.standard_type` (ADR-027) |
 | `0010` | Pilot | `extra` JSON on [SRC] tables and `entities`; `ledgerbridge_accounting.source_fields`; `dimensions.source_object_type`, `source_field`; wider `voucher_number`, `reference_number`, `gstin`, `pan`, `phone`, `units.symbol`, `items.code`, `hsn_code`, `cost_centres.category`; `raw_records.process_warning`; `sync_runs.run_type` `transform` (ADR-025) |
+| `0011` | Pilot | `ledgerbridge_accounting.voucher_types.standard_type` (ADR-027) |
+| `0012` | Pilot | `ledgerbridge_accounting.voucher_types.moves_stock` |
+| `0013` | Pilot | `ledgerbridge_system.validation_runs.thorough` |
+| `0014` | Pilot | `ledgerbridge_accounting.inventory_lines.stock_quantity` (ADR-029) |
+| `0015` | Pilot | `ledgerbridge_accounting.godowns.holding` (ADR-031) |
+| `0016` | Pilot | `ledgerbridge_accounting.vouchers.effective_date` (ADR-039) |
+| `0017` | Pilot | `ledgerbridge_accounting.stock_values`, `ledgerbridge_accounting.fx_revaluation_snapshots`, `ledgerbridge_reporting.statement_lines`, and the Trial Balance, Profit & Loss, Balance Sheet and statement-check views (ADR-040) |
 
-`ledgerbridge_reporting` exists from M2 but stays empty until M6 (Section 6). The per-call AI model log (AI-018) is designed in M8. Type and key choices for tables documented here only as column lists are in Section 9.
+Migration `0017` starts the reporting layer with persisted source and canonical statements; other reporting objects in Section 6 remain planned. The per-call AI model log (AI-018) is designed in M8. Type and key choices for tables documented here only as column lists are in Section 9.
 
 ## 4. `ledgerbridge_accounting` (canonical model)
 
@@ -564,15 +566,18 @@ A run is `failed` when any error-severity issue is recorded, else `passed`. `che
 
 ## 6. `ledgerbridge_reporting` (semantic layer)
 
-Aggregate tables are refreshed by workers after each sync; views sit on top. Only this database is visible to the AI (`ai_ro`).
+The source and canonical statement lines are refreshed by the validation worker; statement views sit on top. Other aggregate tables and reporting views are still planned. Only this database is visible to the AI (`ai_ro`).
 
 | Object | Type | Purpose |
 | --- | --- | --- |
+| `ledgerbridge_reporting.statement_lines` | Table | Source and independently built canonical Trial Balance, Profit & Loss and Balance Sheet lines, keyed by entity, date, statement, side and line number (DAT-013, RPT-012). |
+| `ledgerbridge_reporting.v_trial_balance` | View | Canonical Trial Balance lines, including debit and credit totals. |
+| `ledgerbridge_reporting.v_profit_loss` | View | Canonical Profit & Loss lines. |
+| `ledgerbridge_reporting.v_balance_sheet` | View | Canonical Balance Sheet lines. |
+| `ledgerbridge_reporting.v_statement_check` | View | Canonical and source totals by matched statement line, with their difference. |
 | `ledgerbridge_reporting.agg_ledger_daily` | Table | `entity_id, ledger_id, date, debit, credit, net`, refreshed incrementally. |
 | `ledgerbridge_reporting.v_ledger_balances` | View | Opening + movements → closing per ledger per period. |
-| `ledgerbridge_reporting.v_trial_balance` | View | Trial balance per entity and period. |
 | `ledgerbridge_reporting.v_pnl_monthly` | View | P&L by month, by standard account and source group. |
-| `ledgerbridge_reporting.v_balance_sheet` | View | Balance sheet as at a date. |
 | `ledgerbridge_reporting.v_cash_flow` | View | Cash flow (indirect method) using `cash_flow_class`. |
 | `ledgerbridge_reporting.v_receivables_ageing` | View | Outstanding customer bills by ageing bucket. |
 | `ledgerbridge_reporting.v_payables_ageing` | View | Outstanding vendor bills by ageing bucket. |
@@ -728,7 +733,7 @@ Checked against Tally's own balances and Stock Summary on LedgerBridge Test Co (
 | Stock moved once | A delivery or receipt note, or a rejection (in or out), moves stock. A sales, purchase, debit or credit note line with a tracking number (`BATCHALLOCATIONS.LIST/TRACKINGNUMBER`, not `Not Applicable`) never moves stock, whether the note came before or after it; untracked invoice lines do. The note posts nothing to the books; the invoice does. A credit note tracked to a rejection that was never entered made Tally's P&L count the return's value inconsistently (its Sales Accounts group total differed from its ledgers); with the rejection entered, Tally is consistent. | `inventory_lines.stock_quantity` is the quantity less the tracked part on vouchers that post to the books; stock validation and stock reports use it. `quantity` stays the invoiced quantity. |
 | Job work and godowns | Stock at a godown marked "our stock with third party" (`ISEXTERNAL`, a job worker's location) is in no item balance, nor the Stock Summary, nor the closing stock value; stock at a "third-party stock with us" godown (`ISINTERNAL`, a principal's material) is counted. A Material Out / In moves stock at its line's godown (`GODOWNNAME`); its `DESTINATIONGODOWNNAME` (the job worker's) moves nothing in Tally's balances, whose batches at the job worker show only consumption there. | `godowns.holding` (`own`, `ours_with_third_party`, `third_party_with_us`); stock validation leaves out lines at `ours_with_third_party` godowns. An entry spread over several godowns becomes one inventory line per godown. |
 | Stock journals | Tally lists a stock journal's produced and consumed items in `ALLINVENTORYENTRIES.LIST` (with `ISDEEMEDPOSITIVE`) and again in `INVENTORYENTRIESIN/OUT.LIST`. | Read from `ALLINVENTORYENTRIES`; the in and out lists only when it is missing (reading both counted each entry twice, from PR #20). |
-| Stock ledgers | With accounts integrated with inventory (company `ISINTEGRATED`), Tally's trial balance, balance sheet and profit use the stock items' values ("Opening Stock", "Closing Stock") and leave out every ledger under its reserved Stock-in-Hand group, renamed or not. Such a ledger keeps its own opening and postings in its own balance (here 1,500, while the items' opening stock was 2,010). Without integration, those ledgers are the stock. Tally refuses a voucher posting to such a ledger when integrated ("Ledger under Stock-in-Hand"). The reserved Stock-in-Hand group's own opening and closing for a period are the items' stock value (2,010 and 5,580 here). In two pilot companies the ledger's own balance was the closing stock value at every date. | The connector's `closing_balances` takes the opening and closing stock from the Stock-in-Hand group (`GROUP_BALANCES`; items' sums when Tally gives no total) and lists the stock ledgers; validation compares them with the closing stock value when the source reports them at it, else ledger by ledger (`stock_ledger_at_stock_value`, VAL-012). |
+| Stock ledgers | With accounts integrated with inventory (`ISINTEGRATED=Yes`), Tally's trial balance and balance sheet leave out ledgers under its reserved Stock-in-Hand group, renamed or not; the stock-ledger-at-stock-value comparison applies only in this integrated case. Without integration, those ledgers are the stock and validation compares them ledger by ledger. Tally refuses a voucher posting to such a ledger when integrated. | The connector reads `ISINTEGRATED`; validation compares a ledger with the closing stock value only when integrated and Tally reports that ledger at the stock value (`stock_ledger_at_stock_value`, VAL-012). Otherwise it compares ledger by ledger. |
 | Opening difference | Tally's difference in opening balances is its ledger openings (without Stock-in-Hand ledgers, when integrated) plus the opening stock value (stock not balanced by a ledger shows as a difference, in the Balance Sheet's totals). Its primary groups' openings for a period from the books' beginning, with those of ledgers directly under Primary, are its trial balance's and total that difference. | `opening_difference` warns only when Tally's own Trial Balance as at the books' beginning shows a difference line ("Difference in opening balances"; its Balance Sheet then shows "Diff. in Opening Balances"), by that line's amount (ADR-038). When the report can't be read: the primary group openings, else ledger and item openings. `validate analyse` compares them. |
 | Not causes (checked 2026-10-15) | A reversing journal isn't in any balance even on its own date, also with reversing journals enabled. A voucher dated before the books' beginning is refused ("Out of Range"). A ledger's balance follows its own opening, also when its opening bills total differently (only the bill-wise outstanding uses the bills). A Stock-in-Hand ledger can't be given dated closing values through XML (integrated or not). In Educational mode a balance requested for a date other than the 1st, 2nd or 31st is wrong (for the 30th Tally included later vouchers): validation and analysis use those days only (`core/dates.py`, ADR-032). | `validate analyse` tests them on client data: ledger profiles with the books' first day, counts of optional, cancelled, post-dated, reversing and memorandum vouchers, one month's lines around a year end, opening bills against the opening, and the closing stock value at every date; and what the source's opening difference equals. |
 | Names | A master's name is compared trimmed, with spaces collapsed and case ignored: importing "Party Lima ", "PARTY LIMA" or "Party  Lima" changed the existing "Party Lima" (its name list took the name given). A ledger whose alias is another ledger's name is refused. A voucher naming an alias is stored naming the ledger. | References resolve exact, alias, then normalised (core/names.py: the same master for Tally's data); masters deleted in the source answer only to names no live master has (ADR-034). |
@@ -779,6 +784,9 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-22 | 0.35 | Clarify the migration sequence and that the reporting schema now contains persisted statements and views; distinguish those from planned reporting objects. |
+| 2026-10-22 | 0.34 | Migration 0017: document source stock and foreign-currency snapshots, persisted source/canonical statements and the statement comparison views; clarify reporting-layer implementation status. |
+| 2026-10-22 | 0.33 | Section 7.5: apply stock-ledger-at-stock-value validation only when accounts are integrated. |
 | 2026-10-08 | 0.1 | Initial draft. |
 | 2026-10-08 | 0.2 | `ledgerbridge_system.users.password_hash` for local auth mode (pilot). |
 | 2026-10-09 | 0.3 | M1: first migration (`ledgerbridge_source.raw_records`, `ledgerbridge_system.sources`, `ledgerbridge_system.connections`, `ledgerbridge_system.sync_runs`); raw payload and de-duplication rules. |

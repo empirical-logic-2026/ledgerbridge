@@ -28,8 +28,10 @@ from connectors.base import (
     SourceBalances,
     SourceEntity,
     SourceRecord,
+    SourceStatements,
+    StockFigure,
 )
-from connectors.tally import envelopes, mapping, parser
+from connectors.tally import envelopes, mapping, parser, reports
 from connectors.tally.client import TallyClient, TallyError
 from connectors.tally.signs import postings, tally_amount
 from core.canonical import CanonicalRecord
@@ -394,27 +396,33 @@ class TallyConnector:
         """Tally's own closing balances for the period books-from .. as_of (inclusive).
 
         *Profit & Loss A/c* (directly under Primary) carries the period's computed profit.
-        Tally's stock (checked on the test company, 2026-10-15; schema.md 7.5): with
-        accounts integrated with inventory, its trial balance, balance sheet and profit use
-        the stock items' values and leave out ledgers under Stock-in-Hand (renamed or not);
-        otherwise those ledgers are the stock. The opening difference follows the same rule.
+        The opening and closing stock that profit uses come from Tally's own Profit and Loss
+        report (ADR-040), whether or not accounts are integrated with inventory. If Tally
+        omits a stock line, the previous group/item-derived value remains a fallback.
 
-        Tally's own group totals for the period are used when it reports them (checked on
-        the test company, 2026-10-15): the Stock-in-Hand group holds the stock value Tally
-        uses (integrated), and the primary groups' openings with those of ledgers directly
-        under Primary total its difference in opening balances, as its trial balance from
-        the books' beginning shows it. Otherwise both are computed from ledgers and items.
+        Tally's own primary-group opening totals for the period are used when reported; the
+        opening difference shown on its own Trial Balance takes precedence over any derived
+        difference. Group and item stock totals remain diagnostics only.
         """
         if entity.books_from is None:
             raise TallyError(f"Company '{entity.name}' has no books-from date")
         period = (entity.books_from, as_of)
-        integrated = self._integrated(entity)
+        statements = self.source_statements(entity, as_of)
+        integrated = statements.integrated is True
         groups = self._group_balances(entity, period)
         ledgers = self._ledger_figures(entity, period, _stock_in_hand(groups), integrated)
         item_values = self._item_values(entity, period) if integrated else None
-        opening_stock, closing_stock, difference = _stock_and_difference(
+        fallback_opening, fallback_closing, difference = _stock_and_difference(
             ledgers, item_values, groups
         )
+        opening_stock = (
+            statements.opening_stock if statements.opening_stock is not None else fallback_opening
+        )
+        closing_stock = (
+            statements.closing_stock if statements.closing_stock is not None else fallback_closing
+        )
+        if integrated:
+            difference = ledgers.counted_openings + (opening_stock or Decimal(0))
         primary = [g for g in groups if g.parent in ("", mapping.PRIMARY)]
         if any(g.reported for g in primary):  # Tally's own trial balance
             difference = sum((g.opening for g in primary), ledgers.primary_openings)
@@ -438,6 +446,7 @@ class TallyConnector:
             item_opening_value=item_values[0] if item_values else None,
             group_openings=_group_openings(primary),
             reserved_groups=frozenset(g.reserved for g in primary if g.reserved),
+            statements=statements,
         )
 
     def _ledger_figures(
@@ -615,6 +624,80 @@ class TallyConnector:
                 if dated is None or start <= dated <= end:
                     out.append(element)
         return out
+
+    def source_statements(self, entity: SourceEntity, as_of: date) -> SourceStatements:
+        """Tally's own Trial Balance, Balance Sheet and Profit and Loss for the books'
+        beginning .. as_of, with the figures our statements take from Tally (ADR-040): the
+        stock values its Profit and Loss uses, the stock by group and godown, each foreign-
+        currency ledger's closing balance as it reports it (revalued at current rates) and
+        the ledgers directly under Primary. Read-only exports only."""
+        if entity.books_from is None:
+            raise TallyError(f"Company '{entity.name}' has no books-from date")
+        period = (entity.books_from, as_of)
+        lines = [
+            *reports.trial_balance(self._report(entity, envelopes.TRIAL_BALANCE, period)),
+            *reports.balance_sheet(self._report(entity, envelopes.BALANCE_SHEET, period)),
+            *reports.profit_and_loss(self._report(entity, envelopes.PROFIT_AND_LOSS, period)),
+        ]
+        opening, closing = reports.stock_values(lines)
+        revalued, carriers = self._revalued_and_carriers(entity, period)
+        stock = [
+            *self._stock_figures(entity, envelopes.STOCK_GROUP_VALUES, "stock_group", period),
+            *self._stock_figures(entity, envelopes.GODOWN_VALUES, "godown", period),
+        ]
+        return SourceStatements(
+            as_of=as_of,
+            lines=tuple(lines),
+            opening_stock=opening,
+            closing_stock=closing,
+            stock=(StockFigure("total", "", opening, closing), *stock),
+            revalued=revalued,
+            profit_carriers=frozenset(carriers),
+            integrated=self._integrated(entity),
+        )
+
+    def _report(self, entity: SourceEntity, report: str, period: tuple[date, date]) -> bytes:
+        return self._company_post(
+            entity, lambda name: envelopes.report_request(report, name, period)
+        )
+
+    def _revalued_and_carriers(
+        self, entity: SourceEntity, period: tuple[date, date]
+    ) -> tuple[dict[str, Decimal], set[str]]:
+        """Each foreign-currency ledger's closing balance as Tally reports it (revalued at
+        current rates), and the ledgers directly under Primary."""
+        currencies: dict[str, str] = {}
+        closing: dict[str, Decimal] = {}
+        carriers: set[str] = set()
+        for element in self._export_objects(
+            entity, envelopes.LEDGER_BALANCES, balances_period=period
+        ):
+            key = parser.source_key(element)
+            closing[key] = _canonical(element.findtext("CLOSINGBALANCE"))
+            currencies[key] = (element.findtext("CURRENCYNAME") or "").strip()
+            if (element.findtext("PARENT") or "").strip() in ("", mapping.PRIMARY):
+                carriers.add(key)
+        foreign = _foreign(currencies, carriers)
+        return {key: closing[key] for key in sorted(foreign)}, carriers
+
+    def _stock_figures(
+        self,
+        entity: SourceEntity,
+        spec: envelopes.CollectionSpec,
+        scope: str,
+        period: tuple[date, date],
+    ) -> list[StockFigure]:
+        """The stock value Tally gives each stock group or godown (canonical sign); groups
+        or godowns it gives no value for are left out."""
+        figures = []
+        for element in self._export_objects(entity, spec, balances_period=period):
+            opening = element.findtext("OPENINGVALUE")
+            closing = element.findtext("CLOSINGVALUE")
+            if not (opening or "").strip() and not (closing or "").strip():
+                continue
+            name = parser.object_name(element) or ""
+            figures.append(StockFigure(scope, name, _canonical(opening), _canonical(closing)))
+        return figures
 
     def ledger_balance_elements(self, entity: SourceEntity) -> list[ET.Element]:
         """Ledgers with opening/closing balances and Tally's own $$IsDr judgement, for

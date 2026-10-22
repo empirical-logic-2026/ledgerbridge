@@ -24,6 +24,7 @@ result. The worker's schedule (workers/celery_app.py) runs the same sync code wi
     python -m workers.cli fields [--entity-id 3]
     python -m workers.cli validate-analyse --connection tally-pilot [--entity NAME]
     python -m workers.cli compare-ledger --connection tally-pilot --ledger 88 [--from D --to D]
+    python -m workers.cli compare-statements --connection tally-test [--entity NAME] [--as-of D]
     python -m workers.cli promote-field --field-id 12 --code SALESMAN --name "Salesman"
 
 `extract` only stores raw records (M1); `sync` also transforms them (M3); `check-deletions`
@@ -63,6 +64,7 @@ import threading
 import time
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date, datetime
 
 from sqlalchemy import func, select, text
@@ -70,7 +72,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from connectors import registry
-from connectors.base import Connector, Period
+from connectors.base import STATEMENTS, Connector, Period
 from core import naming
 from core.config import get_settings
 from core.dates import EVERY_DAY, date_rule
@@ -120,6 +122,7 @@ from workers.runs import (
     install_tee,
     reap_stale_runs,
 )
+from workers.statements import compare_statement_lines, refresh_source_figures
 from workers.sync import (
     DELETION_CHECK,
     EntityOutcome,
@@ -260,6 +263,20 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also print the details (dates, voucher numbers, amounts) as lines starting "
         "PRIVATE<TAB>, for dev.ps1 to write to reports/<env>/private/ and never show",
+    )
+
+    statements = sub.add_parser(
+        "compare-statements",
+        help="compare canonical Trial Balance, Balance Sheet and Profit & Loss with the "
+        "source (counts only; --private adds detail lines for a local file)",
+    )
+    connection_args(statements)
+    statements.add_argument("--entity", action="append", help="entity name (repeatable)")
+    statements.add_argument("--as-of", type=date.fromisoformat, help="as of date (default today)")
+    statements.add_argument(
+        "--private",
+        action="store_true",
+        help="also print line details as PRIVATE lines for dev.ps1's local private file",
     )
 
     explain = sub.add_parser(
@@ -497,6 +514,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _validate_analyse(session, args)
     if args.command == "compare-ledger":
         return _compare_ledger(session, args)
+    if args.command == "compare-statements":
+        return _compare_statements(session, args)
     if args.command == "summary":
         return _summary(session)
     if args.command == "report":
@@ -1473,6 +1492,65 @@ def _compare_ledger(session: Session, args: argparse.Namespace) -> int:
         for line in result.private:
             print(f"PRIVATE\t{line}")
     print("Result: compare finished")
+    return 0
+
+
+def _compare_statements(session: Session, args: argparse.Namespace) -> int:
+    """Build canonical statements and compare them with the source's own report lines."""
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    connector = connector_for(session, connection)
+    entities = select_entities(connector, connection, args.entity)
+    ids = entity_ids_for(session, connection.id, [entity.key for entity in entities])
+    labels = Labels(session, connection)
+    asked = args.as_of or date.today()
+    rule = date_rule(connector, entities[0]) if entities else EVERY_DAY
+    as_of = rule.on_or_before(asked)
+    if as_of != asked:
+        print(f"As of {as_of} instead of {asked}: {rule.describe()}")
+    for entity in entities:
+        entity_id = ids.get(entity.key)
+        if entity_id is None:
+            print(f"{labels.for_key(entity.key)}: not transformed yet, nothing to compare")
+            continue
+        reader = getattr(connector, "source_statements", None)
+        if reader is None:
+            print(
+                f"error: {title('statement_reports_unavailable')}",
+                file=sys.stderr,
+            )
+            return 2
+        source = connector.closing_balances(entity, as_of)
+        if source.statements is None:
+            source = replace(source, statements=reader(entity, as_of))
+        if source.statements is None:
+            print(
+                f"error: {title('statement_reports_unavailable')}",
+                file=sys.stderr,
+            )
+            return 2
+        available = {line.statement for line in source.statements.lines}
+        missing = [statement for statement in STATEMENTS if statement not in available]
+        if missing:
+            print(
+                f"error: {title('statement_reports_unavailable')}: missing "
+                + ", ".join(missing)
+                + ".",
+                file=sys.stderr,
+            )
+            return 2
+        refresh_source_figures(session, connection, entity_id, source)
+        comparison = compare_statement_lines(session, entity_id, as_of, tolerance_for(connection))
+        print(f"{labels.for_key(entity.key, entity_id)}: statements as of {as_of}")
+        for line in comparison.summary:
+            print(f"  {line}")
+        if args.private:
+            for line in comparison.private:
+                print(f"PRIVATE\t{entity_id}\t{line}")
+    session.commit()
+    print("Result: statement comparison finished")
     return 0
 
 

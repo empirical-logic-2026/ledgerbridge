@@ -179,6 +179,29 @@ CASES = {
             ),
         ],
     ),  # fmt: skip
+    "validate compare-statements": (
+        [
+            "validate",
+            "compare-statements",
+            "-Company",
+            "LedgerBridge Test Co",
+            "-AsOf",
+            "2026-10-02",
+        ],
+        [
+            SERVICES,
+            _exec(
+                "compare-statements",
+                "--connection",
+                "tally-test",
+                "--entity",
+                "LedgerBridge Test Co",
+                "--private",
+                "--as-of",
+                "2026-10-02",
+            ),
+        ],
+    ),  # fmt: skip
     "validate analyse": (
         ["validate", "analyse"],
         [SERVICES, _job("validate-analyse", "--connection", "tally-test"), WATCH_JOB],

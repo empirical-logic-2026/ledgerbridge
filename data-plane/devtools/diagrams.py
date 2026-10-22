@@ -78,6 +78,12 @@ AREAS = (
          "cost_centres", "dimension_values", "branches"),
     ),
     Area(
+        "er-source-statements",
+        "Source valuations and statement lines (ledgerbridge_accounting, ledgerbridge_reporting)",
+        ("stock_values", "fx_revaluation_snapshots", "statement_lines"),
+        ("entities", "connections", "ledgers"),
+    ),
+    Area(
         "er-system-sync",
         "System, part 1: connections, sync, raw records, validation, alerts, field catalogue",
         ("sources", "agents", "connections", "sync_markers", "sync_runs", "sync_logs",
@@ -111,6 +117,7 @@ SCHEMA_GROUPS = (
     (ACCOUNTING, "organisation and chart of accounts", AREAS[0].tables),
     (ACCOUNTING, "masters", AREAS[1].tables),
     (ACCOUNTING, "transactions", AREAS[2].tables),
+    (ACCOUNTING, "source valuations", ("stock_values", "fx_revaluation_snapshots")),
     (ACCOUNTING, "field catalogue", ("source_fields",)),
     (SYSTEM, "connections and sync", (
         "sources", "agents", "connections", "sync_markers", "sync_runs", "sync_logs",
@@ -124,6 +131,7 @@ SCHEMA_GROUPS = (
     )),
     (SYSTEM, "audit and AI log", ("audit_log", "ai_query_log")),
     (SYSTEM, "configuration", ("kpi_definitions", "settings")),
+    (REPORTING, "persisted source and canonical statements", ("statement_lines",)),
 )  # fmt: skip
 
 # The source-tracking links every accounting table has (schema.md 1.1): drawn in the overview
@@ -255,6 +263,8 @@ def schema_diagram() -> str:
         for number, (label, names) in enumerate(groups, start=1):
             items = "<br/>".join(sorted(names))
             lines.append(f'        {db}_{number}["<b>{label}</b><br/>{items}"]')
+        if db == REPORTING:
+            lines.append(f'        {db}_planned["PLANNED (M6): other views and aggregate tables"]')
         lines.append("    end")
     lines.append("    end")
     for key, _, access, dbs in USERS:

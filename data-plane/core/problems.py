@@ -625,6 +625,24 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Nothing to fix.",),
         ".\\dev.ps1 report -Env {env} -Details",
     ),
+    _p(
+        "LB-VAL-023",
+        "statement_reports_unavailable",
+        "Source statements couldn't be compared",
+        ERROR,
+        "The source didn't provide all three financial statements, so no complete comparison "
+        "was made.",
+        (
+            "The source doesn't support all three statement reports.",
+            "A report returned no statement lines.",
+        ),
+        (".\\dev.ps1 validate compare-statements -Env {env}",),
+        (
+            "Check that the source is available and provides Trial Balance, Balance Sheet and "
+            "Profit & Loss reports, then compare again.",
+        ),
+        ".\\dev.ps1 validate compare-statements -Env {env}",
+    ),
     # --- connection settings ------------------------------------------------------------
     _p(
         "LB-CON-001",

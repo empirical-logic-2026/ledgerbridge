@@ -14,6 +14,8 @@ from sqlalchemy import (
     CHAR,
     JSON,
     BigInteger,
+    Boolean,
+    Date,
     Enum,
     ForeignKey,
     Index,
@@ -25,6 +27,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.models.base import (
+    ORIGINS,
     Base,
     FxRate,
     Id,
@@ -544,3 +547,67 @@ class TaxLine(TimestampMixin, Base):
     taxable_amount: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     tax_amount: Mapped[Decimal] = mapped_column(Money)
     hsn_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+# --- 4.9 Source figures (ADR-033, ADR-040) ---------------------------------------------
+# Figures the source calculates itself and our statements take from it, stored as source
+# figures (never posted as vouchers), with the date they are for and when they were read.
+
+
+class StockValue(TimestampMixin, Base):
+    """The source's stock value as of a date, for the period from the books' beginning:
+    `total` is the stock its profit uses (opening at the books' beginning, closing at the
+    date); `stock_group` and `godown` rows, by name, where the source gives them. Canonical
+    sign (stock is a debit)."""
+
+    __tablename__ = "stock_values"
+    __table_args__ = (
+        UniqueConstraint(
+            "entity_id", "as_of", "scope", "scope_name", name="uq_stock_values_entity_date"
+        ),
+        _A,
+    )
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    connection_id: Mapped[int] = mapped_column(Id, ForeignKey(f"{SYSTEM}.connections.id"))
+    origin: Mapped[str] = mapped_column(Enum(*ORIGINS, name="origin"))
+    as_of: Mapped[date] = mapped_column(Date)
+    scope: Mapped[str] = mapped_column(
+        Enum("total", "stock_group", "godown", name="stock_value_scope")
+    )
+    scope_name: Mapped[str] = mapped_column(String(255), default="")
+    opening_value: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    closing_value: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    # Whether the source integrates accounts with inventory (total rows only).
+    integrated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    read_at: Mapped[datetime] = mapped_column(Timestamp)
+
+
+class FxRevaluationSnapshot(TimestampMixin, Base):
+    """A foreign-currency ledger's balance as the source reports it at a date, revalued at
+    its current rate, against its book value (FX-004, ADR-037): the difference is the
+    source's unrealised gain or loss, never posted as a voucher. `currency_code` and
+    `balance_fc` are filled by the foreign-currency data layer (M4b)."""
+
+    __tablename__ = "fx_revaluation_snapshots"
+    __table_args__ = (
+        UniqueConstraint("ledger_id", "as_of", name="uq_fx_revaluation_ledger_date"),
+        Index("ix_fx_revaluation_entity_date", "entity_id", "as_of"),
+        _A,
+    )
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    ledger_id: Mapped[int] = mapped_column(Id, _fk("ledgers"))
+    connection_id: Mapped[int] = mapped_column(Id, ForeignKey(f"{SYSTEM}.connections.id"))
+    origin: Mapped[str] = mapped_column(Enum(*ORIGINS, name="origin"))
+    as_of: Mapped[date] = mapped_column(Date)
+    currency_code: Mapped[str | None] = mapped_column(CHAR(3), nullable=True)
+    balance_fc: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    # Our balance (validated equal to the source's book value, VAL-013).
+    book_value: Mapped[Decimal] = mapped_column(Money)
+    revalued_value: Mapped[Decimal] = mapped_column(Money)
+    # book - revalued, canonical sign: a debit (positive) is an unrealised loss.
+    unrealised_gain_loss: Mapped[Decimal] = mapped_column(Money)
+    read_at: Mapped[datetime] = mapped_column(Timestamp)

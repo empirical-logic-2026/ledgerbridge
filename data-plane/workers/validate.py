@@ -25,6 +25,7 @@ from core.models import Connection
 from core.models.accounting import Entity
 from core.validation import ValidationReport, Validator, financial_year_ends
 from workers.entities import Labels, select_entities
+from workers.statements import refresh_source_figures
 from workers.sync import DELETION_CHECK, Progress, SyncResult, entity_ids_for
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,21 @@ def run_validation(
             controls = source_controls(
                 connector, entity, session.get_one(Entity, entity_id), as_of, rule, progress
             )
+            if isinstance(source, SourceBalances) and source.statements is not None:
+                controls.statements = {as_of: source.statements, **controls.statements}
+        snapshots = {}
+        if isinstance(source, SourceBalances):
+            snapshots[as_of] = source
+        if controls is not None:
+            snapshots.update(
+                {
+                    when: balances
+                    for when, balances in controls.year_ends.items()
+                    if isinstance(balances, SourceBalances)
+                }
+            )
+        for snapshot in snapshots.values():
+            refresh_source_figures(session, connection, entity_id, snapshot)
         report = Validator(session, entity_id, as_of, tolerance_for(connection), connection.id).run(
             source, sync_run_id, controls
         )
@@ -129,6 +145,7 @@ def source_controls(
         (bills, bills) if bills is None or isinstance(bills, Exception) else bills
     )
     year_ends = {}
+    statements = {}
     if hasattr(connector, "closing_balances"):
         for year_end in financial_year_ends(row.books_from, row.fy_start_month, as_of):
             used = rule.on_or_after(year_end)
@@ -136,7 +153,10 @@ def source_controls(
                 continue
             if used != year_end and progress:
                 progress(f"year end {year_end} checked as of {used} ({rule.describe()})")
-            year_ends[used] = _read(connector, "closing_balances", entity, used)
+            balances = _read(connector, "closing_balances", entity, used)
+            year_ends[used] = balances
+            if isinstance(balances, SourceBalances) and balances.statements is not None:
+                statements[used] = balances.statements
     return SourceControls(
         voucher_counts=_read(connector, "voucher_counts", entity, books_from, as_of)
         if books_from
@@ -144,6 +164,7 @@ def source_controls(
         stock_quantities=_read(connector, "stock_quantities", entity, as_of),
         bill_outstanding=outstanding,
         opening_bills=opening,
+        statements=statements,
         year_ends=year_ends,
     )
 

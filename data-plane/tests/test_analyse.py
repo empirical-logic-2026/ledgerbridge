@@ -573,6 +573,7 @@ class StockValued(Source):
             closing_stock=Decimal("4321"),
             opening_stock=Decimal("4321"),
             stock_ledgers=self.stock_keys,
+            integrated=True,
         )
 
 

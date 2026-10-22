@@ -28,6 +28,8 @@
     ./dev.ps1 validate analyse                  (test explanations for validation mismatches)
     ./dev.ps1 validate compare-ledger -Ledger 88 [-From 2020-04-01] [-To 2021-04-01]
                                                 (a ledger's vouchers in Tally against ours; details to reports/<env>/private/)
+    ./dev.ps1 validate compare-statements [-AsOf 2026-10-02]
+                                                (Trial Balance, Balance Sheet and Profit & Loss; details to reports/<env>/private/)
     ./dev.ps1 fields
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
@@ -110,6 +112,10 @@ param(
     # For `validate compare-ledger`: the ledger's id (as reports and `validate analyse`
     # name ledgers).
     [int]$Ledger = 0,
+
+    # For `validate compare-statements`: compare the source and canonical statements as of
+    # this date (default: today, moved back to a reliable source date if needed).
+    [string]$AsOf = '',
 
     # For `sync full`: ignore an interrupted full sync's progress and fetch everything again.
     [switch]$Restart,
@@ -487,6 +493,27 @@ switch ($Command) {
             }
             return
         }
+        if ($Service -eq 'compare-statements') {
+            # Compare canonical statements with Tally's read-only report exports. Stdout
+            # contains counts only; line labels and amounts go to a local, git-ignored file.
+            $compareArgs = @('python', '-m', 'workers.cli', 'compare-statements', '--connection', $connection, '--private')
+            foreach ($name in $Company) { $compareArgs += @('--entity', $name) }
+            if ($AsOf) { $compareArgs += @('--as-of', $AsOf) }
+            $result = Invoke-StackCaptured (@('exec', '-T', 'api') + $compareArgs)
+            $marker = "PRIVATE`t"
+            $private = @($result.Output | Where-Object { "$_".StartsWith($marker) } | ForEach-Object { "$_".Substring($marker.Length) })
+            $result.Output | Where-Object { -not "$_".StartsWith($marker) } | ForEach-Object { Write-Host $_ }
+            if ($result.Code -ne 0) { throw "compare-statements failed (exit $($result.Code)): see the message above." }
+            if ($private.Count -gt 0) {
+                $folder = Join-Path (Join-Path (Join-Path $root 'reports') $Env) 'private'
+                New-Item -ItemType Directory -Force -Path $folder | Out-Null
+                $file = Join-Path $folder ('compare-statements-{0:yyyy-MM-dd-HHmmss}.tsv' -f (Get-Date))
+                Save-Utf8 $file $private
+                Write-Host ''
+                Write-Host "Details (statement lines and amounts; local only, never share): $file"
+            }
+            return
+        }
         if ($Service -eq 'analyse') {
             # `validate analyse`: tests explanations for every validation mismatch (counts,
             # patterns and Tally's standard names only). Reads Tally's own figures (read-only),
@@ -499,6 +526,7 @@ switch ($Command) {
         }
         $validateArgs = @('python', '-m', 'workers.cli', 'validate', '--connection', $connection, '--source', 'tally')
         foreach ($name in $Company) { $validateArgs += @('--entity', $name) }
+        if ($AsOf) { $validateArgs += @('--as-of', $AsOf) }
         if ($Quick) { $validateArgs += '--quick' }
         Invoke-Checked exec -T api @validateArgs
     }

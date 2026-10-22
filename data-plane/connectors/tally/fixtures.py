@@ -34,6 +34,8 @@ _KNOWN = frozenset(
         *envelopes.ALL_SPECS,
         envelopes.LEDGER_BALANCES,
         envelopes.STOCK_VALUES,
+        envelopes.STOCK_GROUP_VALUES,
+        envelopes.GODOWN_VALUES,
         envelopes.GROUP_BALANCES,
         envelopes.BILLS,
         envelopes.LEDGER_OPENING_BILLS,
@@ -81,6 +83,24 @@ class FixtureTransport(httpx.BaseTransport):
         self.requests.append(body)
         files = self._files_for(body)
         if files is None:
+            report = _ID.search(body)
+            if report and report.group(1) in (
+                envelopes.TRIAL_BALANCE,
+                envelopes.BALANCE_SHEET,
+                envelopes.PROFIT_AND_LOSS,
+            ):
+                # The baseline fixture set records collections, not statement exports. These
+                # empty test reports keep collection-validation tests independent of report
+                # fixtures; statement parsing uses the dedicated recorded report fixtures.
+                content = (
+                    b"<ENVELOPE><DSPACCNAME><DSPDISPNAME>Opening Stock</DSPDISPNAME>"
+                    b"</DSPACCNAME><PLAMT><PLSUBAMT>0.00</PLSUBAMT></PLAMT>"
+                    b"<DSPACCNAME><DSPDISPNAME>Less: Closing Stock</DSPDISPNAME>"
+                    b"</DSPACCNAME><PLAMT><PLSUBAMT>0.00</PLSUBAMT></PLAMT></ENVELOPE>"
+                    if report.group(1) == envelopes.PROFIT_AND_LOSS
+                    else b"<ENVELOPE/>"
+                )
+                return httpx.Response(200, content=content)
             return httpx.Response(200, content=b"<RESPONSE>Unknown Request</RESPONSE>")
         changed_since = _ALTER.search(body)
         if len(files) == 1 and not changed_since:

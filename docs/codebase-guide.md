@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.3 |
-| Date | 2026-10-13 |
+| Version | 0.22 |
+| Date | 2026-10-22 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
 
@@ -75,7 +75,7 @@ ledgerbridge/
 │   │   ├── error_catalogue.py  generates docs/error-catalogue.md from the problem registry
 │   │   └── tally_seed/         fills the test company in TallyPrime (test only)
 │   ├── migrations/
-│   │   └── versions/           one file per database change, 0001 to 0016
+│   │   └── versions/           one file per database change, 0001 to 0017
 │   ├── tests/
 │   │   ├── connectors/tally/   tests of the Tally connector
 │   │   ├── devtools/           tests of the seeder and the diagrams
@@ -158,7 +158,7 @@ ledgerbridge/
 | --- | --- |
 | `config.py` | All settings (database users, ports, Tally address, timeouts, tolerances), read from the environment's `.env` file. |
 | `db.py` | Opens database connections, one kind per database user (app, migrator, report, AI), each with only the rights it needs. |
-| `models/` | The database tables as Python classes, one file per database: `source.py` (raw layer), `accounting.py` (the standard accounting model), `system.py` (connections, sync runs, validation, users, alerts, settings); `base.py` (shared column types and the source-tracking columns); `schemas.py` (the four database names). The tables are described for people in [schema.md](schema.md). |
+| `models/` | The database tables as Python classes, one file per database: `source.py` (raw layer), `accounting.py` (the standard accounting model), `reporting.py` (persisted source and canonical statement lines), `system.py` (connections, sync runs, validation, users, alerts, settings); `base.py` (shared column types and the source-tracking columns); `schemas.py` (the four database names). The tables are described for people in [schema.md](schema.md). |
 | `canonical.py` | The standard ("canonical") records every connector produces: company, group, ledger, voucher, voucher line and so on. |
 | `raw_store.py` | Stores what a source sends, unchanged, in the raw records table, skipping copies that haven't changed. |
 | `transform.py` | Turns raw records into the accounting tables: in batches, in the right order (groups before ledgers before vouchers), updating rather than duplicating, replacing a voucher's lines as a whole, and failing only the record at fault. `Transformer.run` drives it per entity; one writer per kind of record (`_groups`, `_ledgers`, `_simple` for the small masters, `_vouchers`), with `_item_rows` fitting a record's rows, `_voucher_refs` resolving a voucher's names, `_prepare` building its rows and `_insert_children` writing lines, bills, cost allocations, tax lines and dimensions. `mark_deleted` soft-deletes rows whose source object is gone. |
@@ -175,12 +175,13 @@ ledgerbridge/
 
 | File | What it is and what it's for |
 | --- | --- |
-| `cli.py` | The command line behind almost every `dev.ps1` command (`python -m workers.cli ...`): `connect`, `sync`, `validate`, `status`, `summary`, `watch`, `abandon`, `transform-retry`/`-rebuild`/`-explain`, `fields`, `promote-field` and more. It also decides what may be printed: outside the test environment, no names or amounts. |
+| `cli.py` | The command line behind almost every `dev.ps1` command (`python -m workers.cli ...`): `connect`, `sync`, `validate`, `compare-statements`, `status`, `summary`, `watch`, `abandon`, `transform-retry`/`-rebuild`/`-explain`, `fields`, `promote-field` and more. It also decides what may be printed: outside the test environment, no names or amounts. |
 | `sync.py` | Runs a sync: company by company, fetch, store, transform, then hand over to validation; records each run. Also the deletion check and the transform-only runs (retry, rebuild). |
 | `fetch.py` | Fetches one company piece by piece ("chunks", usually a month of vouchers), saves progress so an interrupted sync can resume, and copes with a slow or busy Tally. |
 | `extract.py` | Finding or creating a connection, and the older "raw records only" extraction. |
 | `entities.py` | Which companies a connection works with (found by their key, not their name), and the shared way to name them in output: `entity <id> (company <n>)`. |
 | `validate.py` | Runs validation after syncs and on demand, gathers Tally's own figures through the connector, and raises alerts. |
+| `statements.py` | Refreshes source-reported stock, foreign-currency and statement snapshots after validation reads, builds canonical Trial Balance, Profit & Loss and Balance Sheet lines from accounting data, and compares persisted source/canonical lines without putting private detail in normal output. |
 | `celery_app.py` | The scheduled worker: every minute it checks which connections are due for a sync or a deletion check and starts them. |
 | `locks.py` | The connection's run lock (Redis): taken when a run opens, renewed by its heartbeat, released when it ends, cleared when orphaned, so it can't outlive its job. |
 | `runs.py` | Keeps track of running syncs (heartbeats), marks interrupted ones, and stores the output of background jobs so `sync watch` can follow them. |
@@ -197,7 +198,7 @@ ledgerbridge/
 | File | What it is and what it's for |
 | --- | --- |
 | `env.py`, `script.py.mako` | Alembic's setup and the template for new migration files. |
-| `versions/0001_...py` to `versions/0012_...py` | One file per change to the database, applied in order: 0001 raw records and sync runs, 0002 the accounting and system tables, 0003 the standard chart of accounts, then later additions (tax types, deletion checks, validation dates and alerts, sync checkpoints, unverified ranges, run liveness and job logs, the `extra` fields and field catalogue, voucher types' standard type and whether they move stock). An applied migration is never edited; a change is always a new file. [schema.md](schema.md) Section 3 lists them. |
+| `versions/0001_...py` to `versions/0017_...py` | One file per change to the database, applied in order: 0001 raw records and sync runs, 0002 the accounting and system tables, 0003 the standard chart of accounts, later additions for tax types, validation, stock handling, effective dates, source stock and foreign-currency snapshots, and persisted source/canonical statements. An applied migration is never edited; a change is always a new file. [schema.md](schema.md) Section 3 lists them. |
 
 **`devtools/error_catalogue.py`: the error catalogue.** Writes `docs/error-catalogue.md` from `core/problems.py`, so the documented codes always match what the commands print (also run by `./dev.ps1 diagrams`; a test fails when it is stale). Development only.
 
@@ -214,14 +215,14 @@ ledgerbridge/
 | `conftest.py` | Shared test setup: an in-memory database standing in for MySQL, the recorded Tally answers, the test company's name. |
 | `sim_tally.py` | A simulated Tally for tests: large companies, slow months, timeouts, custom fields, values that don't fit, names written differently. |
 | `fixtures/tally/` | Real answers recorded from the test company (`*.xml`) and `manifest.json`, which says which request each file answers. Test company data only. |
-| `fixtures/tally/rules/` | Answers recorded from the test company that prove Tally's counting rules: ledger and stock item openings fetched for different periods, and tracked notes and invoices. |
+| `fixtures/tally/rules/` | Answers recorded from the test company that prove Tally's counting rules: ledger and stock item openings fetched for different periods, tracked notes and invoices, and P&L stock values for integrated and non-integrated accounts. |
 | `test_counting_rules.py` | Tally's counting rules (schema.md 7.5): openings fetched at the books' beginning, stock moved once for tracked invoices, and the seed matching Tally's own figures. |
 | `test_dates.py` | Reliable dates in Educational mode: validation as of the latest reliable date, year and month ends moved forward, detection and the connection setting. |
 | `test_compare_ledger.py` | `validate compare-ledger`: matching, counts without numbers or amounts, private lines only with `--private`. |
 | `test_edit_log.py` | TallyPrime Edit Log: an altered voucher maps to its current version, the export carries no edit history, and the sync doesn't fetch the edit time; on responses recorded from the test company. |
 | `test_forex.py` | Foreign-currency ledgers at Tally's book value (its trial balance's Unadjusted Forex Gain/Loss), foreign amounts on lines; on responses recorded from the test company. |
 | `test_line_attribution.py` | Which ledger a voucher line belongs to: names as Tally compares them, deleted ledgers with a live twin, ledger lines in lists not read; on fixtures recorded from the test company. |
-| `test_stock_ledger_and_dates.py` | Stock ledgers at the source's stock value, Tally's own group totals (stock value, opening difference) and effective dates; on fixtures recorded from the test company. |
+| `test_stock_ledger_and_dates.py`, `test_tally_statements.py`, `test_statements.py` | Integration-dependent stock-ledger validation, Tally's statement stock values, statement snapshot persistence, canonical statement construction and private comparison output; on fixtures recorded from the test company. |
 | `test_job_work.py` | Job work and godowns as Tally counts them, stock journals read once, Tally's own opening difference; on fixtures recorded from the test company. |
 | `test_dev_script_args.py`, `test_run_lock.py` | The docker compose arguments each `dev.ps1` command builds (with a stand-in for `deploy/stack.ps1`); the run lock: released however a run ends, lapsing after a shutdown, cleared when orphaned, refusals that say what they found. |
 | `connectors/tally/test_*.py` | The Tally connector: requests, parser, mapping, signs, recorded fixtures. |
@@ -301,8 +302,11 @@ Each holds only a `README.md` describing what will be built after the pilot (Pha
 ### (c) Validation against Tally
 
 1. After each company's transform, `workers/validate.py` asks the connector for Tally's own figures: closing balances, and in a thorough check also voucher counts, stock quantities, bills and year-end balances (`connectors/tally/connector.py`).
-2. `core/validation.py` compares them with the accounting tables and stores the results in `validation_runs` and `validation_issues` (`core/models/system.py`).
-3. `core/alerts.py` raises or resolves an alert; `workers/cli.py` prints the outcome; `api/validation.py` serves it to the dashboard.
+2. `workers/statements.py` persists the source stock, foreign-currency and statement snapshots, then builds canonical Trial Balance, Profit & Loss and Balance Sheet lines from the accounting tables.
+3. `core/validation.py` compares source figures with the accounting tables and stores the results in `validation_runs` and `validation_issues` (`core/models/system.py`).
+4. `core/alerts.py` raises or resolves an alert; `workers/cli.py` prints the outcome; `api/validation.py` serves it to the dashboard.
+
+To compare Tally's statement reports independently, `workers.cli compare-statements` refreshes the source and canonical snapshots, reports matched/equal/different counts, and prints labels and amounts only when `--private` is requested. The `dev.ps1 validate compare-statements` wrapper stores those private details under `reports/<env>/private/`.
 
 ### (d) The scheduled worker
 
@@ -385,6 +389,8 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-22 | 0.22 | Document source valuation and statement persistence, canonical statement comparison, migration 0017 and its tests/diagram. |
+| 2026-10-22 | 0.21 | Integration-dependent stock-ledger validation and Tally statement stock-value tests. |
 | 2026-10-19 | 0.20 | `dev.ps1`: shared helpers for background jobs, captured output and tool containers. |
 | 2026-10-19 | 0.19 | `workers/` lighter review: every module says where it fits. |
 | 2026-10-19 | 0.18 | `core/validation.py`, `workers/analyse.py` after the simplicity review. |

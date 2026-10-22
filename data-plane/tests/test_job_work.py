@@ -208,6 +208,14 @@ def _replaying(companies: str | None = None, groups: str | None = None) -> Tally
 
     def answer(request: httpx.Request) -> httpx.Response:
         collection = request.content.decode().split("<ID>")[1].split("</ID>")[0]
+        if collection in (
+            "Trial Balance",
+            "Balance Sheet",
+            "Profit and Loss",
+            "LBStockGroupValues",
+            "LBGodownValues",
+        ):
+            return httpx.Response(200, content=b"<ENVELOPE/>")
         text = (STOCK_LEDGER / files[collection]).read_text(encoding="utf-8")
         if collection == "LBCompanies" and companies is not None:
             text = companies

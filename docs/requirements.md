@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.22 (Draft) |
-| Date | 2026-10-19 |
+| Version | 0.23 (Draft) |
+| Date | 2026-10-22 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
 
@@ -141,6 +141,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | DAT-009 | Fields a source sends that have no column in the canonical model (e.g. Tally user-defined fields from TDL customisations) are kept per record, catalogued per entity and object type, and can be promoted to reporting dimensions by an explicit command, without schema changes at run time. | P1 |
 | DAT-011 | References by name (a ledger's group, a voucher's ledgers, cost centres, stock items, voucher types) resolve by defined rules: exact name first, then a known alias (e.g. a renamed reserved group's reserved name), then a defined normalisation applied to both sides (XML entities, Unicode NFC, spaces, case), each accepted only if exactly one candidate fits; otherwise the record fails with a clear reason. Normalised matches are reported as warnings (counts only), and a diagnostic explains references that don't resolve without showing names or values. | P1 |
 | DAT-012 | Figures follow the source's own counting rules, verified against the source's own reports on the test company: opening balances and opening quantities are the masters' openings at the books' beginning (never a balance at a later period's start); a stock movement recorded twice (a delivery or receipt note and the invoice tracked to it) moves stock once, where the source moves it; vouchers that the source keeps out of the books (optional, memorandum, reversing journals) don't count, while custom types derive their behaviour from the source's standard type; stock held at a job worker's location counts as the source counts it (Tally: not in stock balances), and the source's own difference in opening balances, as its trial balance from the books' beginning shows it, is what the opening check reports (Tally: the difference line of its own trial balance as at the books' beginning, none when it shows none); a voucher's effective date is kept but balances count by the voucher's date, as the source does. | P1 |
+| DAT-013 | Source-reported Trial Balance, Balance Sheet and Profit & Loss lines and valuation controls are kept separately from canonical figures, dated as read, and never turned into vouchers. For Tally, opening and closing stock used by profit are taken from its Profit & Loss report and take precedence over group- or item-derived values, whether or not accounts are integrated with inventory. | P1 |
 | DAT-010 | A value that doesn't fit its column (too long, out of range, invalid date or characters) never fails other records: it is kept in full, never truncated, and flagged. Problems are reported by kind, table, column and size, never the value. | P1 |
 
 ### 4.7 Validation and reconciliation
@@ -177,6 +178,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | RPT-009 | Export to Excel and PDF. | P2 |
 | RPT-010 | Scheduled reports by email, generated inside the client deployment. | P2 |
 | RPT-011 | Over time, "all reports" requested by the client will be delivered; the phase 1 report set is listed in RPT-001 to RPT-004 and RPT-006 to RPT-008, pending confirmation. | — |
+| RPT-012 | Build canonical Trial Balance, Balance Sheet and Profit & Loss figures from the canonical accounting data and the source valuation figures required by DAT-013; compare each statement line by line with the source's own report. Preserve both sides and the comparison date. Command output shows counts and pass/fail only; line-level names and amounts go only to a local private detail file. | P1 |
 
 ### 4.9 AI layer
 
@@ -385,6 +387,7 @@ Requirements can be added or changed in any phase. For each change:
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-22 | 0.23 | DAT-013: preserve source statements and use P&L-reported stock values; RPT-012: build and compare canonical Trial Balance, Balance Sheet and Profit & Loss against the source. |
 | 2026-10-08 | 0.1 | Initial draft from client answers and architecture decisions. |
 | 2026-10-08 | 0.2 | Open items deferred until related features are built. |
 | 2026-10-08 | 0.3 | Added pilot-first delivery approach (Section 2.1) and Phase 1a. |

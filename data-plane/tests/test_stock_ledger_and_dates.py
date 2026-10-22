@@ -32,7 +32,12 @@ AS_OF = date(2026, 10, 2)
 # --- 1. stock ledgers at the source's stock value -------------------------------------------
 
 
-def _validate(db: Session, connection: S.Connection, closing_stock: Decimal):  # noqa: ANN202
+def _validate(
+    db: Session,
+    connection: S.Connection,
+    closing_stock: Decimal,
+    integrated: bool = True,
+):  # noqa: ANN202
     entity_id = db.scalar(select(A.Entity.id))
     validator = Validator(db, entity_id, AS_OF, Decimal(0), connection.id)
     ours = {lb.name: lb for lb in validator.ledger_balances(AS_OF)}
@@ -45,7 +50,7 @@ def _validate(db: Session, connection: S.Connection, closing_stock: Decimal):  #
         opening_stock=closing_stock,
         closing_stock=closing_stock,
         stock_ledgers=frozenset({stock_ledger.source_key}),
-        integrated=True,
+        integrated=integrated,
     )
     report = Validator(db, entity_id, AS_OF, Decimal(0), connection.id).run(source)
     return report, stock_ledger
@@ -65,6 +70,15 @@ def test_a_stock_ledger_at_the_closing_stock_value_is_compared_with_it(
 
 def test_a_stock_ledger_at_another_value_still_fails(db: Session, synced: S.Connection) -> None:
     report, stock_ledger = _validate(db, synced, Decimal(500))
+    failed = [f for f in report.findings if f.check_code == "closing_mismatch"]
+    assert [f.object_id for f in failed] == [str(stock_ledger.id)]
+    assert "stock_ledger_at_stock_value" not in [f.check_code for f in report.findings]
+
+
+def test_a_non_integrated_company_compares_stock_ledgers_normally(
+    db: Session, synced: S.Connection
+) -> None:
+    report, stock_ledger = _validate(db, synced, Decimal(999), integrated=False)
     failed = [f for f in report.findings if f.check_code == "closing_mismatch"]
     assert [f.object_id for f in failed] == [str(stock_ledger.id)]
     assert "stock_ledger_at_stock_value" not in [f.check_code for f in report.findings]

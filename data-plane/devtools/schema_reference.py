@@ -37,8 +37,8 @@ DATABASES = (
     (ACCOUNTING, "Canonical model: companies, chart of accounts, masters and transactions in "
                  "one shape for every source. Written by the transform; read by validation, "
                  "reports and (later) the reporting layer."),
-    (REPORTING, "Semantic layer for reports and AI (M6): views and aggregate tables. Empty "
-                "until M6; the only database the AI user can read (AI-003)."),
+    (REPORTING, "Semantic layer for reports and AI: persisted source and canonical statement "
+                "lines plus reporting views; the only database the AI user can read (AI-003)."),
     (SYSTEM, "Running the platform: connections, sync runs and progress, validation, alerts, "
              "users, roles, audit and AI logs, configuration."),
 )  # fmt: skip
@@ -125,6 +125,14 @@ TABLES: dict[str, tuple[str, str]] = {
                           "resolved when a later run no longer finds it.", "Validation."),
     "alerts": ("In-app alerts: one open per connection and kind (SYN-006, ADR-019).",
                "Sync and validation."),
+    "stock_values": ("Source-reported opening and closing stock values by date and scope "
+                     "(DAT-013).", "Validation's source statement refresh."),
+    "fx_revaluation_snapshots": ("Source-reported foreign-currency book and revalued values "
+                                 "by ledger and date (FX-004).",
+                                 "Validation's source statement refresh."),
+    "statement_lines": ("Source-reported and independently built canonical statements by "
+                        "entity, date and line (DAT-013, RPT-012).",
+                        "Validation's source statement refresh."),
     "users": ("Users (same id as the control plane); local password only with AUTH_MODE=local.",
               "M5."),
     "roles": ("Roles.", "M5 (seeded defaults)."),
@@ -399,13 +407,6 @@ def generate() -> str:
         out += [f"## `{schema}`: {title}", ""]
         for name in names:
             out += _table_section(tables[name], comments, notes, referenced)
-    out += [
-        f"## `{REPORTING}`",
-        "",
-        "No tables yet: the reporting views and aggregate tables are built in M6 (designed in "
-        "schema.md Section 6).",
-        "",
-    ]
     return "\n".join(out)
 
 

@@ -4,6 +4,7 @@ the difference to the rupee amounts entered as "Unadjusted Forex Gain/Loss", and
 Vouchers show the amounts entered. Validation compares the foreign-currency ledgers with
 that book value; each line keeps its foreign amount."""
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -86,7 +87,19 @@ def _replaying(trial_balance: str = BOOKS_TB) -> TallyConnector:
             august = '<SVFROMDATE TYPE="Date">20260801</SVFROMDATE>' in text
             return httpx.Response(200, content=(USD_SALE if august else EMPTY).encode())
         if name == "Trial Balance":
-            return httpx.Response(200, content=trial_balance.encode())
+            start = re.search(r'<SVFROMDATE TYPE="Date">(\d{8})</SVFROMDATE>', text)
+            end = re.search(r'<SVTODATE TYPE="Date">(\d{8})</SVTODATE>', text)
+            same_day = start is not None and end is not None and start.group(1) == end.group(1)
+            if same_day:
+                return httpx.Response(200, content=trial_balance.encode())
+            return httpx.Response(200, content=b"<ENVELOPE/>")
+        if name in (
+            "Balance Sheet",
+            "Profit and Loss",
+            "LBStockGroupValues",
+            "LBGodownValues",
+        ):
+            return httpx.Response(200, content=b"<ENVELOPE/>")
         return httpx.Response(200, content=(FOREX_FIXTURES / files[name]).read_bytes())
 
     return TallyConnector.from_config(

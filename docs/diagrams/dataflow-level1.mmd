@@ -18,7 +18,7 @@ flowchart TB
     end
 
     subgraph acc["ledgerbridge_accounting"]
-        accounting[("accounting tables<br/>entities, ledgers, vouchers, lines, ...<br/>with extra fields and field catalogue")]
+        accounting[("accounting tables<br/>entities, ledgers, vouchers, lines, ...<br/>stock and FX snapshots, extra fields")]
         budgets[("budgets<br/>user-entered, versioned<br/>PLANNED (M7b)")]
     end
 
@@ -28,7 +28,8 @@ flowchart TB
     end
 
     subgraph rep["ledgerbridge_reporting"]
-        views[("reporting views<br/>PLANNED (M6)")]
+        statements[("persisted source and canonical<br/>Trial Balance, P&L, Balance Sheet")]
+        views[("other reporting views<br/>PLANNED (M6)")]
     end
 
     transform["Transform<br/>(core/transform.py)"]
@@ -52,10 +53,11 @@ flowchart TB
     validate --> results
     deletions -->|"key listings"| tally
     deletions --> accounting
+    validate --> statements
     accounting -.-> views
     budgets -.-> views
     results --> api
-    views -.-> api
+    statements -.-> api
     views -.-> ai
     api -.-> dash
     dash -.-> users

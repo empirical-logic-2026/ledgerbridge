@@ -198,10 +198,13 @@ class _LedgerBalance:
 def at_stock_value(
     ours: Mapping[str, Decimal], source: SourceBalances, tolerance: Decimal = ZERO
 ) -> set[str]:
-    """The stock ledgers (source keys) the source reports at its closing stock value rather
-    than at their own opening and postings: their balances here differ from the source's,
-    and the source's total equals its closing stock value as of the date (VAL-012). Used by
-    validation and by `validate analyse`, so both treat them alike."""
+    """The stock ledgers (source keys) the source reports at their closing stock value rather
+    than at their own opening and postings. This exception applies only when accounts are
+    integrated, their balances here differ from the source's, and the source's total equals
+    its closing stock value as of the date (VAL-012). Used by validation and by `validate
+    analyse`, so both treat them alike."""
+    if source.integrated is not True:
+        return set()
     mine = {key: balance for key, balance in ours.items() if key in source.stock_ledgers}
     if not mine or source.closing_stock is None:
         return set()
