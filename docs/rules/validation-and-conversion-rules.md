@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.3 |
+| Version | 1.4 |
 | Date | 2026-10-19 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
@@ -189,7 +189,8 @@ Rules are built generically (PIL-003): Tally specifics live in `data-plane/conne
 - **Proven:** the test company: a renamed Stock-in-Hand group with one ledger (its opening kept in its own balance, left out of the trial balance); the group equal to the items' value at each date; a voucher on the ledger refused.
 - **Code:** `connectors/tally/connector.py` (`closing_balances`, `_stock_in_hand`), `core/validation.py` (`at_stock_value`, `_at_stock_value`).
 - **Tests:** `tests/test_stock_ledger_and_dates.py`, `tests/test_job_work.py`.
-- **ADR:** ADR-031, ADR-033.
+- **Not integrated** (recorded on the test company with the feature switched off, 2026-10-22): Tally's trial balance, balance sheet and Profit and Loss count the stock ledgers as ordinary ledgers, and its opening and closing stock are their own balances; the items' values aren't used. The connector reads each company's own setting (`ISINTEGRATED` Yes or No).
+- **ADR:** ADR-031, ADR-033, ADR-040.
 
 ---
 
@@ -283,6 +284,7 @@ On the fetch side: requests time out and wait for a busy source before declaring
 ## 14. Educational mode: reliable dates only
 
 - **What:** TallyPrime in Educational mode gives correct balances only on the 1st, 2nd and 31st of a month. Validation runs as of the latest such date on or before the date asked; year ends and month ends move to the next one (a 30 June year end is checked on 1 July); the output names the dates used. The connection setting `educational` (auto / yes / no) decides; auto asks Tally (`$$LicenseInfo:IsEducationalMode`). Voucher listings always request whole months.
+- **Statements are stricter:** on the 1st, Tally's own Trial Balance, Profit and Loss and computed profit don't agree with its own ledger balances that day (test company, 2026-10-22: as of 1 October its ledgers equalled ours, while its reports and its Profit & Loss A/c balance didn't; the 2nd and the 31st agreed). Statements therefore move a date on the 1st to the 2nd (`DateRule.for_statements`). Year-end checks still use the 1st; their profit carrier comparison may be affected in Educational mode (open point).
 - **Why:** on the test company a balance requested for the 30th included later vouchers; the pilot runs in Educational mode.
 - **Code:** `core/dates.py` (`DateRule`), `connectors/tally/connector.py` (`date_rule`, `is_educational`), `workers/validate.py`.
 - **Tests:** `tests/test_dates.py`.
@@ -318,16 +320,53 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 | LB-VAL-020 | `validation_error` | Validation couldn't run | — | — |
 | LB-VAL-021 | `stock_ledger_at_stock_value` (info) | Stock ledgers compared with Tally's closing stock value (Section 7) | tolerance | each date |
 | LB-VAL-022 | `foreign_ledgers_at_book_value` (info) | Foreign-currency ledgers compared with their book value (Section 8) | tolerance | each date |
+| LB-VAL-023 | `stock_value_mismatch` | The stock value stored for a date against the source's now (Section 16.2) | tolerance | as of, year ends |
+| LB-VAL-024 | `statement_mismatch` | Our Trial Balance, Profit & Loss and Balance Sheet against the source's own, line by line and in total (Section 16.1) | tolerance | as of, year ends; every month end with `statements` |
+| LB-VAL-025 | `statements_unavailable` | The source's statements couldn't be read for a date | n/a | as of, year ends |
 
 - **Code:** `core/validation.py` (`Validator`), `workers/validate.py` (`run_validation`, `source_controls`), `core/problems.py` (codes, texts).
 - **Tests:** `tests/test_validation.py`, `tests/test_counting_rules.py` (`test_seed_reproduces_tallys_figures`), `tests/test_retransform.py` (`test_thorough_validation_passes_on_the_test_company`), and the rule tests above.
 - **Diagnostics:** `validate analyse` tests explanations for every mismatch (counts only, VAL-010); `validate compare-ledger` compares one ledger voucher by voucher (VAL-014).
 - **ADR:** ADR-019, ADR-028, ADR-029.
 
+## 16. Statements from the source's own figures
+
+### 16.1 Statements are laid out as Tally's and match them line by line
+
+- **What:** our Trial Balance, Profit & Loss and Balance Sheet have one line per primary group (its current name), plus Tally's own lines: Cost of Sales (Opening Stock, Add: the purchase groups, Less: Closing Stock), Profit & Loss A/c and Unadjusted Forex Gain/Loss. Each is compared with Tally's own report export line by line (by label, without "Add: " / "Less: ") and in total at the as-of date and every year end (LB-VAL-024); `./dev.ps1 statements` does the same at every month end. Trial balance lines compare their debit and credit totals.
+- **Why:** reports must equal what the client sees in Tally (RPT-012).
+- **Proven:** the test company at four dates (books' beginning, two month ends, the as-of date), with integration on and off: every line and total equal.
+- **Code:** `core/statements.py`, `connectors/tally/reports.py`, `connector.source_statements`.
+- **Tests:** `tests/test_statements.py`.
+- **ADR:** ADR-040.
+
+### 16.2 Stock in the statements is the source's own figure
+
+- **What:** the opening and closing stock are those of Tally's Profit and Loss, stored in `stock_values`. Integrated: the stock ledgers are left out and the stock appears at its opening value in the Trial Balance and its closing value in the Balance Sheet (Current Assets). Not integrated: the stock ledgers are ordinary ledgers (their balances are Tally's stock). The stored value is checked against Tally's at each date validated (LB-VAL-023).
+- **Why:** with integration off Tally takes the stock ledger's balances (1,500), not the items' values (2,010 / 5,580): following Tally's own figures keeps our statements equal whatever the setting.
+- **Proven:** the recordings above; the connector reads Yes and No.
+- **Code:** `core/statements.py` (`_Figures`), `core/validation.py` (`_statements`, `_stock_value`).
+- **Tests:** `tests/test_statements.py`.
+
+### 16.3 Ledgers directly under Primary are Profit & Loss A/c
+
+- **What:** Tally's Profit & Loss A/c line on the Balance Sheet is the balance of the ledgers directly under Primary (Opening Balance) plus the period's profit (Current Period): liabilities side for a profit, assets side for a loss. In the Trial Balance they are listed by name when not zero.
+- **Proven:** the test company: Profit & Loss A/c equal to the period's loss at every date.
+
+### 16.4 Foreign-currency ledgers at Tally's revalued balance
+
+- **What:** in the statements, a foreign-currency ledger counts at the balance Tally reports (revalued at current rates), stored in `fx_revaluation_snapshots`; the difference to its book value is one "Unadjusted Forex Gain/Loss" line, as in Tally's reports. Validation still compares the ledger itself at book value (rule 8).
+- **Proven:** the test company's dollar customer: 0 revalued, 8,200 book, the line 8,200 Dr.
+
+### 16.5 A difference in opening balances is a note
+
+- **What:** when the openings don't total zero (e.g. not integrated: the items' opening value 2,010 against the stock ledger's 1,500, a difference of 510), Tally's exported Trial Balance and Balance Sheet don't balance and show no line for it. Ours add "Difference in opening balances" as a detail line (not compared), so ours balance and still equal Tally's line by line.
+
 ## Change log
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-22 | 1.4 | Section 16: statements from the source's own figures; rule 7 without integration; checks LB-VAL-023 to LB-VAL-025. |
 | 2026-10-22 | 1.3 | Values with invalid characters that are too long; long names of deleted rows. |
 | 2026-10-19 | 1.2 | Rule 6.2: entries with no quantity of their own across several godowns. |
 | 2026-10-19 | 1.1 | Rule 1.6: TallyPrime Edit Log. |

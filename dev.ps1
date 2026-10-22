@@ -27,6 +27,7 @@
     ./dev.ps1 transform explain [-CheckSource]  (why references didn't resolve; counts only)
     ./dev.ps1 validate analyse                  (test explanations for validation mismatches)
     ./dev.ps1 validate compare-ledger -Ledger 88 [-From 2020-04-01] [-To 2021-04-01]
+    ./dev.ps1 statements [-From 2026-04-01]    (stock values and statements at every month end; compared with the source)
                                                 (a ledger's vouchers in Tally against ours; details to reports/<env>/private/)
     ./dev.ps1 fields
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
@@ -51,13 +52,14 @@
     ./dev.ps1 transform rebuild -Env pilot      (every stored record again with the current code)
     ./dev.ps1 transform explain -Env pilot      (why references didn't resolve; -CheckSource asks Tally)
     ./dev.ps1 validate analyse -Env pilot       (why validation mismatches; reads Tally's figures)
+    ./dev.ps1 statements -Env pilot             (stock values and statements at every month end; counts only)
     ./dev.ps1 summary -Env pilot
     ./dev.ps1 report -Env pilot [-Details]      (saved as reports/pilot/report-<date>.md, safe to share)
     ./dev.ps1 reset -Env pilot
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'help')]
+    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -456,6 +458,19 @@ switch ($Command) {
         $job = [guid]::NewGuid().ToString()
         $syncArgs += @('--job', $job)
         Start-Followed 'sync' $job $syncArgs
+    }
+    'statements' {
+        # Stores the source's stock values and statements (Trial Balance, Profit & Loss,
+        # Balance Sheet) at every month end and year end, builds ours and compares them line
+        # by line (ADR-040). Reads Tally's figures (read-only), in the background like a
+        # sync, followed here. Counts and statement names only. -From starts at a date.
+        Assert-EnvFile
+        Assert-ApiRunning
+        $job = [guid]::NewGuid().ToString()
+        $statementArgs = @('python', '-m', 'workers.cli', 'statements', '--connection', $connection, '--job', $job)
+        foreach ($name in $Company) { $statementArgs += @('--entity', $name) }
+        if ($From) { $statementArgs += @('--from', $From) }
+        Start-Followed 'statements' $job $statementArgs
     }
     'validate' {
         # Validation as of today (M4): voucher balance, trial balance and closing balances

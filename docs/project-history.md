@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.2 |
+| Version | 1.3 |
 | Date | 2026-10-19 |
 | Covers | M0 to M4, the pilot on the client's two companies, PRs #1 to #33 |
 
@@ -61,6 +61,8 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 | #34 | 2026-10-16 | Knowledge base: rulebook, generated schema reference, project history, progress log, Word and PDF copies | One place for every rule and table, with proof and history. |
 | #35 | 2026-10-19 | TallyPrime Edit Log checked like for like; seed case and test (no code change) | Confirm the platform works unchanged on Edit Log. |
 | #36 | 2026-10-19 | Security foundations: checks on every pull request, CLAUDE.md security checklist and report sections, threat model and security guide (SEC-009, ADR-039) | Catch bugs, vulnerable dependencies, insecure code and secrets before merging, ahead of M5. |
+| #37 to #44 | 2026-10-19 to 2026-10-22 | dev.ps1 tests on Windows in CI; A3 simplicity review (Tally connector, transform, validation and analyse, workers, scripts) with every result identical before and after; the review's findings fixed | Code the developer can fully understand; bugs found on the way fixed with tests. |
+| feat/stock-values | 2026-10-22 | The source's stock values and foreign-currency revaluations stored as source figures; Trial Balance, Profit & Loss and Balance Sheet laid out as Tally's and checked against its own reports line by line (ADR-040) | Reports must equal Tally's; recorded on the test company with integration on and off. |
 
 ## 3. Problems found and how each was fixed
 
@@ -115,6 +117,7 @@ The test company was opened in TallyPrime Edit Log (migrated, same GUID). Every 
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-22 | 1.3 | PRs #37 to #44; statements from the source's own figures. |
 | 2026-10-19 | 1.2 | PRs #34 to #36; security foundations. |
 | 2026-10-19 | 1.1 | TallyPrime Edit Log check. |
 | 2026-10-16 | 1.0 | First edition, up to PR #33. |

@@ -625,6 +625,48 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Nothing to fix.",),
         ".\\dev.ps1 report -Env {env} -Details",
     ),
+    _p(
+        "LB-VAL-023",
+        "stock_value_mismatch",
+        "Stock value changed in the source",
+        ERROR,
+        "The stock value the source reports for a date differs from the one stored for it, so "
+        "the statements stored for that date were out of date (they are now refreshed).",
+        (
+            "Vouchers dated on or before that date were entered or altered in the source "
+            "after the value was stored.",
+        ),
+        (".\\dev.ps1 statements -Env {env} refreshes every month end and year end.",),
+        ("Run a full sync, then validate again.",),
+        ".\\dev.ps1 sync full -Env {env}",
+    ),
+    _p(
+        "LB-VAL-024",
+        "statement_mismatch",
+        "Statement line differs from the source",
+        ERROR,
+        "A line (or the total) of our Trial Balance, Profit & Loss or Balance Sheet differs "
+        "from the source's own report for the same date.",
+        (
+            "A ledger balance differs (see the closing balance checks first).",
+            "The source lays a line out differently from ours (a group in another block).",
+        ),
+        ("ledgerbridge_reporting.v_statement_check lists each line, ours against the source's.",),
+        ("Fix the ledger differences first; otherwise send the line's label and statement.",),
+        ".\\dev.ps1 statements -Env {env}",
+    ),
+    _p(
+        "LB-VAL-025",
+        "statements_unavailable",
+        "Source statements couldn't be read",
+        ERROR,
+        "The source's Trial Balance, Balance Sheet or Profit and Loss couldn't be read, so the "
+        "statements weren't compared for that date.",
+        ("The source timed out or stopped answering.",),
+        (".\\dev.ps1 entity-check -Env {env}",),
+        ("Validate again with TallyPrime idle.",),
+        ".\\dev.ps1 validate -Env {env}",
+    ),
     # --- connection settings ------------------------------------------------------------
     _p(
         "LB-CON-001",
@@ -694,6 +736,7 @@ _ALIASES = {
     "voucher_counts_not_supported": "check_not_supported",
     "stock_quantities_not_supported": "check_not_supported",
     "bill_outstanding_not_supported": "check_not_supported",
+    "statements_not_supported": "check_not_supported",
     "stock_values_not_compared": "not_compared",
     "bills_not_compared": "not_compared",
 }

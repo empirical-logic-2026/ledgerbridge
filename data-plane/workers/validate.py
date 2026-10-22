@@ -122,7 +122,8 @@ def source_controls(
 ) -> SourceControls:
     """The source's own figures for one entity (each read separately: one that fails or
     isn't supported doesn't stop the others). Year ends move to the source's next reliable
-    date (Educational mode: a 30 June year end is checked on 1 July)."""
+    date (Educational mode: a 30 June year end is checked on 1 July). The source's own
+    statements are read for the as-of date and each year end (ADR-040)."""
     books_from = entity.books_from or row.books_from
     bills = _read(connector, "bill_outstanding", entity)
     outstanding, opening = (
@@ -137,6 +138,11 @@ def source_controls(
             if used != year_end and progress:
                 progress(f"year end {year_end} checked as of {used} ({rule.describe()})")
             year_ends[used] = _read(connector, "closing_balances", entity, used)
+    statements = {}
+    if hasattr(connector, "source_statements"):
+        for on in {rule.for_statements(on) for on in year_ends} | {as_of}:
+            if on <= as_of:
+                statements[on] = _read(connector, "source_statements", entity, on)
     return SourceControls(
         voucher_counts=_read(connector, "voucher_counts", entity, books_from, as_of)
         if books_from
@@ -145,6 +151,7 @@ def source_controls(
         bill_outstanding=outstanding,
         opening_bills=opening,
         year_ends=year_ends,
+        statements=statements,
     )
 
 

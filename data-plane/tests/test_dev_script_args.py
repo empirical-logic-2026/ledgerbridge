@@ -183,6 +183,14 @@ CASES = {
         ["validate", "analyse"],
         [SERVICES, _job("validate-analyse", "--connection", "tally-test"), WATCH_JOB],
     ),
+    "statements -From": (
+        ["statements", "-From", "2026-04-01"],
+        [
+            SERVICES,
+            _job("statements", "--connection", "tally-test", "--from", "2026-04-01"),
+            WATCH_JOB,
+        ],
+    ),
     "sync": (
         ["sync"],
         [SERVICES, _job("sync", "--connection", "tally-test", "--source", "tally"), WATCH_JOB],

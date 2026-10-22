@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-52 tables, 559 columns.
+55 tables, 602 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -13,8 +13,8 @@ Every database, table and column of the client-hosted data plane (MySQL 8), gene
 | Database | What it holds | Tables |
 | --- | --- | --- |
 | `ledgerbridge_source` | Raw layer: every record exactly as the source sent it (ADR-005). Written only by connectors through the sync; the transform reads it. | 1 |
-| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 26 |
-| `ledgerbridge_reporting` | Semantic layer for reports and AI (M6): views and aggregate tables. Empty until M6; the only database the AI user can read (AI-003). | 0 |
+| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 28 |
+| `ledgerbridge_reporting` | Semantic layer for reports and AI (M6): views and aggregate tables. Empty until M6; the only database the AI user can read (AI-003). | 1 |
 | `ledgerbridge_system` | Running the platform: connections, sync runs and progress, validation, alerts, users, roles, audit and AI logs, configuration. | 25 |
 
 [![The four databases and the database users](../diagrams/schema-databases.png)](../diagrams/schema-databases.svg)
@@ -57,6 +57,10 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 **System, part 2: users, roles and access, audit and AI log, configuration (ledgerbridge_system)**
 
 [![System, part 2: users, roles and access, audit and AI log, configuration (ledgerbridge_system)](../diagrams/er-system-access.png)](../diagrams/er-system-access.svg)
+
+**Source figures and statements: stock values, foreign-currency revaluations (ledgerbridge_accounting) and statement lines (ledgerbridge_reporting)**
+
+[![Source figures and statements: stock values, foreign-currency revaluations (ledgerbridge_accounting) and statement lines (ledgerbridge_reporting)](../diagrams/er-source-statements.png)](../diagrams/er-source-statements.svg)
 
 **Data flow, level 0** (the platform and what it talks to)
 
@@ -130,7 +134,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `base_currency_code` → `currencies.code`.
 
-**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_centres`, `dimension_values`, `entity_sources`, `financial_years`, `godowns`, `inventory_lines`, `item_groups`, `items`, `ledgers`, `parties`, `source_fields`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_types`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_centres`, `dimension_values`, `entity_sources`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `items`, `ledgers`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_types`, `vouchers`.
 
 ### `ledgerbridge_accounting.entity_sources`
 
@@ -335,7 +339,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `group_id` → `account_groups.id`; `party_id` → `parties.id`; `standard_account_id` → `standard_accounts.id`; `currency_code` → `currencies.code`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `voucher_lines`.
+**Referred to by:** `fx_revaluation_snapshots`, `voucher_lines`.
 
 ## `ledgerbridge_accounting`: masters
 
@@ -803,6 +807,92 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`.
 
+## `ledgerbridge_accounting`: source figures
+
+### `ledgerbridge_accounting.stock_values`
+
+**Purpose:** The source's own stock value as of a date (DAT-013, ADR-040): the total its Profit and Loss uses, and by stock group and godown.
+
+**Filled by:** Validation (as-of date, year ends) and `./dev.ps1 statements` (every month end and year end).
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK, UK | The entity (company) the row belongs to. |
+| `connection_id` | BIGINT UNSIGNED | no | FK | The connection the row came from. |
+| `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
+| `as_of` | DATE | no | UK | As of. |
+| `scope` | ENUM('total','stock_group','godown') | no | UK | total (what the source's profit uses), stock_group or godown. |
+| `scope_name` | VARCHAR(255) | no | UK | Scope name. |
+| `opening_value` | NUMERIC(20, 4) | yes |  | Opening value. |
+| `closing_value` | NUMERIC(20, 4) | yes |  | Closing value. |
+| `integrated` | BOOL | yes |  | Whether the source integrates accounts with inventory (total rows). |
+| `read_at` | DATETIME(6) | no |  | When: read. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** unique (entity_id, as_of, scope, scope_name).
+
+**Refers to:** `entity_id` → `entities.id`; `connection_id` → `connections.id`.
+
+### `ledgerbridge_accounting.fx_revaluation_snapshots`
+
+**Purpose:** Each foreign-currency ledger's balance as the source reports it (revalued at current rates) against its book value (FX-004, ADR-037, ADR-040).
+
+**Filled by:** Validation and `./dev.ps1 statements`, for each date.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `ledger_id` | BIGINT UNSIGNED | no | FK, UK | Refers to `ledgers`. |
+| `connection_id` | BIGINT UNSIGNED | no | FK | The connection the row came from. |
+| `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
+| `as_of` | DATE | no | UK | Month end, financial year end or validation date (a reliable date in Educational mode, core/dates.py). |
+| `currency_code` | CHAR(3) | yes |  | Currency (ISO code). |
+| `balance_fc` | NUMERIC(20, 4) | yes |  | The source's own balance in the currency (the foreign part of its closing balance). |
+| `book_value` | NUMERIC(20, 4) | no |  | The source's base-currency value of its vouchers (closing balance less the calculated line). |
+| `revalued_value` | NUMERIC(20, 4) | no |  | The source's closing balance at current rates. |
+| `unrealised_gain_loss` | NUMERIC(20, 4) | no |  | Book value less revalued value (a debit is an unrealised loss). |
+| `read_at` | DATETIME(6) | no |  | When: read. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** unique (ledger_id, as_of); index `ix_fx_revaluation_entity_date` (entity_id, as_of).
+
+**Refers to:** `entity_id` → `entities.id`; `ledger_id` → `ledgers.id`; `connection_id` → `connections.id`.
+
+## `ledgerbridge_reporting`: statements, ours and the source's (views on top)
+
+### `ledgerbridge_reporting.statement_lines`
+
+**Purpose:** Trial Balance, Profit & Loss and Balance Sheet lines, ours and the source's, as of each stored date (RPT-012, ADR-040); the views v_trial_balance, v_profit_loss, v_balance_sheet and v_statement_check read them.
+
+**Filled by:** Validation and `./dev.ps1 statements` (core/statements.py).
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK, UK | The entity (company) the row belongs to. |
+| `as_of` | DATE | no | UK | As of. |
+| `statement` | ENUM('trial_balance','profit_loss','balance_sheet') | no | UK | Statement. |
+| `figures` | ENUM('ours','source') | no | UK | ours (built here) or source (the source's own report). |
+| `line_no` | INTEGER | no | UK | Position of the line in its voucher. |
+| `section` | VARCHAR(32) | yes |  | Section. |
+| `label` | VARCHAR(255) | no |  | Label. |
+| `match_key` | VARCHAR(255) | no |  | The label as both sides are compared. |
+| `level` | ENUM('main','sub','detail') | no |  | main, sub (inside a block) or detail (ours only, never compared). |
+| `amount` | NUMERIC(20, 4) | no |  | Amount in the base currency, canonical sign (debit +, credit −). |
+| `debit` | NUMERIC(20, 4) | yes |  | Debit. |
+| `credit` | NUMERIC(20, 4) | yes |  | Credit. |
+| `refreshed_at` | DATETIME(6) | no |  | When: refreshed. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** unique (entity_id, as_of, statement, figures, line_no); index `ix_statement_lines_match` (entity_id, as_of, statement, match_key).
+
+**Refers to:** `entity_id` → `entities.id`.
+
 ## `ledgerbridge_system`: connections and sync
 
 ### `ledgerbridge_system.sources`
@@ -869,7 +959,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `source_id` → `sources.id`; `agent_id` → `agents.id`.
 
-**Referred to by:** `account_groups`, `alerts`, `cost_centres`, `entity_sources`, `file_layouts`, `godowns`, `import_batches`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `sync_checkpoints`, `sync_logs`, `sync_markers`, `sync_runs`, `sync_slow_periods`, `sync_unverified_ranges`, `units`, `voucher_types`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `cost_centres`, `entity_sources`, `file_layouts`, `fx_revaluation_snapshots`, `godowns`, `import_batches`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `stock_values`, `sync_checkpoints`, `sync_logs`, `sync_markers`, `sync_runs`, `sync_slow_periods`, `sync_unverified_ranges`, `units`, `voucher_types`, `vouchers`.
 
 ### `ledgerbridge_system.sync_markers`
 

@@ -6,7 +6,7 @@ Pictures of the project: what the database holds, who may read it, and how data 
 
 | Diagram | Made how | Source |
 | --- | --- | --- |
-| ER overview and the five ER areas | **Generated** from the database models in `data-plane/core/models` by `data-plane/devtools/diagrams.py`: never edit these `.mmd` files by hand | `er-overview.mmd`, `er-organisation-accounts.mmd`, `er-masters.mmd`, `er-transactions.mmd`, `er-system-sync.mmd`, `er-system-access.mmd` |
+| ER overview and the six ER areas | **Generated** from the database models in `data-plane/core/models` by `data-plane/devtools/diagrams.py`: never edit these `.mmd` files by hand | `er-overview.mmd`, `er-organisation-accounts.mmd`, `er-masters.mmd`, `er-transactions.mmd`, `er-source-statements.mmd`, `er-system-sync.mmd`, `er-system-access.mmd` |
 | Databases and users | **Generated** the same way (tables from the models, users and rights from `deploy/mysql/init/01-schemas.sh`) | `schema-databases.mmd` |
 | Budget tables | Written by hand from [schema.md](../schema.md) Section 4.7: **planned**, not built yet | `er-budgets-planned.mmd` |
 | Data flow, levels 0 and 1 | Written by hand | `dataflow-context.mmd`, `dataflow-level1.mmd` |
@@ -50,6 +50,12 @@ A voucher and everything that belongs to it: its lines (one per ledger posting),
 
 [![Transactions](er-transactions.png)](er-transactions.svg)
 
+### Source figures and statements
+
+Figures the source calculates itself, stored as they are with the date they are for: its stock value (total, by stock group and godown) and its revalued balance of each foreign-currency ledger; and the Trial Balance, Profit & Loss and Balance Sheet lines, ours and the source's, that the reporting views read (ADR-040).
+
+[![Source figures and statements](er-source-statements.png)](er-source-statements.svg)
+
 ### System, part 1: connections, sync, validation
 
 How data arrives and is checked: sources and connections, sync runs with their markers, checkpoints, slow months, unverified ranges and job output, raw records (the data exactly as received), import batches, validation runs and their issues, alerts, and the catalogue of extra fields.
@@ -90,4 +96,5 @@ A sync, started from the command line or by the worker's schedule, asks Tally fo
 
 | Date | Change |
 | --- | --- |
+| 2026-10-22 | Source figures and statements (`er-source-statements`); the reporting database's first table in the databases diagram. |
 | 2026-10-13 | First version: ER overview and five areas, databases and users (generated); planned budget tables, data flow levels 0 and 1 (by hand). |

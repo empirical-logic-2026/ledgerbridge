@@ -1,0 +1,113 @@
+{
+ "companies.xml": {
+  "request": "Company collection"
+ },
+ "trial_balance_2026-04-01.xml": {
+  "request": "report Trial Balance 2026-04-01..2026-04-01"
+ },
+ "balance_sheet_2026-04-01.xml": {
+  "request": "report Balance Sheet 2026-04-01..2026-04-01"
+ },
+ "profit_and_loss_2026-04-01.xml": {
+  "request": "report Profit and Loss 2026-04-01..2026-04-01"
+ },
+ "stock_summary_2026-04-01.xml": {
+  "request": "report Stock Summary 2026-04-01..2026-04-01"
+ },
+ "stock_value_2026-04-01.xml": {
+  "request": "collection LBStockValues 2026-04-01..2026-04-01"
+ },
+ "stock_group_value_2026-04-01.xml": {
+  "request": "collection LBStockGroupValues 2026-04-01..2026-04-01"
+ },
+ "godown_value_2026-04-01.xml": {
+  "request": "collection LBGodownValues 2026-04-01..2026-04-01"
+ },
+ "group_balance_2026-04-01.xml": {
+  "request": "collection LBGroupBalances 2026-04-01..2026-04-01"
+ },
+ "ledger_balance_2026-04-01.xml": {
+  "request": "collection LBLedgerBalances 2026-04-01..2026-04-01"
+ },
+ "trial_balance_2026-05-31.xml": {
+  "request": "report Trial Balance 2026-04-01..2026-05-31"
+ },
+ "balance_sheet_2026-05-31.xml": {
+  "request": "report Balance Sheet 2026-04-01..2026-05-31"
+ },
+ "profit_and_loss_2026-05-31.xml": {
+  "request": "report Profit and Loss 2026-04-01..2026-05-31"
+ },
+ "stock_summary_2026-05-31.xml": {
+  "request": "report Stock Summary 2026-04-01..2026-05-31"
+ },
+ "stock_value_2026-05-31.xml": {
+  "request": "collection LBStockValues 2026-04-01..2026-05-31"
+ },
+ "stock_group_value_2026-05-31.xml": {
+  "request": "collection LBStockGroupValues 2026-04-01..2026-05-31"
+ },
+ "godown_value_2026-05-31.xml": {
+  "request": "collection LBGodownValues 2026-04-01..2026-05-31"
+ },
+ "group_balance_2026-05-31.xml": {
+  "request": "collection LBGroupBalances 2026-04-01..2026-05-31"
+ },
+ "ledger_balance_2026-05-31.xml": {
+  "request": "collection LBLedgerBalances 2026-04-01..2026-05-31"
+ },
+ "trial_balance_2026-08-31.xml": {
+  "request": "report Trial Balance 2026-04-01..2026-08-31"
+ },
+ "balance_sheet_2026-08-31.xml": {
+  "request": "report Balance Sheet 2026-04-01..2026-08-31"
+ },
+ "profit_and_loss_2026-08-31.xml": {
+  "request": "report Profit and Loss 2026-04-01..2026-08-31"
+ },
+ "stock_summary_2026-08-31.xml": {
+  "request": "report Stock Summary 2026-04-01..2026-08-31"
+ },
+ "stock_value_2026-08-31.xml": {
+  "request": "collection LBStockValues 2026-04-01..2026-08-31"
+ },
+ "stock_group_value_2026-08-31.xml": {
+  "request": "collection LBStockGroupValues 2026-04-01..2026-08-31"
+ },
+ "godown_value_2026-08-31.xml": {
+  "request": "collection LBGodownValues 2026-04-01..2026-08-31"
+ },
+ "group_balance_2026-08-31.xml": {
+  "request": "collection LBGroupBalances 2026-04-01..2026-08-31"
+ },
+ "ledger_balance_2026-08-31.xml": {
+  "request": "collection LBLedgerBalances 2026-04-01..2026-08-31"
+ },
+ "trial_balance_2026-10-02.xml": {
+  "request": "report Trial Balance 2026-04-01..2026-10-02"
+ },
+ "balance_sheet_2026-10-02.xml": {
+  "request": "report Balance Sheet 2026-04-01..2026-10-02"
+ },
+ "profit_and_loss_2026-10-02.xml": {
+  "request": "report Profit and Loss 2026-04-01..2026-10-02"
+ },
+ "stock_summary_2026-10-02.xml": {
+  "request": "report Stock Summary 2026-04-01..2026-10-02"
+ },
+ "stock_value_2026-10-02.xml": {
+  "request": "collection LBStockValues 2026-04-01..2026-10-02"
+ },
+ "stock_group_value_2026-10-02.xml": {
+  "request": "collection LBStockGroupValues 2026-04-01..2026-10-02"
+ },
+ "godown_value_2026-10-02.xml": {
+  "request": "collection LBGodownValues 2026-04-01..2026-10-02"
+ },
+ "group_balance_2026-10-02.xml": {
+  "request": "collection LBGroupBalances 2026-04-01..2026-10-02"
+ },
+ "ledger_balance_2026-10-02.xml": {
+  "request": "collection LBLedgerBalances 2026-04-01..2026-10-02"
+ }
+}

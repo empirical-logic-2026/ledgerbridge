@@ -24,9 +24,10 @@ flowchart LR
         ledgerbridge_accounting_2["<b>masters</b><br/>cost_centres<br/>dimension_values<br/>dimensions<br/>godowns<br/>item_groups<br/>items<br/>parties<br/>units<br/>voucher_types"]
         ledgerbridge_accounting_3["<b>transactions</b><br/>bill_allocations<br/>inventory_lines<br/>line_cost_allocations<br/>line_dimensions<br/>tax_lines<br/>voucher_lines<br/>vouchers"]
         ledgerbridge_accounting_4["<b>field catalogue</b><br/>source_fields"]
+        ledgerbridge_accounting_5["<b>source figures</b><br/>fx_revaluation_snapshots<br/>stock_values"]
     end
     subgraph ledgerbridge_reporting["ledgerbridge_reporting"]
-        ledgerbridge_reporting_planned["PLANNED (M6): reporting views and aggregates<br/>the only database the AI can read"]
+        ledgerbridge_reporting_1["<b>statements, ours and the source's (views on top)</b><br/>statement_lines"]
     end
     end
     migrator -->|"ALL, including DDL,<br/>on every database"| mysql
@@ -35,4 +36,3 @@ flowchart LR
     report_ro -->|"read only"| ledgerbridge_reporting
     ai_ro ==>|"read only:<br/>reporting ONLY"| ledgerbridge_reporting
     classDef planned fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:5 5,color:#4b5563
-    class ledgerbridge_reporting_planned planned

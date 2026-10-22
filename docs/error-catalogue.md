@@ -63,6 +63,9 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-020](#lb-val-020-validation-couldnt-run) | Validation couldn't run | `validation_error` | Error |
 | [LB-VAL-021](#lb-val-021-stock-ledgers-at-the-stock-value) | Stock ledgers at the stock value | `stock_ledger_at_stock_value` | Note |
 | [LB-VAL-022](#lb-val-022-foreign-currency-ledgers-at-book-value) | Foreign-currency ledgers at book value | `foreign_ledgers_at_book_value` | Note |
+| [LB-VAL-023](#lb-val-023-stock-value-changed-in-the-source) | Stock value changed in the source | `stock_value_mismatch` | Error |
+| [LB-VAL-024](#lb-val-024-statement-line-differs-from-the-source) | Statement line differs from the source | `statement_mismatch` | Error |
+| [LB-VAL-025](#lb-val-025-source-statements-couldnt-be-read) | Source statements couldn't be read | `statements_unavailable` | Error |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
 | [LB-SYS-001](#lb-sys-001-unexpected-error) | Unexpected error | `unexpected_error` | Error |
@@ -941,6 +944,67 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Nothing to fix.
 
 **Next step:** `.\dev.ps1 report -Env <env> -Details`
+
+### LB-VAL-023: Stock value changed in the source
+
+`stock_value_mismatch` | Error
+
+**What it means:** The stock value the source reports for a date differs from the one stored for it, so the statements stored for that date were out of date (they are now refreshed).
+
+**Common causes:**
+
+- Vouchers dated on or before that date were entered or altered in the source after the value was stored.
+
+**How to investigate:**
+
+- .\dev.ps1 statements -Env <env> refreshes every month end and year end.
+
+**How to fix:**
+
+- Run a full sync, then validate again.
+
+**Next step:** `.\dev.ps1 sync full -Env <env>`
+
+### LB-VAL-024: Statement line differs from the source
+
+`statement_mismatch` | Error
+
+**What it means:** A line (or the total) of our Trial Balance, Profit & Loss or Balance Sheet differs from the source's own report for the same date.
+
+**Common causes:**
+
+- A ledger balance differs (see the closing balance checks first).
+- The source lays a line out differently from ours (a group in another block).
+
+**How to investigate:**
+
+- ledgerbridge_reporting.v_statement_check lists each line, ours against the source's.
+
+**How to fix:**
+
+- Fix the ledger differences first; otherwise send the line's label and statement.
+
+**Next step:** `.\dev.ps1 statements -Env <env>`
+
+### LB-VAL-025: Source statements couldn't be read
+
+`statements_unavailable` | Error
+
+**What it means:** The source's Trial Balance, Balance Sheet or Profit and Loss couldn't be read, so the statements weren't compared for that date.
+
+**Common causes:**
+
+- The source timed out or stopped answering.
+
+**How to investigate:**
+
+- .\dev.ps1 entity-check -Env <env>
+
+**How to fix:**
+
+- Validate again with TallyPrime idle.
+
+**Next step:** `.\dev.ps1 validate -Env <env>`
 
 
 ## Connection settings
