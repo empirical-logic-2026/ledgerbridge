@@ -5,8 +5,9 @@ Where it fits: validation stores and checks the statements for the dates it vali
 as-of date and each year end); this fills every month end in between, from the books'
 beginning to today, so the reporting views have every month. For each date it reads the
 source's statements (read-only), then core/statements.py stores the source's figures,
-builds ours and compares them. Output is counts and the statements' names only: never
-labels, names or amounts.
+builds ours and compares them. Output is counts and the statements' names only, and a
+summary of the lines that differ in standard names and kinds (core/statement_differences.py):
+never other names or amounts.
 """
 
 from collections.abc import Callable
@@ -19,6 +20,7 @@ from connectors.base import Connector, SourceEntity, SourceStatements
 from core import statements
 from core.dates import DateRule
 from core.models import Connection
+from core.statement_differences import Summary
 from core.validation import financial_year_ends
 
 Progress = Callable[[str], None]
@@ -57,6 +59,7 @@ class FillResult:
     by_statement: dict[str, int] = field(default_factory=dict)  # statement -> differences
     unreadable: int = 0
     not_offered: bool = False
+    summary: Summary = field(default_factory=Summary)  # lines that differ, pilot-safe
 
 
 def fill(
@@ -86,6 +89,7 @@ def fill(
             result.not_offered = True
             return result
         compared = statements.refresh(session, entity_id, connection.id, origin, source)
+        result.summary.add(session, entity_id, source, compared)
         result.dates += 1
         if compared.differences:
             result.differing.append(on)

@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.5 |
-| Date | 2026-10-22 |
+| Version | 1.6 |
+| Date | 2026-10-23 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
 The rulebook: every rule LedgerBridge follows when it converts Tally data and validates it against Tally's own figures. For each rule: **what** it is, **why** (what the pilot showed, in counts only), **how it was proven** (a Tally report, or an experiment on LedgerBridge Test Co reproduced by the seeder), **where** it lives in the code, which **tests** cover it, and its **ADR** in [architecture.md](../architecture.md). The tables and columns named here are described in the [schema reference](../database/schema-reference.md); the problem codes (LB-xxx) in the [error catalogue](../error-catalogue.md).
@@ -334,9 +334,9 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 
 ### 16.1 Statements are laid out as Tally's and match them line by line
 
-- **What:** our Trial Balance, Profit & Loss and Balance Sheet have one line per primary group (its current name), plus Tally's own lines: Cost of Sales (Opening Stock, Add: the purchase groups, Less: Closing Stock), Profit & Loss A/c and Unadjusted Forex Gain/Loss. Each is compared with Tally's own report export line by line (by label, without "Add: " / "Less: ") and in total at the as-of date and every year end (LB-VAL-024); `./dev.ps1 statements` does the same at every month end. Trial balance lines compare their debit and credit totals.
+- **What:** our Trial Balance, Profit & Loss and Balance Sheet have one line per primary group (its current name), plus Tally's own lines: Cost of Sales (Opening Stock, Add: the purchase groups, Less: Closing Stock, then Direct Expenses and any other expense group that affects gross profit, each under its own name), Profit & Loss A/c and Unadjusted Forex Gain/Loss. Direct Incomes is a line of its own, beside the sales. Each is compared with Tally's own report export line by line (by label, without "Add: " / "Less: ") and in total at the as-of date and every year end (LB-VAL-024); `./dev.ps1 statements` does the same at every month end. Trial balance lines compare their debit and credit totals.
 - **Why:** reports must equal what the client sees in Tally (RPT-012).
-- **Proven:** the test company at four dates (books' beginning, two month ends, the as-of date), with integration on and off: every line and total equal.
+- **Proven:** the test company at four dates (books' beginning, two month ends, the as-of date), with integration on and off: every line and total equal. Then, after the statement layout seed (2026-10-23: a Direct Expenses ledger with a 300 payment, a Direct Incomes ledger with a 120 receipt), Tally's Cost of Sales was 12,980 = 2,010 + 16,250 − 5,580 + 300, with "Direct Expenses" listed after Closing Stock, and Direct Incomes a main line: ours equal at both dates recorded. The pilot's steady two Profit & Loss differences per date (Cost of Sales and the total) were this.
 - **Code:** `core/statements.py`, `connectors/tally/reports.py`, `connector.source_statements`.
 - **Tests:** `tests/test_statements.py`.
 - **ADR:** ADR-040.
@@ -346,27 +346,36 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 - **What:** the opening and closing stock are those of Tally's Profit and Loss, stored in `stock_values`. Integrated: the stock ledgers are left out and the stock appears at its opening value in the Trial Balance and its closing value in the Balance Sheet (Current Assets). Not integrated: the stock ledgers are ordinary ledgers (their balances are Tally's stock). The stored value is checked against Tally's at each date validated (LB-VAL-023).
 - **Why:** with integration off Tally takes the stock ledger's balances (1,500), not the items' values (2,010 / 5,580): following Tally's own figures keeps our statements equal whatever the setting.
 - **Proven:** the recordings above; the connector reads Yes and No.
-- **Code:** `core/statements.py` (`_Figures`), `core/validation.py` (`_statements`, `_stock_value`).
+- **Code:** `core/statements.py` (`Figures`), `core/validation.py` (`_statements`, `_stock_value`).
 - **Tests:** `tests/test_statements.py`.
 
 ### 16.3 Ledgers directly under Primary are Profit & Loss A/c
 
 - **What:** Tally's Profit & Loss A/c line on the Balance Sheet is the balance of the ledgers directly under Primary (Opening Balance) plus the period's profit (Current Period): liabilities side for a profit, assets side for a loss. In the Trial Balance they are listed by name when not zero.
-- **Proven:** the test company: Profit & Loss A/c equal to the period's loss at every date.
+- **Proven:** the test company: Profit & Loss A/c equal to the period's loss at every date; after the seed gave Profit & Loss A/c an opening balance (3,000 Cr, balanced by a fixed asset), Tally's Balance Sheet line was that opening plus the period's loss (4,121 Dr), still one line in its export (no Opening Balance or Current Period lines), and the Trial Balance listed the account at 3,000 Cr. How the account looks after a year end is still unproven (the test company has none): the summary below tests it on the pilot.
 
 ### 16.4 Foreign-currency ledgers at Tally's revalued balance
 
-- **What:** in the statements, a foreign-currency ledger counts at the balance Tally reports (revalued at current rates), stored in `fx_revaluation_snapshots`; the difference to its book value is one "Unadjusted Forex Gain/Loss" line, as in Tally's reports. Validation still compares the ledger itself at book value (rule 8).
-- **Proven:** the test company's dollar customer: 0 revalued, 8,200 book, the line 8,200 Dr.
+- **What:** in the statements, a foreign-currency ledger counts at the balance Tally reports (revalued at current rates, read for the same period and date as the statements), stored in `fx_revaluation_snapshots`; the difference to its book value is one "Unadjusted Forex Gain/Loss" line, as in Tally's reports. In the Trial Balance that line's debit is the ledgers' losses and its credit their gains, ledger by ledger (book value above the revalued balance is a loss); the Balance Sheet shows the net. Validation still compares the ledger itself at book value (rule 8).
+- **Proven:** the test company's dollar customer: 0 revalued, 8,200 book, the line 8,200 Dr. After the seed added a dollar vendor with an expense entered in rupees (4,100 book, 0 revalued: a gain), Tally's Trial Balance showed the line as 8,200 Dr and 4,100 Cr, its Balance Sheet 4,100 Dr; ours equal. The pilot's steady four Trial Balance differences per date (the line's debit and credit, both totals) were this.
+- **Code:** `core/statements.py` (`Figures.forex`, `trial_balance`).
 
 ### 16.5 A difference in opening balances is a note
 
 - **What:** when the openings don't total zero (e.g. not integrated: the items' opening value 2,010 against the stock ledger's 1,500, a difference of 510), Tally's exported Trial Balance and Balance Sheet don't balance and show no line for it. Ours add "Difference in opening balances" as a detail line (not compared), so ours balance and still equal Tally's line by line.
 
+### 16.6 A pilot-safe summary of the lines that differ
+
+- **What:** when statements differ, validation and `./dev.ps1 statements` print, per company, one line per statement line that differs: its label (the statements' own lines and Tally's reserved group names as they are; a renamed reserved group as "<reserved name> (renamed)", any other group as "a custom group under <its nearest reserved group>", a ledger directly under Primary as such, anything else as "a line not recognised"), whether the line is missing on one side or has a different amount, on how many dates, and which tested amounts the difference equals at how many of them: Direct Expenses, Direct Incomes, the opening and closing stock, the stock ledgers' opening and closing, the stock gap (the items' own value against the stock ledgers', at the books' beginning and at the date), the foreign-currency revaluation and its losses and gains, Tally's own Unadjusted Forex Gain/Loss, Profit & Loss A/c's own balance, the net profit, the difference in opening balances, and after a year end the profit up to it and since, and the stock stored for it. Never other names, never amounts.
+- **Why:** the pilot's statement differences can't be shown (names and amounts); the summary says which rule a difference follows, so the layout can be corrected from counts alone.
+- **Code:** `core/statement_differences.py` (`Labels`, `tested_amounts`, `last_year_end`, `Summary`), `core/validation.py` (`_statements`), `workers/statements.py`, `workers/cli.py` (`_print_statement_summary`).
+- **Tests:** `tests/test_statements.py` (`test_the_summary_names_each_line_safely_and_what_it_equals`, `test_validation_prints_the_summary`, `test_the_last_year_end_gives_its_profit_and_stock`).
+
 ## Change log
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-23 | 1.6 | Section 16: Direct Expenses inside Cost of Sales; the Trial Balance's forex line with losses as its debit and gains as its credit; Profit & Loss A/c with an opening balance; 16.6 the pilot-safe summary of differences. |
 | 2026-10-22 | 1.5 | Section 14: year-end checks use the 31st or the 2nd, never the 1st, like statements; Section 12: the 255-character field path limitation. |
 | 2026-10-22 | 1.4 | Section 16: statements from the source's own figures; rule 7 without integration; checks LB-VAL-023 to LB-VAL-025. |
 | 2026-10-22 | 1.3 | Values with invalid characters that are too long; long names of deleted rows. |

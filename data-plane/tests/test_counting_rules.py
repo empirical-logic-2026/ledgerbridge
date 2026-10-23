@@ -254,7 +254,8 @@ def test_seed_reproduces_tallys_figures() -> None:
     assert balances["Salary"] == (Decimal("15000"), "Dr")  # optional 400 out
     assert balances["Salary Payable"] == (Decimal("15361"), "Cr")  # with the 11 and 13
     assert balances["Electricity"] == (Decimal("4500"), "Dr")  # memorandum 250 out
-    assert balances["Cash"] == (Decimal("27404"), "Dr")  # less the alias voucher's 21
+    # Less the alias voucher's 21; the direct expense (300 out) and income (120 in).
+    assert balances["Cash"] == (Decimal("27224"), "Dr")
     # The invoices post (+1,500, +2,000, debit note -250), the notes don't.
     assert balances["Purchases"] == (Decimal("16250"), "Dr")
     assert balances["Security Deposit"] == (Decimal("12000"), "Dr")

@@ -1,5 +1,6 @@
 """Replays the test company's statements and stock values, recorded with accounts integrated
-with inventory and without (tests/fixtures/tally/rules/stock_values/, 2026-10-22).
+with inventory and without (tests/fixtures/tally/rules/stock_values/, 2026-10-22), and after
+the statement layout seed (tests/fixtures/tally/rules/statement_layout/, 2026-10-23).
 
 Answers report requests (Trial Balance, Balance Sheet, Profit and Loss, Stock Summary) and
 the collections recorded with them by their request id and the period's To date.
@@ -13,6 +14,7 @@ import httpx
 from tests.conftest import FIXTURES
 
 FOLDER = FIXTURES / "tally" / "rules" / "stock_values"
+LAYOUT = FIXTURES / "tally" / "rules" / "statement_layout"
 _ID = re.compile(r"<ID>([^<]+)</ID>")
 _TO = re.compile(r'<SVTODATE TYPE="Date">(\d{4})(\d{2})(\d{2})</SVTODATE>')
 FILES = {
@@ -28,8 +30,8 @@ FILES = {
 }
 
 
-def replay(case: str) -> httpx.MockTransport:
-    folder: Path = FOLDER / case
+def replay(case: str, root: Path = FOLDER) -> httpx.MockTransport:
+    folder: Path = root / case
 
     def answer(request: httpx.Request) -> httpx.Response:
         body = request.read().decode("utf-8")

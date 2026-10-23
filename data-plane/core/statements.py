@@ -15,15 +15,19 @@ ADR-040, decision 2026-10-22):
   stock appears at the opening value in the Trial Balance and at the closing value in the
   Balance Sheet. Not integrated: the stock ledgers are ordinary ledgers.
 - **Foreign-currency ledgers:** at the balance the source reports (revalued at current
-  rates); the difference to their book value is one "Unadjusted Forex Gain/Loss" line.
+  rates); the difference to their book value is one "Unadjusted Forex Gain/Loss" line. In
+  the Trial Balance its debit is the ledgers' losses and its credit their gains, ledger by
+  ledger; the Balance Sheet shows the net (recorded on the test company, 2026-10-23).
 - **Ledgers directly under Primary** (the source's profit carriers, e.g. Tally's Profit &
   Loss A/c) belong to the Profit & Loss A/c line: their balance (Opening Balance) plus the
   period's profit (Current Period); on the liabilities side for a profit, the assets side
   for a loss.
 
 Lines are one per primary group (the group's current name), plus the source's own lines
-(Cost of Sales with Opening Stock, purchases and Closing Stock; Profit & Loss A/c;
-Unadjusted Forex Gain/Loss). Our extra lines (Gross Profit, Net Profit, the two parts of
+(Cost of Sales with Opening Stock, purchases, Closing Stock and then the other expenses
+that affect gross profit, e.g. Direct Expenses; Profit & Loss A/c; Unadjusted Forex
+Gain/Loss). Direct Incomes stay a line of their own (recorded on the test company,
+2026-10-23). Our extra lines (Gross Profit, Net Profit, the two parts of
 Profit & Loss A/c, a difference in opening balances) are `detail`, never compared.
 """
 
@@ -65,6 +69,7 @@ class _Ledger:
     name: str
     top: int  # the primary group it rolls up to
     kind: str
+    opening: Decimal
     balance: Decimal
 
 
@@ -86,6 +91,8 @@ class Difference:
     label: str
     ours: Decimal
     source: Decimal
+    part: str = "amount"  # amount; a trial balance line's debit or credit
+    kind: str = "amount"  # amount, missing_ours, missing_source, total
 
 
 @dataclass
@@ -140,7 +147,7 @@ def _books(
         .subquery()
     )
     ledgers = [
-        _Ledger(lid, key, name, top(gid), kind, Decimal(opening) + Decimal(moved))
+        _Ledger(lid, key, name, top(gid), kind, Decimal(opening), Decimal(opening) + Decimal(moved))
         for lid, key, name, gid, kind, opening, moved in session.execute(
             select(
                 A.Ledger.id,
@@ -168,7 +175,7 @@ def _books(
 
 
 @dataclass
-class _Figures:
+class Figures:
     """Our books and the source's figures for one date, sorted the way the statements need."""
 
     ledgers: list[_Ledger]
@@ -194,37 +201,54 @@ class _Figures:
             and not (self.integrated and ledger.kind == "stock")
         ]
 
+    def totals(self) -> dict[int, Decimal]:
+        """Each primary group's total of the ledgers counted in its line."""
+        totals: dict[int, Decimal] = defaultdict(lambda: ZERO)
+        for ledger in self.counted():
+            totals[ledger.top] += self.value(ledger)
+        return totals
+
     def stock_group(self) -> int | None:
         """The primary group the stock ledgers roll up to (e.g. Current Assets)."""
         return next((x.top for x in self.ledgers if x.kind == "stock"), None)
 
+    def forex(self) -> list[Decimal]:
+        """Each foreign-currency ledger's unadjusted gain or loss: its book value less the
+        balance the source reports (a loss is a debit, a gain a credit)."""
+        return [
+            x.balance - self.source.revalued[x.key]
+            for x in self.ledgers
+            if x.key in self.source.revalued
+        ]
+
     def unadjusted(self) -> Decimal:
-        return sum(
-            (
-                x.balance - self.source.revalued[x.key]
-                for x in self.ledgers
-                if x.key in self.source.revalued
-            ),
-            ZERO,
-        )
+        return sum(self.forex(), ZERO)
 
     def ordered_groups(self, natures: tuple[str, ...]) -> list[_Group]:
         found = [g for g in self.groups.values() if g.nature in natures]
         return sorted(found, key=lambda g: (NATURE_ORDER.get(g.nature or "", 9), g.id))
 
 
+def figures(session: Session, entity_id: int, source: SourceStatements) -> Figures:
+    """Our books as of the source's date, with the source's figures."""
+    ledgers, groups = _books(session, entity_id, source.as_of)
+    return Figures(ledgers, groups, source)
+
+
 def build(
     session: Session, entity_id: int, source: SourceStatements
 ) -> list[tuple[str | None, StatementLine]]:
     """Our three statements as of the source's date: (section, line) pairs."""
-    ledgers, groups = _books(session, entity_id, source.as_of)
-    figures = _Figures(ledgers, groups, source)
-    profit_loss = _profit_loss(figures)
-    net = sum((line.amount for _, line in profit_loss if line.level == "main"), ZERO)
-    return [*_trial_balance(figures), *profit_loss, *_balance_sheet(figures, net)]
+    f = figures(session, entity_id, source)
+    return [*trial_balance(f), *_profit_loss(f), *_balance_sheet(f, net_profit(f))]
 
 
-def _trial_balance(f: _Figures) -> list[tuple[str | None, StatementLine]]:
+def net_profit(f: Figures) -> Decimal:
+    """The period's result as our Profit & Loss shows it (canonical: a loss is positive)."""
+    return sum((line.amount for _, line in _profit_loss(f) if line.level == "main"), ZERO)
+
+
+def trial_balance(f: Figures) -> list[tuple[str | None, StatementLine]]:
     by_group: dict[int, list[Decimal]] = defaultdict(list)
     for ledger in f.counted():
         by_group[ledger.top].append(f.value(ledger))
@@ -240,9 +264,8 @@ def _trial_balance(f: _Figures) -> list[tuple[str | None, StatementLine]]:
     for ledger in f.ledgers:
         if ledger.key in f.source.profit_carriers and ledger.balance:
             lines.append(_tb_line(ledger.name, [ledger.balance]))
-    unadjusted = f.unadjusted()
-    if unadjusted:
-        lines.append(_tb_line(UNADJUSTED_FOREX, [unadjusted]))
+    if any(f.forex()):  # one line: the losses as its debit, the gains as its credit
+        lines.append(_tb_line(UNADJUSTED_FOREX, f.forex()))
     total = sum((line.amount for line in lines), ZERO)
     if total:  # ours don't balance: the difference in opening balances, as a note
         lines.append(StatementLine("trial_balance", OPENING_DIFFERENCE, "detail", -total))
@@ -255,10 +278,8 @@ def _tb_line(label: str, values: list[Decimal]) -> StatementLine:
     return StatementLine("trial_balance", label, "main", debit - credit, debit, credit)
 
 
-def _profit_loss(f: _Figures) -> list[tuple[str | None, StatementLine]]:
-    totals: dict[int, Decimal] = defaultdict(lambda: ZERO)
-    for ledger in f.counted():
-        totals[ledger.top] += f.value(ledger)
+def _profit_loss(f: Figures) -> list[tuple[str | None, StatementLine]]:
+    totals = f.totals()
     groups = f.ordered_groups(("income", "expense"))
     gross = [g for g in groups if g.affects_gross_profit]
     purchases = [g for g in gross if g.standard_code == PURCHASES]
@@ -268,21 +289,27 @@ def _profit_loss(f: _Figures) -> list[tuple[str | None, StatementLine]]:
     def main(section: str, label: str, amount: Decimal) -> None:
         lines.append((section, StatementLine("profit_loss", label, "main", amount)))
 
+    def sub(label: str, amount: Decimal) -> None:
+        lines.append(("gross", StatementLine("profit_loss", label, "sub", amount)))
+
     for group in gross:
         if group.nature == "income":
             main("gross", group.name, totals[group.id])
-    if has_stock:
+    expenses = [g for g in gross if g.nature == "expense"]
+    if has_stock:  # Cost of Sales: stock, purchases, then the other direct expenses
         opening = f.source.opening_stock or ZERO
         closing = f.source.closing_stock or ZERO
-        bought = sum((totals[g.id] for g in purchases), ZERO)
-        main("gross", "Cost of Sales :", opening + bought - closing)
-        lines.append(("gross", StatementLine("profit_loss", "Opening Stock", "sub", opening)))
+        direct = [g for g in expenses if g not in purchases]
+        spent = sum((totals[g.id] for g in expenses), ZERO)
+        main("gross", "Cost of Sales :", opening + spent - closing)
+        sub("Opening Stock", opening)
         for group in purchases:
-            label = f"Add: {group.name}"
-            lines.append(("gross", StatementLine("profit_loss", label, "sub", totals[group.id])))
-        lines.append(("gross", StatementLine("profit_loss", "Less: Closing Stock", "sub", closing)))
-    for group in gross:
-        if group.nature == "expense" and (group not in purchases or not has_stock):
+            sub(f"Add: {group.name}", totals[group.id])
+        sub("Less: Closing Stock", closing)
+        for group in direct:
+            sub(group.name, totals[group.id])
+    else:
+        for group in expenses:
             main("gross", group.name, totals[group.id])
     gross_profit = sum((line.amount for _, line in lines if line.level == "main"), ZERO)
     lines.append(("gross", StatementLine("profit_loss", "Gross Profit", "detail", gross_profit)))
@@ -294,10 +321,8 @@ def _profit_loss(f: _Figures) -> list[tuple[str | None, StatementLine]]:
     return lines
 
 
-def _balance_sheet(f: _Figures, net: Decimal) -> list[tuple[str | None, StatementLine]]:
-    totals: dict[int, Decimal] = defaultdict(lambda: ZERO)
-    for ledger in f.counted():
-        totals[ledger.top] += f.value(ledger)
+def _balance_sheet(f: Figures, net: Decimal) -> list[tuple[str | None, StatementLine]]:
+    totals = f.totals()
     stock = f.stock_group()
     if f.integrated and stock is not None:
         totals[stock] += f.source.closing_stock or ZERO  # the stock at its closing value
@@ -350,18 +375,23 @@ def compare(
         for key in sorted(set(mine) | set(source)):
             a, b = mine.get(key), source.get(key)
             label = (a or b)[0]
+            kind = "missing_ours" if a is None else "missing_source" if b is None else "amount"
             for part in _parts(statement):
                 x = a[1][part] if a else ZERO
                 y = b[1][part] if b else ZERO
                 compared += 1
                 if abs(x - y) > tolerance:
-                    differences.append(Difference(statement, f"{key}:{part}", label, x, y))
+                    differences.append(
+                        Difference(statement, f"{key}:{part}", label, x, y, part, kind)
+                    )
         for part in _parts(statement):
             x = sum((v[1][part] for v in mine.values()), ZERO)
             y = sum((v[1][part] for v in source.values()), ZERO)
             compared += 1
             if abs(x - y) > tolerance:
-                differences.append(Difference(statement, f"total:{part}", "total", x, y))
+                differences.append(
+                    Difference(statement, f"total:{part}", "total", x, y, part, "total")
+                )
     return compared, differences
 
 
