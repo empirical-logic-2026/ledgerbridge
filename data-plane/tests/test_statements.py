@@ -312,3 +312,47 @@ def test_the_last_year_end_gives_its_profit_and_stock(
     assert tested["the foreign-currency losses"] == Decimal(8200)
     assert tested["the foreign-currency gains"] == Decimal(-4100)
     assert tested["Profit & Loss A/c's own balance"] == Decimal(-3000)
+
+
+def test_tally_splits_a_trial_balance_line_ledger_by_ledger(
+    db: Session, layout_books: S.Connection
+) -> None:
+    """Current Liabilities holds Duties & Taxes with input tax ledgers (debit) and output
+    tax ledgers (credit): Tally's Trial Balance shows 2,340 Dr and 26,129 Cr, ledger by
+    ledger. Netting each sub-group first (the summary's tested split) would give 0 Dr."""
+    from core.statement_differences import netted_split
+
+    entity_id = db.scalars(select(A.Entity)).one().id
+    source = _source("integrated", AS_OF, LAYOUT)
+    f = statements.figures(db, entity_id, source)
+    line = next(x for _, x in statements.trial_balance(f) if x.label == "Current Liabilities")
+    theirs = next(
+        x for x in source.lines if x.statement == "trial_balance" and x.label == line.label
+    )
+    assert (
+        (line.debit, line.credit)
+        == (theirs.debit, theirs.credit)
+        == (Decimal(2340), Decimal(26129))
+    )
+    group = next(g.id for g in f.groups.values() if g.name == "Current Liabilities")
+    assert netted_split(f, group) == {"debit": Decimal(0), "credit": Decimal(23789)}
+
+
+def test_stock_candidates_are_read_after_the_first_year_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Integrated, after a year end: Tally's Stock-in-Hand group, the items' value and the
+    current financial year's own closing stock, for the summary. Before it: none."""
+    connector = TallyConnector.from_config(
+        {"url": "http://tally.test:9000", "educational": "yes"}, transport=replay("integrated")
+    )
+    entity = connector.list_entities()[0]
+    assert connector._year_start(entity, AS_OF) == date(2026, 4, 1)
+    assert connector.source_statements(entity, AS_OF).stock_candidates == {}  # first year
+    monkeypatch.setattr(connector, "_year_start", lambda entity, on: date(2026, 6, 1))
+    found = connector._stock_candidates(entity, (entity.books_from, AS_OF))
+    assert found == {
+        "Stock-in-Hand's closing balance": Decimal(5580),
+        "the stock items' closing value": Decimal(5580),
+        "this financial year's closing stock": Decimal(5580),  # the recording's own P&L
+    }

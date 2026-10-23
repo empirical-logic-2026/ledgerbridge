@@ -174,7 +174,9 @@ class SourceStatements:
     items' own opening and closing value when the statements' stock is something else
     (accounts not integrated with inventory: the stock ledgers), and `standard_names`, the
     source's own names that may be shown outside the client's machine (its statements' own
-    lines and its reserved group names)."""
+    lines and its reserved group names); `stock_candidates`, other closing stock figures the
+    source reports for the date, by a name safe to show (accounts integrated with inventory,
+    after the first financial year end: which one its Balance Sheet uses is being found)."""
 
     as_of: date
     lines: tuple[StatementLine, ...]
@@ -186,6 +188,7 @@ class SourceStatements:
     integrated: bool | None = None
     item_values: tuple[Decimal, Decimal] | None = None
     standard_names: frozenset[str] = frozenset()
+    stock_candidates: Mapping[str, Decimal] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

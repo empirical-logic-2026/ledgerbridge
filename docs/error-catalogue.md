@@ -971,6 +971,8 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **What it means:** A line (or the total) of our Trial Balance, Profit & Loss or Balance Sheet differs from the source's own report for the same date.
 
+**Usually a consequence of:** LB-VAL-004, LB-VAL-005, LB-VAL-006, LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
+
 **Common causes:**
 
 - A ledger balance differs (see the closing balance checks first).
@@ -978,11 +980,12 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **How to investigate:**
 
+- The summary printed by validate and statements names each differing line (standard names only) and what the difference equals.
 - ledgerbridge_reporting.v_statement_check lists each line, ours against the source's.
 
 **How to fix:**
 
-- Fix the ledger differences first; otherwise send the line's label and statement.
+- Fix the ledger differences first; otherwise send the summary's lines.
 
 **Next step:** `.\dev.ps1 statements -Env <env>`
 

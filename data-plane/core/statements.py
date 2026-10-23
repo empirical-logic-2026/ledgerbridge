@@ -71,6 +71,7 @@ class _Ledger:
     kind: str
     opening: Decimal
     balance: Decimal
+    branch: int | None = None  # the sub-group directly under `top` it sits in; None: in top
 
 
 @dataclass
@@ -136,6 +137,14 @@ def _books(
             gid = groups[gid][0]
         return gid
 
+    def branch(gid: int) -> int | None:
+        """The group directly under the primary group on the way up (None: the primary)."""
+        below, seen = None, set()
+        while groups.get(gid, (None,))[0] is not None and gid not in seen:
+            seen.add(gid)
+            below, gid = gid, groups[gid][0]
+        return below
+
     movements = (
         select(A.VoucherLine.ledger_id, func.sum(A.VoucherLine.amount).label("moved"))
         .where(
@@ -147,7 +156,16 @@ def _books(
         .subquery()
     )
     ledgers = [
-        _Ledger(lid, key, name, top(gid), kind, Decimal(opening), Decimal(opening) + Decimal(moved))
+        _Ledger(
+            lid,
+            key,
+            name,
+            top(gid),
+            kind,
+            Decimal(opening),
+            Decimal(opening) + Decimal(moved),
+            branch(gid),
+        )  # fmt: skip
         for lid, key, name, gid, kind, opening, moved in session.execute(
             select(
                 A.Ledger.id,

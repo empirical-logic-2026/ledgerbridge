@@ -19,7 +19,7 @@ of the dates each tested amount explains: counts, standard names and kinds only,
 other names or amounts.
 """
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from decimal import Decimal
@@ -180,8 +180,35 @@ def tested_amounts(f: Figures, year_end: YearEnd) -> dict[str, Decimal]:
         "the stock at the last year end less the opening stock": _less(
             year_end.stock, source.opening_stock
         ),
+        "the foreign-currency ledgers' openings": sum(
+            (x.opening for x in f.ledgers if x.key in source.revalued), ZERO
+        ),
+        **{
+            f"the closing stock less {name}": _less(source.closing_stock, amount)
+            for name, amount in source.stock_candidates.items()
+        },
     }
     return {name: amount for name, amount in found.items() if amount}
+
+
+NETTED = "the split with each sub-group netted"
+
+
+def netted_split(f: Figures, group_id: int) -> dict[str, Decimal]:
+    """A Trial Balance group line's debit and credit if each sub-group directly under the
+    group were netted first (ledgers directly in the group stay one by one); ours splits
+    ledger by ledger, as recorded on the test company (2026-10-23)."""
+    sums: dict[object, Decimal] = defaultdict(lambda: ZERO)
+    for x in f.counted():
+        if x.top == group_id:
+            sums[x.branch if x.branch is not None else ("ledger", x.id)] += f.value(x)
+    if f.integrated and f.source.opening_stock is not None and f.stock_group() == group_id:
+        branch = next((x.branch for x in f.ledgers if x.kind == "stock"), None)
+        sums[branch if branch is not None else "stock"] += f.source.opening_stock
+    return {
+        "debit": sum((v for v in sums.values() if v > 0), ZERO),
+        "credit": -sum((v for v in sums.values() if v < 0), ZERO),
+    }
 
 
 def _is_forex(label: str) -> bool:
@@ -259,10 +286,16 @@ class Summary:
         tested = tested_amounts(f, last_year_end(session, entity_id, f))
         labels = Labels(session, entity_id, f)
         close = max(self.tolerance, Decimal("0.01"))
+        groups = {match_key(g.name): g.id for g in f.groups.values()}
         for difference in result.differences:
             row = self.rows.setdefault(_key(difference, labels), _Row())
             row.dates.add(source.as_of)
-            row.equals.update(equals(difference.ours - difference.source, tested, close))
+            line = dict(tested)
+            group = groups.get(match_key(difference.label))
+            if difference.statement == "trial_balance" and group is not None:
+                netted = netted_split(f, group)[difference.part]
+                line[NETTED] = difference.ours - netted  # the source's equals the netted split
+            row.equals.update(equals(difference.ours - difference.source, line, close))
 
     def lines(self) -> list[str]:
         """One line per differing statement line and kind, statement by statement, the most

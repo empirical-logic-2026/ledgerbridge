@@ -657,7 +657,46 @@ class TallyConnector:
             # value then tells the gap between the two.
             item_values=None if integrated else self._item_values(entity, period),
             standard_names=mapping.RESERVED_GROUPS | reports.OWN_LINES,
+            stock_candidates=self._stock_candidates(entity, period) if integrated else {},
         )
+
+    def _stock_candidates(
+        self, entity: SourceEntity, period: tuple[date, date]
+    ) -> dict[str, Decimal]:
+        """Closing stock figures Tally reports besides its Profit and Loss's, for the summary
+        of differences: its Stock-in-Hand group's closing balance, the stock items' closing
+        value, and the closing stock of the current financial year's own Profit and Loss.
+        Read only after the first financial year end (pilot 2026-10-23: an integrated
+        company's Balance Sheet stock differed from its Profit and Loss's from then on)."""
+        start = self._year_start(entity, period[1])
+        if start is None or start <= period[0]:
+            return {}
+        found: dict[str, Decimal] = {}
+        groups = self._group_balances(entity, period)
+        stock = next((g for g in groups if g.reserved == STOCK_IN_HAND and g.reported), None)
+        if stock is not None:
+            found["Stock-in-Hand's closing balance"] = stock.closing
+        found["the stock items' closing value"] = self._item_values(entity, period)[1]
+        year = reports.profit_and_loss(
+            self._report(entity, envelopes.PROFIT_AND_LOSS, (start, period[1]))
+        )
+        closing = reports.stock_values(year)[1]
+        if closing is not None:
+            found["this financial year's closing stock"] = closing
+        return found
+
+    def _year_start(self, entity: SourceEntity, on: date) -> date | None:
+        """The start of the financial year `on` falls in (the company's STARTINGFROM month
+        and day), or None when Tally doesn't say."""
+        body = self._post(envelopes.collection_request(envelopes.COMPANIES))
+        for company in parser.objects(parser.parse_response(body), envelopes.COMPANIES.object_tag):
+            if parser.source_key(company) == entity.key:
+                first = parser.tally_date(parser.text_of(company, "STARTINGFROM"))
+                if first is None:
+                    return None
+                start = first.replace(year=on.year)
+                return start if start <= on else start.replace(year=on.year - 1)
+        return None
 
     def _report(self, entity: SourceEntity, report: str, period: tuple[date, date]) -> bytes:
         return self._company_post(
