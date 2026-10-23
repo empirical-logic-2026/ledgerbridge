@@ -643,6 +643,7 @@ class TallyConnector:
             *self._stock_figures(entity, envelopes.STOCK_GROUP_VALUES, "stock_group", period),
             *self._stock_figures(entity, envelopes.GODOWN_VALUES, "godown", period),
         ]
+        integrated = self._integrated(entity)
         return SourceStatements(
             as_of=as_of,
             lines=tuple(lines),
@@ -651,7 +652,11 @@ class TallyConnector:
             stock=(StockFigure("total", "", opening, closing), *stock),
             revalued=revalued,
             profit_carriers=frozenset(carriers),
-            integrated=self._integrated(entity),
+            integrated=integrated,
+            # Not integrated, the statements' stock is the stock ledgers': the items' own
+            # value then tells the gap between the two.
+            item_values=None if integrated else self._item_values(entity, period),
+            standard_names=mapping.RESERVED_GROUPS | reports.OWN_LINES,
         )
 
     def _report(self, entity: SourceEntity, report: str, period: tuple[date, date]) -> bytes:

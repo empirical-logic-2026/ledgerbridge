@@ -48,7 +48,8 @@ def test_expected_trial_balance_for_anchors() -> None:
     assert balances["Rent"] == (Decimal("1436"), "Dr")  # with EDITLOG-ALTER-1 (37)
     assert balances["Party Kilo"] == (Decimal("21"), "Dr")  # named by its alias
     # contra, receipts, payments, altered 1,500, post-dated 75; the memorandum's 250 excluded
-    assert balances["Cash"] == (Decimal("27404"), "Dr")  # less the alias voucher's 21
+    # Less the alias voucher's 21; the direct expense (300 out) and income (120 in).
+    assert balances["Cash"] == (Decimal("27224"), "Dr")
     assert balances["Capital"] == (Decimal("50000"), "Cr")
     # 19,360 before ALTER-2 (receipt altered from 3,000 to 5,900); DEL-1 is deleted.
     assert balances["Test Bank Current A/c"] == (Decimal("25260"), "Dr")
@@ -184,7 +185,8 @@ def test_seed_creates_everything_then_second_run_changes_nothing() -> None:
     tally = FakeTally()
     first = seed(SEED, COMPANY, tally.read, tally, log=lambda _: None)
     assert first.created["vouchers"] == len(SEED.vouchers)
-    assert first.created["ledgers"] == len(SEED.ledgers) - 1  # Cash is predefined
+    predefined = sum(1 for x in SEED.ledgers if x.predefined)  # Cash, Profit & Loss A/c
+    assert first.created["ledgers"] == len(SEED.ledgers) - predefined
     assert "opening balance of Cash" in first.altered
     assert first.cancelled == ["CANCEL-1"]
     assert "voucher ALTER-1" in first.altered

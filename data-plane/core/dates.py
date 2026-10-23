@@ -61,6 +61,21 @@ class DateRule:
         return f"{self.reason}: only days {days} of a month give reliable balances"
 
 
+def financial_year_ends(books_from: date | None, fy_start_month: int, as_of: date) -> list[date]:
+    """Financial year ends after books_from and before as_of."""
+    if books_from is None:
+        return []
+    ends = []
+    year = books_from.year if books_from.month < fy_start_month else books_from.year + 1
+    while True:
+        end = date(year, fy_start_month, 1) - timedelta(days=1)
+        if end >= as_of:
+            return ends
+        if end >= books_from:
+            ends.append(end)
+        year += 1
+
+
 EVERY_DAY = DateRule()
 EDUCATIONAL = DateRule(EDUCATIONAL_DAYS, "Educational mode")
 

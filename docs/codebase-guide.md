@@ -161,6 +161,7 @@ ledgerbridge/
 | `db.py` | Opens database connections, one kind per database user (app, migrator, report, AI), each with only the rights it needs. |
 | `models/` | The database tables as Python classes, one file per database: `source.py` (raw layer), `accounting.py` (the standard accounting model, with the source figures `stock_values` and `fx_revaluation_snapshots`), `reporting.py` (statement lines for the reporting views), `system.py` (connections, sync runs, validation, users, alerts, settings); `base.py` (shared column types and the source-tracking columns); `schemas.py` (the four database names). The tables are described for people in [schema.md](schema.md). |
 | `statements.py` | The Trial Balance, Profit & Loss and Balance Sheet laid out as the source's, built from our ledgers and the source's own stock and revaluation figures (`build`), compared with the source's line by line (`compare`), both stored in `ledgerbridge_reporting.statement_lines` (`refresh`). |
+| `statement_differences.py` | A pilot-safe summary of the statement lines that differ from the source's: safe labels (standard names; custom groups described by where they sit), missing or different, on how many dates, and which tested amounts each difference equals (Direct Expenses, stock, forex, the last year end's profit and stock). Printed by validation and `statements`. |
 | `canonical.py` | The standard ("canonical") records every connector produces: company, group, ledger, voucher, voucher line and so on. |
 | `raw_store.py` | Stores what a source sends, unchanged, in the raw records table, skipping copies that haven't changed. |
 | `transform.py` | Turns raw records into the accounting tables: in batches, in the right order (groups before ledgers before vouchers), updating rather than duplicating, replacing a voucher's lines as a whole, and failing only the record at fault. `Transformer.run` drives it per entity; one writer per kind of record (`_groups`, `_ledgers`, `_simple` for the small masters, `_vouchers`), with `_item_rows` fitting a record's rows, `_voucher_refs` resolving a voucher's names, `_prepare` building its rows and `_insert_children` writing lines, bills, cost allocations, tax lines and dimensions. `mark_deleted` soft-deletes rows whose source object is gone. |
@@ -388,6 +389,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-23 | 0.22 | `core/statement_differences.py` (pilot-safe summary of statement differences); recordings in `tests/fixtures/tally/rules/statement_layout/`. |
 | 2026-10-22 | 0.21 | `core/statements.py`, `core/models/reporting.py`, `connectors/tally/reports.py`, `workers/statements.py`, migration 0017; `tests/test_statements.py` with `tests/stock_replay.py`. |
 | 2026-10-19 | 0.20 | `dev.ps1`: shared helpers for background jobs, captured output and tool containers. |
 | 2026-10-19 | 0.19 | `workers/` lighter review: every module says where it fits. |

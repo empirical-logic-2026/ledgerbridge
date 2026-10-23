@@ -28,7 +28,12 @@ Tally's own balances, 2026-10-14; schema.md 7.4):
   LIMA" and "Party  Lima": Tally took each for the existing ledger (its name list keeps the
   last), and refused a ledger whose alias was another ledger's name;
 - effective dates (2026-10-15): journals and sales dated on one side of a month end and
-  effective on the other, regular and optional: Tally counts them by their date.
+  effective on the other, regular and optional: Tally counts them by their date;
+- statement layout (2026-10-23): a Direct Expenses and a Direct Incomes ledger with a
+  voucher each (where Tally's Profit and Loss puts them), a vendor kept in US dollars with
+  an expense entered in rupees (its unadjusted forex is a gain, the customer's a loss), and
+  an opening balance on Profit & Loss A/c balanced by a fixed asset (Tally's Balance Sheet
+  then shows the account's Opening Balance and Current Period, as after a year end).
 """
 
 from dataclasses import dataclass, field, replace
@@ -546,6 +551,23 @@ FX_VOUCHERS = (
     ),
 )  # fmt: skip
 
+# --- statement layout (2026-10-23): the lines Tally's own statements show for direct
+# expenses and incomes, foreign-currency gains and losses, and an accumulated profit.
+FX_VENDOR = "Vendor Echo USD"
+LAYOUT_LEDGERS = (
+    Ledger("Freight Inward", "Direct Expenses"),
+    Ledger("Job Work Charges", "Direct Incomes"),
+    Ledger(FX_VENDOR, "Sundry Creditors", currency="$"),
+    Ledger("Consulting Fees", "Indirect Expenses"),
+    Ledger("Profit & Loss A/c", "Primary", _d("3000"), "Cr", predefined=True),
+    Ledger("Furniture", "Fixed Assets", _d("3000"), "Dr"),
+)
+LAYOUT_VOUCHERS = (
+    _journal("STMT-DEXP-1", "Payment", date(2026, 9, 1), "Freight Inward", "Cash", "300"),
+    _journal("STMT-DINC-1", "Receipt", date(2026, 9, 1), "Cash", "Job Work Charges", "120"),
+    _journal("STMT-FXV-1", "Journal", date(2026, 9, 1), "Consulting Fees", FX_VENDOR, "4100"),
+)
+
 # --- edit log (2026-10-19): a journal altered after creation with TallyPrime Edit Log, so
 # Tally keeps its earlier version.
 EDIT_LOG_VOUCHERS = (
@@ -560,7 +582,7 @@ EDIT_LOG_VOUCHERS = (
 NAME_VOUCHERS = (_journal("NAME-ALIAS-1", "Journal", date(2026, 9, 1), "Kilo Alias", "Cash", "21"),)
 
 SEED = SeedData(
-    ledgers=(*LEDGERS, *NAME_LEDGERS, *FX_LEDGERS),
+    ledgers=(*LEDGERS, *NAME_LEDGERS, *FX_LEDGERS, *LAYOUT_LEDGERS),
     currencies=(USD,),
     units=("Nos",),
     stock_items=(
@@ -572,7 +594,7 @@ SEED = SeedData(
         StockItem("Hinge", "Nos", _d("5"), _d("2"), group="Components"),  # in a stock group
     ),
     cost_centres=("Head Office", "Branch"),
-    vouchers=(*VOUCHERS, *NAME_VOUCHERS, *FX_VOUCHERS, *EDIT_LOG_VOUCHERS),
+    vouchers=(*VOUCHERS, *NAME_VOUCHERS, *FX_VOUCHERS, *EDIT_LOG_VOUCHERS, *LAYOUT_VOUCHERS),
     voucher_types=(("Adjustment Journal", "Journal"),),  # a custom type under Journal
     godowns=(Godown(JOB_WORKER, external=True), Godown(PRINCIPAL, internal=True)),
     renamed_groups=(STOCK_IN_HAND,),

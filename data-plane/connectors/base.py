@@ -168,7 +168,13 @@ class SourceStatements:
     and closing stock its profit uses, the stock by group and godown, the closing balance
     it reports for each foreign-currency ledger (revalued at current rates), the ledgers
     whose balance carries the computed profit, and whether accounts are integrated with
-    inventory. Amounts use the canonical sign."""
+    inventory. Amounts use the canonical sign.
+
+    For the summary of differences (core/statement_differences.py): `item_values`, the stock
+    items' own opening and closing value when the statements' stock is something else
+    (accounts not integrated with inventory: the stock ledgers), and `standard_names`, the
+    source's own names that may be shown outside the client's machine (its statements' own
+    lines and its reserved group names)."""
 
     as_of: date
     lines: tuple[StatementLine, ...]
@@ -178,6 +184,8 @@ class SourceStatements:
     revalued: Mapping[str, Decimal] = field(default_factory=dict)  # ledger key -> balance
     profit_carriers: frozenset[str] = frozenset()
     integrated: bool | None = None
+    item_values: tuple[Decimal, Decimal] | None = None
+    standard_names: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)

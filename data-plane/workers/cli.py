@@ -1079,12 +1079,22 @@ def _print_validation(reports: list[ValidationReport], labels: Labels) -> int:
         if r.unbalanced_by_type:
             listed = ", ".join(f"{k} {n:,}" for k, n in sorted(r.unbalanced_by_type.items()))
             print(f"    {unbalanced} by voucher type: {listed}")
+        _print_statement_summary(r.statement_summary)
         for line in r.root_cause.lines():
             print(f"  ROOT CAUSE: {line}")
         step = next_step(validation_occurrences(session, run, label), get_settings().app_env)
         if step:
             print(f"  Next step: {step}")
     return 1 if any(r.status == "failed" for r in reports) else 0
+
+
+def _print_statement_summary(lines: list[str]) -> None:
+    """The statement lines that differ from the source's (core/statement_differences.py):
+    standard names, kinds and counts only."""
+    if lines:
+        print(f"  {title('statement_mismatch')}: lines that differ, and what the difference equals")
+        for line in lines:
+            print(f"    {line}")
 
 
 def _status(session: Session) -> int:
@@ -1493,6 +1503,7 @@ def _statements(session: Session, args: argparse.Namespace) -> int:
             )
             + (f"; {result.unreadable:,} dates couldn't be read" if result.unreadable else "")
         )
+        _print_statement_summary(result.summary.lines())
         if result.differing or result.unreadable:
             code = 1
     print("Result: statements finished")

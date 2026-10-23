@@ -29,7 +29,7 @@ runs a Validator after every sync (and on `validate`); the report is stored in
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, or_, select, update
@@ -37,11 +37,13 @@ from sqlalchemy.orm import Session
 
 from connectors.base import SourceBalances, SourceControls, SourceStatements
 from core import statements
+from core.dates import financial_year_ends
 from core.models import accounting as A  # noqa: N812
 from core.models.base import utcnow
 from core.models.source import RawRecord
 from core.models.system import Connection, ValidationIssue, ValidationRun
 from core.problems import title
+from core.statement_differences import Summary
 
 ZERO = Decimal(0)
 PROFIT_NATURES = ("income", "expense")
@@ -176,6 +178,8 @@ class ValidationReport:
     unbalanced_by_type: Counter[str] = field(default_factory=Counter)
     # What unbalanced vouchers have in common (counts): "with inventory lines", ...
     unbalanced_details: Counter[str] = field(default_factory=Counter)
+    # Statement lines that differ from the source's, pilot-safe (core/statement_differences).
+    statement_summary: list[str] = field(default_factory=list)
 
     @property
     def failed_by_code(self) -> Counter[str]:
@@ -242,21 +246,6 @@ def _period_profit(ledgers: list[_LedgerBalance], source: SourceBalances) -> Dec
     return profit
 
 
-def financial_year_ends(books_from: date | None, fy_start_month: int, as_of: date) -> list[date]:
-    """Financial year ends after books_from and before as_of."""
-    if books_from is None:
-        return []
-    ends = []
-    year = books_from.year if books_from.month < fy_start_month else books_from.year + 1
-    while True:
-        end = date(year, fy_start_month, 1) - timedelta(days=1)
-        if end >= as_of:
-            return ends
-        if end >= books_from:
-            ends.append(end)
-        year += 1
-
-
 class Validator:
     def __init__(
         self,
@@ -314,7 +303,7 @@ class Validator:
             self._bills(controls.bill_outstanding, controls.opening_bills)
             self._cover(self._bills_covered(controls))
             if controls.statements:
-                self._statements(controls.statements)
+                report.statement_summary = self._statements(controls.statements)
                 read = all(isinstance(s, SourceStatements) for s in controls.statements.values())
                 self._cover(STATEMENTS_COMPARED if read else STATEMENTS_READ)
         report.root_cause = self._root_cause()
@@ -330,13 +319,14 @@ class Validator:
         """Records a finding: a failed check (error), a warning or a note (info)."""
         self.findings.append(finding)
 
-    def _statements(self, figures: Mapping[date, SourceStatements | Exception]) -> None:
+    def _statements(self, figures: Mapping[date, SourceStatements | Exception]) -> list[str]:
         """VAL-015, RPT-012 (ADR-040): at each date, the source's stock value against the
         one stored for it, then our Trial Balance, Profit & Loss and Balance Sheet against
         the source's own, line by line and in total. Both sides are stored for the views
-        (core/statements.py)."""
+        (core/statements.py). Returns the pilot-safe summary of the lines that differ."""
         if self.connection_id is None:
-            return
+            return []
+        summary = Summary(self.tolerance)
         connection = self.session.get(Connection, self.connection_id)
         origin = str((connection.config if connection else {}).get("origin", "live"))
         for on, source in sorted(figures.items()):
@@ -347,6 +337,7 @@ class Validator:
                 self.session, self.entity.id, self.connection_id, origin, source, self.tolerance
             )
             self._stock_value(on, result.stock_before, source)
+            summary.add(self.session, self.entity.id, source, result)
             self.passed += result.compared - len(result.differences)
             for difference in result.differences:
                 self._fail(
@@ -361,6 +352,7 @@ class Validator:
                         f"'{difference.label}' differs from the source.",
                     )
                 )
+        return summary.lines()
 
     def _stock_value(
         self,

@@ -29,6 +29,14 @@ from connectors.tally.signs import tally_amount
 OPENING_STOCK = "Opening Stock"
 CLOSING_STOCK = "Less: Closing Stock"
 ZERO = Decimal(0)
+# Tally's own words in its statements (no client data): with the reserved group names, the
+# only labels a summary of differences may show (core/statement_differences.py).
+OWN_LINES = frozenset({
+    "Cost of Sales", "Opening Stock", "Closing Stock", "Profit & Loss A/c",
+    "Unadjusted Forex Gain/Loss", "Opening Balance", "Current Period",
+    "Difference in opening balances", "Diff. in Opening Balances", "Gross Profit",
+    "Gross Loss", "Nett Profit", "Nett Loss", "Net Profit", "Net Loss",
+})  # fmt: skip
 
 
 def _canonical(text: str | None) -> Decimal | None:

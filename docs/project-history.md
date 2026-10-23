@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.3 |
-| Date | 2026-10-19 |
+| Version | 1.4 |
+| Date | 2026-10-23 |
 | Covers | M0 to M4, the pilot on the client's two companies, PRs #1 to #33 |
 
 What has been built and done so far, in order: the milestones, every pull request with what it did and why, the problems the pilot found and how each was fixed, the pilot's results, lessons learned and what is still open. Counts and Tally's standard names only: no client names or amounts. The rules themselves are in the [rulebook](rules/validation-and-conversion-rules.md); the database in the [schema reference](database/schema-reference.md); the decisions in [architecture.md](architecture.md) (ADR-001 to ADR-038).
@@ -62,7 +62,9 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 | #35 | 2026-10-19 | TallyPrime Edit Log checked like for like; seed case and test (no code change) | Confirm the platform works unchanged on Edit Log. |
 | #36 | 2026-10-19 | Security foundations: checks on every pull request, CLAUDE.md security checklist and report sections, threat model and security guide (SEC-009, ADR-039) | Catch bugs, vulnerable dependencies, insecure code and secrets before merging, ahead of M5. |
 | #37 to #44 | 2026-10-19 to 2026-10-22 | dev.ps1 tests on Windows in CI; A3 simplicity review (Tally connector, transform, validation and analyse, workers, scripts) with every result identical before and after; the review's findings fixed | Code the developer can fully understand; bugs found on the way fixed with tests. |
-| feat/stock-values | 2026-10-22 | The source's stock values and foreign-currency revaluations stored as source figures; Trial Balance, Profit & Loss and Balance Sheet laid out as Tally's and checked against its own reports line by line (ADR-040) | Reports must equal Tally's; recorded on the test company with integration on and off. |
+| #45 | 2026-10-22 | The source's stock values and foreign-currency revaluations stored as source figures; Trial Balance, Profit & Loss and Balance Sheet laid out as Tally's and checked against its own reports line by line (ADR-040) | Reports must equal Tally's; recorded on the test company with integration on and off. |
+| #46 | 2026-10-22 | Educational mode: year-end checks on the 31st or the 2nd, never the 1st (ADR-032 amended) | Tally's computed profit on the 1st disagrees with its ledgers. |
+| fix/statement-layout | 2026-10-23 | Direct Expenses inside Cost of Sales; the Trial Balance's forex line split into losses and gains; a pilot-safe summary of statement differences | The pilot's statement check failed on both companies (ledger checks all passing). |
 
 ## 3. Problems found and how each was fixed
 
@@ -83,12 +85,14 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 | Three customers differing | Foreign-currency ledgers revalued by Tally | Book value from Tally's own vouchers | #30, #31, #33 |
 | Opening difference warning | Our figure differed from what Tally displays | Use Tally's own trial balance line | #33 |
 | A lock outliving its job; argument splitting | Lock not tied to the job; PowerShell arrays | Lock with heartbeat; argument handling | #23 |
+| Statements differing at every date (Profit & Loss 2 lines, Trial Balance 4) | Tally puts Direct Expenses inside Cost of Sales and shows forex losses and gains in separate columns | Same layout, recorded on the seeded test company | fix/statement-layout |
 
 ## 4. Pilot results (counts only)
 
 - **Entity 2:** validation **passes**: 415,301 checks, 0 failed.
 - **Entity 1:** from 16 failures (Educational-mode dates, PR #27) to 9 (three foreign-currency customers today and at year ends, plus the opening warning). `validate compare-ledger` then matched every one of Tally's vouchers with ours for those customers (47 of 47, 60 of 60, 3 of 3; our extra vouchers were 3 optional Journals each, not counted), with equal totals. PR #33 compares them with Tally's book value and follows Tally's own opening difference; the result of the developer's run after it is to be recorded here.
 - **Test company:** passes every check (104 as of 2026-10-02), with the stock-ledger and foreign-currency notes.
+- **Statements (after PR #45, 2026-10-23):** every ledger-level check passed on both companies; only the statement check failed: entity 2 (integrated) 6 lines at every date before its first year end, 10 at the year end and the next date, 8 after; entity 1 (not integrated, foreign-currency customers) about 10 at every date. The steady part was the Cost of Sales and forex layout (fix/statement-layout); the year-end part is to be read from the new summary.
 
 ### TallyPrime Edit Log (2026-10-19)
 
@@ -118,6 +122,7 @@ The test company was opened in TallyPrime Edit Log (migrated, same GUID). Every 
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-23 | 1.4 | PRs #45 and #46; the statement layout fixes and the pilot-safe summary; long field paths. |
 | 2026-10-22 | 1.3 | PRs #37 to #44; statements from the source's own figures. |
 | 2026-10-19 | 1.2 | PRs #34 to #36; security foundations. |
 | 2026-10-19 | 1.1 | TallyPrime Edit Log check. |

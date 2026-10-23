@@ -250,7 +250,7 @@ Share the output as it is. It also shows: pairs of explanations that fit only to
 
 **One ledger, voucher by voucher.** `./dev.ps1 validate compare-ledger -Env pilot -Ledger <id> [-From YYYY-MM-DD] [-To YYYY-MM-DD]` reads that ledger's vouchers from Tally (read-only) and compares them with ours. It prints counts by voucher type and month and kinds only, and writes the details (dates, voucher numbers, both amounts) to `reports/pilot/private/compare-ledger-<id>-<time>.tsv` for you to check in Tally: local, git-ignored, never share it.
 
-**Statements against Tally's own.** Thorough validation (`validate`, and every full sync) also reads Tally's Trial Balance, Balance Sheet and Profit and Loss at the as-of date and each year end, stores the stock values Tally uses, and compares our statements with Tally's line by line (`Statement line differs from the source [statement_mismatch, LB-VAL-024]`). `./dev.ps1 statements -Env pilot` does the same at every month end and prints, per company, at how many dates the statements differ and in which statement: counts only. To see a line, ours against Tally's, query `ledgerbridge_reporting.v_statement_check` yourself (it holds names and amounts: never share it).
+**Statements against Tally's own.** Thorough validation (`validate`, and every full sync) also reads Tally's Trial Balance, Balance Sheet and Profit and Loss at the as-of date and each year end, stores the stock values Tally uses, and compares our statements with Tally's line by line (`Statement line differs from the source [statement_mismatch, LB-VAL-024]`). `./dev.ps1 statements -Env pilot` does the same at every month end and prints, per company, at how many dates the statements differ and in which statement. When lines differ, both also print a summary that is safe to share: one line per differing statement line (the statements' own lines and Tally's reserved group names; any other group as "a custom group under <reserved group>"), whether it is missing on one side or has a different amount, on how many dates, and what the difference equals among tested amounts (Direct Expenses, stock, foreign-currency revaluation, the last year end's profit and stock, ...). Send that summary when something still differs. To see a line, ours against Tally's, query `ledgerbridge_reporting.v_statement_check` yourself (it holds names and amounts: never share it).
 
 ### 9. After a change to how data is fetched: `sync full -Restart`
 
@@ -306,6 +306,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-23 | 0.23 | The pilot-safe summary of statement differences. |
 | 2026-10-22 | 0.22 | Statements against Tally's own (`statements`; checked in thorough validation). |
 | 2026-10-16 | 0.21 | `validate compare-ledger`; foreign-currency ledgers one by one. |
 | 2026-10-16 | 0.20 | Foreign-currency ledgers at book value. |
