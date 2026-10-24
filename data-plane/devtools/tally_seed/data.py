@@ -617,7 +617,7 @@ NETTING_VOUCHERS = (
 # (its value at a date depends on the period valued), with ledgers of its own so the other
 # figures stay as they were; and a customer kept in US dollars whose opening balance the
 # developer entered in TallyPrime ($1,000 at Rs 80; Tally's XML import refused foreign
-# amounts, ADR-035), balanced by a capital ledger, with rates of exchange that change later.
+# amounts, ADR-035), balanced by a capital ledger.
 YE_VENDOR = "Vendor Golf Year End"
 YE_CUSTOMER = "Customer India Year End"
 YE_PURCHASES = "Purchases - Year End"
@@ -628,7 +628,9 @@ YEAR_END_LEDGERS = (
     Ledger(YE_CUSTOMER, "Sundry Debtors", bill_wise=True),
     Ledger(YE_PURCHASES, "Purchase Accounts"),
     Ledger(YE_SALES, "Sales Accounts"),
-    Ledger(FX_OPENING_CUSTOMER, "Sundry Debtors", _d("80000"), currency="$", opening_by_hand=True),
+    # Entered by hand: Tally kept the ledger in the base currency with its opening in dollars
+    # ("-$1000.00 @ ? 80/$ = -? 80000.00"); no rates of exchange were stored.
+    Ledger(FX_OPENING_CUSTOMER, "Sundry Debtors", _d("80000"), opening_by_hand=True),
     Ledger("Capital - Hotel", "Capital Account", _d("80000"), "Cr"),
 )
 

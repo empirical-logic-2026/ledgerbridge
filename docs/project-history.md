@@ -65,6 +65,7 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 | #45 | 2026-10-22 | The source's stock values and foreign-currency revaluations stored as source figures; Trial Balance, Profit & Loss and Balance Sheet laid out as Tally's and checked against its own reports line by line (ADR-040) | Reports must equal Tally's; recorded on the test company with integration on and off. |
 | #46 | 2026-10-22 | Educational mode: year-end checks on the 31st or the 2nd, never the 1st (ADR-032 amended) | Tally's computed profit on the 1st disagrees with its ledgers. |
 | #47 | 2026-10-23 | Direct Expenses inside Cost of Sales; the Trial Balance's forex line split into losses and gains; a pilot-safe summary of statement differences | The pilot's statement check failed on both companies (ledger checks all passing). |
+| fix/statements-final | 2026-10-24 | The expected company guard (LB-SYNC-011, ADR-041); Trial Balance netting (ADR-042); the test company across a year end; stock ledgers at the source's stock in both settings; lines taken from the source where no rule is known (ADR-043) | Finish statement matching for both pilot companies. |
 | #48 | 2026-10-24 | More tested amounts in the summary (netted split, other stock figures, foreign-currency openings); the report blames the layout when every ledger check passes | The pilot's remaining statement differences. |
 
 ## 3. Problems found and how each was fixed
@@ -92,7 +93,7 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 
 - **Entity 2:** validation **passes**: 415,301 checks, 0 failed.
 - **Entity 1:** from 16 failures (Educational-mode dates, PR #27) to 9 (three foreign-currency customers today and at year ends, plus the opening warning). `validate compare-ledger` then matched every one of Tally's vouchers with ours for those customers (47 of 47, 60 of 60, 3 of 3; our extra vouchers were 3 optional Journals each, not counted), with equal totals. PR #33 compares them with Tally's book value and follows Tally's own opening difference; the result of the developer's run after it is to be recorded here.
-- **Test company:** passes every check (104 as of 2026-10-02), with the stock-ledger and foreign-currency notes.
+- **Test company:** passes every check (104 as of 2026-10-02), with the stock-ledger and foreign-currency notes. From 2026-10-24 its books begin on 1 April 2025 (a year end on 31 March 2026): 278 checks, statements equal at all 18 month ends.
 - **Statements (after PR #45, 2026-10-23):** every ledger-level check passed on both companies; only the statement check failed: entity 2 (integrated) 6 lines at every date before its first year end, 10 at the year end and the next date, 8 after; entity 1 (not integrated, foreign-currency customers) about 10 at every date. The steady part was the Cost of Sales and forex layout (fix/statement-layout); the year-end part is to be read from the new summary.
 
 ### TallyPrime Edit Log (2026-10-19)

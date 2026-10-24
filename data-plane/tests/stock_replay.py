@@ -21,9 +21,12 @@ from tests.conftest import FIXTURES
 FOLDER = FIXTURES / "tally" / "rules" / "stock_values"
 LAYOUT = FIXTURES / "tally" / "rules" / "statement_layout"
 NETTING = FIXTURES / "tally" / "rules" / "statement_netting"
+YEAR_END = FIXTURES / "tally" / "rules" / "statement_year_end"
 EMPTY = b"<ENVELOPE><BODY><DATA><COLLECTION></COLLECTION></DATA></BODY></ENVELOPE>"
 _ID = re.compile(r"<ID>([^<]+)</ID>")
 _TO = re.compile(r'<SVTODATE TYPE="Date">(\d{4})(\d{2})(\d{2})</SVTODATE>')
+_FROM = re.compile(r'<SVFROMDATE TYPE="Date">(\d{8})</SVFROMDATE>')
+_BOOKS = re.compile(r"<BOOKSFROM[^>]*>(\d{8})</BOOKSFROM>")
 FILES = {
     "Trial Balance": "trial_balance",
     "Balance Sheet": "balance_sheet",
@@ -49,7 +52,14 @@ def replay(case: str, root: Path = FOLDER) -> httpx.MockTransport:
             setting = folder / "group_reporting.xml"
             return httpx.Response(200, content=setting.read_bytes() if setting.exists() else EMPTY)
         to = _TO.search(body)
-        file = folder / f"{FILES[kind]}_{to.group(1)}-{to.group(2)}-{to.group(3)}.xml"  # type: ignore[union-attr]
+        # A period starting after the books' beginning (the current financial year): its
+        # own recording, prefixed fy_ (statement_year_end).
+        books = _BOOKS.search(
+            (folder / "companies.xml").read_text(encoding="utf-8", errors="replace")
+        )
+        start = _FROM.search(body)
+        prefix = "fy_" if books and start and start.group(1) != books.group(1) else ""
+        file = folder / f"{prefix}{FILES[kind]}_{to.group(1)}-{to.group(2)}-{to.group(3)}.xml"  # type: ignore[union-attr]
         return httpx.Response(200, content=file.read_bytes())
 
     return httpx.MockTransport(answer)

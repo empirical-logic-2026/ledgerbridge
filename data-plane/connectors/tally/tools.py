@@ -24,7 +24,7 @@ from pathlib import Path
 import httpx
 
 from connectors.tally import envelopes, parser
-from connectors.tally.connector import TallyConnector
+from connectors.tally.connector import TallyConnector, _period_for
 from connectors.tally.fixtures import DEFAULT_DIR, FixtureTransport, load_manifest
 from connectors.tally.signs import check_balance_sides, check_opening_balances, check_vouchers
 from core.config import get_settings
@@ -68,9 +68,18 @@ def capture_fixtures(company: str, directory: Path, guid_prefix: str = "") -> in
 
     save("companies.xml", companies_body)
     files[envelopes.COMPANIES.collection_id] = "companies.xml"
+
+    def request(spec: envelopes.CollectionSpec) -> str:
+        """As the connector asks: masters with openings for the books' beginning, so their
+        OPENINGBALANCE is their own opening, not the balance at the start of Tally's
+        current year (a company with a year end, 2026-10-24)."""
+        return envelopes.collection_request(
+            spec, company=company, balances_period=_period_for(spec, entity)
+        )
+
     for spec in envelopes.MASTER_SPECS:
         name = f"{spec.object_type}s.xml"
-        save(name, connector.client.post(envelopes.collection_request(spec, company=company)))
+        save(name, connector.client.post(request(spec)))
         files[spec.collection_id] = name
 
     balances_request = envelopes.collection_request(envelopes.LEDGER_BALANCES, company=company)
@@ -83,7 +92,7 @@ def capture_fixtures(company: str, directory: Path, guid_prefix: str = "") -> in
         (envelopes.BILLS, "bills.xml"),
         (envelopes.LEDGER_OPENING_BILLS, "ledger_opening_bills.xml"),
     ):
-        save(name, connector.client.post(envelopes.collection_request(spec, company=company)))
+        save(name, connector.client.post(request(spec)))
         files[spec.collection_id] = name
 
     vouchers = []

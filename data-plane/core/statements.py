@@ -10,14 +10,26 @@ its statement lines), builds ours, stores them in `ledgerbridge_reporting.statem
 
 Ours follow the source's own figures where the books alone can't give them (ADR-033,
 ADR-040, decision 2026-10-22):
-- **Stock:** the opening and closing stock the source's Profit and Loss uses. Accounts
-  integrated with inventory: the stock ledgers (`ledger_kind` stock) are left out and the
-  stock appears at the opening value in the Trial Balance and at the closing value in the
-  Balance Sheet. Not integrated: the stock ledgers are ordinary ledgers.
+- **Stock:** the opening and closing stock the source's Profit and Loss uses, in place of
+  the stock ledgers (`ledger_kind` stock): at the opening value in the Trial Balance and at
+  the closing value in the Balance Sheet, under the stock ledgers' primary group. Integrated
+  with inventory that stock is the items' value; not integrated it is the stock ledgers'
+  own, which in Tally can be closing values entered by date rather than their balance
+  (pilot 2026-10-24: a Balance Sheet differing by the stock at the last year end less the
+  opening stock).
 - **Foreign-currency ledgers:** at the balance the source reports (revalued at current
-  rates); the difference to their book value is one "Unadjusted Forex Gain/Loss" line. In
-  the Trial Balance its debit is the ledgers' losses and its credit their gains, ledger by
-  ledger; the Balance Sheet shows the net (recorded on the test company, 2026-10-23).
+  rates). The "Unadjusted Forex Gain/Loss" line is **taken from the source** (labelled so):
+  the rule behind it isn't fully known (pilot 2026-10-24: one company's line differed from
+  the ledgers' book value less their revalued balance, mostly by its difference in opening
+  balances but not always). Ours, computed that way (its debit the losses and its credit
+  the gains, ledger by ledger, as recorded on the test company, 2026-10-23), stays beside
+  it as a detail line, never compared.
+- **The Balance Sheet's stock after the first year end, integrated with inventory:** the
+  line holding the stock (e.g. Current Assets) is **taken from the source** too: one
+  company's differed from ours (the Profit and Loss's closing stock) from its first year end
+  on, which the test company, recorded across a year end, doesn't reproduce. Ours stays as a
+  detail line. Where a taken line and ours differ, `Comparison.taken` says so, for the
+  summary of differences (what the difference equals), so the rule can still be found.
 - **Ledgers directly under Primary** (the source's profit carriers, e.g. Tally's Profit &
   Loss A/c) belong to the Profit & Loss A/c line: their balance (Opening Balance) plus the
   period's profit (Current Period); on the liabilities side for a profit, the assets side
@@ -32,7 +44,7 @@ Profit & Loss A/c, a difference in opening balances) are `detail`, never compare
 """
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
 
@@ -49,6 +61,11 @@ PURCHASES = "5110"  # the standard account of purchase groups: inside Cost of Sa
 NATURE_ORDER = {"equity": 0, "liability": 1, "asset": 2, "income": 3, "expense": 4}
 PROFIT_LOSS_ACCOUNT = "Profit & Loss A/c"
 UNADJUSTED_FOREX = "Unadjusted Forex Gain/Loss"
+# A line ours take from the source's own report, because no rule for it is known: labelled
+# so in the views and compared like any other (the suffix is ignored by match_key).
+TAKEN = " (taken from the source)"
+COMPUTED = " (computed)"  # ours beside a line taken from the source: a detail line
+COMPUTED_FOREX = UNADJUSTED_FOREX + COMPUTED
 OPENING_DIFFERENCE = "Difference in opening balances"
 
 
@@ -56,6 +73,7 @@ def match_key(label: str) -> str:
     """A line's label as both sides are compared: without the source's "Add: " / "Less: "
     and trailing ":", spaces collapsed, case folded."""
     text = " ".join(label.split()).casefold()
+    text = text.removesuffix(TAKEN.casefold())
     for prefix in ("add:", "less:"):
         if text.startswith(prefix):
             text = text[len(prefix) :].strip()
@@ -107,6 +125,7 @@ class Comparison:
     compared: int = 0
     differences: list[Difference] = field(default_factory=list)
     stock_before: tuple[Decimal | None, Decimal | None] | None = None  # stored before the read
+    taken: list[Difference] = field(default_factory=list)  # taken lines unlike ours computed
 
 
 # --- our books as of a date ---------------------------------------------------------------
@@ -211,6 +230,14 @@ class Figures:
     def integrated(self) -> bool:
         return bool(self.source.integrated) and self.source.closing_stock is not None
 
+    @property
+    def replaces_stock(self) -> bool:
+        """Whether the source's stock stands in for the stock ledgers: it reports its stock,
+        and accounts are integrated with inventory or there are stock ledgers."""
+        if self.source.closing_stock is None:
+            return False
+        return self.integrated or any(x.kind == "stock" for x in self.ledgers)
+
     def value(self, ledger: _Ledger) -> Decimal:
         """A ledger as the source's statements count it: foreign-currency ledgers at the
         balance the source reports."""
@@ -223,7 +250,7 @@ class Figures:
             ledger
             for ledger in self.ledgers
             if ledger.key not in self.source.profit_carriers
-            and not (self.integrated and ledger.kind == "stock")
+            and not (self.replaces_stock and ledger.kind == "stock")
         ]
 
     def unit(self, ledger: _Ledger) -> tuple[str, object]:
@@ -242,8 +269,12 @@ class Figures:
         return totals
 
     def stock_group(self) -> int | None:
-        """The primary group the stock ledgers roll up to (e.g. Current Assets)."""
-        return next((x.top for x in self.ledgers if x.kind == "stock"), None)
+        """The primary group the stock ledgers roll up to (e.g. Current Assets); without
+        stock ledgers, the current assets group (standard account 1270)."""
+        found = next((x.top for x in self.ledgers if x.kind == "stock"), None)
+        if found is None:
+            found = next((g.id for g in self.groups.values() if g.standard_code == "1270"), None)
+        return found
 
     def forex(self) -> list[Decimal]:
         """Each foreign-currency ledger's unadjusted gain or loss: its book value less the
@@ -253,6 +284,24 @@ class Figures:
             for x in self.ledgers
             if x.key in self.source.revalued
         ]
+
+    @property
+    def stock_from_balance_sheet(self) -> bool:
+        """Whether the Balance Sheet's stock line is taken from the source: integrated with
+        inventory, after the first financial year end (when the connector reads the other
+        stock figures, `stock_candidates`)."""
+        return self.integrated and bool(self.source.stock_candidates)
+
+    def source_line(self, statement: str, label: str) -> StatementLine | None:
+        """The source's own line of a statement (its main lines), or None."""
+        key = match_key(label)
+        return next(
+            (
+                x for x in self.source.lines
+                if x.statement == statement and x.level == "main" and match_key(x.label) == key
+            ),
+            None,
+        )  # fmt: skip
 
     def unadjusted(self) -> Decimal:
         return sum(self.forex(), ZERO)
@@ -289,7 +338,7 @@ def trial_balance(f: Figures) -> list[tuple[str | None, StatementLine]]:
         units = by_group[ledger.top]
         unit = f.unit(ledger)
         units[unit] = units.get(unit, ZERO) + f.value(ledger)
-    if f.integrated and f.source.opening_stock is not None:
+    if f.replaces_stock and f.source.opening_stock is not None:
         stock = f.stock_group()
         if stock is not None:  # the stock at its opening value, where the stock ledgers sit
             unit = next((f.unit(x) for x in f.ledgers if x.kind == "stock"), ("stock", 0))
@@ -304,7 +353,15 @@ def trial_balance(f: Figures) -> list[tuple[str | None, StatementLine]]:
         if ledger.key in f.source.profit_carriers and ledger.balance:
             lines.append(_tb_line(ledger.name, [ledger.balance]))
     if any(f.forex()):  # one line: the losses as its debit, the gains as its credit
-        lines.append(_tb_line(UNADJUSTED_FOREX, f.forex()))
+        lines.append(replace(_tb_line(COMPUTED_FOREX, f.forex()), level="detail"))
+    taken = f.source_line("trial_balance", UNADJUSTED_FOREX)
+    if taken is not None:
+        lines.append(
+            StatementLine(
+                "trial_balance", UNADJUSTED_FOREX + TAKEN, "main",
+                taken.amount, taken.debit, taken.credit,
+            )
+        )  # fmt: skip
     total = sum((line.amount for line in lines), ZERO)
     if total:  # ours don't balance: the difference in opening balances, as a note
         lines.append(StatementLine("trial_balance", OPENING_DIFFERENCE, "detail", -total))
@@ -363,11 +420,21 @@ def _profit_loss(f: Figures) -> list[tuple[str | None, StatementLine]]:
 def _balance_sheet(f: Figures, net: Decimal) -> list[tuple[str | None, StatementLine]]:
     totals = f.totals()
     stock = f.stock_group()
-    if f.integrated and stock is not None:
+    if f.replaces_stock and stock is not None:
         totals[stock] += f.source.closing_stock or ZERO  # the stock at its closing value
+    theirs = None
+    if f.stock_from_balance_sheet and stock is not None:
+        theirs = f.source_line("balance_sheet", f.groups[stock].name)
     lines: list[tuple[str | None, StatementLine]] = []
     for group in f.ordered_groups(("equity", "liability", "asset")):
         section = "assets" if group.nature == "asset" else "liabilities"
+        if theirs is not None and group.id == stock:
+            name, ours = group.name, totals[group.id]
+            lines.append(
+                (section, StatementLine("balance_sheet", name + TAKEN, "main", theirs.amount))
+            )
+            lines.append((section, StatementLine("balance_sheet", name + COMPUTED, "detail", ours)))
+            continue
         lines.append(
             (section, StatementLine("balance_sheet", group.name, "main", totals[group.id]))
         )
@@ -379,12 +446,12 @@ def _balance_sheet(f: Figures, net: Decimal) -> list[tuple[str | None, Statement
     lines.append((side, StatementLine("balance_sheet", "Current Period", "detail", net)))
     unadjusted = f.unadjusted()
     if unadjusted:
-        lines.append(
-            (
-                _side(unadjusted),
-                StatementLine("balance_sheet", UNADJUSTED_FOREX, "main", unadjusted),
-            )
-        )
+        computed = StatementLine("balance_sheet", COMPUTED_FOREX, "detail", unadjusted)
+        lines.append((_side(unadjusted), computed))
+    taken = f.source_line("balance_sheet", UNADJUSTED_FOREX)
+    if taken is not None:
+        line = StatementLine("balance_sheet", UNADJUSTED_FOREX + TAKEN, "main", taken.amount)
+        lines.append((_side(taken.amount), line))
     total = sum((line.amount for _, line in lines if line.level == "main"), ZERO)
     if total:
         lines.append(
@@ -494,8 +561,29 @@ def refresh(
     result.compared, result.differences = compare(
         [x for _, x in ours], list(source.lines), tolerance
     )
+    result.taken = taken_differences([x for _, x in ours], tolerance)
     session.commit()
     return result
+
+
+def taken_differences(lines: list[StatementLine], tolerance: Decimal = ZERO) -> list[Difference]:
+    """Lines taken from the source whose figure differs from ours computed beside them
+    (kind "taken"): not a statement difference, but what the summary tests to find the
+    rule."""
+    by_label = {(x.statement, x.label): x for x in lines}
+    found = []
+    for line in lines:
+        if not line.label.endswith(TAKEN):
+            continue
+        base = line.label.removesuffix(TAKEN)
+        computed = by_label.get((line.statement, base + COMPUTED))
+        for part in _parts(line.statement):
+            ours = (getattr(computed, part) or ZERO) if computed else ZERO
+            theirs = getattr(line, part) or ZERO
+            if abs(ours - theirs) > tolerance:
+                key = f"{match_key(base)}:{part}"
+                found.append(Difference(line.statement, key, base, ours, theirs, part, "taken"))
+    return found
 
 
 def _section(line: StatementLine) -> str | None:
