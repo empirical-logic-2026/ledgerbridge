@@ -389,6 +389,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-24 | 0.25 | Migration 0019 (`alerts.resolution`); `dev.ps1 backup`; `backups/` (git-ignored). |
 | 2026-10-24 | 0.24 | Migration 0018 (`v_statement_open_differences`). |
 | 2026-10-24 | 0.23 | `workers/entities.py` also guards against comparing another company (`ensure_loaded`); `tests/test_entity_guard.py`; recordings in `tests/fixtures/tally/rules/statement_netting/` and `statement_year_end/`; the seeder creates account groups and switches inventory integration. |
 | 2026-10-23 | 0.22 | `core/statement_differences.py` (pilot-safe summary of statement differences); recordings in `tests/fixtures/tally/rules/statement_layout/`. |

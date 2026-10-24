@@ -5,6 +5,7 @@ stock_values/not_integrated); and after the statement layout seed of 2026-10-23
 (statement_layout/books, statement_layout/integrated: Direct Expenses and Direct Incomes, a
 foreign-currency gain beside a loss, an opening balance on Profit & Loss A/c)."""
 
+import re
 from collections.abc import Iterator
 from datetime import date
 from decimal import Decimal
@@ -597,3 +598,27 @@ def test_validation_reports_a_taken_line_as_an_open_difference_not_a_pass(
     assert [f.severity for f in warnings] == ["warning", "warning"]  # trial balance, sheet
     assert after.status == "passed" and after.checks_failed == 0
     assert after.checks_passed == before.checks_passed - 2  # not counted as passes
+
+
+def test_validate_prints_passed_with_warnings_and_exits_0(
+    db: Session, layout_books: S.Connection, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Warnings only: validate says "PASSED with N warnings" and exits 0. (Run without the
+    source's own balances, the opening difference warns too, so the next step is its
+    command; the open item as the next step is in tests/test_report.py.)"""
+    from connectors.base import SourceControls
+    from core.validation import Validator
+    from workers.cli import _print_validation
+    from workers.entities import Labels
+
+    entity_id = db.scalars(select(A.Entity)).one().id
+    source = _tally_current_assets(_source("integrated", AS_OF, LAYOUT), debit=500)
+    report = Validator(db, entity_id, AS_OF, connection_id=layout_books.id).run(
+        None, controls=SourceControls(statements={AS_OF: source})
+    )
+    code = _print_validation([report], Labels(db, layout_books))
+    out = capsys.readouterr().out
+    assert code == 0
+    assert re.search(r": PASSED with \d+ warnings \(", out)
+    assert "FAILED" not in out
+    assert "[statement_taken_from_source, LB-VAL-026]: lines taken from the source" in out

@@ -23,6 +23,7 @@ from workers.report import (
     ATTENTION,
     FAILED,
     OK,
+    OK_WARNINGS,
     HealthReport,
     Occurrence,
     Section,
@@ -129,6 +130,38 @@ def test_verdict_is_the_worst_severity_found_now() -> None:
     assert verdict([_occ("LB-VAL-004", 0)]) == OK  # fixed since the previous run
 
 
+def test_verdicts_and_the_next_step_for_open_items() -> None:
+    """Agreed 2026-10-24: OK; OK WITH WARNINGS (only warnings waiting on an open item,
+    nothing to run); ACTION NEEDED (a warning with a command, e.g. an interrupted sync);
+    FAILED (any error). The next step prefers anything runnable; an open item alone is
+    named, not a command."""
+    open_difference = _occ("LB-VAL-026", 2)  # waits on ADR-043's open item
+    interrupted = _occ("LB-SYNC-010", 1)  # run the sync again
+    assert verdict([open_difference]) == OK_WARNINGS
+    assert verdict([open_difference, interrupted]) == ATTENTION
+    assert verdict([open_difference, _occ("LB-VAL-004", 1)]) == FAILED
+    assert next_step([open_difference], "pilot") == (
+        "nothing to run: open item ADR-043, find the forex revaluation rule (rulebook 16.8)"
+    )
+    assert next_step([open_difference, interrupted], "pilot") == r".\dev.ps1 sync -Env pilot"
+
+
+@pytest.mark.parametrize(
+    ("found", "code"), [(OK, 0), (OK_WARNINGS, 0), (ATTENTION, 0), (FAILED, 1)]
+)
+def test_report_exits_1_only_when_something_failed(
+    monkeypatch: pytest.MonkeyPatch, found: str, code: int
+) -> None:
+    from types import SimpleNamespace
+
+    from workers import cli
+
+    monkeypatch.setattr(cli, "build", lambda *args: SimpleNamespace(verdict=found))
+    monkeypatch.setattr(cli, "render_text", lambda *args: "")
+    args = SimpleNamespace(entity=None, format="text", details=False)
+    assert cli._report(None, args) == code  # type: ignore[arg-type]
+
+
 def test_root_causes_come_first_and_consequences_point_at_them() -> None:
     found = [_occ("LB-VAL-006", 3609), _occ("LB-VAL-004", 602), _occ("LB-TRF-001", 12)]
     assert [g[0].problem.code for g in ordered(found)] == [
@@ -188,8 +221,8 @@ def test_text_report_has_verdict_sections_problems_and_next_steps() -> None:
     # The unfinished full sync comes first: its results change the validation (LB-SYNC-002).
     assert lines[2] == r"Next step: .\dev.ps1 sync full -Env pilot"
     assert "== Validation per company: FAILED ==" in text
-    assert "== Work in progress: ATTENTION NEEDED ==" in text
-    assert "== Warnings: ATTENTION NEEDED ==" in text
+    assert "== Work in progress: ACTION NEEDED ==" in text
+    assert "== Warnings: ACTION NEEDED ==" in text
     assert "FAILED  Balances at year ends [year_end_mismatch, LB-VAL-006]" in text
     assert "  Where: entity 1 (company 1): 3,609 (better, was 3,700)" in text
     assert "  What this means: Some ledgers' balances at past financial year ends" in text
@@ -223,9 +256,9 @@ def test_colours_only_when_asked_and_supported(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("NO_COLOR", "1")
     assert not style.enabled()
 
-    line = "Overall: ATTENTION NEEDED; validation PASSED; stock FAILED (worse, was 2)"
+    line = "Overall: ACTION NEEDED; validation PASSED; stock FAILED (worse, was 2)"
     coloured = style.colorize(line)
-    assert f"{style.YELLOW}ATTENTION NEEDED{style.RESET}" in coloured
+    assert f"{style.YELLOW}ACTION NEEDED{style.RESET}" in coloured
     assert f"{style.GREEN}PASSED{style.RESET}" in coloured
     assert f"{style.RED}FAILED{style.RESET}" in coloured
     assert f"{style.RED}worse{style.RESET}" in coloured

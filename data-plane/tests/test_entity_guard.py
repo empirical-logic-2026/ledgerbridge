@@ -126,18 +126,46 @@ def test_statements_stop_too(
         fill(db, synced, connector, entity, entity_id, [AS_OF], lambda _: None)
 
 
-def test_an_old_alert_without_an_entity_is_resolved_once_every_entity_passed(
+def test_alerts_close_with_their_reason(
     db: Session, synced: S.Connection, connector: TallyConnector
 ) -> None:
-    """Pilot 2026-10-24: a validation alert from before alerts were kept per entity (no
-    entity) stayed open with every validation passing."""
-    from core.alerts import open_alert, raise_alert
+    """Every alert closes with its reason (migration 0019): the company's own alert when its
+    validation passes; one without a company (from before alerts were kept per company: pilot
+    2026-10-24, alert 4) once every company passed; one about a company no longer on the
+    connection, since no run of it will ever pass."""
+    from core.alerts import raise_alert
 
-    raise_alert(db, "validation_failed", synced.id, "from before alerts per entity")
+    entity_id = db.scalars(select(A.Entity)).one().id
+    gone = A.Entity(code="GONE", name="A company no longer connected")
+    db.add(gone)
+    db.commit()
+    own = raise_alert(db, "validation_failed", synced.id, "failed", entity_id=entity_id)
+    old = raise_alert(db, "validation_failed", synced.id, "from before alerts per entity")
+    other = raise_alert(db, "validation_failed", synced.id, "failed", entity_id=gone.id)
     keys = [e.key for e in connector.list_entities()]
     (report,) = run_validation(db, synced, connector, entity_keys=keys, as_of=AS_OF)
     assert report.status == "passed"
-    assert open_alert(db, "validation_failed", synced.id) is None
+    for alert in (own, old, other):
+        db.refresh(alert)
+        assert alert.resolved_at is not None
+    assert own.resolution == f"validation run {report.validation_run_id} passed"
+    assert old.resolution == "every company on the connection last validated as passed"
+    assert other.resolution == "the company is no longer on the connection"
+
+
+def test_an_alert_without_a_company_stays_open_while_a_company_fails(
+    db: Session, synced: S.Connection
+) -> None:
+    from core.alerts import open_alert, raise_alert
+    from core.models.base import utcnow
+    from workers.validate import _resolve_alerts_beyond_entities
+
+    entity_id = db.scalars(select(A.Entity)).one().id
+    raise_alert(db, "validation_failed", synced.id, "from before alerts per entity")
+    db.add(S.ValidationRun(entity_id=entity_id, as_of=AS_OF, started_at=utcnow(), status="failed"))
+    db.commit()
+    _resolve_alerts_beyond_entities(db, synced)
+    assert open_alert(db, "validation_failed", synced.id) is not None
 
 
 def test_the_summary_heads_open_differences_apart(capsys: pytest.CaptureFixture[str]) -> None:

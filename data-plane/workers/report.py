@@ -2,7 +2,7 @@
 
 `report` answers "is everything all right, and if not, what do I do next?" in one place:
 
-    Overall: ATTENTION NEEDED
+    Overall: ACTION NEEDED
     Next step: .\\dev.ps1 validate analyse -Env pilot
 
 then sections: connection, data loaded, work in progress, validation per company, warnings,
@@ -56,7 +56,10 @@ from workers.fields import catalogue_counts
 from workers.runs import FINISHED
 from workers.sync import DELETION_CHECK, entity_ids_for, last_run, running_run
 
-OK, ATTENTION, FAILED = "OK", "ATTENTION NEEDED", "FAILED"
+# OK; OK WITH WARNINGS (only warnings waiting on an open item: nothing to run); ACTION NEEDED
+# (a warning with something to run, e.g. an interrupted sync); FAILED (an error). Only FAILED
+# makes `report` and `validate` exit 1.
+OK, OK_WARNINGS, ATTENTION, FAILED = "OK", "OK WITH WARNINGS", "ACTION NEEDED", "FAILED"
 _RANK = {ERROR: 0, WARNING: 1, INFO: 2}
 _MARK = {ERROR: "FAILED", WARNING: "WARNING", INFO: "note"}
 # Checks that only run in a thorough validation (the source's controls).
@@ -117,12 +120,13 @@ def trend(now: int, before: int | None, comparable: bool = True) -> str:
 
 
 def verdict(occurrences: Iterable[Occurrence]) -> str:
-    severities = {o.problem.severity for o in occurrences if o.active}
-    if ERROR in severities:
+    active = [o.problem for o in occurrences if o.active]
+    if any(p.severity == ERROR for p in active):
         return FAILED
-    if WARNING in severities:
+    warnings = [p for p in active if p.severity == WARNING]
+    if any(not p.open_item for p in warnings):
         return ATTENTION
-    return OK
+    return OK_WARNINGS if warnings else OK
 
 
 def _present(occurrences: Iterable[Occurrence]) -> set[str]:
@@ -196,12 +200,18 @@ def _work_rank(code: str) -> int:
 
 def next_step(occurrences: list[Occurrence], env: str) -> str | None:
     """The first problem's command: unfinished work (a running job, a full sync to resume,
-    records waiting) before anything else, then root causes before their consequences."""
+    records waiting) before anything else, then root causes before their consequences.
+    Problems waiting on an open item come last, named, since nothing can be run for them."""
+    waiting = None
     for group in ordered(occurrences):
         p = group[0].problem
-        if p.severity != INFO or p.code in WORK_FIRST:
-            return p.command(env)
-    return None
+        if p.severity == INFO and p.code not in WORK_FIRST:
+            continue
+        if p.open_item:
+            waiting = waiting or p
+            continue
+        return p.command(env)
+    return f"nothing to run: open item {waiting.open_item}" if waiting else None
 
 
 # --- validation, as every command shows it ------------------------------------------------
@@ -266,6 +276,13 @@ def validation_lines(
     """`Validation of entity 1 (company 1) as of 2026-10-14: FAILED ...` and one line per
     check that found something (or was fixed since the previous run)."""
     status = run.status.upper()
+    warnings = sum(
+        o.count or 0
+        for o in validation_occurrences(session, run, where)
+        if o.problem.severity == WARNING
+    )
+    if run.status == "passed" and warnings:
+        status = f"PASSED with {warnings:,} warning{'s' if warnings != 1 else ''}"
     head = (
         f"{indent}Validation of {where} as of {run.as_of}: {status} "
         f"({run.checks_passed:,} checks passed, {run.checks_failed:,} failed; run {run.id}, "

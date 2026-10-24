@@ -72,7 +72,10 @@ def _entry(p: Problem) -> list[str]:
             out.append("")
             out += [f"- {item.replace('{env}', '<env>')}" for item in items]
             out.append("")
-    out += [f"**Next step:** `{p.command('<env>')}`", ""]
+    if p.open_item:  # nothing to run: it waits on an open item
+        out += [f"**Next step:** nothing to run: open item {p.open_item}.", ""]
+    else:
+        out += [f"**Next step:** `{p.command('<env>')}`", ""]
     return out
 
 

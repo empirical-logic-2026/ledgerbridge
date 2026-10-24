@@ -12,7 +12,8 @@
     docker compose command, or a throwaway tool container), all through deploy/stack.ps1.
 
 .EXAMPLE
-    ./dev.ps1 up
+    ./dev.ps1 up                          (pilot: backs up the databases first)
+    ./dev.ps1 backup                      (a full copy of the databases to backups/<env>/)
     ./dev.ps1 status
     ./dev.ps1 report [-Details]                 (health report: verdict, problems, next steps; saved under reports/)
     ./dev.ps1 logs api
@@ -60,7 +61,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'help')]
+    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -225,6 +226,25 @@ function Assert-PortsFree {
                 "Stop that program or change $name in .env.$Env."
         }
     }
+}
+
+function Backup-Database {
+    # A full copy of the four databases (ADR-016), taken inside the mysql container so the
+    # root password never appears on this machine's command line, then copied out to
+    # backups/<env>/ (git-ignored: it holds the environment's data). Restore: docs/pilot-runbook.md.
+    $folder = Join-Path (Join-Path $root 'backups') $Env
+    New-Item -ItemType Directory -Force -Path $folder | Out-Null
+    $file = "ledgerbridge-$Env-$(Get-Date -Format 'yyyyMMdd-HHmmss').sql.gz"
+    $inside = '/tmp/ledgerbridge-backup.sql.gz'
+    Write-Host "Backing up the $Env databases before anything changes them..."
+    $dump = 'set -o pipefail; MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqldump -uroot --single-transaction ' +
+        '--routines --triggers --set-gtid-purged=OFF --databases ledgerbridge_source ' +
+        "ledgerbridge_accounting ledgerbridge_reporting ledgerbridge_system | gzip > $inside"
+    Invoke-Stack exec -T mysql bash -c $dump
+    Invoke-Stack cp "mysql:$inside" (Join-Path $folder $file)
+    Invoke-Stack exec -T mysql rm -f $inside
+    $saved = Get-Item (Join-Path $folder $file)
+    Write-Host ("Backup saved: {0} ({1:N1} MB)" -f $saved.FullName, ($saved.Length / 1MB)) -ForegroundColor Green
 }
 
 function Get-RunningServices {
@@ -393,6 +413,9 @@ switch ($Command) {
         Assert-EnvFile
         Assert-PortsFree
         Invoke-Stack up -d --build --wait
+        # Pilot: a full backup before migrations can change anything (developer, 2026-10-24).
+        # A failed backup stops here, before migrating.
+        if ($Env -eq 'pilot') { Backup-Database }
         # Migrations run as the migrator user in a one-off container; the running api never
         # holds schema-change rights (schema.md 2.1).
         Write-Host "Applying database migrations (one-off migrate container)..."
@@ -404,6 +427,12 @@ switch ($Command) {
         Write-Host "  Dashboard:  $(Get-EnvValue 'FRONTEND_ORIGIN' 'http://localhost:5173')  (start it with: cd frontend; npm run dev)"
         Write-Host "  API health: $base/health/ready"
         Write-Host "  API docs:   $base/docs"
+    }
+    'backup' {
+        # A full copy of the environment's four databases to backups/<env>/ (git-ignored).
+        # `up -Env pilot` takes one itself before applying migrations.
+        Assert-EnvFile
+        Backup-Database
     }
     'down' {
         Assert-EnvFile

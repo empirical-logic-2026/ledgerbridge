@@ -17,3 +17,5 @@ dist/
 
 # Health reports saved by ./dev.ps1 report (pilot-safe, but local)
 reports/
+# Database backups (./dev.ps1 backup; up -Env pilot): an environment's data.
+backups/

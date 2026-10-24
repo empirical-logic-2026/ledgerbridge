@@ -54,6 +54,7 @@ Create an env file by copying the matching example (`.env.test.example` → `.en
 | `./dev.ps1 test` | Backend lint, unit tests and, if the stack is up, integration tests; then frontend lint and tests. **Test environment only.** The migration test resets the test database tables. |
 | `./dev.ps1 down` | Stops and removes the containers. Data volumes are kept. |
 | `./dev.ps1 up -Env pilot` | The same commands against `.env.pilot` (developer only; `test` refuses pilot). Outside the test environment the commands print no company, ledger or party names and no error messages, only counts and pass/fail, and `trial-balance` refuses to run. The steps are in [docs/pilot-runbook.md](docs/pilot-runbook.md). |
+| `./dev.ps1 backup` | A full copy of the environment's four databases to `backups/<env>/` (git-ignored; it holds that environment's data). `up -Env pilot` takes one itself before applying migrations; restoring is in the pilot runbook. |
 
 First time:
 

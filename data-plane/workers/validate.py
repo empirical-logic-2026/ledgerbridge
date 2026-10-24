@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from connectors.base import Connector, SourceBalances, SourceControls, SourceEntity
-from core.alerts import raise_alert, resolve_alert
+from core.alerts import raise_alert, resolve_alert, resolve_alerts_of_other_entities
 from core.config import get_settings
 from core.dates import EVERY_DAY, DateRule, date_rule
 from core.errors import short_error
@@ -101,7 +101,7 @@ def run_validation(
             report.checks_failed,
         )
         reports.append(report)
-    _resolve_alert_without_entity(session, connection)
+    _resolve_alerts_beyond_entities(session, connection)
     return reports
 
 
@@ -160,14 +160,18 @@ def source_controls(
     )
 
 
-def _resolve_alert_without_entity(session: Session, connection: Connection) -> None:
-    """A validation alert raised before alerts were kept per entity has no entity, so no
-    entity's passing validation resolves it (pilot 2026-10-24: one from 2026-10-14 stayed
-    open with every validation passing). It is resolved once every entity of the connection
-    last validated as passed."""
+def _resolve_alerts_beyond_entities(session: Session, connection: Connection) -> None:
+    """Validation alerts no entity's validation would ever resolve, each with its reason:
+    one about an entity no longer on the connection, and one raised before alerts were kept
+    per entity (no entity: pilot 2026-10-24, one from 2026-10-14 stayed open with every
+    validation passing), once every entity of the connection last validated as passed."""
     entity_ids = session.scalars(
         select(EntitySource.entity_id).where(EntitySource.connection_id == connection.id)
     ).all()
+    resolve_alerts_of_other_entities(
+        session, "validation_failed", connection.id, set(entity_ids),
+        reason="the company is no longer on the connection",
+    )  # fmt: skip
     latest = [
         session.scalar(
             select(ValidationRun.status)
@@ -178,12 +182,18 @@ def _resolve_alert_without_entity(session: Session, connection: Connection) -> N
         for entity_id in set(entity_ids)
     ]
     if latest and all(status == "passed" for status in latest):
-        resolve_alert(session, "validation_failed", connection.id)
+        resolve_alert(
+            session, "validation_failed", connection.id,
+            reason="every company on the connection last validated as passed",
+        )  # fmt: skip
 
 
 def _alert(session: Session, connection: Connection, report: ValidationReport) -> None:
     if report.status == "passed":
-        resolve_alert(session, "validation_failed", connection.id, entity_id=report.entity_id)
+        resolve_alert(
+            session, "validation_failed", connection.id, entity_id=report.entity_id,
+            reason=f"validation run {report.validation_run_id} passed",
+        )  # fmt: skip
         return
     codes = ", ".join(f"{code} {n}" for code, n in sorted(report.failed_by_code.items()))
     raise_alert(
@@ -276,7 +286,7 @@ def alert_for_run(session: Session, connection: Connection, result: SyncResult) 
             sync_run_id=result.sync_run_id,
         )
         return False
-    resolve_alert(session, kind, connection.id)
+    resolve_alert(session, kind, connection.id, reason=f"run {result.sync_run_id} succeeded")
     return True
 
 
