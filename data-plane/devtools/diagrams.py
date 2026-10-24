@@ -58,7 +58,7 @@ AREAS = (
         "er-organisation-accounts",
         "Organisation and chart of accounts (ledgerbridge_accounting)",
         ("entities", "entity_sources", "branches", "financial_years", "currencies",
-         "exchange_rates", "standard_accounts", "account_groups", "ledgers"),
+         "currency_sources", "exchange_rates", "standard_accounts", "account_groups", "ledgers"),
         ("parties",),
     ),
     Area(

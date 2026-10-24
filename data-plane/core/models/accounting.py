@@ -127,24 +127,58 @@ class Currency(TimestampMixin, Base):
     __tablename__ = "currencies"
     __table_args__ = _A
 
-    code: Mapped[str] = mapped_column(CHAR(3), primary_key=True)
+    code: Mapped[str] = mapped_column(CHAR(3), primary_key=True)  # ISO 4217
     name: Mapped[str] = name_column()
     decimal_places: Mapped[int] = mapped_column(TinyInt, default=2, server_default="2")
+    symbol: Mapped[str | None] = mapped_column(String(16), nullable=True)  # e.g. "$"
+
+
+class CurrencySource(SourceTrackingMixin, TimestampMixin, Base):
+    """A currency as one entity's source names it (Tally: a currency master, e.g. "$"),
+    mapped to its ISO code when the source gives one (FX-001, schema.md 4.8)."""
+
+    __tablename__ = "currency_sources"
+    __table_args__ = src_table_args("currency_sources", ACCOUNTING)
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    name: Mapped[str] = name_column()  # as the source writes it in amounts ("$")
+    currency_code: Mapped[str | None] = mapped_column(
+        CHAR(3), ForeignKey(f"{ACCOUNTING}.currencies.code"), nullable=True
+    )
+    formal_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    decimal_places: Mapped[int | None] = mapped_column(TinyInt, nullable=True)
+
+
+RATE_KINDS = ("standard", "buying", "selling", "vouchers")
+RATE_SOURCES = ("source_rate_list", "vouchers")
 
 
 class ExchangeRate(TimestampMixin, Base):
+    """A rate (base currency per unit of a foreign currency) on a date, per entity, with
+    where it came from (FX-003): the source's own rate list (its kind: standard, buying,
+    selling), or the day's foreign-currency voucher lines weighted by foreign amount."""
+
     __tablename__ = "exchange_rates"
     __table_args__ = (
-        UniqueConstraint("from_code", "to_code", "rate_date", name="uq_exchange_rates_day"),
+        UniqueConstraint(
+            "entity_id", "currency_name", "rate_date", "rate_kind", name="uq_exchange_rates_day"
+        ),
         _A,
     )
 
     id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
-    from_code: Mapped[str] = mapped_column(CHAR(3), ForeignKey(f"{ACCOUNTING}.currencies.code"))
-    to_code: Mapped[str] = mapped_column(CHAR(3), ForeignKey(f"{ACCOUNTING}.currencies.code"))
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    # The currency as the source names it (currency_sources.name); its ISO code when known.
+    currency_name: Mapped[str] = mapped_column(String(64))
+    currency_code: Mapped[str | None] = mapped_column(
+        CHAR(3), ForeignKey(f"{ACCOUNTING}.currencies.code"), nullable=True
+    )
     rate_date: Mapped[date]
     rate: Mapped[Decimal] = mapped_column(FxRate)
-    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rate_kind: Mapped[str] = mapped_column(Enum(*RATE_KINDS, name="rate_kind"))
+    source: Mapped[str] = mapped_column(Enum(*RATE_SOURCES, name="rate_source"))
+    voucher_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 # --- 4.2 Chart of accounts -------------------------------------------------------------
@@ -224,6 +258,12 @@ class Ledger(SourceTrackingMixin, TimestampMixin, Base):
     currency_code: Mapped[str] = mapped_column(
         CHAR(3), ForeignKey(f"{ACCOUNTING}.currencies.code"), default="INR"
     )
+    # The currency of the ledger's foreign figures as the source names it (its opening's
+    # foreign part when it has one, else the ledger's own, Tally CURRENCYNAME: e.g. "$"), and
+    # the opening in it (FX-001). `currency_code` is the ledger's own currency. Base-currency
+    # figures stay the books.
+    currency_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    opening_balance_fc: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     is_bill_wise: Mapped[bool] = flag()
     is_cost_centre_applicable: Mapped[bool] = flag()
     gstin: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -460,6 +500,10 @@ class VoucherLine(TimestampMixin, Base):
     ledger_id: Mapped[int] = mapped_column(Id, _fk("ledgers"))
     amount: Mapped[Decimal] = mapped_column(Money)
     amount_fc: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    # A foreign-currency line's currency as the source names it and its rate as written
+    # (base per unit; FX-001). NULL on base-currency lines.
+    currency_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    exchange_rate: Mapped[Decimal | None] = mapped_column(FxRate, nullable=True)
     is_party_line: Mapped[bool] = flag()
     is_effective: Mapped[bool] = flag(True)
 

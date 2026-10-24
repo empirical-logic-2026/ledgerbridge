@@ -55,9 +55,16 @@ TABLES: dict[str, tuple[str, str]] = {
                        "entity, on which connection.", "Transform, with the entity."),
     "branches": ("Branches of an entity (planned).", "Not filled yet."),
     "financial_years": ("Financial years of an entity (planned).", "Not filled yet."),
-    "currencies": ("Currencies by ISO code.", "Seeded (INR); foreign currencies in M4b (FX-001)."),
-    "exchange_rates": ("Exchange rates by date (outline; redesigned for FX-003).",
-                       "Not filled yet."),
+    "currencies": ("Currencies by ISO code, with the symbol the source writes.",
+                   "Seeded (INR); foreign currencies from the source's currency masters "
+                   "(FX-001)."),
+    "currency_sources": ("Each entity's currencies as its source names them (e.g. \"$\"), "
+                         "with the ISO code when the source gives one (FX-001).",
+                         "Transform, from currency masters."),
+    "exchange_rates": ("Rates per entity, currency and date, each with its kind and source: the "
+                       "source's own rate list, or the day's voucher lines weighted by foreign "
+                       "amount (FX-003).",
+                       "Transform: currency masters' rate lists and voucher rates."),
     "standard_accounts": ("The standard chart of accounts used to compare and combine companies "
                           "(RPT-006).", "Seeded by a migration."),
     "account_groups": ("The source's group tree (Tally groups), per entity, as kept there.",

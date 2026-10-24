@@ -650,3 +650,8 @@ def test_transform_rebuild_command(db: Session, run_cli) -> None:  # noqa: ANN00
     assert "records rebuilt; transformed" in out and ", 1 failed" in out  # the bad voucher
     assert "Result: rebuild succeeded; validation skipped" in out
     assert "Sim Co" not in out
+    # The base-currency books are identical before and after (core/base_check.py).
+    assert re.search(r"Base figures before and after the rebuild: [\d,]+ vouchers and [\d,]+ "
+                     r"ledgers compared, 0 vouchers and 0 ledgers differ \(OK\)", out)  # fmt: skip
+    # Every amount written in a foreign currency counted, read or not (LB-TRF-011).
+    assert re.search(r"Foreign-currency amounts: [\d,]+ read, 0 not read \(OK\)", out)

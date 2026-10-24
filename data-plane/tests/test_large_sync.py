@@ -83,13 +83,13 @@ def test_stops_cleanly_when_tally_stops_answering_and_resumes(db: Session, sim) 
     assert waits == [10.0, 30.0, 90.0]  # checked with growing pauses before giving up
     assert any("UNRESPONSIVE" in line for line in lines)
     done = _count(db, S.SyncCheckpoint)
-    assert done == 1 + 8 + 3  # company, 8 master types, 3 voucher months
+    assert done == 1 + 9 + 3  # company, 9 master types, 3 voucher months
 
     transport.revive()
     transport.log.clear()
     result, lines, _ = _sync(db, connection, transport, connector)
     assert result.status == "succeeded", result.error
-    assert any(f"resuming: {done} of {1 + 8 + MONTHS} chunks" in line for line in lines)
+    assert any(f"resuming: {done} of {1 + 9 + MONTHS} chunks" in line for line in lines)
     assert _voucher_months(transport) == [date(2026, m, 1) for m in (7, 8, 9, 10)]
     assert _raw_vouchers(db) == transport.total_vouchers
     assert _count(db, A.Voucher) == transport.total_vouchers  # all transformed
@@ -283,7 +283,7 @@ def test_pause_between_requests(db: Session, sim) -> None:  # noqa: ANN001
     db.commit()
     result, _, waits = _sync(db, connection, SimTally(per_day=1), connector)
     assert result.status == "succeeded"
-    assert waits.count(2.0) >= 1 + 8 + MONTHS - 1  # between every two chunk requests
+    assert waits.count(2.0) >= 1 + 9 + MONTHS - 1  # between every two chunk requests
 
 
 def test_parts_the_source_widens_are_held_to_their_dates(db: Session, sim) -> None:  # noqa: ANN001
@@ -389,7 +389,7 @@ def test_progress_per_chunk_and_summary_counts(db: Session, sim) -> None:  # noq
     assert outcome.status == "succeeded"
     assert outcome.fetched == outcome.stored == _count(db, RawRecord)
     assert outcome.transformed == outcome.fetched  # the company record counts too
-    assert outcome.chunks == 1 + 8 + MONTHS and outcome.chunks_skipped == 0
+    assert outcome.chunks == 1 + 9 + MONTHS and outcome.chunks_skipped == 0
     assert not any("Sim Co" in line for line in lines)  # no names in progress lines
 
 

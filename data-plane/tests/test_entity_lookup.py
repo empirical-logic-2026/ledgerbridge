@@ -225,7 +225,7 @@ def test_sync_prints_progress_and_a_result(pilot_cli) -> None:  # noqa: ANN001
     steps = [
         f"1 companies in this run: {new}",
         f"{new}: fetching (full)",
-        f"{new}: ledger: 21 received, 21 stored, 0 unchanged (chunk 3 of",
+        f"{new}: ledger: 21 received, 21 stored, 0 unchanged (chunk 4 of",
         f"{new}: voucher 2026-04-01..2026-04-30:",
         f"{new}: fetched ",
         f"{new}: transforming into the accounting tables",

@@ -49,6 +49,38 @@ def tally_foreign_amount(text: str | None) -> Decimal | None:
     return tally_amount(left)
 
 
+def tally_foreign_parts(text: str | None) -> tuple[str, Decimal, Decimal | None] | None:
+    """(the currency as written, the foreign amount, the rate) of a foreign amount such as
+    `-$100.00 @ ₹82.00/$ = -₹8200.00` (Tally writes the rupee sign as `?` in exports): ("$",
+    -100.00, 82.00). The amount keeps Tally's sign; the rate is base per unit, None when
+    Tally writes none. None for an amount in the base currency only."""
+    if not text or "=" not in text:
+        return None
+    left = text.rsplit("=", 1)[0]
+    amount_part, _, rate_part = left.partition("@")
+    amount = tally_amount(amount_part)
+    match = _DIGITS.search(amount_part)
+    if amount is None or match is None:
+        return None
+    symbol = amount_part[: match.start()].replace("-", "").strip()
+    rate = None
+    if rate_part:
+        per, _, unit = rate_part.partition("/")
+        value = tally_amount(per)
+        rate = abs(value) if value else None
+        symbol = symbol or unit.strip()
+    return symbol, amount, rate
+
+
+def tally_foreign_unread(text: str | None) -> bool:
+    """True when an amount is written as a foreign amount (it has `@` or `=`) but its
+    foreign part or its base amount after `=` can't be read. The rupee sign isn't read at
+    all (only the digits around it), so `?`, `₹`, `Rs.` or `INR` make no difference."""
+    if not text or ("@" not in text and "=" not in text):
+        return False
+    return tally_foreign_parts(text) is None or tally_amount(text) is None
+
+
 def _sign_word(amount: Decimal) -> str:
     return "negative" if amount < 0 else "positive" if amount > 0 else "zero"
 

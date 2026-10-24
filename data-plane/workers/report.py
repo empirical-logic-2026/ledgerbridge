@@ -50,6 +50,7 @@ from core.problems import (
     for_error,
     for_key,
 )
+from core.transform import FOREIGN_UNREAD
 from workers.entities import Labels
 from workers.failures import failure_breakdown, format_group, warning_breakdown
 from workers.fields import catalogue_counts
@@ -633,6 +634,8 @@ class Builder:
 
 
 def note_code(message: str) -> str:
+    if message.startswith(FOREIGN_UNREAD):
+        return "LB-TRF-011"
     if message.startswith("ambiguous reference"):
         return "LB-TRF-005"
     if message.startswith("reference matched"):

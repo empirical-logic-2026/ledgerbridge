@@ -85,6 +85,7 @@ npm run build
 ./dev.ps1 transform explain [-CheckSource]           # why references didn't resolve (counts and kinds only)
 ./dev.ps1 validate -Quick                            # skip voucher counts, stock, bills and year-end checks
 ./dev.ps1 validate analyse                           # test explanations for validation mismatches (counts only)
+./dev.ps1 validate fx-rules                          # which revaluation rule the source's statements follow (counts only)
 ./dev.ps1 validate compare-ledger -Ledger 26         # one ledger's vouchers in Tally against ours (counts; details to reports/<env>/private/)
 ./dev.ps1 statements [-From 2026-04-01]              # stock values and statements at every month end; compared with Tally's own (counts)
 ./dev.ps1 fields                                     # field catalogue (fields with no column, e.g. UDFs)
