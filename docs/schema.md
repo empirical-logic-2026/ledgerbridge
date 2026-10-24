@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.34 (Draft) |
+| Version | 0.35 (Draft) |
 | Date | 2026-10-16 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -520,7 +520,7 @@ Figures the source calculates itself and no voucher holds, stored with the date 
 | --- | --- |
 | `ledgerbridge_system.validation_runs` | `id, sync_run_id NULL, import_batch_id NULL, entity_id, as_of DATE, started_at, status, checks_passed, checks_failed, thorough BOOLEAN NULL` (`as_of` added by migration `0006`; `thorough` by `0013`: whether the source's controls were compared (voucher counts, stock, bills, year ends), so counts are compared only with a run of the same kind; NULL for older runs) |
 | `ledgerbridge_system.validation_issues` | `id, validation_run_id, check_code ('voucher_unbalanced','tb_unbalanced','closing_mismatch',...), severity, object_type, object_id, expected_value, actual_value, message, resolved_at` |
-| `ledgerbridge_system.alerts` | `id, kind ENUM('sync_failed','deletion_check_failed','validation_failed'), severity ENUM('error','warning'), connection_id, entity_id NULL, sync_run_id NULL, validation_run_id NULL, message, resolved_at NULL, acknowledged_at NULL, acknowledged_by VARCHAR(36) NULL` (SYN-006, migration `0006`). Index `(connection_id, kind, resolved_at)`. `message` holds counts and check codes only. Proposed for M7b: kind `budget_variance` (BUD-011), with `entity_id` set and `connection_id` NULL, so `connection_id` becomes nullable. |
+| `ledgerbridge_system.alerts` | `id, kind ENUM('sync_failed','deletion_check_failed','validation_failed'), severity ENUM('error','warning'), connection_id, entity_id NULL, sync_run_id NULL, validation_run_id NULL, message, resolved_at NULL, resolution VARCHAR(255) NULL, acknowledged_at NULL, acknowledged_by VARCHAR(36) NULL` (SYN-006, migration `0006`; `resolution` migration `0019`: why it was resolved, e.g. the run that passed, every company passing, or the company no longer on the connection). Index `(connection_id, kind, resolved_at)`. `message` holds counts and check codes only. Proposed for M7b: kind `budget_variance` (BUD-011), with `entity_id` set and `connection_id` NULL, so `connection_id` becomes nullable. |
 
 **Checks (M4, VAL-001, VAL-002)**, all **as of a date** (`as_of`, default today): only vouchers dated on or before it count. Post-dated vouchers are stored as they are (`is_post_dated` recorded, `is_effective` unchanged); reports in M6 likewise calculate as of a date.
 
@@ -804,6 +804,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-24 | 0.35 | `alerts.resolution` (migration 0019). |
 | 2026-10-24 | 0.34 | Section 6: `v_statement_open_differences` (migration 0018, ADR-043). |
 | 2026-10-22 | 0.33 | Section 4.9 source figures (`stock_values`), `fx_revaluation_snapshots` built; Section 6 `statement_lines` and the statement views; Section 5.2 statement and stock value checks (migration 0017, ADR-040). |
 | 2026-10-22 | 0.32 | Section 5.2: an issue is resolved only by a run that ran its check. |

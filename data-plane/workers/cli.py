@@ -109,6 +109,7 @@ from workers.failures import failure_breakdown, format_group, warning_breakdown
 from workers.fields import PromoteError, catalogue, catalogue_counts, promote_field
 from workers.references import completeness, explain_entity, failed_reference_counts, lines
 from workers.report import (
+    ATTENTION,
     FAILED,
     OK,
     build,
@@ -691,14 +692,14 @@ def _sync(
 
 
 def _overall(runs: Sequence[SyncResult], validation: str) -> str:
-    """`Overall: OK / ATTENTION NEEDED / FAILED` for a run's result line."""
+    """`Overall: OK / ACTION NEEDED / FAILED` for a run's result line."""
     failed = any(r.status == "failed" or r.failed for r in runs)  # or records failed to convert
     if failed or validation in ("failed", "error"):
         verdict = FAILED
     elif any(r.status != "succeeded" for r in runs) or any(
         e.unverified for r in runs for e in r.entity_results
     ):
-        verdict = "ATTENTION NEEDED"
+        verdict = ATTENTION
     else:
         verdict = OK
     return f"Overall: {verdict} (details and next steps: report)"
@@ -1342,13 +1343,14 @@ def _summary(session: Session) -> int:
 
 def _report(session: Session, args: argparse.Namespace) -> int:
     """The health report (workers/report.py): no names, values or amounts in any
-    environment. Exit code 0 for OK, 1 when something needs attention or failed."""
+    environment. Exit code 1 only when something FAILED; 0 for OK, OK WITH WARNINGS and
+    ACTION NEEDED (warnings never fail a command)."""
     report = build(session, get_settings().app_env, args.entity)
     if args.format == "markdown":
         print(render_markdown(report), end="")
     else:
         print(render_text(report, args.details))
-    return 0 if report.verdict == OK else 1
+    return 1 if report.verdict == FAILED else 0
 
 
 def _print_breakdowns(session: Session, connection_id: int) -> None:

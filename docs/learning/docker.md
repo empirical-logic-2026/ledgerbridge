@@ -70,6 +70,15 @@ Why run commands *inside* the container (`exec`) rather than on your PC? The con
 
 `exec -d` means "start a command in a running container and return at once" (**d**etached). The command is then a process of the container, not of your PowerShell window: closing the window, a lost terminal or Ctrl+C can't stop it. Only stopping the container (`./dev.ps1 down`, or Docker stopping) does. `docker stop` sends its polite stop signal (SIGTERM) only to the container's main process (the API server); other processes such as an `exec`'d sync are killed outright when the container stops. So the sync can't record that it stopped: its run stops sending heartbeats, and after 5 minutes the next sync or `status` marks it `interrupted`, keeping its progress. To see such a process: `./deploy/stack.ps1 -Env test top api` lists the processes in the api container, including a running `workers.cli sync`. Because a detached process has no window to print to, the sync writes its output to the `sync_logs` table and `sync watch` reads it from there.
 
+### Backing up the databases: `./dev.ps1 backup`
+
+`./dev.ps1 backup` (and `./dev.ps1 up -Env pilot`, before it applies migrations) copies the four databases out of the mysql container in two Docker steps:
+
+1. `docker compose exec -T mysql bash -c '...mysqldump ... | gzip > /tmp/...'`: runs `mysqldump` **inside** the running mysql container. The root password is read there from the container's own `MYSQL_ROOT_PASSWORD` variable, so it never appears on your machine's command line or in logs.
+2. `docker compose cp mysql:/tmp/... backups/<env>/...`: copies the file from the container to your disk (`backups/` is git-ignored), then the temporary copy inside the container is deleted.
+
+Try it on the test environment: `./dev.ps1 backup` prints the file and its size. Restoring reverses the steps (`cp` into the container, `exec ... mysql`); the pilot runbook gives the exact commands.
+
 ## 4. `deploy/stack.ps1`: the front door to Docker Compose
 
 Use it directly when you need a Compose command `dev.ps1` doesn't wrap:
@@ -477,6 +486,7 @@ See it: the PR's checks, "Details" on a job, then the step "Initialize container
 
 | Date | Change |
 | --- | --- |
+| 2026-10-24 | Section 3: backing up the databases (`./dev.ps1 backup`, `docker compose exec` and `cp`). |
 | 2026-10-22 | Section 3: `./dev.ps1 statements`, a background job like `validate analyse`. |
 | 2026-10-19 | Section 3: `dev.ps1`'s repeated Docker patterns are now one function each (`Start-Followed`, `Invoke-StackCaptured`, `Invoke-ToolContainer`); the Docker commands themselves are unchanged. `stack.ps1`'s example now shows the `migrate` service of the `tools` profile (the `workers` profile it showed doesn't exist). |
 | 2026-10-19 | Section 11: Docker in the automated checks (service containers, a job in a container, throwaway tool containers, building and scanning our image). |

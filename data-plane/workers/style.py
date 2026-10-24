@@ -1,7 +1,7 @@
 """Colours for terminal output, with a plain fallback (source-independent).
 
 Output is always plain text whose status words carry the meaning on their own (OK, PASSED,
-ATTENTION NEEDED, WARNING, FAILED, better, worse), so nothing is lost without colour.
+OK WITH WARNINGS, ACTION NEEDED, WARNING, FAILED, better, worse), so nothing is lost without colour.
 When colours are on, those words are coloured as they are printed: green for good, yellow
 for attention, red for failures.
 
@@ -22,9 +22,10 @@ from typing import TextIO
 GREEN, YELLOW, RED, RESET = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
 
 _WORDS = (
+    (re.compile(r"\b(OK WITH WARNINGS|PASSED with [\d,]+ warnings?)\b"), YELLOW),
     (re.compile(r"\b(OK|PASSED|SUCCEEDED|better|fixed)\b"), GREEN),
     (
-        re.compile(r"\b(ATTENTION NEEDED|WARNING|INTERRUPTED|RUNNING|UNVERIFIED|NOT VALIDATED)\b"),
+        re.compile(r"\b(ACTION NEEDED|WARNING|INTERRUPTED|RUNNING|UNVERIFIED|NOT VALIDATED)\b"),
         YELLOW,
     ),
     (re.compile(r"\b(FAILED|ERROR|worse|ROOT CAUSE)\b"), RED),
@@ -36,7 +37,8 @@ def enabled() -> bool:
 
 
 def colorize(text: str) -> str:
-    """Status words in colour. ATTENTION NEEDED is matched before its parts."""
+    """Status words in colour. Longer phrases (OK WITH WARNINGS, ACTION NEEDED) are matched
+    before their parts."""
     for pattern, colour in _WORDS:
         text = pattern.sub(lambda m, c=colour: f"{c}{m.group(0)}{RESET}", text)  # type: ignore[misc]
     return text

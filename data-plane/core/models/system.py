@@ -285,8 +285,9 @@ ALERT_KINDS = ("sync_failed", "deletion_check_failed", "validation_failed")
 
 class Alert(TimestampMixin, Base):
     """An in-app alert (SYN-006). One open alert per connection and kind (per entity for
-    validation); resolved when the next run succeeds or passes. `message` holds counts and
-    check codes only, never amounts or names."""
+    validation); resolved when the next run succeeds or passes, with the reason in
+    `resolution` (migration 0019). `message` holds counts and check codes only, never amounts
+    or names."""
 
     __tablename__ = "alerts"
     __table_args__ = (Index("ix_alerts_open", "connection_id", "kind", "resolved_at"), _S)
@@ -306,6 +307,7 @@ class Alert(TimestampMixin, Base):
     )
     message: Mapped[str] = mapped_column(Text)
     resolved_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
+    resolution: Mapped[str | None] = mapped_column(String(255), nullable=True)  # why resolved
     acknowledged_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
     acknowledged_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
 

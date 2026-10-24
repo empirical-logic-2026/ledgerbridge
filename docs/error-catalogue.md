@@ -1052,7 +1052,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 - Nothing to fix in the data; send the summary's lines.
 
-**Next step:** `.\dev.ps1 statements -Env <env>`
+**Next step:** nothing to run: open item ADR-043, find the forex revaluation rule (rulebook 16.8).
 
 
 ## Connection settings

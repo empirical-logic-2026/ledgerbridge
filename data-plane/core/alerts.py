@@ -2,7 +2,9 @@
 
 An alert is raised when something starts failing and resolved when it works again: one
 open alert per connection and kind (per entity for validation). A failure that repeats
-every few minutes updates the open alert instead of creating new ones.
+every few minutes updates the open alert instead of creating new ones. Every resolution
+records its reason (`alerts.resolution`), e.g. the run that passed, or that the company
+the alert was about is no longer on the connection.
 
 The `ledgerbridge_system.alerts` row is the in-app channel. Further channels get the
 raise and resolve events through `AlertChannel`: the log now, email later. Messages hold
@@ -41,7 +43,11 @@ class LogChannel:
 
     def resolved(self, alert: Alert) -> None:
         logger.info(
-            "Alert %s resolved: %s on connection %s", alert.id, alert.kind, alert.connection_id
+            "Alert %s resolved: %s on connection %s (%s)",
+            alert.id,
+            alert.kind,
+            alert.connection_id,
+            alert.resolution,
         )
 
 
@@ -106,15 +112,46 @@ def resolve_alert(
     kind: str,
     connection_id: int,
     *,
+    reason: str,
     entity_id: int | None = None,
     channels: Sequence[AlertChannel] = DEFAULT_CHANNELS,
 ) -> Alert | None:
-    """Resolves the open alert of this kind, if any."""
+    """Resolves the open alert of this kind, if any, recording why."""
     alert = open_alert(session, kind, connection_id, entity_id)
     if alert is None:
         return None
+    _resolve(session, alert, reason, channels)
+    return alert
+
+
+def resolve_alerts_of_other_entities(
+    session: Session,
+    kind: str,
+    connection_id: int,
+    entity_ids: set[int],
+    *,
+    reason: str,
+    channels: Sequence[AlertChannel] = DEFAULT_CHANNELS,
+) -> list[Alert]:
+    """Resolves open alerts of this kind about an entity not in `entity_ids` (one no longer
+    on the connection: no run of it will ever resolve them)."""
+    query = select(Alert).where(
+        Alert.kind == kind,
+        Alert.connection_id == connection_id,
+        Alert.entity_id.is_not(None),
+        Alert.resolved_at.is_(None),
+    )
+    if entity_ids:
+        query = query.where(Alert.entity_id.not_in(entity_ids))
+    found = list(session.scalars(query))
+    for alert in found:
+        _resolve(session, alert, reason, channels)
+    return found
+
+
+def _resolve(session: Session, alert: Alert, reason: str, channels: Sequence[AlertChannel]) -> None:
     alert.resolved_at = alert.updated_at = utcnow()
+    alert.resolution = reason[:255]
     session.commit()
     for channel in channels:
         channel.resolved(alert)
-    return alert

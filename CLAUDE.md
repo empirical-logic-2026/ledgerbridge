@@ -63,7 +63,8 @@ npm test -- --run
 npm run build
 
 # Developer commands (PowerShell, repo root; default -Env test; needs .env.test)
-./dev.ps1 up                     # build, start, wait healthy, migrate (as migrator), print URLs (API on 8001)
+./dev.ps1 up                     # build, start, wait healthy, migrate (as migrator), print URLs (API on 8001); pilot: backup first
+./dev.ps1 backup                 # a full copy of the four databases to backups/<env>/ (git-ignored)
 ./dev.ps1 status | down | test | logs <service> | tally-companies
 ./dev.ps1 seed-test-data         # idempotent seed of LedgerBridge Test Co in TallyPrime (ADR-014)
 ./dev.ps1 extract -Company "LedgerBridge Test Co"   # raw records only (M1)

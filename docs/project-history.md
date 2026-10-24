@@ -65,7 +65,9 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 | #45 | 2026-10-22 | The source's stock values and foreign-currency revaluations stored as source figures; Trial Balance, Profit & Loss and Balance Sheet laid out as Tally's and checked against its own reports line by line (ADR-040) | Reports must equal Tally's; recorded on the test company with integration on and off. |
 | #46 | 2026-10-22 | Educational mode: year-end checks on the 31st or the 2nd, never the 1st (ADR-032 amended) | Tally's computed profit on the 1st disagrees with its ledgers. |
 | #47 | 2026-10-23 | Direct Expenses inside Cost of Sales; the Trial Balance's forex line split into losses and gains; a pilot-safe summary of statement differences | The pilot's statement check failed on both companies (ledger checks all passing). |
-| fix/retire-stock-fallback | 2026-10-24 | The Balance Sheet stock fallback retired | Ours matched the pilot at every date. |
+| fix/verdicts-alerts-open-items | 2026-10-24 | Verdicts and exit codes, open items, alert reasons (migration 0019), pilot backups (ADR-044) | Pilot: warnings read as needing action, report exited 1, a stale alert. |
+| #51 | 2026-10-24 | Open differences under their own heading; an alert without a company resolved | Pilot output. |
+| #50 | 2026-10-24 | The Balance Sheet stock fallback retired | Ours matched the pilot at every date. |
 | #49 | 2026-10-24 | Temporary stopgap: Current Assets taken from Tally where ours differs at dates Tally shows its forex line, with a reconciling line; open differences reported (LB-VAL-026), the view `v_statement_open_differences` (ADR-043) | Entity 1 differed at 18 of 78 dates with no rule found. |
 | #48 | 2026-10-24 | The expected company guard (LB-SYNC-011, ADR-041); Trial Balance netting (ADR-042); the test company across a year end; stock ledgers at the source's stock in both settings; lines taken from the source where no rule is known (ADR-043) | Finish statement matching for both pilot companies. |
 | #48 | 2026-10-24 | More tested amounts in the summary (netted split, other stock figures, foreign-currency openings); the report blames the layout when every ledger check passes | The pilot's remaining statement differences. |
@@ -120,6 +122,7 @@ The test company was opened in TallyPrime Edit Log (migrated, same GUID). Every 
 | Windows Application Control on the developer's machine | Blocks `.venv\Scripts\*.exe`, so `./dev.ps1 test` can't run; tests run with the base interpreter meanwhile. |
 | Foreign-currency data layer | Designed (FX-001 to FX-013, ADR-037), planned for M4b; needs a foreign-currency voucher and a rate entered in TallyPrime first, to copy their exported fields. |
 | Long field paths | The field catalogue keys a field by its path cut to 255 characters, so two paths differing only after that are counted as one (values are unaffected). Left until such paths appear; the fix is a schema change (rulebook Section 12). |
+| Forex revaluation rule (ADR-043) | Entity 1's Current Assets is taken from Tally at 18 dates (open differences, LB-VAL-026) until the rule Tally's Balance Sheet revalues by is found; read-only checks in the client's Tally pending. |
 | Onboarding robustness | Making the first sync of a new company smooth end to end (connect, full sync, validation, report) without manual steps. |
 
 ## Change log

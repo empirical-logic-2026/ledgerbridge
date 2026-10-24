@@ -40,6 +40,10 @@ class Problem:
     consequence_of: tuple[str, ...] = field(default=())  # codes of likely root causes
     # The likely cause when none of `consequence_of` is present (else `causes`).
     causes_alone: tuple[str, ...] = field(default=())
+    # Set when nothing can be run to clear it: it waits on an open item (e.g. a rule still
+    # to find). Such a warning leaves the verdict at OK WITH WARNINGS, and the next step
+    # names the item instead of a command (unless another problem has one).
+    open_item: str = ""
 
     def label(self) -> str:
         """`Balances at year ends [year_end_mismatch, LB-VAL-006]`."""
@@ -717,7 +721,8 @@ PROBLEMS: tuple[Problem, ...] = (
             "ledgerbridge_reporting.v_statement_open_differences lists every date.",
         ),
         ("Nothing to fix in the data; send the summary's lines.",),
-        ".\\dev.ps1 statements -Env {env}",
+        ".\\dev.ps1 report -Env {env} -Details",
+        open_item="ADR-043, find the forex revaluation rule (rulebook 16.8)",
     ),
     # --- connection settings ------------------------------------------------------------
     _p(

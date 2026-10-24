@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-55 tables, 602 columns.
+55 tables, 603 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -1197,6 +1197,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `validation_run_id` | BIGINT UNSIGNED | yes | FK | Refers to `validation_runs`. |
 | `message` | TEXT | no |  | Message. |
 | `resolved_at` | DATETIME(6) | yes |  | When it was resolved (NULL while open). |
+| `resolution` | VARCHAR(255) | yes |  | why resolved |
 | `acknowledged_at` | DATETIME(6) | yes |  | When: acknowledged. |
 | `acknowledged_by` | VARCHAR(36) | yes |  | Acknowledged by. |
 | `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
