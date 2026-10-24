@@ -332,6 +332,7 @@ class HealthReport:
     env: str
     generated: datetime
     sections: list[Section]
+    commit: str = "unknown"  # the git commit the running code was built from (ADR-045)
 
     @property
     def occurrences(self) -> list[Occurrence]:
@@ -384,7 +385,7 @@ class Builder:
             self.validation(),
             self.warnings(),
         ]
-        return HealthReport(self.env, utcnow(), sections)
+        return HealthReport(self.env, utcnow(), sections, get_settings().ledgerbridge_commit)
 
     # --- sections -------------------------------------------------------------------------
 
@@ -661,7 +662,8 @@ def render_text(report: HealthReport, details: bool = False) -> str:
     errors = sum(1 for g in ordered(occurrences) if g[0].problem.severity == ERROR)
     warnings = sum(1 for g in ordered(occurrences) if g[0].problem.severity == WARNING)
     out = [
-        f"LedgerBridge health report ({report.env}), {report.generated:%Y-%m-%d %H:%M} UTC",
+        f"LedgerBridge health report ({report.env}), {report.generated:%Y-%m-%d %H:%M} UTC, "
+        f"code {report.commit}",
         f"Overall: {report.verdict}  ({errors} problem(s), {warnings} warning(s))",
     ]
     step = next_step(occurrences, report.env)
@@ -691,7 +693,8 @@ def render_markdown(report: HealthReport) -> str:
     out = [
         f"# LedgerBridge health report ({report.env})",
         "",
-        f"Generated {report.generated:%Y-%m-%d %H:%M} UTC. Counts, dates and codes only: no "
+        f"Generated {report.generated:%Y-%m-%d %H:%M} UTC by code {report.commit}. Counts, "
+        "dates and codes only: no "
         "names, values or amounts. Codes are explained in docs/error-catalogue.md.",
         "",
         f"**Overall: {report.verdict}**",

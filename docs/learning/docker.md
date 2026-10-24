@@ -79,6 +79,16 @@ Why run commands *inside* the container (`exec`) rather than on your PC? The con
 
 Try it on the test environment: `./dev.ps1 backup` prints the file and its size. Restoring reverses the steps (`cp` into the container, `exec ... mysql`); the pilot runbook gives the exact commands.
 
+### Which code is running? The commit stamp
+
+An image is a snapshot of the code at the moment it was built: updating the code with `git` changes nothing inside running containers until `./dev.ps1 up` rebuilds the image. So every image now records the git commit it was built from:
+
+- `deploy/stack.ps1` reads the checked-out commit (`git rev-parse --short=12 HEAD`) and sets `GIT_COMMIT` before calling Docker Compose.
+- `deploy/compose.yaml` passes it to the build (`build: args: GIT_COMMIT`), once for `api` and reused (`*commit`) by `worker` and `migrate`.
+- `data-plane/Dockerfile` turns it into an environment variable inside the container, `LEDGERBRIDGE_COMMIT`, and a label (`org.opencontainers.image.revision`). It comes after `COPY . .`, so a new commit doesn't rebuild the Python packages.
+
+`validate`, `report`, `statements` and `sync` ask the running api container (`docker compose exec -T api printenv LEDGERBRIDGE_COMMIT`) and compare: on the pilot a different commit stops them with "run ./dev.ps1 up"; on test it is a warning. See it yourself: `./deploy/stack.ps1 -Env test exec -T api printenv LEDGERBRIDGE_COMMIT`, and the report's first line ("code ...").
+
 ## 4. `deploy/stack.ps1`: the front door to Docker Compose
 
 Use it directly when you need a Compose command `dev.ps1` doesn't wrap:
@@ -486,6 +496,7 @@ See it: the PR's checks, "Details" on a job, then the step "Initialize container
 
 | Date | Change |
 | --- | --- |
+| 2026-10-24 | Section 3: the commit stamp (`GIT_COMMIT` build argument, `LEDGERBRIDGE_COMMIT` in the image, the check before commands). |
 | 2026-10-24 | Section 3: backing up the databases (`./dev.ps1 backup`, `docker compose exec` and `cp`). |
 | 2026-10-22 | Section 3: `./dev.ps1 statements`, a background job like `validate analyse`. |
 | 2026-10-19 | Section 3: `dev.ps1`'s repeated Docker patterns are now one function each (`Start-Followed`, `Invoke-StackCaptured`, `Invoke-ToolContainer`); the Docker commands themselves are unchanged. `stack.ps1`'s example now shows the `migrate` service of the `tools` profile (the `workers` profile it showed doesn't exist). |

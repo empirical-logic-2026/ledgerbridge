@@ -298,6 +298,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 - **Validate again** (e.g. after reloading Tally): `./dev.ps1 validate -Env pilot`.
 - **Transform failed records again** (no Tally needed): `./dev.ps1 transform retry -Env pilot` (step 7).
 - **Verdicts and exit codes (ADR-044):** OK; OK WITH WARNINGS (only open items, nothing to run: e.g. an open difference, LB-VAL-026); ACTION NEEDED (a warning with a next step to run); FAILED. `validate` and `report` exit 1 only for FAILED; validate prints "PASSED with N warnings".
+- **After updating the code, always `./dev.ps1 up -Env pilot` first:** `validate`, `report`, `statements` and `sync` stop with "The pilot stack runs code X but the checked-out code is Y: run ./dev.ps1 up -Env pilot" otherwise (ADR-045). The report's first line names the code it ran.
 - **Database backups:** `./dev.ps1 up -Env pilot` backs up the four databases before applying migrations and prints where (`backups\pilot\ledgerbridge-pilot-<date>-<time>.sql.gz`, git-ignored: it holds the client's data; keep it on this machine). `./dev.ps1 backup -Env pilot` takes one on demand. To restore one (it replaces the databases' contents; the stack must be up):
   ```powershell
   ./deploy/stack.ps1 -Env pilot cp backups\pilot\<file>.sql.gz mysql:/tmp/restore.sql.gz
@@ -312,6 +313,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-24 | 0.28 | Commands stop when the stack runs other code than the checked-out one. |
 | 2026-10-24 | 0.27 | Verdicts and exit codes; backups before migrations, and how to restore. |
 | 2026-10-24 | 0.26 | Open differences under their own heading; an old alert without a company resolved by passing validations. |
 | 2026-10-24 | 0.25 | Open differences (LB-VAL-026): OK with warnings. |

@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://127.0.0.1:6333"
 
     tally_url: str = "http://localhost:9000"
+    # The git commit the running image was built from (Dockerfile, ADR-045).
+    ledgerbridge_commit: str = "unknown"
     # How long one Tally request may take before the sync checks Tally and splits the
     # request (ADR-022); a connection can override it with config.timeout_sec.
     tally_timeout_sec: float = 120.0
