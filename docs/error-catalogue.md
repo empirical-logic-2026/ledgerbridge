@@ -42,6 +42,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-TRF-007](#lb-trf-007-mapping-assumptions) | Mapping assumptions | `mapping_assumptions` | Note |
 | [LB-TRF-008](#lb-trf-008-ledgers-without-a-standard-account) | Ledgers without a standard account | `unmapped_ledgers` | Note |
 | [LB-TRF-009](#lb-trf-009-custom-fields-in-the-sources-data) | Custom fields in the source's data | `custom_xml_prefixes` | Note |
+| [LB-TRF-010](#lb-trf-010-base-figures-changed-by-a-rebuild) | Base figures changed by a rebuild | `base_figures_changed` | Error |
 | [LB-VAL-001](#lb-val-001-vouchers-that-dont-balance) | Vouchers that don't balance | `voucher_unbalanced` | Error |
 | [LB-VAL-002](#lb-val-002-trial-balance-doesnt-balance) | Trial balance doesn't balance | `tb_unbalanced` | Error |
 | [LB-VAL-003](#lb-val-003-opening-balances-dont-total-zero) | Opening balances don't total zero | `opening_difference` | Warning |
@@ -493,6 +494,26 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Nothing needed; promote a field if reports need it.
 
 **Next step:** `.\dev.ps1 fields -Env <env>`
+
+### LB-TRF-010: Base figures changed by a rebuild
+
+`base_figures_changed` | Error
+
+**What it means:** After `transform rebuild` some vouchers' base amounts or ledgers' openings or balances differ from before it: a change meant to add information beside the books changed the books.
+
+**Common causes:**
+
+- A code change altered how base amounts are read or which lines count.
+
+**How to investigate:**
+
+- The rebuild's output gives the counts of vouchers and ledgers that differ.
+
+**How to fix:**
+
+- Don't use the rebuilt figures; report the counts so the change can be corrected.
+
+**Next step:** `.\dev.ps1 report -Env <env> -Details`
 
 
 ## Validation: our figures against the source's
