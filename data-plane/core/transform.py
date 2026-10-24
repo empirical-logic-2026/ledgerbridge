@@ -118,6 +118,14 @@ class TransformResult:
     # Values kept aside because they didn't fit their column: "<kind>: <table.column>; ..."
     # -> count. Kinds and column names only, never values (ADR-025).
     data_warnings: Counter[str] = field(default_factory=Counter)
+    # Amounts written in a foreign currency: read beside the base amount, or not readable
+    # (LB-TRF-011). Counts only, so a parsing failure can't pass unnoticed.
+    foreign_read: int = 0
+    foreign_unread: int = 0
+
+
+# The note on a record with a foreign amount that couldn't be read (LB-TRF-011).
+FOREIGN_UNREAD = "foreign amount not read"
 
 
 @dataclass
@@ -624,11 +632,32 @@ class Transformer:
         for item in items:
             item.row.process_status = "processed"
             item.row.process_error = None
+            self._count_foreign(item, result)
             warnings = list(dict.fromkeys(item.warnings))
             item.row.process_warning = "; ".join(warnings)[:2000] if warnings else None
             result.data_warnings.update(warnings)
             result.processed += 1
             result.by_object_type[item.row.object_type] += 1
+
+    @staticmethod
+    def _count_foreign(item: _Raw, result: TransformResult) -> None:
+        """Counts the record's foreign amounts read and not read; one not read is noted on
+        the record, by the column it would have filled (never its value)."""
+        for record in item.records:
+            if isinstance(record, CanonicalVoucher):
+                read = sum(line.amount_fc is not None for line in record.lines)
+                unread = sum(line.foreign_unread for line in record.lines)
+                column = "voucher_lines.amount_fc"
+            elif isinstance(record, CanonicalLedger):
+                read = int(record.opening_balance_fc is not None)
+                unread = int(record.opening_foreign_unread)
+                column = "ledgers.opening_balance_fc"
+            else:
+                continue
+            result.foreign_read += read
+            result.foreign_unread += unread
+            if unread:
+                item.warnings.append(f"{FOREIGN_UNREAD}: {column}")
 
     def _run_entity(self, entity_key: str, result: TransformResult) -> None:
         pending = self._pending_ids(entity_key)

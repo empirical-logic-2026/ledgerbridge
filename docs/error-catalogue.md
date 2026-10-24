@@ -43,6 +43,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-TRF-008](#lb-trf-008-ledgers-without-a-standard-account) | Ledgers without a standard account | `unmapped_ledgers` | Note |
 | [LB-TRF-009](#lb-trf-009-custom-fields-in-the-sources-data) | Custom fields in the source's data | `custom_xml_prefixes` | Note |
 | [LB-TRF-010](#lb-trf-010-base-figures-changed-by-a-rebuild) | Base figures changed by a rebuild | `base_figures_changed` | Error |
+| [LB-TRF-011](#lb-trf-011-foreign-currency-amounts-not-read) | Foreign-currency amounts not read | `foreign_amounts_unread` | Warning |
 | [LB-VAL-001](#lb-val-001-vouchers-that-dont-balance) | Vouchers that don't balance | `voucher_unbalanced` | Error |
 | [LB-VAL-002](#lb-val-002-trial-balance-doesnt-balance) | Trial balance doesn't balance | `tb_unbalanced` | Error |
 | [LB-VAL-003](#lb-val-003-opening-balances-dont-total-zero) | Opening balances don't total zero | `opening_difference` | Warning |
@@ -512,6 +513,26 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 **How to fix:**
 
 - Don't use the rebuilt figures; report the counts so the change can be corrected.
+
+**Next step:** `.\dev.ps1 report -Env <env> -Details`
+
+### LB-TRF-011: Foreign-currency amounts not read
+
+`foreign_amounts_unread` | Warning
+
+**What it means:** Some amounts are written in a foreign currency (with `@` or `=`) in a form the connector couldn't read: their currency, foreign amount and rate stay empty, and if the base amount itself couldn't be read it counts as zero.
+
+**Common causes:**
+
+- The source writes foreign amounts in a form not seen before.
+
+**How to investigate:**
+
+- `transform rebuild` prints how many were read and not read; the report with -Details lists the kinds of record and columns.
+
+**How to fix:**
+
+- Send the counts (no values) so the parser can be extended, then rebuild.
 
 **Next step:** `.\dev.ps1 report -Env <env> -Details`
 

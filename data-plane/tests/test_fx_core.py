@@ -21,15 +21,17 @@ from sqlalchemy.orm import Session
 from connectors.tally import mapping
 from connectors.tally.connector import TallyConnector
 from connectors.tally.fixtures import FixtureTransport
-from connectors.tally.signs import tally_foreign_parts
+from connectors.tally.signs import tally_foreign_parts, tally_foreign_unread
 from core import base_check, fx
+from core.canonical import CanonicalLine, CanonicalVoucher
 from core.models import accounting as A  # noqa: N812
 from core.models import system as S  # noqa: N812
 from core.models.source import RawRecord
-from core.transform import Transformer
+from core.transform import Transformer, TransformResult, _Raw
 from tests.conftest import COMPANY
 from tests.stock_replay import YEAR_END
 from workers.extract import get_or_create_connection
+from workers.report import note_code
 from workers.sync import run_sync
 
 ET = __import__("xml.etree.ElementTree").etree.ElementTree
@@ -61,12 +63,63 @@ USD_MASTER = (
         ("-$1000.00 @ ? 80/$ = -? 80000.00", ("$", Decimal("-1000.00"), Decimal("80"))),
         ("-€1,250.50 @ ?90.10/€ = -?112,670.05", ("€", Decimal("-1250.50"), Decimal("90.10"))),
         ("$50.00 = ?4100.00", ("$", Decimal("50.00"), None)),  # no rate written
+        # The rupee sign however it is written: only the digits around it are read.
+        ("-$100.00 @ ₹82.00/$ = -₹8200.00", ("$", Decimal("-100.00"), Decimal("82.00"))),
+        ("-$100.00 @ Rs.82.00/$ = -Rs.8200.00", ("$", Decimal("-100.00"), Decimal("82.00"))),
+        ("-$100.00 @ Rs. 82.00/$ = -Rs. 8200.00", ("$", Decimal("-100.00"), Decimal("82.00"))),
+        ("-$100 @ Rs 82/$ = -Rs 8200", ("$", Decimal("-100"), Decimal("82"))),
+        ("-£50.00 @ INR 100/£ = -INR 5000", ("£", Decimal("-50.00"), Decimal("100"))),
+        ("$-100.00 @ ?82.00/$ = ?-8200.00", ("$", Decimal("-100.00"), Decimal("82.00"))),
+        ("-US$ 100 @ ?82/US$ = -?8200", ("US$", Decimal("-100"), Decimal("82"))),
+        (
+            "-Dhs.100.00 @ Rs.22.50/Dhs. = -Rs.2250.00",
+            ("Dhs.", Decimal("-100.00"), Decimal("22.50")),
+        ),
         ("8200.00", None),  # base currency only
         ("", None),
     ],
 )
 def test_a_foreign_amount_gives_its_currency_amount_and_rate(text: str, parts: object) -> None:
     assert tally_foreign_parts(text) == parts
+
+
+@pytest.mark.parametrize(
+    ("text", "unread"),
+    [
+        ("-$100.00 @ ?82.00/$ = -?8200.00", False),
+        ("-$100.00 @ ₹82.00/$ = -₹8200.00", False),
+        ("-$100.00 @ Rs.82.00/$ = -Rs.8200.00", False),
+        ("8200.00", False),  # base currency only
+        ("", False),
+        (None, False),
+        ("-$100.00 @ ?82.00/$", True),  # no base amount after `=`
+        ("-$ @ ?82.00/$ = -?8200.00", True),  # no foreign amount
+        ("-$100.00 @ ?82.00/$ = -?", True),  # the base amount unreadable
+    ],
+)
+def test_a_foreign_amount_that_cant_be_read_is_flagged(text: str | None, unread: bool) -> None:
+    assert tally_foreign_unread(text) is unread
+
+
+def test_an_unreadable_foreign_amount_is_counted_and_noted() -> None:
+    line = mapping._line(  # a ledger entry written in a form not seen before
+        _element(
+            "<ALLLEDGERENTRIES.LIST><LEDGERNAME>Customer</LEDGERNAME>"
+            "<AMOUNT>-$100.00 @ ?82.00/$</AMOUNT></ALLLEDGERENTRIES.LIST>"
+        )
+    )
+    assert line.foreign_unread and line.amount_fc is None
+    read = CanonicalLine("Sales", Decimal(8200), amount_fc=Decimal(-100))
+    voucher = CanonicalVoucher(
+        source_key="v", voucher_type_name="Sales", voucher_number="1",
+        voucher_date=date(2026, 8, 1),
+        lines=(line, read),
+    )  # fmt: skip
+    item, result = _Raw(row=RawRecord(), records=[voucher]), TransformResult()
+    Transformer._count_foreign(item, result)
+    assert (result.foreign_read, result.foreign_unread) == (1, 1)
+    assert item.warnings == ["foreign amount not read: voucher_lines.amount_fc"]
+    assert note_code(item.warnings[0]) == "LB-TRF-011"
 
 
 def _element(xml: str) -> object:
@@ -146,7 +199,9 @@ def test_the_transform_stores_foreign_figures_and_leaves_base_figures_alone(
     connector = TallyConnector.from_config(
         {"url": "http://tally.test:9000"}, transport=FixtureTransport(BOOKS)
     )
-    Transformer(db, foreign_books.id, connector).run(rebuild=True)
+    result = Transformer(db, foreign_books.id, connector).run(rebuild=True)
+    # The sale's dollar line and Customer Hotel USD's opening; none unreadable.
+    assert (result.foreign_read, result.foreign_unread) == (2, 0)
     found = base_check.compare(before, base_check.snapshot(db, foreign_books.id))
     assert found.unchanged and found.vouchers > 50 and found.ledgers > 40  # the books unchanged
 

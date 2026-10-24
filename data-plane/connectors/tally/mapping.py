@@ -18,7 +18,12 @@ from typing import Any
 from connectors.base import SourceRecord
 from connectors.tally import parser
 from connectors.tally.parser import text_of
-from connectors.tally.signs import postings, tally_amount, tally_foreign_parts
+from connectors.tally.signs import (
+    postings,
+    tally_amount,
+    tally_foreign_parts,
+    tally_foreign_unread,
+)
 from core.canonical import (
     NO_STANDARD_ACCOUNT,
     CanonicalBill,
@@ -348,6 +353,7 @@ def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalReco
         currency_name=text_of(element, "CURRENCYNAME"),
         opening_currency_name=opening_currency,
         opening_balance_fc=opening_fc,
+        opening_foreign_unread=tally_foreign_unread(text_of(element, "OPENINGBALANCE")),
         is_bill_wise=_flag(element, "ISBILLWISEON"),
         is_cost_centre_applicable=_flag(element, "ISCOSTCENTRESON"),
         gstin=gstin,
@@ -503,6 +509,7 @@ def _line(entry: ET.Element) -> CanonicalLine:
         amount_fc=amount_fc,
         currency_name=currency,
         exchange_rate=rate,
+        foreign_unread=tally_foreign_unread(text_of(entry, "AMOUNT")),
         is_party_line=_flag(entry, "ISPARTYLEDGER"),
         bills=bills,
         cost_allocations=cost_allocations,

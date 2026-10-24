@@ -87,6 +87,7 @@ class CanonicalLedger:
     currency_name: str | None = None
     opening_currency_name: str | None = None
     opening_balance_fc: Decimal | None = None
+    opening_foreign_unread: bool = False  # written in a foreign currency, but not readable
     is_bill_wise: bool = False
     is_cost_centre_applicable: bool = False
     gstin: str | None = None
@@ -206,6 +207,7 @@ class CanonicalLine:
     amount_fc: Decimal | None = None
     currency_name: str | None = None
     exchange_rate: Decimal | None = None
+    foreign_unread: bool = False  # written in a foreign currency, but not readable
     is_party_line: bool = False
     bills: tuple[CanonicalBill, ...] = ()
     cost_allocations: tuple[tuple[str, Decimal], ...] = ()  # (cost centre name, amount)

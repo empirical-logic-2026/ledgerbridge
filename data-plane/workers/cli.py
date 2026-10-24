@@ -1448,6 +1448,7 @@ def _transform_retry(session: Session, args: argparse.Namespace) -> int:
         code |= _print_base_check(
             base_check.compare(before, base_check.snapshot(session, connection.id))
         )
+        _print_foreign_read(result)
     alert_for_run(session, connection, result)
     if not args.no_validate:
         code |= _print_validation(after.latest, Labels(session, connection))
@@ -1463,6 +1464,19 @@ def _transform_retry(session: Session, args: argparse.Namespace) -> int:
     overall = _overall([result], validation)
     print(f"Result: {kind} {result.status}; validation {validation}. {overall}")
     return code
+
+
+def _print_foreign_read(result: SyncResult) -> None:
+    """How many amounts written in a foreign currency were read and how many weren't
+    (counts only). Those not read are a warning: their records carry the note too."""
+    line = (
+        f"Foreign-currency amounts: {result.foreign_read:,} read, "
+        f"{result.foreign_unread:,} not read"
+    )
+    if result.foreign_unread:
+        print(f"{line} [{title('foreign_amounts_unread')}]", file=sys.stderr)
+    else:
+        print(f"{line} (OK)")
 
 
 def _print_base_check(found: base_check.BaseComparison) -> int:

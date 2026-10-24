@@ -366,6 +366,22 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Don't use the rebuilt figures; report the counts so the change can be corrected.",),
         ".\\dev.ps1 report -Env {env} -Details",
     ),
+    _p(
+        "LB-TRF-011",
+        "foreign_amounts_unread",
+        "Foreign-currency amounts not read",
+        WARNING,
+        "Some amounts are written in a foreign currency (with `@` or `=`) in a form the "
+        "connector couldn't read: their currency, foreign amount and rate stay empty, and if "
+        "the base amount itself couldn't be read it counts as zero.",
+        ("The source writes foreign amounts in a form not seen before.",),
+        (
+            "`transform rebuild` prints how many were read and not read; the report with "
+            "-Details lists the kinds of record and columns.",
+        ),
+        ("Send the counts (no values) so the parser can be extended, then rebuild.",),
+        ".\\dev.ps1 report -Env {env} -Details",
+    ),
     # --- validation: our figures against the source's ----------------------------------
     _p(
         "LB-VAL-001",
