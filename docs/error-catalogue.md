@@ -32,6 +32,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-SYNC-008](#lb-sync-008-a-sync-is-already-running) | A sync is already running | `sync_busy` | Warning |
 | [LB-SYNC-009](#lb-sync-009-never-synced) | Never synced | `never_synced` | Warning |
 | [LB-SYNC-010](#lb-sync-010-last-sync-interrupted) | Last sync interrupted | `sync_interrupted` | Warning |
+| [LB-SYNC-011](#lb-sync-011-expected-company-not-loaded) | Expected company not loaded | `expected_entity_not_loaded` | Error |
 | [LB-TRF-001](#lb-trf-001-records-that-failed-to-convert) | Records that failed to convert | `records_failed` | Error |
 | [LB-TRF-002](#lb-trf-002-records-not-converted-yet) | Records not converted yet | `records_pending` | Warning |
 | [LB-TRF-003](#lb-trf-003-values-kept-aside-didnt-fit-their-column) | Values kept aside (didn't fit their column) | `values_kept_in_extra` | Note |
@@ -283,6 +284,27 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Run the sync again: it continues where it stopped.
 
 **Next step:** `.\dev.ps1 sync -Env <env>`
+
+### LB-SYNC-011: Expected company not loaded
+
+`expected_entity_not_loaded` | Error
+
+**What it means:** The source doesn't have the company this entity was synced from loaded (by its company GUID), or another loaded company has the same name: the run stopped before comparing or storing anything, so no validation problems or alerts were recorded.
+
+**Common causes:**
+
+- Another company (e.g. the test company) is loaded in TallyPrime instead.
+- The company was switched in TallyPrime while the run was going.
+
+**How to investigate:**
+
+- .\dev.ps1 entity-check -Env <env> shows which configured companies are loaded.
+
+**How to fix:**
+
+- Load only the expected companies in TallyPrime, then run the command again.
+
+**Next step:** `.\dev.ps1 entity-check -Env <env>`
 
 
 ## Transform: converting stored records into the accounting tables

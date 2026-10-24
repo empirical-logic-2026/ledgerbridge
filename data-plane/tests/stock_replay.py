@@ -1,6 +1,11 @@
 """Replays the test company's statements and stock values, recorded with accounts integrated
 with inventory and without (tests/fixtures/tally/rules/stock_values/, 2026-10-22), and after
-the statement layout seed (tests/fixtures/tally/rules/statement_layout/, 2026-10-23).
+the statement layout seed (tests/fixtures/tally/rules/statement_layout/, 2026-10-23) and the
+netting seed (tests/fixtures/tally/rules/statement_netting/, 2026-10-24).
+
+The groups' reporting setting (LBGroupReporting) is dated nothing; recordings made before it
+was read answer with no groups: every group's setting was No then (the test company's group
+records, read 2026-10-24).
 
 Answers report requests (Trial Balance, Balance Sheet, Profit and Loss, Stock Summary) and
 the collections recorded with them by their request id and the period's To date.
@@ -15,6 +20,8 @@ from tests.conftest import FIXTURES
 
 FOLDER = FIXTURES / "tally" / "rules" / "stock_values"
 LAYOUT = FIXTURES / "tally" / "rules" / "statement_layout"
+NETTING = FIXTURES / "tally" / "rules" / "statement_netting"
+EMPTY = b"<ENVELOPE><BODY><DATA><COLLECTION></COLLECTION></DATA></BODY></ENVELOPE>"
 _ID = re.compile(r"<ID>([^<]+)</ID>")
 _TO = re.compile(r'<SVTODATE TYPE="Date">(\d{4})(\d{2})(\d{2})</SVTODATE>')
 FILES = {
@@ -38,6 +45,9 @@ def replay(case: str, root: Path = FOLDER) -> httpx.MockTransport:
         kind = _ID.search(body).group(1)  # type: ignore[union-attr]
         if kind == "LBCompanies":
             return httpx.Response(200, content=(folder / "companies.xml").read_bytes())
+        if kind == "LBGroupReporting":
+            setting = folder / "group_reporting.xml"
+            return httpx.Response(200, content=setting.read_bytes() if setting.exists() else EMPTY)
         to = _TO.search(body)
         file = folder / f"{FILES[kind]}_{to.group(1)}-{to.group(2)}-{to.group(3)}.xml"  # type: ignore[union-attr]
         return httpx.Response(200, content=file.read_bytes())

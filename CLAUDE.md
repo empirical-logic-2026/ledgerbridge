@@ -93,6 +93,7 @@ npm run build
 # Pilot commands (init-env, connect -Origin backup, sync full, summary with -Env pilot) are in
 # docs/pilot-runbook.md: the developer runs them. Claude Code never does.
 ./dev.ps1 seed-test-data create-only                 # create missing seed items, skip alterations and deletions
+./dev.ps1 seed-test-data integrated-off              # (or integrated-on) switch the test company's inventory integration
 ./deploy/stack.ps1 -Env test exec -T api python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
 
 # Lower level: any docker compose command for one environment

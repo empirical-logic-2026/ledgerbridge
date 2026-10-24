@@ -95,7 +95,14 @@ from core.validation import ValidationReport
 from workers import style
 from workers.analyse import analyse
 from workers.compare import compare_ledger
-from workers.entities import Labels, by_names, configured, select_entities, to_config
+from workers.entities import (
+    ExpectedEntityNotLoadedError,
+    Labels,
+    by_names,
+    configured,
+    select_entities,
+    to_config,
+)
 from workers.extract import connector_for, get_or_create_connection, run_extract
 from workers.failures import failure_breakdown, format_group, warning_breakdown
 from workers.fields import PromoteError, catalogue, catalogue_counts, promote_field
@@ -445,6 +452,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return code
+        except ExpectedEntityNotLoadedError as exc:  # stopped before comparing anything
+            print(f"STOPPED: {exc} [LB-SYNC-011]", file=sys.stderr)
+            return 2
         except Exception as exc:
             if _show_names():
                 raise  # test environment: the full traceback helps

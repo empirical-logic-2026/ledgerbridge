@@ -43,7 +43,7 @@ from core.models.system import SyncMarker
 from core.raw_store import RawStore
 from core.transform import Transformer, TransformResult, mark_deleted
 from workers import locks
-from workers.entities import Labels, select_entities
+from workers.entities import ExpectedEntityNotLoadedError, Labels, ensure_loaded, select_entities
 from workers.fetch import AUTO, ChunkFetcher, FetchSettings
 from workers.runs import (
     INTERRUPTED_BY_SIGNAL,
@@ -197,12 +197,15 @@ def run_sync(
         result.entity_results = outcomes
         say(f"{len(outcomes)} companies in this run: {', '.join(o.label for o in outcomes)}")
         for entity, outcome in zip(entities, outcomes, strict=True):
+            ensure_loaded(connector, entity)
             try:
                 _sync_entity(
                     session, connection, connector, run, result, entity, outcome,
                     full=full, period=period, restart=restart, say=say, sleep=sleep,
                     refetch_from=refetch_from,
                 )  # fmt: skip
+            except ExpectedEntityNotLoadedError:
+                raise  # the whole run stops: the source has other companies loaded
             except SourceUnresponsiveError as exc:
                 session.rollback()
                 outcome.status, outcome.error = "failed", short_error(exc, redact=True)
@@ -228,6 +231,9 @@ def run_sync(
     except (KeyboardInterrupt, SystemExit):
         _interrupt_run(session, run, result)
         raise
+    except ExpectedEntityNotLoadedError as exc:
+        _stop_run(session, run, result, exc)
+        say(f"STOPPED: {exc} [LB-SYNC-011]")
     except Exception as exc:
         _fail_run(session, run, result, exc)
     return _close_run(session, run, result)
@@ -508,7 +514,9 @@ def run_deletion_check(
             say(f"{labels.for_key(entity.key)}: checking for deletions")
             result.entities.append(entity.name)
             result.entity_keys.append(entity.key)
+            ensure_loaded(connector, entity)
             existing = connector.list_keys(entity)
+            ensure_loaded(connector, entity)  # still the same company: then mark deletions
             for object_type, keys in existing.items():
                 result.fetched[object_type] += len(keys)
             deleted = mark_deleted(session, connection.id, entity_id, existing)
@@ -521,6 +529,9 @@ def run_deletion_check(
     except (KeyboardInterrupt, SystemExit):
         _interrupt_run(session, run, result)
         raise
+    except ExpectedEntityNotLoadedError as exc:
+        _stop_run(session, run, result, exc)
+        say(f"STOPPED: {exc} [LB-SYNC-011]")
     except Exception as exc:
         _fail_run(session, run, result, exc)
     return _close_run(session, run, result)
@@ -611,6 +622,15 @@ def _interrupt_run(session: Session, run: SyncRun, result: SyncResult) -> None:
     result.status = run.status = "interrupted"
     logger.warning("Sync run %s interrupted", run.id)
     _close_run(session, run, result)
+
+
+def _stop_run(session: Session, run: SyncRun, result: SyncResult, exc: Exception) -> None:
+    """The expected company isn't loaded: the run stops as interrupted (checkpoints kept, so
+    it resumes once the company is loaded again), nothing compared and no alert."""
+    session.rollback()
+    result.error = run.error_summary = short_error(exc)
+    result.status = run.status = "interrupted"
+    logger.warning("Sync run %s stopped: %s", run.id, type(exc).__name__)
 
 
 def _fail_run(session: Session, run: SyncRun, result: SyncResult, exc: Exception) -> None:

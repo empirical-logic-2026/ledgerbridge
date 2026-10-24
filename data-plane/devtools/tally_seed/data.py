@@ -2,7 +2,8 @@
 
 Amounts are positive here; Dr/Cr is explicit. The XML builder turns them into Tally's
 signed form. Voucher dates use only the 1st, 2nd or 31st of a month (TallyPrime
-Educational mode).
+Educational mode). The test company's books begin on 1 April 2025 (changed in TallyPrime by
+the developer, 2026-10-24, so it has a year end): vouchers fall in FY 2025-26 or 2026-27.
 
 Besides everyday vouchers, the set reproduces Tally's counting rules (checked against
 Tally's own balances, 2026-10-14; schema.md 7.4):
@@ -43,8 +44,8 @@ from typing import Any, Literal
 
 Side = Literal["Dr", "Cr"]
 EDUCATIONAL_DAYS = (1, 2, 31)
-FY_START = date(2026, 4, 1)
-FY_END = date(2027, 3, 31)
+FY_START = date(2025, 4, 1)  # the books' beginning (FY 2025-26)
+FY_END = date(2027, 3, 31)  # the end of FY 2026-27
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,9 @@ class Ledger:
     predefined: bool = False  # exists in every Tally company (e.g. Cash); only altered
     aliases: tuple[str, ...] = ()  # other names (Tally's alias names)
     currency: str | None = None  # a foreign currency's symbol (else the base currency)
+    # The opening is entered by hand in TallyPrime (a foreign-currency opening: Tally's XML
+    # import refused foreign amounts, ADR-035): created without one and never altered.
+    opening_by_hand: bool = False
 
 
 @dataclass(frozen=True)
@@ -148,6 +152,17 @@ class Godown:
 
 
 @dataclass(frozen=True)
+class AccountGroup:
+    """A group of ledgers, with Tally's two reporting settings (exported as ISADDABLE and
+    ISSUBLEDGER, read from the test company's group records, 2026-10-24)."""
+
+    name: str
+    parent: str
+    addable: bool = False  # ISADDABLE
+    sub_ledger: bool = False  # ISSUBLEDGER: "group behaves like a sub-ledger"
+
+
+@dataclass(frozen=True)
 class Currency:
     symbol: str  # Tally's name for it, e.g. "$"
     formal_name: str
@@ -166,6 +181,7 @@ class SeedData:
     godowns: tuple[Godown, ...] = field(default=())
     stock_groups: tuple[str, ...] = field(default=())
     currencies: tuple[Currency, ...] = field(default=())
+    groups: tuple[AccountGroup, ...] = field(default=())
 
 
 # Voucher types whose vouchers don't post to the books (Tally leaves them out of every
@@ -568,6 +584,77 @@ LAYOUT_VOUCHERS = (
     _journal("STMT-FXV-1", "Journal", date(2026, 9, 1), "Consulting Fees", FX_VENDOR, "4100"),
 )
 
+# --- Trial Balance netting (2026-10-24): how Tally splits a line into debit and credit when
+# a group holds ledgers on both sides. Sundry Creditors behaves like a sub-ledger in every
+# Tally company (ISSUBLEDGER Yes): a vendor with an advance is a debit inside it. Three
+# custom groups, one per setting, each with a debit and a credit ledger.
+NETTING_GROUPS = (
+    AccountGroup("Advances Addable", "Current Assets", addable=True),
+    AccountGroup("Advances Sub-ledger", "Current Assets", sub_ledger=True),
+    AccountGroup("Advances Plain", "Current Assets"),
+)
+NETTING_LEDGERS = (
+    Ledger("Addable Dr", "Advances Addable"),
+    Ledger("Addable Cr", "Advances Addable"),
+    Ledger("Sub-ledger Dr", "Advances Sub-ledger"),
+    Ledger("Sub-ledger Cr", "Advances Sub-ledger"),
+    Ledger("Plain Dr", "Advances Plain"),
+    Ledger("Plain Cr", "Advances Plain"),
+    Ledger("Vendor Foxtrot Advance", "Sundry Creditors"),
+)
+NETTING_VOUCHERS = (
+    _journal("NET-ADD-DR", "Payment", date(2026, 9, 2), "Addable Dr", "Cash", "400"),
+    _journal("NET-ADD-CR", "Receipt", date(2026, 9, 2), "Cash", "Addable Cr", "150"),
+    _journal("NET-SUB-DR", "Payment", date(2026, 9, 2), "Sub-ledger Dr", "Cash", "200"),
+    _journal("NET-SUB-CR", "Receipt", date(2026, 9, 2), "Cash", "Sub-ledger Cr", "90"),
+    _journal("NET-PLN-DR", "Payment", date(2026, 9, 2), "Plain Dr", "Cash", "300"),
+    _journal("NET-PLN-CR", "Receipt", date(2026, 9, 2), "Cash", "Plain Cr", "120"),
+    _journal("NET-VND-DR", "Payment", date(2026, 9, 2), "Vendor Foxtrot Advance", "Cash", "700"),
+)
+
+# --- a year end (2026-10-24): the books begin on 1 April 2025, so 31 March 2026 is a year end
+# before the as-of date. An item of its own bought at rising rates and sold in both years
+# (its value at a date depends on the period valued), with ledgers of its own so the other
+# figures stay as they were; and a customer kept in US dollars whose opening balance the
+# developer entered in TallyPrime ($1,000 at Rs 80; Tally's XML import refused foreign
+# amounts, ADR-035), balanced by a capital ledger, with rates of exchange that change later.
+YE_VENDOR = "Vendor Golf Year End"
+YE_CUSTOMER = "Customer India Year End"
+YE_PURCHASES = "Purchases - Year End"
+YE_SALES = "Sales - Year End"
+FX_OPENING_CUSTOMER = "Customer Hotel USD"
+YEAR_END_LEDGERS = (
+    Ledger(YE_VENDOR, "Sundry Creditors", bill_wise=True),
+    Ledger(YE_CUSTOMER, "Sundry Debtors", bill_wise=True),
+    Ledger(YE_PURCHASES, "Purchase Accounts"),
+    Ledger(YE_SALES, "Sales Accounts"),
+    Ledger(FX_OPENING_CUSTOMER, "Sundry Debtors", _d("80000"), currency="$", opening_by_hand=True),
+    Ledger("Capital - Hotel", "Capital Account", _d("80000"), "Cr"),
+)
+
+
+def _bolts(marker: str, on: date, quantity: str, rate: str, bought: bool) -> Voucher:
+    """A purchase (bought) or sale of Bolts on credit, with its bill."""
+    line = ItemLine(
+        "Bolt", _d(quantity), _d(rate), YE_PURCHASES if bought else YE_SALES, inward=bought
+    )
+    party = YE_VENDOR if bought else YE_CUSTOMER
+    kind = "Purchase" if bought else "Sales"
+    amount = str(line.amount)
+    return _goods(marker, kind, on, f"{kind} of Bolts {marker}", party, line, marker,
+                  _bill(marker, amount))  # fmt: skip
+
+
+YEAR_END_VOUCHERS = (
+    _bolts("YE-PUR-1", date(2025, 6, 2), "100", "10", bought=True),
+    _bolts("YE-PUR-2", date(2025, 9, 2), "100", "14", bought=True),
+    _bolts("YE-SAL-1", date(2025, 12, 31), "120", "25", bought=False),
+    _bolts("YE-PUR-3", date(2026, 3, 2), "50", "18", bought=True),
+    _bolts("YE-SAL-2", date(2026, 3, 31), "30", "25", bought=False),
+    _bolts("YE-PUR-4", date(2026, 6, 2), "60", "20", bought=True),
+    _bolts("YE-SAL-3", date(2026, 8, 31), "80", "30", bought=False),
+)
+
 # --- edit log (2026-10-19): a journal altered after creation with TallyPrime Edit Log, so
 # Tally keeps its earlier version.
 EDIT_LOG_VOUCHERS = (
@@ -582,7 +669,15 @@ EDIT_LOG_VOUCHERS = (
 NAME_VOUCHERS = (_journal("NAME-ALIAS-1", "Journal", date(2026, 9, 1), "Kilo Alias", "Cash", "21"),)
 
 SEED = SeedData(
-    ledgers=(*LEDGERS, *NAME_LEDGERS, *FX_LEDGERS, *LAYOUT_LEDGERS),
+    ledgers=(
+        *LEDGERS,
+        *NAME_LEDGERS,
+        *FX_LEDGERS,
+        *LAYOUT_LEDGERS,
+        *NETTING_LEDGERS,
+        *YEAR_END_LEDGERS,
+    ),
+    groups=NETTING_GROUPS,
     currencies=(USD,),
     units=("Nos",),
     stock_items=(
@@ -592,9 +687,18 @@ SEED = SeedData(
         StockItem("Bracket", "Nos"),  # made by the job worker
         StockItem("Client Fabric", "Nos"),  # a principal's material, with us
         StockItem("Hinge", "Nos", _d("5"), _d("2"), group="Components"),  # in a stock group
+        StockItem("Bolt", "Nos"),  # bought and sold across the year end
     ),
     cost_centres=("Head Office", "Branch"),
-    vouchers=(*VOUCHERS, *NAME_VOUCHERS, *FX_VOUCHERS, *EDIT_LOG_VOUCHERS, *LAYOUT_VOUCHERS),
+    vouchers=(
+        *VOUCHERS,
+        *NAME_VOUCHERS,
+        *FX_VOUCHERS,
+        *EDIT_LOG_VOUCHERS,
+        *LAYOUT_VOUCHERS,
+        *NETTING_VOUCHERS,
+        *YEAR_END_VOUCHERS,
+    ),
     voucher_types=(("Adjustment Journal", "Journal"),),  # a custom type under Journal
     godowns=(Godown(JOB_WORKER, external=True), Godown(PRINCIPAL, internal=True)),
     renamed_groups=(STOCK_IN_HAND,),

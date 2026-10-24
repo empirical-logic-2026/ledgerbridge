@@ -20,7 +20,7 @@ from core import statements
 from core.models import accounting as A  # noqa: N812
 from core.models import system as S  # noqa: N812
 from tests.conftest import COMPANY
-from tests.stock_replay import FOLDER, LAYOUT, replay
+from tests.stock_replay import FOLDER, LAYOUT, NETTING, replay
 from workers.extract import get_or_create_connection
 from workers.sync import run_sync
 
@@ -46,6 +46,12 @@ def _synced(db: Session, monkeypatch: pytest.MonkeyPatch, folder: Path) -> S.Con
 def books(db: Session, monkeypatch: pytest.MonkeyPatch) -> Iterator[S.Connection]:
     """The test company's books as recorded on the day its statements were."""
     yield _synced(db, monkeypatch, FOLDER / "books")
+
+
+@pytest.fixture
+def netting_books(db: Session, monkeypatch: pytest.MonkeyPatch) -> Iterator[S.Connection]:
+    """The test company's books after the netting seed (2026-10-24)."""
+    yield _synced(db, monkeypatch, NETTING / "books")
 
 
 @pytest.fixture
@@ -356,3 +362,25 @@ def test_stock_candidates_are_read_after_the_first_year_end(
         "the stock items' closing value": Decimal(5580),
         "this financial year's closing stock": Decimal(5580),  # the recording's own P&L
     }
+
+
+def test_a_group_netted_for_reporting_is_one_figure_in_the_trial_balance(
+    db: Session, netting_books: S.Connection
+) -> None:
+    """The netting seed (2026-10-24): under Current Assets a group set to net its balances
+    for reporting (ISADDABLE: 400 Dr and 150 Cr shown as 250 Dr), a group behaving like a
+    sub-ledger and a plain one (both split: 200 Dr / 90 Cr, 300 Dr / 120 Cr); a vendor
+    with an advance inside Sundry Creditors (sub-ledger, still split: 700 Dr). Tally's Trial
+    Balance: Current Assets 72,518 Dr and 210 Cr, Current Liabilities 3,040 Dr."""
+    entity_id = db.scalars(select(A.Entity)).one().id
+    source = _source("integrated", AS_OF, NETTING)
+    assert len(source.netted_groups) == 1
+    result = statements.refresh(db, entity_id, netting_books.id, "live", source)
+    listed = [(d.statement, d.key, str(d.ours), str(d.source)) for d in result.differences]
+    assert listed == []
+    ours = {
+        x.label: (x.debit, x.credit)
+        for _, x in statements.trial_balance(statements.figures(db, entity_id, source))
+    }
+    assert ours["Current Assets"] == (Decimal(72518), Decimal(210))
+    assert ours["Current Liabilities"] == (Decimal(3040), Decimal(26129))

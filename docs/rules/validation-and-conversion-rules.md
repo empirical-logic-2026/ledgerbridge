@@ -372,6 +372,23 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 - **Code:** `core/statement_differences.py` (`Labels`, `tested_amounts`, `last_year_end`, `Summary`), `core/validation.py` (`_statements`), `workers/statements.py`, `workers/cli.py` (`_print_statement_summary`).
 - **Tests:** `tests/test_statements.py` (`test_the_summary_names_each_line_safely_and_what_it_equals`, `test_validation_prints_the_summary`, `test_the_last_year_end_gives_its_profit_and_stock`).
 
+### 16.7 A Trial Balance line splits ledger by ledger, groups netted for reporting as one
+
+- **What:** each Trial Balance line shows the debit balances and the credit balances under the primary group separately, ledger by ledger (also inside sub-groups), except a group Tally nets for reporting ("Nett Debit/Credit Balances for Reporting", ISADDABLE Yes): its balances count as one figure (the highest such group above a ledger). "Group behaves like a sub-ledger" (ISSUBLEDGER, Yes for Sundry Debtors and Sundry Creditors in every company) doesn't change the split. The setting is read from Tally with the statements at each date.
+- **Why:** pilot: Current Liabilities (and Current Assets, Fixed Assets) differed in their debit and credit columns with equal net amounts.
+- **Proven:** the netting seed (2026-10-24): under Current Assets an ISADDABLE group with 400 Dr and 150 Cr shown as 250 Dr, a sub-ledger group and a plain one each split (200 Dr / 90 Cr, 300 Dr / 120 Cr): Current Assets 72,518 Dr and 210 Cr; a vendor with a 700 advance inside Sundry Creditors: Current Liabilities 3,040 Dr. Ours equal.
+- **Code:** `core/statements.py` (`Figures.unit`, `trial_balance`), `connector._netted_groups` (`envelopes.GROUP_REPORTING`).
+- **Tests:** `tests/test_statements.py` (`test_a_group_netted_for_reporting_is_one_figure_in_the_trial_balance`, `test_tally_splits_a_trial_balance_line_ledger_by_ledger`).
+- **ADR:** ADR-042.
+
+## 17. Only the expected company is compared
+
+- **What:** before every step that reads Tally to compare or store (sync, deletion check, validation, `validate analyse`, `statements`) and again after reading, the company the entity was synced from must be loaded (by its GUID) and no other loaded company may have the same name; otherwise the run stops with "Expected company not loaded" (LB-SYNC-011): nothing compared or marked deleted, no validation problems or alerts, a sync run marked interrupted so it resumes.
+- **Why:** pilot: a run with another company loaded reported 3,742 ledgers missing.
+- **Code:** `workers/entities.py` (`ensure_loaded`), `workers/sync.py`, `workers/validate.py`, `workers/analyse.py` (`_read`), `workers/statements.py`.
+- **Tests:** `tests/test_entity_guard.py`.
+- **ADR:** ADR-041.
+
 ## Change log
 
 | Date | Version | Change |

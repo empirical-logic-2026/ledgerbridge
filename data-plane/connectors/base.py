@@ -189,6 +189,7 @@ class SourceStatements:
     item_values: tuple[Decimal, Decimal] | None = None
     standard_names: frozenset[str] = frozenset()
     stock_candidates: Mapping[str, Decimal] = field(default_factory=dict)
+    netted_groups: frozenset[str] = frozenset()  # groups netted in its reports (source keys)
 
 
 @dataclass(frozen=True)

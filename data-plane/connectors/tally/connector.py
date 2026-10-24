@@ -658,6 +658,7 @@ class TallyConnector:
             item_values=None if integrated else self._item_values(entity, period),
             standard_names=mapping.RESERVED_GROUPS | reports.OWN_LINES,
             stock_candidates=self._stock_candidates(entity, period) if integrated else {},
+            netted_groups=self._netted_groups(entity),
         )
 
     def _stock_candidates(
@@ -684,6 +685,14 @@ class TallyConnector:
         if closing is not None:
             found["this financial year's closing stock"] = closing
         return found
+
+    def _netted_groups(self, entity: SourceEntity) -> frozenset[str]:
+        """The groups Tally nets for reporting (ISADDABLE Yes), by GUID."""
+        return frozenset(
+            parser.source_key(group)
+            for group in self._export_objects(entity, envelopes.GROUP_REPORTING)
+            if (group.findtext("ISADDABLE") or "").strip() == "Yes"
+        )
 
     def _year_start(self, entity: SourceEntity, on: date) -> date | None:
         """The start of the financial year `on` falls in (the company's STARTINGFROM month

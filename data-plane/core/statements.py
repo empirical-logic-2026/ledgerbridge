@@ -71,7 +71,12 @@ class _Ledger:
     kind: str
     opening: Decimal
     balance: Decimal
-    branch: int | None = None  # the sub-group directly under `top` it sits in; None: in top
+    groups: tuple[str, ...] = ()  # source keys of its group and those above, up to `top`
+
+    @property
+    def branch(self) -> str | None:
+        """The sub-group directly under its primary group it sits in (None: in the primary)."""
+        return self.groups[-2] if len(self.groups) > 1 else None
 
 
 @dataclass
@@ -113,8 +118,8 @@ def _books(
     """Every ledger's balance as of the date (opening + effective lines), with the primary
     group it rolls up to; and the primary groups."""
     groups = {
-        gid: (parent, name, nature, gross, code)
-        for gid, parent, name, nature, gross, code in session.execute(
+        gid: (parent, name, nature, gross, code, key)
+        for gid, parent, name, nature, gross, code, key in session.execute(
             select(
                 A.AccountGroup.id,
                 A.AccountGroup.parent_id,
@@ -122,6 +127,7 @@ def _books(
                 A.AccountGroup.nature,
                 A.AccountGroup.affects_gross_profit,
                 A.StandardAccount.code,
+                A.AccountGroup.source_key,
             )
             .outerjoin(
                 A.StandardAccount, A.StandardAccount.id == A.AccountGroup.standard_account_id
@@ -137,13 +143,14 @@ def _books(
             gid = groups[gid][0]
         return gid
 
-    def branch(gid: int) -> int | None:
-        """The group directly under the primary group on the way up (None: the primary)."""
-        below, seen = None, set()
-        while groups.get(gid, (None,))[0] is not None and gid not in seen:
+    def path(gid: int) -> tuple[str, ...]:
+        """Source keys of the group and every group above it, up to the primary group."""
+        keys, seen = [], set()
+        while gid in groups and gid not in seen:
             seen.add(gid)
-            below, gid = gid, groups[gid][0]
-        return below
+            keys.append(groups[gid][5])
+            gid = groups[gid][0]
+        return tuple(keys)
 
     movements = (
         select(A.VoucherLine.ledger_id, func.sum(A.VoucherLine.amount).label("moved"))
@@ -164,7 +171,7 @@ def _books(
             kind,
             Decimal(opening),
             Decimal(opening) + Decimal(moved),
-            branch(gid),
+            path(gid),
         )  # fmt: skip
         for lid, key, name, gid, kind, opening, moved in session.execute(
             select(
@@ -183,7 +190,7 @@ def _books(
     tops = {ledger.top for ledger in ledgers}
     primary = {
         gid: _Group(gid, name, nature, bool(gross), code)
-        for gid, (_, name, nature, gross, code) in groups.items()
+        for gid, (_, name, nature, gross, code, _key) in groups.items()
         if gid in tops
     }
     return ledgers, primary
@@ -218,6 +225,14 @@ class Figures:
             if ledger.key not in self.source.profit_carriers
             and not (self.integrated and ledger.kind == "stock")
         ]
+
+    def unit(self, ledger: _Ledger) -> tuple[str, object]:
+        """What the source's Trial Balance splits a line into debit and credit by: the
+        ledger itself, or the highest group above it whose balances the source nets for
+        reporting (Tally's "Nett Debit/Credit Balances for Reporting", recorded on the test
+        company, 2026-10-24)."""
+        netted = [key for key in ledger.groups if key in self.source.netted_groups]
+        return ("group", netted[-1]) if netted else ("ledger", ledger.id)
 
     def totals(self) -> dict[int, Decimal]:
         """Each primary group's total of the ledgers counted in its line."""
@@ -267,16 +282,22 @@ def net_profit(f: Figures) -> Decimal:
 
 
 def trial_balance(f: Figures) -> list[tuple[str | None, StatementLine]]:
-    by_group: dict[int, list[Decimal]] = defaultdict(list)
+    """One line per primary group, split into debit and credit ledger by ledger, a group the
+    source nets for reporting counting as one figure."""
+    by_group: dict[int, dict[tuple[str, object], Decimal]] = defaultdict(dict)
     for ledger in f.counted():
-        by_group[ledger.top].append(f.value(ledger))
+        units = by_group[ledger.top]
+        unit = f.unit(ledger)
+        units[unit] = units.get(unit, ZERO) + f.value(ledger)
     if f.integrated and f.source.opening_stock is not None:
         stock = f.stock_group()
-        if stock is not None:
-            by_group[stock].append(f.source.opening_stock)  # the stock at its opening value
+        if stock is not None:  # the stock at its opening value, where the stock ledgers sit
+            unit = next((f.unit(x) for x in f.ledgers if x.kind == "stock"), ("stock", 0))
+            units = by_group[stock]
+            units[unit] = units.get(unit, ZERO) + f.source.opening_stock
     lines = []
     for group in f.ordered_groups(tuple(NATURE_ORDER)):
-        values = by_group.get(group.id, [])
+        values = list(by_group.get(group.id, {}).values())
         if values:
             lines.append(_tb_line(group.name, values))
     for ledger in f.ledgers:

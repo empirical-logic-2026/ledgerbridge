@@ -201,7 +201,7 @@ def netted_split(f: Figures, group_id: int) -> dict[str, Decimal]:
     sums: dict[object, Decimal] = defaultdict(lambda: ZERO)
     for x in f.counted():
         if x.top == group_id:
-            sums[x.branch if x.branch is not None else ("ledger", x.id)] += f.value(x)
+            sums[("group", x.branch) if x.branch else ("ledger", x.id)] += f.value(x)
     if f.integrated and f.source.opening_stock is not None and f.stock_group() == group_id:
         branch = next((x.branch for x in f.ledgers if x.kind == "stock"), None)
         sums[branch if branch is not None else "stock"] += f.source.opening_stock

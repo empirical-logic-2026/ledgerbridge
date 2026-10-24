@@ -12,7 +12,7 @@ it again; the seeder stays idempotent.
 import re
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 import httpx
@@ -127,6 +127,7 @@ class TallyState:
     godowns: set[str] = field(default_factory=set)
     reserved_groups: dict[str, str] = field(default_factory=dict)  # reserved -> current name
     currencies: set[str] = field(default_factory=set)
+    groups: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -208,6 +209,7 @@ def read_state(client: TallyClient, company: str) -> TallyState:
         voucher_types=_names(export(VOUCHER_TYPES), "VOUCHERTYPE"),
         godowns=_names(export(GODOWNS), "GODOWN"),
         currencies=_names(export(CURRENCIES), "CURRENCY"),
+        groups=_names(export(GROUPS), "GROUP"),
         reserved_groups={
             reserved: name
             for g in parser.objects(export(GROUPS), "GROUP")
@@ -215,6 +217,25 @@ def read_state(client: TallyClient, company: str) -> TallyState:
             and (name := parser.object_name(g))
         },
     )
+
+
+def set_integration(
+    client: TallyClient, importer: TallyImporter, company: str, integrated: bool
+) -> bool:
+    """Switches the test company's "Integrate Accounts with Inventory", then reads it back:
+    True when Tally reports the setting asked for (recordings with and without, ADR-040)."""
+    result = importer.post(
+        rq.envelope(company, "All Masters", rq.company_integration(company, integrated))
+    )
+    if not result.ok:
+        raise ImportFailedError("integration setting", result.messages)
+    body = client.post(envelopes.collection_request(envelopes.COMPANIES))
+    flags = [
+        (c.findtext("ISINTEGRATED") or "").strip()
+        for c in parser.objects(parser.parse_response(body), "COMPANY")
+        if parser.object_name(c) == company
+    ]
+    return flags == ["Yes" if integrated else "No"]
 
 
 def _is_altered(voucher: Voucher, state: VoucherState) -> bool:
@@ -289,13 +310,22 @@ def seed(
             run(currency.symbol, "currency", "All Masters", rq.currency_create(currency))
             report.add("currencies")
 
+    for group in seed_data.groups:
+        if group.name not in state.groups:
+            run(group.name, "group", "All Masters", rq.group_create(group))
+            report.add("groups")
+
     for ledger in seed_data.ledgers:
         wanted = -ledger.opening if ledger.opening_side == "Dr" else ledger.opening
         if ledger.name not in state.ledgers:
             if ledger.predefined:
                 raise ImportFailedError(ledger.name, ["predefined ledger is missing in Tally"])
-            run(ledger.name, "ledger", "All Masters", rq.ledger_create(ledger))
+            created = replace(ledger, opening=Decimal(0)) if ledger.opening_by_hand else ledger
+            run(ledger.name, "ledger", "All Masters", rq.ledger_create(created))
             report.add("ledgers")
+        elif ledger.opening_by_hand:
+            if state.ledgers[ledger.name] != wanted:
+                report.skipped.append(f"opening balance of {ledger.name} (entered by hand)")
         elif state.ledgers[ledger.name] != wanted:
             run(ledger.name, "opening balance", "All Masters", rq.ledger_set_opening(ledger))
             report.altered.append(f"opening balance of {ledger.name}")

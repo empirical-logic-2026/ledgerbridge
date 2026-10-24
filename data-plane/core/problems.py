@@ -209,6 +209,22 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Run the sync again: it continues where it stopped.",),
         ".\\dev.ps1 sync -Env {env}",
     ),
+    _p(
+        "LB-SYNC-011",
+        "expected_entity_not_loaded",
+        "Expected company not loaded",
+        ERROR,
+        "The source doesn't have the company this entity was synced from loaded (by its "
+        "company GUID), or another loaded company has the same name: the run stopped before "
+        "comparing or storing anything, so no validation problems or alerts were recorded.",
+        (
+            "Another company (e.g. the test company) is loaded in TallyPrime instead.",
+            "The company was switched in TallyPrime while the run was going.",
+        ),
+        (".\\dev.ps1 entity-check -Env {env} shows which configured companies are loaded.",),
+        ("Load only the expected companies in TallyPrime, then run the command again.",),
+        ".\\dev.ps1 entity-check -Env {env}",
+    ),
     # --- transform: stored records into accounting tables -------------------------------
     _p(
         "LB-TRF-001",
@@ -763,6 +779,7 @@ _ERROR_TYPES = {
     "ReadTimeout": "LB-SYNC-005",
     "OperationalError": "LB-SYS-003",
     "SyncBusyError": "LB-SYNC-008",
+    "ExpectedEntityNotLoadedError": "LB-SYNC-011",
 }
 
 
