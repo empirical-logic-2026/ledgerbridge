@@ -32,12 +32,9 @@ ADR-040, decision 2026-10-22):
   gap, so the ledgers plus that line equal the group's total. At every other date ours is
   the line and is compared. Exit: replace it with the computed figure once the revaluation
   rule is found (pilot 2026-10-24: one company's Current Assets at 18 of 78 dates).
-- **The Balance Sheet's stock after the first year end, integrated with inventory:** the
-  line holding the stock (e.g. Current Assets) is **taken from the source** too: one
-  company's differed from ours (the Profit and Loss's closing stock) from its first year end
-  on, which the test company, recorded across a year end, doesn't reproduce. Ours stays as a
-  detail line. Where a taken line and ours differ, `Comparison.taken` says so, for the
-  summary of differences (what the difference equals), so the rule can still be found.
+- **The Balance Sheet's stock:** the Profit and Loss's closing stock, computed and compared
+  at every date. (Taken from the source after a first year end from 2026-10-24 to its
+  retirement: the pilot then matched at every date with ours, ADR-043's exit condition.)
 - **Ledgers directly under Primary** (the source's profit carriers, e.g. Tally's Profit &
   Loss A/c) belong to the Profit & Loss A/c line: their balance (Opening Balance) plus the
   period's profit (Current Period); on the liabilities side for a profit, the assets side
@@ -295,13 +292,6 @@ class Figures:
             if x.key in self.source.revalued
         ]
 
-    @property
-    def stock_from_balance_sheet(self) -> bool:
-        """Whether the Balance Sheet's stock line is taken from the source: integrated with
-        inventory, after the first financial year end (when the connector reads the other
-        stock figures, `stock_candidates`)."""
-        return self.integrated and bool(self.source.stock_candidates)
-
     def foreign_group_from_source(self, statement: str, group: _Group) -> StatementLine | None:
         """The source's own line for a group holding foreign-currency ledgers, at a date the
         source shows its forex line (the ADR-043 stopgap's first two conditions); None
@@ -480,19 +470,9 @@ def _balance_sheet(f: Figures, net: Decimal) -> list[tuple[str | None, Statement
     stock = f.stock_group()
     if f.replaces_stock and stock is not None:
         totals[stock] += f.source.closing_stock or ZERO  # the stock at its closing value
-    theirs = None
-    if f.stock_from_balance_sheet and stock is not None:
-        theirs = f.source_line("balance_sheet", f.groups[stock].name)
     lines: list[tuple[str | None, StatementLine]] = []
     for group in f.ordered_groups(("equity", "liability", "asset")):
         section = "assets" if group.nature == "asset" else "liabilities"
-        if theirs is not None and group.id == stock:
-            name, ours = group.name, totals[group.id]
-            lines.append(
-                (section, StatementLine("balance_sheet", name + TAKEN, "main", theirs.amount))
-            )
-            lines.append((section, StatementLine("balance_sheet", name + COMPUTED, "detail", ours)))
-            continue
         line = StatementLine("balance_sheet", group.name, "main", totals[group.id])
         lines.extend((section, x) for x in _group_line(f, group, line))
     carried = sum((x.balance for x in f.ledgers if x.key in f.source.profit_carriers), ZERO)
