@@ -64,7 +64,8 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 | #37 to #44 | 2026-10-19 to 2026-10-22 | dev.ps1 tests on Windows in CI; A3 simplicity review (Tally connector, transform, validation and analyse, workers, scripts) with every result identical before and after; the review's findings fixed | Code the developer can fully understand; bugs found on the way fixed with tests. |
 | #45 | 2026-10-22 | The source's stock values and foreign-currency revaluations stored as source figures; Trial Balance, Profit & Loss and Balance Sheet laid out as Tally's and checked against its own reports line by line (ADR-040) | Reports must equal Tally's; recorded on the test company with integration on and off. |
 | #46 | 2026-10-22 | Educational mode: year-end checks on the 31st or the 2nd, never the 1st (ADR-032 amended) | Tally's computed profit on the 1st disagrees with its ledgers. |
-| fix/statement-layout | 2026-10-23 | Direct Expenses inside Cost of Sales; the Trial Balance's forex line split into losses and gains; a pilot-safe summary of statement differences | The pilot's statement check failed on both companies (ledger checks all passing). |
+| #47 | 2026-10-23 | Direct Expenses inside Cost of Sales; the Trial Balance's forex line split into losses and gains; a pilot-safe summary of statement differences | The pilot's statement check failed on both companies (ledger checks all passing). |
+| #48 | 2026-10-24 | More tested amounts in the summary (netted split, other stock figures, foreign-currency openings); the report blames the layout when every ledger check passes | The pilot's remaining statement differences. |
 
 ## 3. Problems found and how each was fixed
 
@@ -85,7 +86,7 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 | Three customers differing | Foreign-currency ledgers revalued by Tally | Book value from Tally's own vouchers | #30, #31, #33 |
 | Opening difference warning | Our figure differed from what Tally displays | Use Tally's own trial balance line | #33 |
 | A lock outliving its job; argument splitting | Lock not tied to the job; PowerShell arrays | Lock with heartbeat; argument handling | #23 |
-| Statements differing at every date (Profit & Loss 2 lines, Trial Balance 4) | Tally puts Direct Expenses inside Cost of Sales and shows forex losses and gains in separate columns | Same layout, recorded on the seeded test company | fix/statement-layout |
+| Statements differing at every date (Profit & Loss 2 lines, Trial Balance 4) | Tally puts Direct Expenses inside Cost of Sales and shows forex losses and gains in separate columns | Same layout, recorded on the seeded test company | #47 |
 
 ## 4. Pilot results (counts only)
 

@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.6 |
-| Date | 2026-10-23 |
+| Version | 1.7 |
+| Date | 2026-10-24 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
 The rulebook: every rule LedgerBridge follows when it converts Tally data and validates it against Tally's own figures. For each rule: **what** it is, **why** (what the pilot showed, in counts only), **how it was proven** (a Tally report, or an experiment on LedgerBridge Test Co reproduced by the seeder), **where** it lives in the code, which **tests** cover it, and its **ADR** in [architecture.md](../architecture.md). The tables and columns named here are described in the [schema reference](../database/schema-reference.md); the problem codes (LB-xxx) in the [error catalogue](../error-catalogue.md).
@@ -366,7 +366,8 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 
 ### 16.6 A pilot-safe summary of the lines that differ
 
-- **What:** when statements differ, validation and `./dev.ps1 statements` print, per company, one line per statement line that differs: its label (the statements' own lines and Tally's reserved group names as they are; a renamed reserved group as "<reserved name> (renamed)", any other group as "a custom group under <its nearest reserved group>", a ledger directly under Primary as such, anything else as "a line not recognised"), whether the line is missing on one side or has a different amount, on how many dates, and which tested amounts the difference equals at how many of them: Direct Expenses, Direct Incomes, the opening and closing stock, the stock ledgers' opening and closing, the stock gap (the items' own value against the stock ledgers', at the books' beginning and at the date), the foreign-currency revaluation and its losses and gains, Tally's own Unadjusted Forex Gain/Loss, Profit & Loss A/c's own balance, the net profit, the difference in opening balances, and after a year end the profit up to it and since, and the stock stored for it. Never other names, never amounts.
+- **What:** when statements differ, validation and `./dev.ps1 statements` print, per company, one line per statement line that differs: its label (the statements' own lines and Tally's reserved group names as they are; a renamed reserved group as "<reserved name> (renamed)", any other group as "a custom group under <its nearest reserved group>", a ledger directly under Primary as such, anything else as "a line not recognised"), whether the line is missing on one side or has a different amount, on how many dates, and which tested amounts the difference equals at how many of them: Direct Expenses, Direct Incomes, the opening and closing stock, the stock ledgers' opening and closing, the stock gap (the items' own value against the stock ledgers', at the books' beginning and at the date), the foreign-currency revaluation and its losses and gains, Tally's own Unadjusted Forex Gain/Loss, Profit & Loss A/c's own balance, the net profit, the difference in opening balances, and after a year end the profit up to it and since, and the stock stored for it; the foreign-currency ledgers' openings; for a Trial Balance group line, its split with each sub-group netted first; and for an integrated company after its first year end, the closing stock less each other closing stock Tally reports (its Stock-in-Hand group's closing balance, the stock items' closing value, the current financial year's own closing stock). Never other names, never amounts. When every ledger check passes, the report gives the layout as the likely cause of a statement difference, not a ledger balance.
+- **Trial Balance split, as recorded (2026-10-23):** Tally splits a group's line into debit and credit ledger by ledger, also inside a sub-group (Duties & Taxes: input tax ledgers 2,340 Dr, output tax ledgers in the 26,129 Cr); netting each sub-group first would give 0 Dr. A group setting that nets it is the open question for the pilot's Current Liabilities.
 - **Why:** the pilot's statement differences can't be shown (names and amounts); the summary says which rule a difference follows, so the layout can be corrected from counts alone.
 - **Code:** `core/statement_differences.py` (`Labels`, `tested_amounts`, `last_year_end`, `Summary`), `core/validation.py` (`_statements`), `workers/statements.py`, `workers/cli.py` (`_print_statement_summary`).
 - **Tests:** `tests/test_statements.py` (`test_the_summary_names_each_line_safely_and_what_it_equals`, `test_validation_prints_the_summary`, `test_the_last_year_end_gives_its_profit_and_stock`).
@@ -375,6 +376,7 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-24 | 1.7 | 16.6: more tested amounts (netted split, other stock figures, foreign-currency openings); the Trial Balance split as recorded; the report's likely cause without ledger differences. |
 | 2026-10-23 | 1.6 | Section 16: Direct Expenses inside Cost of Sales; the Trial Balance's forex line with losses as its debit and gains as its credit; Profit & Loss A/c with an opening balance; 16.6 the pilot-safe summary of differences. |
 | 2026-10-22 | 1.5 | Section 14: year-end checks use the 31st or the 2nd, never the 1st, like statements; Section 12: the 255-character field path limitation. |
 | 2026-10-22 | 1.4 | Section 16: statements from the source's own figures; rule 7 without integration; checks LB-VAL-023 to LB-VAL-025. |
