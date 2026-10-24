@@ -34,6 +34,7 @@ from core.statements import (
     OPENING_DIFFERENCE,
     PROFIT_LOSS_ACCOUNT,
     PURCHASES,
+    REVALUATION_DIFFERENCE,
     UNADJUSTED_FOREX,
     Comparison,
     Difference,
@@ -56,8 +57,9 @@ KINDS = {
     "taken": "taken from the source, ours computed differs",
 }
 # Our own lines (core/statements.py): safe to show like the source's.
-OUR_LINES = (PROFIT_LOSS_ACCOUNT, UNADJUSTED_FOREX, OPENING_DIFFERENCE, "Cost of Sales",
-             "Opening Stock", "Closing Stock", "Opening Balance", "Current Period")  # fmt: skip
+OUR_LINES = (PROFIT_LOSS_ACCOUNT, UNADJUSTED_FOREX, OPENING_DIFFERENCE, REVALUATION_DIFFERENCE,
+             "Cost of Sales", "Opening Stock", "Closing Stock", "Opening Balance",
+             "Current Period")  # fmt: skip
 PREFIXES = ("Add: ", "Less: ")
 
 

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.8 |
+| Version | 1.9 |
 | Date | 2026-10-24 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
@@ -391,6 +391,11 @@ Only where no rule could be found, a line is the source's own figure, labelled "
 | --- | --- | --- |
 | Unadjusted Forex Gain/Loss (Trial Balance and Balance Sheet) | always | 16.4: the pilot's line didn't follow the ledgers' book value less their revalued balance, and its rule couldn't be reproduced on the test company. |
 | The Balance Sheet line holding the stock (e.g. Current Assets) | integrated with inventory, after the first financial year end | 16.2: one pilot company's Balance Sheet stock differed from its Profit and Loss's from its first year end; the test company across a year end showed them equal. |
+| **Temporary stopgap:** a group line holding foreign-currency ledgers (Trial Balance and Balance Sheet; e.g. Current Assets) | only at dates where the source shows its Unadjusted Forex Gain/Loss line and ours differs from the source's by more than the tolerance; ours at every other date | Pilot entity 1 (2026-10-24): Current Assets differed at 18 of 78 dates, by no single ledger's revaluation nor a fixed mix of them (the revalued figure Tally's Balance Sheet uses isn't its ledger-balance export's). A detail line "Forex revaluation difference (per Tally, under review)" makes the ledgers plus it equal the group's total. **Exit:** replace with the computed figure once the revaluation rule is found. |
+
+- **"Differs":** by more than the validation tolerance, the same as the comparison's: `connections.config.validation_tolerance`, else `VALIDATION_TOLERANCE`, default 0 (exact). A trial balance line differs when its debit or its credit does.
+- **Open differences, not passes:** every date where a taken line differs from ours computed is a warning, "Statement line taken from the source (open difference)" (LB-VAL-026): not counted as passed, not a failure. Validation then reports OK with warnings and exits 0; the summary gives one line per statement line with its number of dates; `ledgerbridge_reporting.v_statement_open_differences` lists every date (any difference above zero).
+- **One number:** reports and the AI read the statement views' `main` lines; detail lines (ours computed, the reconciling line, notes) explain them.
 
 - **Code:** `core/statements.py` (`TAKEN`, `COMPUTED`, `Figures.stock_from_balance_sheet`, `taken_differences`), `core/statement_differences.py` (kind "taken").
 - **Tests:** `tests/test_statements.py` (`test_the_forex_line_is_taken_from_the_source_and_ours_kept_as_detail`, `test_after_the_year_end_the_balance_sheet_stock_line_is_taken_from_the_source`).
@@ -408,6 +413,7 @@ Only where no rule could be found, a line is the source's own figure, labelled "
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-24 | 1.9 | 16.8: the Current Assets stopgap, the tolerance stated, open differences (LB-VAL-026). |
 | 2026-10-24 | 1.8 | 16.2 stock ledgers replaced by the source's stock in both settings, and the year end recorded; 16.4 and 16.8 lines taken from the source; 16.7 Trial Balance netting; 17 the expected company. |
 | 2026-10-24 | 1.7 | 16.6: more tested amounts (netted split, other stock figures, foreign-currency openings); the Trial Balance split as recorded; the report's likely cause without ledger differences. |
 | 2026-10-23 | 1.6 | Section 16: Direct Expenses inside Cost of Sales; the Trial Balance's forex line with losses as its debit and gains as its credit; Profit & Loss A/c with an opening balance; 16.6 the pilot-safe summary of differences. |

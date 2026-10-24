@@ -24,6 +24,14 @@ ADR-040, decision 2026-10-22):
   balances but not always). Ours, computed that way (its debit the losses and its credit
   the gains, ledger by ledger, as recorded on the test company, 2026-10-23), stays beside
   it as a detail line, never compared.
+- **A group holding foreign-currency ledgers, temporary stopgap (ADR-043):** at a date where
+  the source shows its forex line and our group line differs from the source's by more than
+  the validation tolerance (the comparison's: `connections.config.validation_tolerance`,
+  default 0, exact), the line is the source's (labelled), ours is a "(computed)" detail line
+  and a detail line "Forex revaluation difference (per Tally, under review)" makes up the
+  gap, so the ledgers plus that line equal the group's total. At every other date ours is
+  the line and is compared. Exit: replace it with the computed figure once the revaluation
+  rule is found (pilot 2026-10-24: one company's Current Assets at 18 of 78 dates).
 - **The Balance Sheet's stock after the first year end, integrated with inventory:** the
   line holding the stock (e.g. Current Assets) is **taken from the source** too: one
   company's differed from ours (the Profit and Loss's closing stock) from its first year end
@@ -66,6 +74,7 @@ UNADJUSTED_FOREX = "Unadjusted Forex Gain/Loss"
 TAKEN = " (taken from the source)"
 COMPUTED = " (computed)"  # ours beside a line taken from the source: a detail line
 COMPUTED_FOREX = UNADJUSTED_FOREX + COMPUTED
+REVALUATION_DIFFERENCE = "Forex revaluation difference (per Tally, under review)"
 OPENING_DIFFERENCE = "Difference in opening balances"
 
 
@@ -73,7 +82,7 @@ def match_key(label: str) -> str:
     """A line's label as both sides are compared: without the source's "Add: " / "Less: "
     and trailing ":", spaces collapsed, case folded."""
     text = " ".join(label.split()).casefold()
-    text = text.removesuffix(TAKEN.casefold())
+    text = text.removesuffix(TAKEN.casefold()).removesuffix(COMPUTED.casefold())
     for prefix in ("add:", "less:"):
         if text.startswith(prefix):
             text = text[len(prefix) :].strip()
@@ -225,6 +234,7 @@ class Figures:
     ledgers: list[_Ledger]
     groups: dict[int, _Group]
     source: SourceStatements
+    tolerance: Decimal = ZERO  # "differs": by more than this, as the comparison
 
     @property
     def integrated(self) -> bool:
@@ -292,6 +302,20 @@ class Figures:
         stock figures, `stock_candidates`)."""
         return self.integrated and bool(self.source.stock_candidates)
 
+    def foreign_group_from_source(self, statement: str, group: _Group) -> StatementLine | None:
+        """The source's own line for a group holding foreign-currency ledgers, at a date the
+        source shows its forex line (the ADR-043 stopgap's first two conditions); None
+        otherwise. The caller takes it only where ours differs."""
+        shows_forex = any(
+            self.source_line(s, UNADJUSTED_FOREX) for s in ("trial_balance", "balance_sheet")
+        )
+        holds_foreign = any(
+            x.top == group.id and x.key in self.source.revalued for x in self.ledgers
+        )
+        if not (shows_forex and holds_foreign):
+            return None
+        return self.source_line(statement, group.name)
+
     def source_line(self, statement: str, label: str) -> StatementLine | None:
         """The source's own line of a statement (its main lines), or None."""
         key = match_key(label)
@@ -311,17 +335,19 @@ class Figures:
         return sorted(found, key=lambda g: (NATURE_ORDER.get(g.nature or "", 9), g.id))
 
 
-def figures(session: Session, entity_id: int, source: SourceStatements) -> Figures:
+def figures(
+    session: Session, entity_id: int, source: SourceStatements, tolerance: Decimal = ZERO
+) -> Figures:
     """Our books as of the source's date, with the source's figures."""
     ledgers, groups = _books(session, entity_id, source.as_of)
-    return Figures(ledgers, groups, source)
+    return Figures(ledgers, groups, source, tolerance)
 
 
 def build(
-    session: Session, entity_id: int, source: SourceStatements
+    session: Session, entity_id: int, source: SourceStatements, tolerance: Decimal = ZERO
 ) -> list[tuple[str | None, StatementLine]]:
     """Our three statements as of the source's date: (section, line) pairs."""
-    f = figures(session, entity_id, source)
+    f = figures(session, entity_id, source, tolerance)
     return [*trial_balance(f), *_profit_loss(f), *_balance_sheet(f, net_profit(f))]
 
 
@@ -348,7 +374,7 @@ def trial_balance(f: Figures) -> list[tuple[str | None, StatementLine]]:
     for group in f.ordered_groups(tuple(NATURE_ORDER)):
         values = list(by_group.get(group.id, {}).values())
         if values:
-            lines.append(_tb_line(group.name, values))
+            lines.extend(_group_line(f, group, _tb_line(group.name, values)))
     for ledger in f.ledgers:
         if ledger.key in f.source.profit_carriers and ledger.balance:
             lines.append(_tb_line(ledger.name, [ledger.balance]))
@@ -362,10 +388,42 @@ def trial_balance(f: Figures) -> list[tuple[str | None, StatementLine]]:
                 taken.amount, taken.debit, taken.credit,
             )
         )  # fmt: skip
-    total = sum((line.amount for line in lines), ZERO)
+    total = sum((line.amount for line in lines if line.level == "main"), ZERO)
     if total:  # ours don't balance: the difference in opening balances, as a note
         lines.append(StatementLine("trial_balance", OPENING_DIFFERENCE, "detail", -total))
     return [(None, line) for line in lines]
+
+
+def _group_line(f: Figures, group: _Group, ours: StatementLine) -> list[StatementLine]:
+    """A group's line: ours, or (ADR-043 stopgap) the source's where the group holds
+    foreign-currency ledgers, the source shows its forex line and ours differs by more than
+    the tolerance; then ours follows as a "(computed)" detail line and the gap as the
+    "Forex revaluation difference (per Tally, under review)" detail line."""
+    theirs = f.foreign_group_from_source(ours.statement, group)
+    if theirs is None or not _differs(ours, theirs, f.tolerance):
+        return [ours]
+    gap = StatementLine(
+        ours.statement, REVALUATION_DIFFERENCE, "detail", theirs.amount - ours.amount,
+        _less(theirs.debit, ours.debit), _less(theirs.credit, ours.credit),
+    )  # fmt: skip
+    return [
+        replace(theirs, label=group.name + TAKEN, level="main"),
+        replace(ours, label=group.name + COMPUTED, level="detail"),
+        gap,
+    ]
+
+
+def _differs(ours: StatementLine, theirs: StatementLine, tolerance: Decimal) -> bool:
+    """By more than the tolerance in any part compared (a trial balance line's debit or
+    credit; otherwise its amount), as `compare` does."""
+    return any(
+        abs((getattr(ours, part) or ZERO) - (getattr(theirs, part) or ZERO)) > tolerance
+        for part in _parts(ours.statement)
+    )
+
+
+def _less(a: Decimal | None, b: Decimal | None) -> Decimal | None:
+    return None if a is None and b is None else (a or ZERO) - (b or ZERO)
 
 
 def _tb_line(label: str, values: list[Decimal]) -> StatementLine:
@@ -435,9 +493,8 @@ def _balance_sheet(f: Figures, net: Decimal) -> list[tuple[str | None, Statement
             )
             lines.append((section, StatementLine("balance_sheet", name + COMPUTED, "detail", ours)))
             continue
-        lines.append(
-            (section, StatementLine("balance_sheet", group.name, "main", totals[group.id]))
-        )
+        line = StatementLine("balance_sheet", group.name, "main", totals[group.id])
+        lines.extend((section, x) for x in _group_line(f, group, line))
     carried = sum((x.balance for x in f.ledgers if x.key in f.source.profit_carriers), ZERO)
     account = carried + net
     side = _side(account)
@@ -553,7 +610,7 @@ def refresh(
     now = utcnow()
     _store_stock(session, entity_id, connection_id, origin, source, now)
     _store_revaluations(session, entity_id, connection_id, origin, source, now)
-    ours = build(session, entity_id, source)
+    ours = build(session, entity_id, source, tolerance)
     _store_lines(
         session, entity_id, source.as_of, "source", [(_section(x), x) for x in source.lines], now
     )

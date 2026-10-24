@@ -57,6 +57,7 @@ def statement_dates(
 class FillResult:
     dates: int = 0
     differing: list[date] = field(default_factory=list)  # dates whose statements differ
+    taken: list[date] = field(default_factory=list)  # dates with open differences (ADR-043)
     by_statement: dict[str, int] = field(default_factory=dict)  # statement -> differences
     unreadable: int = 0
     not_offered: bool = False
@@ -93,6 +94,8 @@ def fill(
         ensure_loaded(connector, entity)  # still the same company after reading
         compared = statements.refresh(session, entity_id, connection.id, origin, source)
         result.summary.add(session, entity_id, source, compared)
+        if compared.taken:
+            result.taken.append(on)
         result.dates += 1
         if compared.differences:
             result.differing.append(on)

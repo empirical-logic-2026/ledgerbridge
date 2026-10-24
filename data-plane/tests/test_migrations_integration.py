@@ -93,3 +93,41 @@ def test_voucher_children_cascade_on_delete() -> None:
         ("tax_lines", "vouchers"),
         ("tax_lines", "voucher_lines"),
     }
+
+
+def test_the_open_differences_view_pairs_taken_and_computed_lines() -> None:
+    """v_statement_open_differences (0018, ADR-043): a line taken from the source beside
+    ours computed, listed only where they differ, with the debit and credit gaps."""
+    command.upgrade(_config(), "head")
+    insert = text(
+        f"INSERT INTO {REPORTING}.statement_lines (entity_id, as_of, statement, figures, "
+        "line_no, section, label, match_key, level, amount, debit, credit, refreshed_at, "
+        "created_at, updated_at) VALUES (999999, '2022-05-02', :statement, 'ours', :n, NULL, "
+        ":label, :key, :level, :amount, :debit, :credit, NOW(), NOW(), NOW())"
+    )
+    rows = [
+        ("trial_balance", 1, "Current Assets (taken from the source)", "main", 90, 100, 10),
+        ("trial_balance", 2, "Current Assets (computed)", "detail", 85, 95, 10),
+        ("balance_sheet", 1, "Current Assets (taken from the source)", "main", 90, None, None),
+        ("balance_sheet", 2, "Current Assets (computed)", "detail", 90, None, None),
+    ]
+    with get_engine("migrator").connect() as conn:
+        transaction = conn.begin()
+        try:
+            conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+            for statement, n, label, level, amount, debit, credit in rows:
+                conn.execute(insert, {
+                    "statement": statement, "n": n, "label": label, "key": "current assets",
+                    "level": level, "amount": amount, "debit": debit, "credit": credit,
+                })  # fmt: skip
+            found = conn.execute(
+                text(
+                    f"SELECT statement, difference, debit_difference, credit_difference FROM "
+                    f"{REPORTING}.v_statement_open_differences WHERE entity_id = 999999"
+                )
+            ).all()
+        finally:
+            transaction.rollback()
+    assert [(s, float(d), float(dd), float(cd)) for s, d, dd, cd in found] == [
+        ("trial_balance", 5.0, 5.0, 0.0)  # the balance sheet line equal: not open
+    ]

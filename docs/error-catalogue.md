@@ -67,6 +67,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-023](#lb-val-023-stock-value-changed-in-the-source) | Stock value changed in the source | `stock_value_mismatch` | Error |
 | [LB-VAL-024](#lb-val-024-statement-line-differs-from-the-source) | Statement line differs from the source | `statement_mismatch` | Error |
 | [LB-VAL-025](#lb-val-025-source-statements-couldnt-be-read) | Source statements couldn't be read | `statements_unavailable` | Error |
+| [LB-VAL-026](#lb-val-026-statement-line-taken-from-the-source-open-difference) | Statement line taken from the source (open difference) | `statement_taken_from_source` | Warning |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
 | [LB-SYS-001](#lb-sys-001-unexpected-error) | Unexpected error | `unexpected_error` | Error |
@@ -1030,6 +1031,28 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Validate again with TallyPrime idle.
 
 **Next step:** `.\dev.ps1 validate -Env <env>`
+
+### LB-VAL-026: Statement line taken from the source (open difference)
+
+`statement_taken_from_source` | Warning
+
+**What it means:** Where no rule for a line is known yet, the line shown is the source's own figure, labelled "(taken from the source)", and ours ("(computed)") differs from it at this date: an open difference, under review, not a pass (ADR-043, a temporary stopgap). A group's gap is shown as "Forex revaluation difference (per Tally, under review)".
+
+**Common causes:**
+
+- The Unadjusted Forex Gain/Loss line, whose rule isn't known yet.
+- A group holding foreign-currency ledgers, at a date the source shows its forex line: the source revalues them differently from its ledger balances.
+
+**How to investigate:**
+
+- The summary printed by validate and statements gives each line with its number of dates and what the difference equals.
+- ledgerbridge_reporting.v_statement_open_differences lists every date.
+
+**How to fix:**
+
+- Nothing to fix in the data; send the summary's lines.
+
+**Next step:** `.\dev.ps1 statements -Env <env>`
 
 
 ## Connection settings
