@@ -124,3 +124,29 @@ def test_statements_stop_too(
     _switch(connector, monkeypatch, "gone")
     with pytest.raises(ExpectedEntityNotLoadedError):
         fill(db, synced, connector, entity, entity_id, [AS_OF], lambda _: None)
+
+
+def test_an_old_alert_without_an_entity_is_resolved_once_every_entity_passed(
+    db: Session, synced: S.Connection, connector: TallyConnector
+) -> None:
+    """Pilot 2026-10-24: a validation alert from before alerts were kept per entity (no
+    entity) stayed open with every validation passing."""
+    from core.alerts import open_alert, raise_alert
+
+    raise_alert(db, "validation_failed", synced.id, "from before alerts per entity")
+    keys = [e.key for e in connector.list_entities()]
+    (report,) = run_validation(db, synced, connector, entity_keys=keys, as_of=AS_OF)
+    assert report.status == "passed"
+    assert open_alert(db, "validation_failed", synced.id) is None
+
+
+def test_the_summary_heads_open_differences_apart(capsys: pytest.CaptureFixture[str]) -> None:
+    from workers.cli import _print_statement_summary
+
+    taken = "Balance sheet: Current Assets: taken from the source, ours computed differs at 1"
+    _print_statement_summary([taken])
+    out = capsys.readouterr().out
+    assert "[statement_taken_from_source, LB-VAL-026]" in out and "LB-VAL-024" not in out
+    _print_statement_summary(["Profit & loss: Cost of Sales: different amount at 1", taken])
+    out = capsys.readouterr().out
+    assert out.index("LB-VAL-024") < out.index("LB-VAL-026")
