@@ -353,6 +353,19 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Nothing needed; promote a field if reports need it.",),
         ".\\dev.ps1 fields -Env {env}",
     ),
+    _p(
+        "LB-TRF-010",
+        "base_figures_changed",
+        "Base figures changed by a rebuild",
+        ERROR,
+        "After `transform rebuild` some vouchers' base amounts or ledgers' openings or balances "
+        "differ from before it: a change meant to add information beside the books changed "
+        "the books.",
+        ("A code change altered how base amounts are read or which lines count.",),
+        ("The rebuild's output gives the counts of vouchers and ledgers that differ.",),
+        ("Don't use the rebuilt figures; report the counts so the change can be corrected.",),
+        ".\\dev.ps1 report -Env {env} -Details",
+    ),
     # --- validation: our figures against the source's ----------------------------------
     _p(
         "LB-VAL-001",

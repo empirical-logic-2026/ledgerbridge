@@ -15,7 +15,11 @@ def test_every_request_is_an_export(spec: envelopes.CollectionSpec) -> None:
     assert root.findtext("HEADER/ID") == spec.collection_id
     assert root.findtext(".//COLLECTION/TYPE") == spec.tally_type
     assert root.findtext(".//SVCURRENTCOMPANY") == "A & B Ltd"
-    assert "GUID" in root.findtext(".//COLLECTION/FETCH")
+    if spec.native:  # read whole: small collections whose nested fields aren't known yet
+        assert root.findtext(".//COLLECTION/NATIVEMETHOD") == "*"
+        assert root.find(".//COLLECTION/FETCH") is None
+    else:
+        assert "GUID" in root.findtext(".//COLLECTION/FETCH")
 
 
 def test_voucher_request_uses_exclusive_end_on_the_first() -> None:

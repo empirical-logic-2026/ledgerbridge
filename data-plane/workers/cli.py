@@ -72,7 +72,7 @@ from sqlalchemy.orm import Session
 
 from connectors import registry
 from connectors.base import Connector, Period
-from core import naming
+from core import base_check, naming
 from core.config import get_settings
 from core.dates import EVERY_DAY, date_rule
 from core.db import get_engine
@@ -93,7 +93,7 @@ from core.problems import BY_CODE, for_error, title
 from core.statement_differences import KINDS
 from core.transform import trial_balance
 from core.validation import ValidationReport
-from workers import style
+from workers import fx_rules, style
 from workers.analyse import analyse
 from workers.compare import compare_ledger
 from workers.entities import (
@@ -272,6 +272,17 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also print the details (dates, voucher numbers, amounts) as lines starting "
         "PRIVATE<TAB>, for dev.ps1 to write to reports/<env>/private/ and never show",
+    )
+
+    fx_rules_parser = sub.add_parser(
+        "fx-rules",
+        help="which revaluation rule the source's statements follow: counts per candidate "
+        "rule over the stored statement dates (ADR-043); counts only",
+    )
+    connection_args(fx_rules_parser)
+    fx_rules_parser.add_argument("--entity", action="append", help="entity name (repeatable)")
+    fx_rules_parser.add_argument(
+        "--job", help="job id: also write the output to sync_logs, for `watch`"
     )
 
     statements_parser = sub.add_parser(
@@ -478,6 +489,7 @@ JOB_COMMANDS = (
     "transform-explain",
     "validate-analyse",
     "statements",
+    "fx-rules",
 )
 
 
@@ -529,6 +541,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _compare_ledger(session, args)
     if args.command == "statements":
         return _statements(session, args)
+    if args.command == "fx-rules":
+        return _fx_rules(session, args)
     if args.command == "summary":
         return _summary(session)
     if args.command == "report":
@@ -1407,6 +1421,9 @@ def _transform_retry(session: Session, args: argparse.Namespace) -> int:
             )
             return 2
     connector = connector_for(session, connection)  # the source isn't contacted
+    rebuild = args.command == "transform-rebuild"
+    # A rebuild must leave the base-currency books identical (core/base_check.py).
+    before = base_check.snapshot(session, connection.id) if rebuild else None
     after = AfterRun()
     hook = None
     if not args.no_validate:
@@ -1421,12 +1438,16 @@ def _transform_retry(session: Session, args: argparse.Namespace) -> int:
             keys,
             progress=_progress,
             after_entity=hook,
-            rebuild=args.command == "transform-rebuild",
+            rebuild=rebuild,
         )
     except SyncBusyError as exc:
         print(f"{exc} [LB-SYNC-008]", file=sys.stderr)
         return 3
     code = _print_sync(result)
+    if before is not None:
+        code |= _print_base_check(
+            base_check.compare(before, base_check.snapshot(session, connection.id))
+        )
     alert_for_run(session, connection, result)
     if not args.no_validate:
         code |= _print_validation(after.latest, Labels(session, connection))
@@ -1442,6 +1463,20 @@ def _transform_retry(session: Session, args: argparse.Namespace) -> int:
     overall = _overall([result], validation)
     print(f"Result: {kind} {result.status}; validation {validation}. {overall}")
     return code
+
+
+def _print_base_check(found: base_check.BaseComparison) -> int:
+    """The base figures before and after a rebuild: counts only. 1 when any differ."""
+    line = (
+        f"Base figures before and after the rebuild: {found.vouchers:,} vouchers and "
+        f"{found.ledgers:,} ledgers compared, {found.vouchers_differing:,} vouchers and "
+        f"{found.ledgers_differing:,} ledgers differ"
+    )
+    if found.unchanged:
+        print(f"{line} (OK)")
+        return 0
+    print(f"{line} [{title('base_figures_changed')}]", file=sys.stderr)
+    return 1
 
 
 def _validate_analyse(session: Session, args: argparse.Namespace) -> int:
@@ -1478,6 +1513,22 @@ def _validate_analyse(session: Session, args: argparse.Namespace) -> int:
             print(line, flush=True)
     print("Result: analyse finished")
     return 0
+
+
+def _fx_rules(session: Session, args: argparse.Namespace) -> int:
+    """Which revaluation rule the source's statements follow (workers/fx_rules.py)."""
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    connector = connector_for(session, connection)
+    entities = select_entities(connector, connection, args.entity)
+    ids = entity_ids_for(session, connection.id, [e.key for e in entities])
+    labels = Labels(session, connection)
+    chosen = [(e, ids[e.key], labels.for_key(e.key, ids[e.key])) for e in entities if e.key in ids]
+    code = fx_rules.run(session, connector, chosen)
+    print("Result: fx-rules finished")
+    return code
 
 
 def _statements(session: Session, args: argparse.Namespace) -> int:

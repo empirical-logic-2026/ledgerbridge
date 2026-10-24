@@ -186,6 +186,10 @@ CASES = {
         ["validate", "analyse"],
         [SERVICES, _job("validate-analyse", "--connection", "tally-test"), WATCH_JOB],
     ),
+    "validate fx-rules": (
+        ["validate", "fx-rules"],
+        [SERVICES, _job("fx-rules", "--connection", "tally-test"), WATCH_JOB],
+    ),
     "statements -From": (
         ["statements", "-From", "2026-04-01"],
         [

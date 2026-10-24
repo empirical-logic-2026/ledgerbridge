@@ -80,6 +80,13 @@ class CanonicalLedger:
     opening_balance: Decimal = Decimal(0)
     opening_balance_date: date | None = None
     currency_code: str = "INR"
+    # The ledger's own currency as the source names it (e.g. "$"; Tally CURRENCYNAME), and
+    # the currency and amount of its opening's foreign part when it has one (FX-001): a
+    # ledger the source keeps in the base currency can still open in dollars (the test
+    # company, 2026-10-24). The base-currency opening stays the books' figure.
+    currency_name: str | None = None
+    opening_currency_name: str | None = None
+    opening_balance_fc: Decimal | None = None
     is_bill_wise: bool = False
     is_cost_centre_applicable: bool = False
     gstin: str | None = None
@@ -90,6 +97,29 @@ class CanonicalLedger:
     # Assumptions the connector made for this record; reported in the sync output.
     warnings: tuple[str, ...] = ()
     aliases: tuple[str, ...] = ()  # other names references may use (ADR-027)
+    extra: Mapping[str, Any] | None = _extra()
+
+
+@dataclass(frozen=True)
+class CanonicalRate:
+    """One dated rate from a currency's own rate list (base per unit)."""
+
+    kind: str  # standard / buying / selling
+    rate_date: date
+    rate: Decimal
+
+
+@dataclass(frozen=True)
+class CanonicalCurrency:
+    """A currency as a source keeps it (Tally: a currency master): the name it writes in
+    amounts (e.g. "$"), its ISO code when the source gives one, and its rate lists."""
+
+    source_key: str
+    name: str
+    code: str | None = None  # ISO 4217, e.g. USD
+    formal_name: str | None = None
+    decimal_places: int | None = None
+    rates: tuple[CanonicalRate, ...] = ()
     extra: Mapping[str, Any] | None = _extra()
 
 
@@ -170,9 +200,12 @@ class CanonicalBill:
 class CanonicalLine:
     ledger_name: str
     amount: Decimal
-    # The foreign currency amount of a line in a foreign currency (canonical sign); its rate
-    # is amount / amount_fc. None in the base currency.
+    # The foreign currency amount of a line in a foreign currency (canonical sign), its
+    # currency as the source names it and its rate as written (base per unit; FX-001). None
+    # in the base currency.
     amount_fc: Decimal | None = None
+    currency_name: str | None = None
+    exchange_rate: Decimal | None = None
     is_party_line: bool = False
     bills: tuple[CanonicalBill, ...] = ()
     cost_allocations: tuple[tuple[str, Decimal], ...] = ()  # (cost centre name, amount)
@@ -218,6 +251,7 @@ class CanonicalVoucher:
 
 CanonicalRecord = (
     CanonicalCompany
+    | CanonicalCurrency
     | CanonicalGroup
     | CanonicalLedger
     | CanonicalVoucherType

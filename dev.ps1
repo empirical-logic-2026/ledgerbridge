@@ -528,6 +528,16 @@ switch ($Command) {
         Assert-EnvFile
         Assert-ApiRunning
         Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
+        if ($Service -eq 'fx-rules') {
+            # Which revaluation rule Tally's statements follow (ADR-043): counts per candidate
+            # rule over the dates `statements` stored. Reads the groups' netting setting only
+            # (read-only); in the background like a sync, followed here. Counts only.
+            $job = [guid]::NewGuid().ToString()
+            $fxArgs = @('python', '-m', 'workers.cli', 'fx-rules', '--connection', $connection, '--job', $job)
+            foreach ($name in $Company) { $fxArgs += @('--entity', $name) }
+            Start-Followed 'fx-rules' $job $fxArgs
+            return
+        }
         if ($Service -eq 'compare-ledger') {
             # One ledger's vouchers in Tally (read-only) against ours, voucher by voucher.
             # Printed: counts by voucher type and month, kinds only. The details (dates,

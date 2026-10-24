@@ -1,0 +1,200 @@
+"""Foreign currency, the core (FX-001, FX-003, FX-006): each foreign-currency line's currency,
+foreign amount and rate; ledgers' currencies and foreign openings; currency masters with their
+rate lists; voucher-derived rates; foreign balances per date. Base-currency figures unchanged.
+
+The test company can't hold foreign amounts (Tally's import refuses them, ADR-035), so the
+foreign parts are synthetic, written the way Tally exports them, on the test company's
+recorded books (statement_year_end/books, 2026-10-24): the dollar customer's sale gets a
+dollar amount, and a currency master with a rate list is added. Customer Hotel USD's dollar
+opening is the one the developer entered in TallyPrime (on a ledger Tally keeps in rupees).
+"""
+
+import hashlib
+from datetime import date, datetime
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from connectors.tally import mapping
+from connectors.tally.connector import TallyConnector
+from connectors.tally.fixtures import FixtureTransport
+from connectors.tally.signs import tally_foreign_parts
+from core import base_check, fx
+from core.models import accounting as A  # noqa: N812
+from core.models import system as S  # noqa: N812
+from core.models.source import RawRecord
+from core.transform import Transformer
+from tests.conftest import COMPANY
+from tests.stock_replay import YEAR_END
+from workers.extract import get_or_create_connection
+from workers.sync import run_sync
+
+ET = __import__("xml.etree.ElementTree").etree.ElementTree
+BOOKS: Path = YEAR_END / "books"
+SALE_LINE = (
+    '<AMOUNT TYPE="Amount">-8200.00</AMOUNT>'  # the dollar customer's line of FX-SAL-1, in rupees
+)
+SALE_IN_DOLLARS = '<AMOUNT TYPE="Amount">-$100.00 @ ?82.00/$ = -?8200.00</AMOUNT>'
+USD_MASTER = (
+    '<CURRENCY NAME="$" RESERVEDNAME=""><GUID>synthetic-usd</GUID><ALTERID> 1</ALTERID>'
+    "<MASTERID> 1</MASTERID><ORIGINALNAME>$</ORIGINALNAME><EXPANDEDSYMBOL>USD</EXPANDEDSYMBOL>"
+    "<MAILINGNAME>US Dollar</MAILINGNAME><DECIMALPLACES> 2</DECIMALPLACES>"
+    "<DAILYSTDRATES.LIST><DATE>20250401</DATE><SPECIFIEDRATE>80.00</SPECIFIEDRATE>"
+    "</DAILYSTDRATES.LIST>"
+    "<DAILYSTDRATES.LIST><DATE>20260331</DATE><SPECIFIEDRATE>83.00</SPECIFIEDRATE>"
+    "</DAILYSTDRATES.LIST>"
+    "<DAILYSELLINGRATES.LIST><DATE>20260331</DATE><SPECIFIEDRATE>84.00</SPECIFIEDRATE>"
+    "</DAILYSELLINGRATES.LIST>"
+    "<DAILYBUYINGRATES.LIST><DATE>20260331</DATE><SPECIFIEDRATE>0</SPECIFIEDRATE>"
+    "</DAILYBUYINGRATES.LIST>"
+    "</CURRENCY>"
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "parts"),
+    [
+        ("-$100.00 @ ?82.00/$ = -?8200.00", ("$", Decimal("-100.00"), Decimal("82.00"))),
+        ("-$1000.00 @ ? 80/$ = -? 80000.00", ("$", Decimal("-1000.00"), Decimal("80"))),
+        ("-€1,250.50 @ ?90.10/€ = -?112,670.05", ("€", Decimal("-1250.50"), Decimal("90.10"))),
+        ("$50.00 = ?4100.00", ("$", Decimal("50.00"), None)),  # no rate written
+        ("8200.00", None),  # base currency only
+        ("", None),
+    ],
+)
+def test_a_foreign_amount_gives_its_currency_amount_and_rate(text: str, parts: object) -> None:
+    assert tally_foreign_parts(text) == parts
+
+
+def _element(xml: str) -> object:
+    return ET.fromstring(xml)
+
+
+def test_ledgers_keep_their_own_currency_and_their_openings_foreign_part() -> None:
+    hotel = mapping.ledger(
+        _element(
+            '<LEDGER NAME="Hotel"><NAME>Hotel</NAME><PARENT>Sundry Debtors</PARENT>'
+            "<CURRENCYNAME>?</CURRENCYNAME>"
+            "<OPENINGBALANCE>-$1000.00 @ ? 80/$ = -? 80000.00</OPENINGBALANCE></LEDGER>"
+        ),
+        "hotel",
+        "company",
+    )[0]
+    assert (hotel.currency_name, hotel.opening_currency_name) == ("?", "$")
+    assert hotel.opening_balance == Decimal(80000)  # the books' figure, a debit
+    assert hotel.opening_balance_fc == Decimal(1000)
+    plain = mapping.ledger(
+        _element(
+            '<LEDGER NAME="Cash"><NAME>Cash</NAME><PARENT>Cash-in-Hand</PARENT>'
+            "<CURRENCYNAME>?</CURRENCYNAME><OPENINGBALANCE>-500.00</OPENINGBALANCE></LEDGER>"
+        ),
+        "cash",
+        "company",
+    )[0]
+    assert (plain.opening_currency_name, plain.opening_balance_fc) == (None, None)
+
+
+def test_a_currency_master_gives_its_code_and_rate_lists() -> None:
+    usd = mapping.currency(_element(USD_MASTER), "synthetic-usd")
+    assert (usd.name, usd.code, usd.formal_name, usd.decimal_places) == ("$", "USD", "US Dollar", 2)
+    assert [(r.kind, r.rate_date, r.rate) for r in usd.rates] == [
+        ("standard", date(2025, 4, 1), Decimal("80.00")),
+        ("standard", date(2026, 3, 31), Decimal("83.00")),
+        ("selling", date(2026, 3, 31), Decimal("84.00")),  # a zero buying rate is no rate
+    ]
+
+
+@pytest.fixture
+def foreign_books(db: Session, monkeypatch: pytest.MonkeyPatch) -> S.Connection:
+    """The year-end books synced, then made foreign the way a real company is: the sale's
+    dollar line, and a currency master with its rate lists."""
+    monkeypatch.setattr(
+        "connectors.registry.default_config", lambda code: {"url": "http://tally.test:9000"}
+    )
+    connection = get_or_create_connection(db, "tally-test", "tally")
+    db.commit()
+    connector = TallyConnector.from_config(
+        {"url": "http://tally.test:9000"}, transport=FixtureTransport(BOOKS)
+    )
+    assert run_sync(db, connection, connector, [COMPANY]).status == "succeeded"
+    sale = next(
+        r for r in db.scalars(select(RawRecord).where(RawRecord.object_type == "voucher"))
+        if "[lb-seed:FX-SAL-1]" in r.payload
+    )  # fmt: skip
+    assert sale.payload.count(SALE_LINE) == 1
+    sale.payload = sale.payload.replace(SALE_LINE, SALE_IN_DOLLARS)
+    company = db.scalars(select(RawRecord.source_entity_key)).first()
+    db.add(
+        RawRecord(
+            connection_id=connection.id, source_entity_key=company, object_type="currency",
+            source_key="synthetic-usd", source_alter_id=1, payload_format="xml",
+            payload=USD_MASTER, payload_hash=hashlib.sha256(USD_MASTER.encode()).hexdigest(),
+            received_at=datetime(2026, 10, 24), process_status="pending",
+        )
+    )  # fmt: skip
+    db.commit()
+    return connection
+
+
+def test_the_transform_stores_foreign_figures_and_leaves_base_figures_alone(
+    db: Session, foreign_books: S.Connection
+) -> None:
+    before = base_check.snapshot(db, foreign_books.id)
+    connector = TallyConnector.from_config(
+        {"url": "http://tally.test:9000"}, transport=FixtureTransport(BOOKS)
+    )
+    Transformer(db, foreign_books.id, connector).run(rebuild=True)
+    found = base_check.compare(before, base_check.snapshot(db, foreign_books.id))
+    assert found.unchanged and found.vouchers > 50 and found.ledgers > 40  # the books unchanged
+
+    line = db.execute(
+        select(A.VoucherLine).where(A.VoucherLine.currency_name.is_not(None))
+    ).scalar_one()
+    assert (line.currency_name, line.amount_fc, line.exchange_rate, line.amount) == (
+        "$", Decimal(100), Decimal(82), Decimal(8200),
+    )  # fmt: skip
+    usd = db.scalars(select(A.CurrencySource)).one()
+    assert (usd.name, usd.currency_code) == ("$", "USD")
+    assert db.get(A.Currency, "USD").symbol == "$"
+
+    by_name = {x.name: x for x in db.scalars(select(A.Ledger))}
+    delta, hotel = by_name["Customer Delta USD"], by_name["Customer Hotel USD"]
+    assert (delta.currency_code, delta.currency_name) == ("USD", "$")
+    assert (hotel.currency_code, hotel.currency_name) == ("INR", "$")  # Tally keeps it in rupees
+    assert hotel.opening_balance_fc == Decimal(1000)
+
+    rates = {
+        (r.source, r.rate_kind, r.rate_date): (r.rate, r.currency_code, r.voucher_count)
+        for r in db.scalars(select(A.ExchangeRate))
+    }
+    assert rates == {
+        ("source_rate_list", "standard", date(2025, 4, 1)): (Decimal(80), "USD", None),
+        ("source_rate_list", "standard", date(2026, 3, 31)): (Decimal(83), "USD", None),
+        ("source_rate_list", "selling", date(2026, 3, 31)): (Decimal(84), "USD", None),
+        ("vouchers", "vouchers", date(2026, 8, 1)): (Decimal(82), "USD", 1),
+    }
+
+    entity_id = db.scalars(select(A.Entity.id)).one()
+    balances = fx.foreign_balances(db, entity_id, date(2026, 10, 2))
+    assert {by_id.name: (b.currency_name, b.balance_fc) for b in balances.values()
+            for by_id in [db.get(A.Ledger, b.ledger_id)]} == {
+        "Customer Delta USD": ("$", Decimal(100)),
+        "Customer Hotel USD": ("$", Decimal(1000)),
+    }  # fmt: skip
+    before_sale = fx.foreign_balances(db, entity_id, date(2026, 7, 31))
+    assert {db.get(A.Ledger, b.ledger_id).name: b.balance_fc for b in before_sale.values()} == {
+        "Customer Hotel USD": Decimal(1000)
+    }
+
+
+def test_the_base_check_finds_a_changed_amount(db: Session, foreign_books: S.Connection) -> None:
+    before = base_check.snapshot(db, foreign_books.id)
+    line = db.scalars(select(A.VoucherLine)).first()
+    line.amount += 1
+    db.commit()
+    found = base_check.compare(before, base_check.snapshot(db, foreign_books.id))
+    assert (found.vouchers_differing, found.ledgers_differing) == (1, 1)
+    assert not found.unchanged

@@ -18,12 +18,13 @@ from typing import Any
 from connectors.base import SourceRecord
 from connectors.tally import parser
 from connectors.tally.parser import text_of
-from connectors.tally.signs import postings, tally_amount, tally_foreign_amount
+from connectors.tally.signs import postings, tally_amount, tally_foreign_parts
 from core.canonical import (
     NO_STANDARD_ACCOUNT,
     CanonicalBill,
     CanonicalCompany,
     CanonicalCostCentre,
+    CanonicalCurrency,
     CanonicalGodown,
     CanonicalGroup,
     CanonicalInventoryLine,
@@ -32,6 +33,7 @@ from core.canonical import (
     CanonicalLedger,
     CanonicalLine,
     CanonicalParty,
+    CanonicalRate,
     CanonicalRecord,
     CanonicalUnit,
     CanonicalVoucher,
@@ -172,10 +174,14 @@ class MappingError(ValueError):
 # --- small helpers ---------------------------------------------------------------------
 
 
-def _foreign(text: str | None) -> Decimal | None:
-    """A line's foreign currency amount, canonical sign (None in the base currency)."""
-    value = tally_foreign_amount(text)
-    return -value if value else None
+def _foreign(text: str | None) -> tuple[str | None, Decimal | None, Decimal | None]:
+    """(currency as written, foreign amount in the canonical sign, rate) of an amount in a
+    foreign currency; (None, None, None) in the base currency."""
+    parts = tally_foreign_parts(text)
+    if parts is None or not parts[1]:
+        return None, None, None
+    symbol, amount, rate = parts
+    return symbol or None, -amount, rate
 
 
 def _flag(element: ET.Element, path: str) -> bool:
@@ -333,11 +339,15 @@ def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalReco
     state = text_of(element, "LEDSTATENAME") or text_of(element, ".//LEDMAILINGDETAILS.LIST/STATE")
     tax_type, warnings = _tax_type(element)
     name = _name(element)
+    opening_currency, opening_fc, _ = _foreign(text_of(element, "OPENINGBALANCE"))
     record = CanonicalLedger(
         source_key=key,
         name=name,
         group_name=parent,
         opening_balance=_amount(element, "OPENINGBALANCE"),
+        currency_name=text_of(element, "CURRENCYNAME"),
+        opening_currency_name=opening_currency,
+        opening_balance_fc=opening_fc,
         is_bill_wise=_flag(element, "ISBILLWISEON"),
         is_cost_centre_applicable=_flag(element, "ISCOSTCENTRESON"),
         gstin=gstin,
@@ -359,6 +369,56 @@ def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalReco
         aliases=_aliases(element, name),
     )
     return [_primary_group(entity_key), record] if parent == PRIMARY else [record]
+
+
+_ISO = re.compile(r"^[A-Z]{3}$")
+RATE_LISTS = {
+    "DAILYSTDRATES.LIST": "standard",
+    "DAILYBUYINGRATES.LIST": "buying",
+    "DAILYSELLINGRATES.LIST": "selling",
+}
+
+
+def currency(element: ET.Element, key: str) -> CanonicalCurrency:
+    """A currency master: the name it is written with in amounts (ORIGINALNAME, else NAME),
+    its ISO code (EXPANDEDSYMBOL or ISOCURRENCYCODE when three capital letters), formal name
+    and decimals, and its rate lists. The lists' inner fields weren't known when this was
+    written (none on the test company), so each entry is read as its first date field and
+    its first other number: entries without both are left out (and counted by the fx-rules
+    command, which reports what was read)."""
+    code = next(
+        (c for c in (text_of(element, "EXPANDEDSYMBOL"), text_of(element, "ISOCURRENCYCODE"))
+         if c and _ISO.match(c.strip())),
+        None,
+    )  # fmt: skip
+    decimals = _NUMBER.search(text_of(element, "DECIMALPLACES") or "")
+    return CanonicalCurrency(
+        source_key=key,
+        name=text_of(element, "ORIGINALNAME") or _name(element),
+        code=code.strip() if code else None,
+        formal_name=text_of(element, "MAILINGNAME"),
+        decimal_places=int(decimals.group(0)) if decimals else None,
+        rates=tuple(_rates(element)),
+    )
+
+
+def _rates(element: ET.Element) -> list[CanonicalRate]:
+    found = []
+    for tag, kind in RATE_LISTS.items():
+        for entry in element.findall(tag):
+            on, rate = None, None
+            for child in entry.iter():
+                text = (child.text or "").strip()
+                if not text or child is entry:
+                    continue
+                if on is None and "DATE" in child.tag.upper():
+                    on = parser.tally_date(text)
+                elif rate is None and "DATE" not in child.tag.upper():
+                    value = tally_amount(text)
+                    rate = abs(value) if value else None
+            if on is not None and rate:
+                found.append(CanonicalRate(kind, on, rate))
+    return found
 
 
 def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
@@ -436,10 +496,13 @@ def _line(entry: ET.Element) -> CanonicalLine:
         for alloc in category.findall("COSTCENTREALLOCATIONS.LIST")
         if (name := text_of(alloc, "NAME"))
     )
+    currency, amount_fc, rate = _foreign(text_of(entry, "AMOUNT"))
     return CanonicalLine(
         ledger_name=text_of(entry, "LEDGERNAME") or "",
         amount=_amount(entry, "AMOUNT"),
-        amount_fc=_foreign(text_of(entry, "AMOUNT")),
+        amount_fc=amount_fc,
+        currency_name=currency,
+        exchange_rate=rate,
         is_party_line=_flag(entry, "ISPARTYLEDGER"),
         bills=bills,
         cost_allocations=cost_allocations,
@@ -616,7 +679,13 @@ USED_FIELDS: dict[str, frozenset[str]] = {
         *_MASTER, "OPENINGBALANCE", "ISBILLWISEON", "ISCOSTCENTRESON", "TAXTYPE",
         "GSTDUTYHEAD", "PARTYGSTIN", "LEDGSTREGDETAILS.LIST/GSTIN", "INCOMETAXNUMBER",
         "LEDSTATENAME", "LEDMAILINGDETAILS.LIST/STATE", "COUNTRYNAME", "EMAIL",
-        "LEDGERPHONE", "LEDGERMOBILE", "BILLCREDITPERIOD", "CREDITLIMIT",
+        "LEDGERPHONE", "LEDGERMOBILE", "BILLCREDITPERIOD", "CREDITLIMIT", "CURRENCYNAME",
+    )),
+    # Read whole (`native`): only the fields kept are listed; the rest stays in the raw
+    # record without being catalogued (a currency master has dozens of internal fields).
+    "currency": frozenset((
+        *_MASTER, "ORIGINALNAME", "EXPANDEDSYMBOL", "ISOCURRENCYCODE", "MAILINGNAME",
+        "DECIMALPLACES",
     )),
     "voucher_type": frozenset((*_MASTER, "AFFECTSSTOCK")),
     "unit": frozenset((*_IDENTITY, "ORIGINALNAME", "DECIMALPLACES")),
@@ -697,6 +766,8 @@ def _records(record: SourceRecord, element: ET.Element) -> list[CanonicalRecord]
     match record.object_type:
         case "company":
             return [company(element, key)]
+        case "currency":
+            return [currency(element, key)]
         case "group":
             return [group(element, key)]
         case "ledger":
