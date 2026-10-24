@@ -205,6 +205,16 @@ function Get-EnvValue([string]$Name, [string]$Default = '') {
     return $Default
 }
 
+function Assert-Step([string]$Command, [string[]]$Steps) {
+    # A word after the command must be one of its steps: an unknown or misspelt one (or one
+    # from a newer version of this script) stops here, instead of running the plain command
+    # as if no step had been given (pilot, 2026-10-24: `validate fx-rules` ran a validation).
+    if ($Service -and $Service -notin $Steps) {
+        $known = if ($Steps) { $Steps -join ', ' } else { 'none' }
+        throw "Unknown step '$Service' for '$Command' (its steps: $known); nothing was run. After updating the code, check the checked-out branch has it (git log)."
+    }
+}
+
 function Assert-EnvFile {
     if (-not (Test-Path $envFile)) {
         throw "Missing .env.$Env. Copy .env.$Env.example to .env.$Env and fill in the passwords."
@@ -473,6 +483,7 @@ switch ($Command) {
         # the database; this window just follows it (ADR-024). Closing the window or Ctrl+C
         # never stops the sync: `sync watch` follows it again, `sync abandon` recovers runs
         # whose process is gone.
+        Assert-Step 'sync' @('full', 'deletions', 'watch', 'abandon')
         Assert-EnvFile
         Assert-ApiRunning
         Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
@@ -512,6 +523,7 @@ switch ($Command) {
         # Balance Sheet) at every month end and year end, builds ours and compares them line
         # by line (ADR-040). Reads Tally's figures (read-only), in the background like a
         # sync, followed here. Counts and statement names only. -From starts at a date.
+        Assert-Step 'statements' @()
         Assert-EnvFile
         Assert-ApiRunning
         Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
@@ -525,6 +537,7 @@ switch ($Command) {
         # Validation as of today (M4): voucher balance, trial balance and closing balances
         # against the source. Prints counts, check codes and pass/fail only. Syncs validate
         # on their own; this runs it on demand.
+        Assert-Step 'validate' @('fx-rules', 'compare-ledger', 'analyse')
         Assert-EnvFile
         Assert-ApiRunning
         Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
@@ -688,6 +701,7 @@ switch ($Command) {
         # Writes into Tally (ADR-014): test environment and test company only. The tool itself
         # re-checks APP_ENV, that only one company is loaded and that its name matches exactly.
         if ($Env -ne 'test') { throw 'seed-test-data runs only against the test environment.' }
+        Assert-Step 'seed-test-data' @('create-only', 'integrated-off', 'integrated-on')
         Assert-EnvFile
         if (-not $Company) { $Company = @('LedgerBridge Test Co') }
         Push-Location (Join-Path $root 'data-plane')

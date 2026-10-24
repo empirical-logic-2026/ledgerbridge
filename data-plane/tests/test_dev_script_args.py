@@ -265,6 +265,30 @@ def test_each_command_passes_whole_arguments(name: str, tmp_path: Path) -> None:
     assert [c[:3] for c in calls] == [c[:3] for c in expected], calls
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [["validate", "fx-rulez"], ["sync", "ful"], ["statements", "all"], ["transform", "redo"]],
+)
+def test_an_unknown_step_runs_nothing(argv: list[str], tmp_path: Path) -> None:
+    """Pilot 2026-10-24: `validate fx-rules` on a branch without it ran a plain validation."""
+    stack, log = tmp_path / "fake-stack.ps1", tmp_path / "calls.jsonl"
+    stack.write_text(FAKE_STACK, encoding="utf-8")
+    env = {
+        **__import__("os").environ,
+        "LEDGERBRIDGE_DEV_STACK": str(stack),
+        "LEDGERBRIDGE_DEV_STACK_LOG": str(log),
+    }
+    done = subprocess.run(  # noqa: S603 - fixed arguments, no shell
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-File", str(REPO / "dev.ps1"), *argv, "-Env", "test"],
+        capture_output=True, text=True, timeout=120, check=False, env=env, cwd=REPO,
+    )  # fmt: skip
+    assert done.returncode != 0
+    assert not log.exists()  # the stack was never called
+    if argv[0] != "transform":  # transform has its own usage line
+        assert f"Unknown step '{argv[1]}' for '{argv[0]}'" in done.stdout + done.stderr
+
+
 def test_a_single_argument_stays_one_argument(tmp_path: Path) -> None:
     """The exact pilot failure: `status` runs `ps` as one argument."""
     calls = _calls(tmp_path, "status")
