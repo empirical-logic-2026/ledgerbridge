@@ -84,7 +84,12 @@ BILLS_READ = (
 )
 BILLS_COMPARED = (*BILLS_READ, "bills_mismatch")
 STATEMENTS_READ = ("statements_unavailable", "statements_not_supported")
-STATEMENTS_COMPARED = (*STATEMENTS_READ, "statement_mismatch", "stock_value_mismatch")
+STATEMENTS_COMPARED = (
+    *STATEMENTS_READ,
+    "statement_mismatch",
+    "stock_value_mismatch",
+    "statement_taken_from_source",
+)
 # Codes from no known check (older runs): resolved as before when not found again.
 KNOWN_CODES = frozenset(
     (*ALWAYS_CHECKED, *CLOSING_COMPARED, *YEAR_END_COMPARED, *COUNTS_COMPARED,
@@ -338,7 +343,22 @@ class Validator:
             )
             self._stock_value(on, result.stock_before, source)
             summary.add(self.session, self.entity.id, source, result)
-            self.passed += result.compared - len(result.differences)
+            # A line taken from the source where ours differs is an open difference, not a
+            # pass (ADR-043): a warning, counted in neither passed nor failed.
+            self.passed += result.compared - len(result.differences) - len(result.taken)
+            for taken in result.taken:
+                self._fail(
+                    Finding(
+                        "statement_taken_from_source",
+                        "warning",
+                        "statement",
+                        f"{taken.statement}@{on.isoformat()}:{taken.key}"[:64],
+                        taken.source,
+                        taken.ours,
+                        f"{taken.statement.replace('_', ' ').capitalize()} as of {on}: "
+                        f"'{taken.label}' is taken from the source; ours differs.",
+                    )
+                )
             for difference in result.differences:
                 self._fail(
                     Finding(

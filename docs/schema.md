@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.33 (Draft) |
+| Version | 0.34 (Draft) |
 | Date | 2026-10-16 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -586,6 +586,7 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | `ledgerbridge_reporting.statement_lines` | Table | **Built (migration 0017, ADR-040).** `entity_id, as_of, statement ENUM('trial_balance','profit_loss','balance_sheet'), figures ENUM('ours','source'), line_no, section NULL ('assets'/'liabilities', 'gross'/'net'), label, match_key, level ENUM('main','sub','detail'), amount (canonical), debit NULL, credit NULL (trial balance), refreshed_at`. Ours and the source's for each date stored (month ends, year ends, validation dates); `match_key` is the label as both sides are compared (e.g. without "Add: "); `detail` lines (Gross Profit, Net Profit, the two parts of Profit & Loss A/c, a difference in opening balances) are ours only and never compared. Unique `(entity_id, as_of, statement, figures, line_no)`. |
 | `ledgerbridge_reporting.v_trial_balance`, `v_profit_loss`, `v_balance_sheet` | View | **Built (0017).** Our statement lines as of each stored date, laid out as the source's (RPT-012). |
 | `ledgerbridge_reporting.v_statement_check` | View | **Built (0017).** Per entity, date, statement and line: ours, the source's and the difference (`detail` lines left out). |
+| `ledgerbridge_reporting.v_statement_open_differences` | View | **Built (0018).** Lines taken from the source where ours (the "(computed)" detail line) differs: per entity, date, statement and line, both figures and the difference, also by debit and credit (ADR-043, LB-VAL-026). |
 | `ledgerbridge_reporting.agg_ledger_daily` | Table | `entity_id, ledger_id, date, debit, credit, net`, refreshed incrementally. |
 | `ledgerbridge_reporting.v_ledger_balances` | View | Opening + movements → closing per ledger per period. |
 | `ledgerbridge_reporting.v_trial_balance` | View | Trial balance per entity and period. |
@@ -803,6 +804,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-24 | 0.34 | Section 6: `v_statement_open_differences` (migration 0018, ADR-043). |
 | 2026-10-22 | 0.33 | Section 4.9 source figures (`stock_values`), `fx_revaluation_snapshots` built; Section 6 `statement_lines` and the statement views; Section 5.2 statement and stock value checks (migration 0017, ADR-040). |
 | 2026-10-22 | 0.32 | Section 5.2: an issue is resolved only by a run that ran its check. |
 | 2026-10-19 | 0.31 | Section 7.5: TallyPrime Edit Log exports the same; no edit history in the export. |

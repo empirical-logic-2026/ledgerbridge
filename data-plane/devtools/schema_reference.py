@@ -95,8 +95,8 @@ TABLES: dict[str, tuple[str, str]] = {
                                  "Validation and `./dev.ps1 statements`, for each date."),
     "statement_lines": ("Trial Balance, Profit & Loss and Balance Sheet lines, ours and the "
                         "source's, as of each stored date (RPT-012, ADR-040); the views "
-                        "v_trial_balance, v_profit_loss, v_balance_sheet and "
-                        "v_statement_check read them.",
+                        "v_trial_balance, v_profit_loss, v_balance_sheet, "
+                        "v_statement_check and v_statement_open_differences read them.",
                         "Validation and `./dev.ps1 statements` (core/statements.py)."),
     "vouchers": ("Vouchers (transactions) with their type, number, date, party and flags.",
                  "Transform, from voucher records; replaced as a whole with their child rows "

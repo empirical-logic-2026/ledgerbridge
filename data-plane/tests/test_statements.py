@@ -441,7 +441,15 @@ def test_without_integration_the_balance_sheet_takes_the_closing_stock_too(
 
     entity_id = db.scalars(select(A.Entity)).one().id
     source = _source("not_integrated")
-    entered = replace(source, closing_stock=Decimal(1800))  # 1,500 in the ledger's balance
+    # A closing value of 1,800 entered on the stock ledger (1,500 its balance); Tally's
+    # Balance Sheet carries it too.
+    shown = tuple(
+        replace(x, amount=x.amount + 300)
+        if x.statement == "balance_sheet" and x.label == "Current Assets"
+        else x
+        for x in source.lines
+    )
+    entered = replace(source, closing_stock=Decimal(1800), lines=shown)
 
     def line(src, statement: str, label: str):  # noqa: ANN001, ANN202
         return next(x for _, x in statements.build(db, entity_id, src)
@@ -489,3 +497,105 @@ def test_after_the_year_end_the_balance_sheet_stock_line_is_taken_from_the_sourc
         and "the closing stock less Stock-in-Hand's closing balance at 1" in x
         for x in summary.lines()
     )
+
+
+# --- the ADR-043 stopgap: a group holding foreign-currency ledgers taken where ours differs --
+
+
+def _tally_current_assets(source, debit: int = 0, credit: int = 0):  # noqa: ANN001, ANN202
+    """The source with Tally's Current Assets moved (Trial Balance by debit and credit,
+    Balance Sheet by their net), as if it revalued its foreign-currency ledgers otherwise."""
+    from dataclasses import replace
+
+    def moved(x):  # noqa: ANN001, ANN202
+        if x.label != "Current Assets":
+            return x
+        if x.statement == "trial_balance":
+            return replace(
+                x, debit=x.debit + debit, credit=x.credit + credit, amount=x.amount + debit - credit
+            )
+        if x.statement == "balance_sheet":
+            return replace(x, amount=x.amount + debit - credit)
+        return x
+
+    return replace(source, lines=tuple(moved(x) for x in source.lines))
+
+
+def _lines(db: Session, entity_id: int, source, tolerance: Decimal = Decimal(0)):  # noqa: ANN001, ANN202
+    return {
+        (x.statement, x.label): x for _, x in statements.build(db, entity_id, source, tolerance)
+    }
+
+
+@pytest.mark.parametrize(("debit", "credit"), [(500, 0), (0, 200)])
+def test_current_assets_is_taken_where_ours_differs_and_tally_shows_its_forex_line(
+    db: Session, layout_books: S.Connection, debit: int, credit: int
+) -> None:
+    """Current Assets holds a dollar customer and Tally shows its forex line: where Tally's
+    line differs from ours (on the debit side, then the credit side) it is taken; ours is a
+    "(computed)" detail line and the gap a "Forex revaluation difference (per Tally, under
+    review)" detail line, so ours plus the gap equal the line; totals then equal Tally's."""
+    entity_id = db.scalars(select(A.Entity)).one().id
+    source = _tally_current_assets(_source("integrated", AS_OF, LAYOUT), debit, credit)
+    lines = _lines(db, entity_id, source)
+    taken = lines[("trial_balance", "Current Assets (taken from the source)")]
+    computed = lines[("trial_balance", "Current Assets (computed)")]
+    gap = lines[("trial_balance", "Forex revaluation difference (per Tally, under review)")]
+    assert (gap.debit, gap.credit) == (Decimal(debit), Decimal(credit))
+    assert (computed.debit + gap.debit, computed.credit + gap.credit) == (taken.debit, taken.credit)
+    assert computed.amount + gap.amount == taken.amount
+    sheet = lines[("balance_sheet", "Current Assets (taken from the source)")]
+    sheet_gap = lines[("balance_sheet", "Forex revaluation difference (per Tally, under review)")]
+    assert (
+        lines[("balance_sheet", "Current Assets (computed)")].amount + sheet_gap.amount
+        == sheet.amount
+    )
+    result = statements.refresh(db, entity_id, layout_books.id, "live", source)
+    assert result.differences == []  # every line and total equal to Tally's
+    assert {(d.statement, d.part) for d in result.taken if d.key.startswith("current assets")} == {
+        ("trial_balance", "debit" if debit else "credit"),
+        ("balance_sheet", "amount"),
+    }
+
+
+def test_current_assets_stays_ours_where_it_matches_or_tally_shows_no_forex_line(
+    db: Session, layout_books: S.Connection
+) -> None:
+    from dataclasses import replace
+
+    entity_id = db.scalars(select(A.Entity)).one().id
+    source = _source("integrated", AS_OF, LAYOUT)
+    assert ("trial_balance", "Current Assets") in _lines(db, entity_id, source)  # equal
+    within = _tally_current_assets(source, debit=5)
+    assert ("trial_balance", "Current Assets") in _lines(db, entity_id, within, Decimal(5))
+    moved = _tally_current_assets(source, debit=500)
+    no_forex = replace(
+        moved, lines=tuple(x for x in moved.lines if x.label != "Unadjusted Forex Gain/Loss")
+    )
+    assert ("trial_balance", "Current Assets") in _lines(db, entity_id, no_forex)
+    result = statements.refresh(db, entity_id, layout_books.id, "live", no_forex)
+    assert "current assets:debit" in {d.key for d in result.differences}  # a real difference
+
+
+def test_validation_reports_a_taken_line_as_an_open_difference_not_a_pass(
+    db: Session, layout_books: S.Connection
+) -> None:
+    from connectors.base import SourceControls
+    from core.validation import Validator
+
+    entity_id = db.scalars(select(A.Entity)).one().id
+    clean = _source("integrated", AS_OF, LAYOUT)
+
+    def run(source):  # noqa: ANN001, ANN202
+        controls = SourceControls(statements={AS_OF: source})
+        return Validator(db, entity_id, AS_OF, connection_id=layout_books.id).run(
+            None, controls=controls
+        )
+
+    run(clean)  # stores the stock value: from now on it is checked too
+    before = run(clean)
+    after = run(_tally_current_assets(clean, debit=500))
+    warnings = [f for f in after.findings if f.check_code == "statement_taken_from_source"]
+    assert [f.severity for f in warnings] == ["warning", "warning"]  # trial balance, sheet
+    assert after.status == "passed" and after.checks_failed == 0
+    assert after.checks_passed == before.checks_passed - 2  # not counted as passes

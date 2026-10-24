@@ -866,7 +866,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 ### `ledgerbridge_reporting.statement_lines`
 
-**Purpose:** Trial Balance, Profit & Loss and Balance Sheet lines, ours and the source's, as of each stored date (RPT-012, ADR-040); the views v_trial_balance, v_profit_loss, v_balance_sheet and v_statement_check read them.
+**Purpose:** Trial Balance, Profit & Loss and Balance Sheet lines, ours and the source's, as of each stored date (RPT-012, ADR-040); the views v_trial_balance, v_profit_loss, v_balance_sheet, v_statement_check and v_statement_open_differences read them.
 
 **Filled by:** Validation and `./dev.ps1 statements` (core/statements.py).
 

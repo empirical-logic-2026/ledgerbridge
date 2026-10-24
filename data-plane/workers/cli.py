@@ -1512,6 +1512,13 @@ def _statements(session: Session, args: argparse.Namespace) -> int:
                 else "every line and total matches the source"
             )
             + (f"; {result.unreadable:,} dates couldn't be read" if result.unreadable else "")
+            + (
+                f"; WARNING: open differences at {len(result.taken):,} dates, lines taken from "
+                "the source where ours differs [statement_taken_from_source, LB-VAL-026]: see "
+                "ledgerbridge_reporting.v_statement_open_differences"
+                if result.taken
+                else ""
+            )
         )
         _print_statement_summary(result.summary.lines())
         if result.differing or result.unreadable:

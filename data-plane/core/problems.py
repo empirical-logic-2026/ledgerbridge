@@ -696,6 +696,29 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Validate again with TallyPrime idle.",),
         ".\\dev.ps1 validate -Env {env}",
     ),
+    _p(
+        "LB-VAL-026",
+        "statement_taken_from_source",
+        "Statement line taken from the source (open difference)",
+        WARNING,
+        "Where no rule for a line is known yet, the line shown is the source's own figure, "
+        'labelled "(taken from the source)", and ours ("(computed)") differs from it at '
+        "this date: an open difference, under review, not a pass (ADR-043, a temporary "
+        "stopgap). A group's gap is shown as \"Forex revaluation difference (per Tally, under "
+        'review)".',
+        (
+            "The Unadjusted Forex Gain/Loss line, whose rule isn't known yet.",
+            "A group holding foreign-currency ledgers, at a date the source shows its forex "
+            "line: the source revalues them differently from its ledger balances.",
+        ),
+        (
+            "The summary printed by validate and statements gives each line with its number of "
+            "dates and what the difference equals.",
+            "ledgerbridge_reporting.v_statement_open_differences lists every date.",
+        ),
+        ("Nothing to fix in the data; send the summary's lines.",),
+        ".\\dev.ps1 statements -Env {env}",
+    ),
     # --- connection settings ------------------------------------------------------------
     _p(
         "LB-CON-001",
