@@ -38,6 +38,8 @@ class Problem:
     fix: tuple[str, ...]
     next_step: str  # an exact command; {env} is the environment
     consequence_of: tuple[str, ...] = field(default=())  # codes of likely root causes
+    # The likely cause when none of `consequence_of` is present (else `causes`).
+    causes_alone: tuple[str, ...] = field(default=())
 
     def label(self) -> str:
         """`Balances at year ends [year_end_mismatch, LB-VAL-006]`."""
@@ -206,6 +208,22 @@ PROBLEMS: tuple[Problem, ...] = (
         ("The report shows any unfinished full sync and its progress.",),
         ("Run the sync again: it continues where it stopped.",),
         ".\\dev.ps1 sync -Env {env}",
+    ),
+    _p(
+        "LB-SYNC-011",
+        "expected_entity_not_loaded",
+        "Expected company not loaded",
+        ERROR,
+        "The source doesn't have the company this entity was synced from loaded (by its "
+        "company GUID), or another loaded company has the same name: the run stopped before "
+        "comparing or storing anything, so no validation problems or alerts were recorded.",
+        (
+            "Another company (e.g. the test company) is loaded in TallyPrime instead.",
+            "The company was switched in TallyPrime while the run was going.",
+        ),
+        (".\\dev.ps1 entity-check -Env {env} shows which configured companies are loaded.",),
+        ("Load only the expected companies in TallyPrime, then run the command again.",),
+        ".\\dev.ps1 entity-check -Env {env}",
     ),
     # --- transform: stored records into accounting tables -------------------------------
     _p(
@@ -651,9 +669,20 @@ PROBLEMS: tuple[Problem, ...] = (
             "A ledger balance differs (see the closing balance checks first).",
             "The source lays a line out differently from ours (a group in another block).",
         ),
-        ("ledgerbridge_reporting.v_statement_check lists each line, ours against the source's.",),
-        ("Fix the ledger differences first; otherwise send the line's label and statement.",),
+        (
+            "The summary printed by validate and statements names each differing line (standard "
+            "names only) and what the difference equals.",
+            "ledgerbridge_reporting.v_statement_check lists each line, ours against the source's.",
+        ),
+        ("Fix the ledger differences first; otherwise send the summary's lines.",),
         ".\\dev.ps1 statements -Env {env}",
+        ("LB-VAL-004", "LB-VAL-005", "LB-VAL-006", *_FAILED),
+        (
+            "Every ledger balance matches the source, so the statement groups or presents the "
+            "lines differently from ours (a group netted, a line in another block, a stock or "
+            "forex figure taken differently): the summary printed by validate and statements "
+            "says which lines differ and what the difference equals.",
+        ),
     ),
     _p(
         "LB-VAL-025",
@@ -750,6 +779,7 @@ _ERROR_TYPES = {
     "ReadTimeout": "LB-SYNC-005",
     "OperationalError": "LB-SYS-003",
     "SyncBusyError": "LB-SYNC-008",
+    "ExpectedEntityNotLoadedError": "LB-SYNC-011",
 }
 
 

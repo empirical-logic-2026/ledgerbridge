@@ -138,8 +138,10 @@ def cause_line(problem: Problem, present: set[str], full: bool = False) -> str:
     followers = [
         p for p in sorted(present) if problem.code in BY_CODE.get(p, problem).consequence_of
     ]
-    causes = problem.causes if full else problem.causes[:1]
-    text = " ".join(causes) or "Not known yet."
+    causes = problem.causes
+    if problem.causes_alone:  # none of its root causes is present (they'd be named above)
+        causes = problem.causes_alone
+    text = " ".join(causes if full else causes[:1]) or "Not known yet."
     if followers:
         return (
             f"ROOT CAUSE: {len(followers)} other problem(s) here likely follow from it, so fix "

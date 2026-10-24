@@ -174,6 +174,12 @@ GODOWN_VALUES = CollectionSpec(
 # balance's (their sum is Tally's difference in opening balances), and with accounts
 # integrated with inventory its Stock-in-Hand group holds the stock value Tally uses
 # (checked on the test company, 2026-10-15).
+# Groups whose balances Tally nets for reporting ("Nett Debit/Credit Balances for Reporting",
+# exported as ISADDABLE; read from the test company's group records, 2026-10-24): its Trial
+# Balance shows such a group as one figure, not split ledger by ledger.
+GROUP_REPORTING = CollectionSpec(
+    "LBGroupReporting", "Group", "GROUP", "group_reporting", (*_KEYS, "ISADDABLE")
+)
 GROUP_BALANCES = CollectionSpec(
     "LBGroupBalances", "Group", "GROUP", "group_balance",
     ("NAME", "PARENT", "OPENINGBALANCE", "CLOSINGBALANCE"),

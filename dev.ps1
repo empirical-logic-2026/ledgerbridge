@@ -36,6 +36,7 @@
     ./dev.ps1 docs-export                       (Word and PDF copies of the rulebook, schema reference and history in docs/export)
     ./dev.ps1 seed-test-data
     ./dev.ps1 seed-test-data create-only
+    ./dev.ps1 seed-test-data integrated-off     (or integrated-on: the test company's setting)
     ./dev.ps1 down
 
     Pilot (developer only; see docs/pilot-runbook.md):
@@ -635,6 +636,10 @@ switch ($Command) {
         # cancellations and deletions, so a sync can see vouchers before they change.
         $seedArgs = @('--company', $Company[0])
         if ($Service -eq 'create-only') { $seedArgs += '--create-only' }
+        # `seed-test-data integrated-off` / `integrated-on` only switch the test company's
+        # "Integrate Accounts with Inventory" (recordings with and without it).
+        if ($Service -eq 'integrated-off') { $seedArgs += @('--integrated', 'no') }
+        if ($Service -eq 'integrated-on') { $seedArgs += @('--integrated', 'yes') }
         try { Invoke-Uv run python -m devtools.tally_seed @seedArgs }
         finally { Pop-Location }
     }

@@ -24,7 +24,7 @@ from core.errors import short_error
 from core.models import Connection
 from core.models.accounting import Entity
 from core.validation import ValidationReport, Validator, financial_year_ends
-from workers.entities import Labels, select_entities
+from workers.entities import ExpectedEntityNotLoadedError, Labels, ensure_loaded, select_entities
 from workers.sync import DELETION_CHECK, Progress, SyncResult, entity_ids_for
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,7 @@ def run_validation(
                 else (f"; {rule.describe()}" if rule.restricted else "")
             )
             progress(f"{label}: validating as of {as_of}{depth}{dates}")
+        ensure_loaded(connector, entity)  # LB-SYNC-011: never compare another company
         source: SourceBalances | Exception | None = _read(
             connector, "closing_balances", entity, as_of
         )
@@ -83,6 +84,7 @@ def run_validation(
             controls = source_controls(
                 connector, entity, session.get_one(Entity, entity_id), as_of, rule, progress
             )
+        ensure_loaded(connector, entity)  # still the same company after reading
         report = Validator(session, entity_id, as_of, tolerance_for(connection), connection.id).run(
             source, sync_run_id, controls
         )
@@ -239,6 +241,8 @@ def entity_validator(
 def alert_for_run(session: Session, connection: Connection, result: SyncResult) -> bool:
     """Raises or resolves the run's own alert. True if the run succeeded."""
     kind = "deletion_check_failed" if result.run_type == DELETION_CHECK else "sync_failed"
+    if (result.error or "").startswith(ExpectedEntityNotLoadedError.__name__):
+        return False  # stopped before comparing anything: no alert (LB-SYNC-011)
     if result.status != "succeeded":
         raise_alert(
             session,

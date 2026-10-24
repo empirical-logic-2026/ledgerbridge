@@ -22,6 +22,7 @@ from core.dates import DateRule
 from core.models import Connection
 from core.statement_differences import Summary
 from core.validation import financial_year_ends
+from workers.entities import ensure_loaded
 
 Progress = Callable[[str], None]
 
@@ -78,6 +79,7 @@ def fill(
         result.not_offered = True
         return result
     origin = str(connection.config.get("origin", "live"))
+    ensure_loaded(connector, entity)  # LB-SYNC-011: never compare another company
     for on in dates:
         try:
             source: SourceStatements | None = read(entity, on)
@@ -88,6 +90,7 @@ def fill(
         if source is None:
             result.not_offered = True
             return result
+        ensure_loaded(connector, entity)  # still the same company after reading
         compared = statements.refresh(session, entity_id, connection.id, origin, source)
         result.summary.add(session, entity_id, source, compared)
         result.dates += 1

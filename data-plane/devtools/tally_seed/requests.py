@@ -10,6 +10,7 @@ from decimal import Decimal
 from xml.sax.saxutils import escape, quoteattr
 
 from devtools.tally_seed.data import (
+    AccountGroup,
     Currency,
     Entry,
     Godown,
@@ -140,6 +141,27 @@ def cost_centre_create(name: str) -> str:
     return (
         f'<COSTCENTRE NAME={quoteattr(name)} ACTION="Create">{_names(name)}'
         f"<CATEGORY>{COST_CATEGORY}</CATEGORY></COSTCENTRE>"
+    )
+
+
+def group_create(group: AccountGroup) -> str:
+    def flag(value: bool) -> str:
+        return "Yes" if value else "No"
+
+    return (
+        f'<GROUP NAME={quoteattr(group.name)} ACTION="Create">{_names(group.name)}'
+        f"<PARENT>{escape(group.parent)}</PARENT>"
+        f"<ISADDABLE>{flag(group.addable)}</ISADDABLE>"
+        f"<ISSUBLEDGER>{flag(group.sub_ledger)}</ISSUBLEDGER></GROUP>"
+    )
+
+
+def company_integration(company: str, integrated: bool) -> str:
+    """Switches "Integrate Accounts with Inventory" (ISINTEGRATED, as Tally exports it; Tally
+    accepted the alteration on the test company, 2026-10-24)."""
+    return (
+        f'<COMPANY NAME={quoteattr(company)} ACTION="Alter">'
+        f"<ISINTEGRATED>{'Yes' if integrated else 'No'}</ISINTEGRATED></COMPANY>"
     )
 
 

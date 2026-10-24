@@ -48,8 +48,9 @@ def test_expected_trial_balance_for_anchors() -> None:
     assert balances["Rent"] == (Decimal("1436"), "Dr")  # with EDITLOG-ALTER-1 (37)
     assert balances["Party Kilo"] == (Decimal("21"), "Dr")  # named by its alias
     # contra, receipts, payments, altered 1,500, post-dated 75; the memorandum's 250 excluded
-    # Less the alias voucher's 21; the direct expense (300 out) and income (120 in).
-    assert balances["Cash"] == (Decimal("27224"), "Dr")
+    # Less the alias voucher's 21; the direct expense (300 out) and income (120 in); the
+    # netting advances (1,240 out net).
+    assert balances["Cash"] == (Decimal("25984"), "Dr")
     assert balances["Capital"] == (Decimal("50000"), "Cr")
     # 19,360 before ALTER-2 (receipt altered from 3,000 to 5,900); DEL-1 is deleted.
     assert balances["Test Bank Current A/c"] == (Decimal("25260"), "Dr")
@@ -142,6 +143,8 @@ class FakeTally:
             action = obj.get("ACTION")
             if obj.tag == "UNIT":
                 self.state.units.add(obj.get("NAME"))
+            elif obj.tag == "GROUP" and action == "Create":
+                self.state.groups.add(obj.get("NAME"))
             elif obj.tag == "GROUP":
                 old = obj.get("NAME")
                 reserved = next(r for r, n in self.state.reserved_groups.items() if n == old)
@@ -244,3 +247,31 @@ def test_rejected_import_stops_with_tallys_message() -> None:
     tally = Rejecting()
     with pytest.raises(ImportFailedError, match="Voucher date is not allowed"):
         seed(SEED, COMPANY, tally.read, tally, log=lambda _: None)
+
+
+def test_the_integration_switch_is_an_alteration_of_the_company_only() -> None:
+    """`--integrated` writes one company alteration (ISINTEGRATED, the field Tally exports)
+    and reads the setting back."""
+    from devtools.tally_seed.seed import set_integration
+
+    root = ET.fromstring(
+        rq.envelope(COMPANY, "All Masters", rq.company_integration(COMPANY, False))
+    )
+    company = root.find(".//TALLYMESSAGE/COMPANY")
+    assert company is not None and company.get("ACTION") == "Alter"
+    assert [c.tag for c in company] == ["ISINTEGRATED"] and company.findtext("ISINTEGRATED") == "No"
+
+    class Client:
+        def post(self, request_xml: str) -> bytes:
+            return (
+                "<ENVELOPE><BODY><DATA><COLLECTION>"
+                f'<COMPANY NAME="{COMPANY}"><NAME>{COMPANY}</NAME>'
+                "<ISINTEGRATED>No</ISINTEGRATED></COMPANY></COLLECTION></DATA></BODY></ENVELOPE>"
+            ).encode()
+
+    class Importer:
+        def post(self, request_xml: str) -> ImportResult:
+            return ImportResult(altered=1)
+
+    assert set_integration(Client(), Importer(), COMPANY, False) is True  # type: ignore[arg-type]
+    assert set_integration(Client(), Importer(), COMPANY, True) is False  # type: ignore[arg-type]

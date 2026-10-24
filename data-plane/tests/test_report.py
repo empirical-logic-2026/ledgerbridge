@@ -145,6 +145,19 @@ def test_root_causes_come_first_and_consequences_point_at_them() -> None:
     assert cause_line(BY_CODE["LB-VAL-004"], {"LB-VAL-004"}) == BY_CODE["LB-VAL-004"].causes[0]
 
 
+def test_statement_differences_without_ledger_differences_blame_the_layout() -> None:
+    """Pilot 2026-10-23: every ledger check passed, yet the cause named a ledger balance.
+    With a ledger difference present the statement difference follows from it; alone, the
+    statement groups or presents lines differently."""
+    statement = BY_CODE["LB-VAL-024"]
+    alone = cause_line(statement, {"LB-VAL-024"})
+    assert alone.startswith("Every ledger balance matches the source")
+    assert "ledger balance differs" not in alone
+    assert cause_line(statement, {"LB-VAL-024", "LB-VAL-004"}).startswith(
+        "Consequence: likely follows from"
+    )
+
+
 def _report() -> HealthReport:
     validation = Section(
         "Validation per company",

@@ -1,0 +1,32 @@
+{
+ "companies.xml": {
+  "request": "Company collection"
+ },
+ "group_reporting.xml": {
+  "request": "collection LBGroupReporting"
+ },
+ "trial_balance_2026-10-02.xml": {
+  "request": "report Trial Balance 2026-04-01..2026-10-02"
+ },
+ "balance_sheet_2026-10-02.xml": {
+  "request": "report Balance Sheet 2026-04-01..2026-10-02"
+ },
+ "profit_and_loss_2026-10-02.xml": {
+  "request": "report Profit and Loss 2026-04-01..2026-10-02"
+ },
+ "stock_value_2026-10-02.xml": {
+  "request": "collection LBStockValues 2026-04-01..2026-10-02"
+ },
+ "stock_group_value_2026-10-02.xml": {
+  "request": "collection LBStockGroupValues 2026-04-01..2026-10-02"
+ },
+ "godown_value_2026-10-02.xml": {
+  "request": "collection LBGodownValues 2026-04-01..2026-10-02"
+ },
+ "group_balance_2026-10-02.xml": {
+  "request": "collection LBGroupBalances 2026-04-01..2026-10-02"
+ },
+ "ledger_balance_2026-10-02.xml": {
+  "request": "collection LBLedgerBalances 2026-04-01..2026-10-02"
+ }
+}

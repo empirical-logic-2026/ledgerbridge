@@ -182,7 +182,7 @@ ledgerbridge/
 | `sync.py` | Runs a sync: company by company, fetch, store, transform, then hand over to validation; records each run. Also the deletion check and the transform-only runs (retry, rebuild). |
 | `fetch.py` | Fetches one company piece by piece ("chunks", usually a month of vouchers), saves progress so an interrupted sync can resume, and copes with a slow or busy Tally. |
 | `extract.py` | Finding or creating a connection, and the older "raw records only" extraction. |
-| `entities.py` | Which companies a connection works with (found by their key, not their name), and the shared way to name them in output: `entity <id> (company <n>)`. |
+| `entities.py` | Which companies a connection works with (found by their key, not their name), the shared way to name them in output (`entity <id> (company <n>)`), and the guard every comparing step uses: the expected company loaded, no namesake (`ensure_loaded`, LB-SYNC-011). |
 | `validate.py` | Runs validation after syncs and on demand, gathers Tally's own figures through the connector, and raises alerts. |
 | `celery_app.py` | The scheduled worker: every minute it checks which connections are due for a sync or a deletion check and starts them. |
 | `locks.py` | The connection's run lock (Redis): taken when a run opens, renewed by its heartbeat, released when it ends, cleared when orphaned, so it can't outlive its job. |
@@ -389,6 +389,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-24 | 0.23 | `workers/entities.py` also guards against comparing another company (`ensure_loaded`); `tests/test_entity_guard.py`; recordings in `tests/fixtures/tally/rules/statement_netting/` and `statement_year_end/`; the seeder creates account groups and switches inventory integration. |
 | 2026-10-23 | 0.22 | `core/statement_differences.py` (pilot-safe summary of statement differences); recordings in `tests/fixtures/tally/rules/statement_layout/`. |
 | 2026-10-22 | 0.21 | `core/statements.py`, `core/models/reporting.py`, `connectors/tally/reports.py`, `workers/statements.py`, migration 0017; `tests/test_statements.py` with `tests/stock_replay.py`. |
 | 2026-10-19 | 0.20 | `dev.ps1`: shared helpers for background jobs, captured output and tool containers. |

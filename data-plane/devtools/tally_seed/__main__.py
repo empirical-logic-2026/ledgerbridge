@@ -1,6 +1,8 @@
 """python -m devtools.tally_seed --company "LedgerBridge Test Co" [--create-only]
 
---expected-only prints the expected balances without contacting Tally.
+--expected-only prints the expected balances without contacting Tally. --integrated yes|no
+only switches the company's "Integrate Accounts with Inventory" (for recordings with and
+without it) and reads it back; nothing else is written.
 """
 
 import argparse
@@ -17,6 +19,7 @@ from devtools.tally_seed.seed import (
     check_guards,
     read_state,
     seed,
+    set_integration,
 )
 
 SHOWN = ("Rent", "Cash", "Capital")
@@ -39,6 +42,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="create missing items only; skip alterations, cancellations and deletions",
     )
+    args.add_argument(
+        "--integrated", choices=("yes", "no"), help="only switch the integration setting"
+    )
     opts = args.parse_args(argv)
 
     problems = validate(SEED)
@@ -56,6 +62,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SeedRefusedError as exc:
         print(f"Refused, nothing written: {exc}", file=sys.stderr)
         return 2
+
+    if opts.integrated:
+        on = opts.integrated == "yes"
+        done = set_integration(
+            connector.client, TallyImporter(settings.tally_url), opts.company, on
+        )
+        state = "confirmed" if done else "NOT confirmed by Tally"
+        print(f"Integrate Accounts with Inventory: {'on' if on else 'off'} ({state})")
+        return 0 if done else 1
 
     print(f"Seeding '{opts.company}' at {settings.tally_url}")
     try:

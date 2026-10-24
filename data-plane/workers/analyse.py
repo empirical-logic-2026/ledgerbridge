@@ -61,6 +61,7 @@ from core.validation import (
     at_stock_value,
     financial_year_ends,
 )
+from workers.entities import ensure_loaded
 
 Progress = Callable[[str], None]
 ZERO = Decimal(0)
@@ -185,13 +186,18 @@ class Analyser:
         self.lines.append(line)
 
     def _read(self, method: str, *args: Any) -> Any:
+        """A source figure (an exception it raised is reported as unavailable), read only
+        while the expected company is loaded (LB-SYNC-011: never analyse another one)."""
         read = getattr(self.connector, method, None)
         if read is None:
             return None
+        ensure_loaded(self.connector, self.entity)
         try:
-            return read(*args)
+            found = read(*args)
         except Exception as exc:  # noqa: BLE001 - reported as unavailable
-            return exc
+            found = exc
+        ensure_loaded(self.connector, self.entity)
+        return found
 
     # --- driver -----------------------------------------------------------------------
 
