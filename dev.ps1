@@ -247,6 +247,22 @@ function Backup-Database {
     Write-Host ("Backup saved: {0} ({1:N1} MB)" -f $saved.FullName, ($saved.Length / 1MB)) -ForegroundColor Green
 }
 
+function Assert-CodeCurrent {
+    # The running stack's code (its image's git commit, stamped at build: ADR-045) against
+    # the checked-out commit. A stack not rebuilt after an update runs the older code (pilot
+    # 2026-10-24: validate and report ran an image from before the fix). Pilot: stop; test:
+    # warn. Without git the check is skipped.
+    $code = & git -C $root rev-parse --short=12 HEAD 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $code) { return }
+    $code = "$code".Trim()
+    $found = Invoke-StackCaptured @('exec', '-T', 'api', 'printenv', 'LEDGERBRIDGE_COMMIT')
+    $running = if ($found.Code -eq 0 -and $found.Output) { "$($found.Output[0])".Trim() } else { 'unknown' }
+    if ($running -eq $code) { return }
+    $message = "The $Env stack runs code $running but the checked-out code is ${code}: run ./dev.ps1 up -Env $Env"
+    if ($Env -eq 'pilot') { throw $message }
+    Write-Warning $message
+}
+
 function Get-RunningServices {
     $services = & $stack -Env $Env ps --status running --services
     if ($LASTEXITCODE -ne 0) { return @() }
@@ -393,6 +409,7 @@ switch ($Command) {
         # Markdown copy saved under reports/<env>/ (git-ignored) can be shared as it is.
         Assert-EnvFile
         Assert-ApiRunning
+        Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
         $reportArgs = @('python', '-m', 'workers.cli', 'report')
         foreach ($name in $Company) { $reportArgs += @('--entity', $name) }
         $folder = Join-Path (Join-Path $root 'reports') $Env
@@ -458,6 +475,7 @@ switch ($Command) {
         # whose process is gone.
         Assert-EnvFile
         Assert-ApiRunning
+        Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
         if ($Service -eq 'watch') {
             Invoke-Checked exec -T api python -m workers.cli watch --connection $connection
             return
@@ -496,6 +514,7 @@ switch ($Command) {
         # sync, followed here. Counts and statement names only. -From starts at a date.
         Assert-EnvFile
         Assert-ApiRunning
+        Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
         $job = [guid]::NewGuid().ToString()
         $statementArgs = @('python', '-m', 'workers.cli', 'statements', '--connection', $connection, '--job', $job)
         foreach ($name in $Company) { $statementArgs += @('--entity', $name) }
@@ -508,6 +527,7 @@ switch ($Command) {
         # on their own; this runs it on demand.
         Assert-EnvFile
         Assert-ApiRunning
+        Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
         if ($Service -eq 'compare-ledger') {
             # One ledger's vouchers in Tally (read-only) against ours, voucher by voucher.
             # Printed: counts by voucher type and month, kinds only. The details (dates,

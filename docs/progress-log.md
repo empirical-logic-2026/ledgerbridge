@@ -4,6 +4,7 @@ Dated entries of what was done, newest first. The full story so far, PR by PR, i
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-24 | Images carry their git commit; on the pilot, `validate`, `report`, `statements` and `sync` stop when the stack runs other code than the checked-out one (ADR-045); the report shows the commit. |
 | 2026-10-24 | One scale of verdicts (OK, OK WITH WARNINGS, ACTION NEEDED, FAILED; only FAILED exits 1; "PASSED with N warnings"); open items as next steps (LB-VAL-026: ADR-043's revaluation rule); alerts close with a reason (migration 0019), including those without a company or about one no longer connected; `up -Env pilot` backs up the databases before migrating (ADR-044). |
 | 2026-10-24 | Pilot: both companies' statements equal at every date (entity 1 OK with warnings: open differences on Current Assets and the forex line, LB-VAL-026). The summary now heads open differences apart from statement differences; a validation alert without an entity (from before alerts per entity) is resolved once every entity last validated as passed. |
 | 2026-10-24 | The Balance Sheet stock fallback retired (ADR-043's exit condition met: the pilot matched at every date with ours); stock computed and compared everywhere. |

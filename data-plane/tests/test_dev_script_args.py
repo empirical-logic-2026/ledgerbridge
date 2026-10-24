@@ -34,6 +34,9 @@ exit 0
 GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 CLI = ["python", "-m", "workers.cli"]
 SERVICES = ["ps", "--status", "running", "--services"]
+# Commands that first check the stack runs the checked-out code (ADR-045).
+CHECKS_CODE = {"validate", "report", "statements", "sync"}
+COMMIT = ["exec", "-T", "api", "printenv", "LEDGERBRIDGE_COMMIT"]
 
 
 def _calls(tmp_path: Path, *argv: str) -> list[list[str]]:
@@ -247,6 +250,9 @@ CASES = {
 def test_each_command_passes_whole_arguments(name: str, tmp_path: Path) -> None:
     argv, expected = CASES[name]
     calls = _calls(tmp_path, *argv)
+    if argv[0] in CHECKS_CODE:  # the stack's commit, read once after the services (ADR-045)
+        assert calls[1] == COMMIT, calls
+        calls = [calls[0], *calls[2:]]
     for call in calls:
         # Single characters only appear when an argument was split up (`ps` -> `p`, `s`).
         assert all(len(a) > 1 for a in call), call
@@ -259,3 +265,22 @@ def test_a_single_argument_stays_one_argument(tmp_path: Path) -> None:
     """The exact pilot failure: `status` runs `ps` as one argument."""
     calls = _calls(tmp_path, "status")
     assert calls[0] == ["ps"]
+
+
+def test_the_pilot_stops_when_the_stack_runs_other_code(tmp_path: Path) -> None:
+    """Pilot 2026-10-24: validate and report ran an image from before the update. The fake
+    stack has no commit stamp (an old image): test warns, the commands still run."""
+    stack, log = tmp_path / "fake-stack.ps1", tmp_path / "calls.jsonl"
+    stack.write_text(FAKE_STACK, encoding="utf-8")
+    env = {
+        **__import__("os").environ,
+        "LEDGERBRIDGE_DEV_STACK": str(stack),
+        "LEDGERBRIDGE_DEV_STACK_LOG": str(log),
+    }
+    done = subprocess.run(  # noqa: S603 - fixed arguments, no shell
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-File", str(REPO / "dev.ps1"), "report", "-Env", "test"],
+        capture_output=True, text=True, timeout=120, check=False, env=env, cwd=REPO,
+    )  # fmt: skip
+    assert done.returncode == 0
+    assert "runs code unknown but the checked-out code is" in done.stdout + done.stderr

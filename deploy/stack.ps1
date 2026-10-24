@@ -41,6 +41,9 @@ if (-not $ComposeArgs) {
 # Read by compose.yaml for the services' env_file.
 $previous = $env:LEDGERBRIDGE_ENV_FILE
 $env:LEDGERBRIDGE_ENV_FILE = $envFile
+# The checked-out commit, stamped into images built now (compose.yaml build args, ADR-045).
+$commit = & git -C $repoRoot rev-parse --short=12 HEAD 2>$null
+$env:GIT_COMMIT = if ($LASTEXITCODE -eq 0 -and $commit) { "$commit".Trim() } else { 'unknown' }
 try {
     # docker compose writes progress to stderr. Under 'Stop', Windows PowerShell 5.1 turns
     # redirected stderr lines into terminating errors, so rely on the exit code instead.
