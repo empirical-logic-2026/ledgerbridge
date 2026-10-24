@@ -19,6 +19,12 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
+# The git commit this image was built from (deploy/stack.ps1 passes it at build time):
+# dev.ps1 compares it with the checked-out code, and the report shows it (ADR-045).
+ARG GIT_COMMIT=unknown
+ENV LEDGERBRIDGE_COMMIT=$GIT_COMMIT
+LABEL org.opencontainers.image.revision=$GIT_COMMIT
+
 RUN useradd --system --uid 10001 app && chown -R app /app
 USER app
 

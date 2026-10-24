@@ -62,6 +62,9 @@ services:
   api:
     build:
       context: ../data-plane
+      args: &commit
+        # The checked-out git commit, set by deploy/stack.ps1: stamped into the image.
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     image: ledgerbridge-data-plane:dev
     env_file: ${LEDGERBRIDGE_ENV_FILE:?run via deploy/stack.ps1}
     environment: &container-overrides
@@ -91,6 +94,7 @@ services:
     # (SYN-001, ADR-017). Beat keeps its small state file in /tmp inside the container.
     build:
       context: ../data-plane
+      args: *commit
     image: ledgerbridge-data-plane:dev
     command:
       - celery
@@ -117,6 +121,7 @@ services:
     profiles: [tools]
     build:
       context: ../data-plane
+      args: *commit
     image: ledgerbridge-data-plane:dev
     command: ["alembic", "upgrade", "head"]
     env_file: ${LEDGERBRIDGE_ENV_FILE:?run via deploy/stack.ps1}
