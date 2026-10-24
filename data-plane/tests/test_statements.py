@@ -461,45 +461,43 @@ def test_without_integration_the_balance_sheet_takes_the_closing_stock_too(
     assert (tb.debit, tb.credit) == (Decimal(72678), Decimal(0))  # the opening stock: 1,500
 
 
-def test_after_the_year_end_the_balance_sheet_stock_line_is_taken_from_the_source(
+def test_after_the_year_end_the_balance_sheet_stock_is_ours_and_compared(
     db: Session, year_end_books: S.Connection
 ) -> None:
-    """Integrated, after the first year end, the line holding the stock is the source's
-    (ours kept as detail); a taken line that differs from ours is reported by the summary
-    with what the difference equals, never as a statement difference."""
+    """The stock fallback is retired (the pilot matched at every date with ours): after the
+    first year end Current Assets is ours, with the Profit and Loss's closing stock, and
+    compared. A Balance Sheet stock of Tally's other than that is a statement difference,
+    and the summary says what it equals. (Tally's forex line is left out here: with it, the
+    ADR-043 stopgap for a group holding foreign-currency ledgers would apply.)"""
     from dataclasses import replace
 
     from core.statement_differences import Summary
 
     entity_id = db.scalars(select(A.Entity)).one().id
-    before = statements.build(db, entity_id, _source("integrated", date(2026, 3, 2), YEAR_END))
-    assert any(x.label == "Current Assets" and x.level == "main" for _, x in before)
     source = _source("integrated", AS_OF, YEAR_END)
     lines = {x.label: x for _, x in statements.build(db, entity_id, source)}
-    taken = lines["Current Assets (taken from the source)"]
-    assert taken.level == "main" and lines["Current Assets (computed)"].amount == taken.amount
+    assert lines["Current Assets"].level == "main"
+    assert "Current Assets (taken from the source)" not in lines
     # Tally's Balance Sheet stock 500 above the Profit and Loss's (6,840):
     shifted = tuple(
         replace(x, amount=x.amount + 500)
         if x.statement == "balance_sheet" and x.label == "Current Assets"
         else x
         for x in source.lines
+        if x.label != "Unadjusted Forex Gain/Loss"
     )
     candidates = {**source.stock_candidates, "Stock-in-Hand's closing balance": Decimal(7340)}
     changed = replace(source, lines=shifted, stock_candidates=candidates)
     result = statements.refresh(db, entity_id, year_end_books.id, "live", changed)
-    assert result.differences == []  # the line is the source's, so the totals agree too
-    assert [(d.key, d.kind) for d in result.taken] == [("current assets:amount", "taken")]
+    assert "current assets:amount" in {d.key for d in result.differences}
+    assert result.taken == []
     summary = Summary()
     summary.add(db, entity_id, changed, result)
     assert any(
-        x.startswith("Balance sheet: Current Assets: taken from the source, ours computed")
+        x.startswith("Balance sheet: Current Assets: different amount")
         and "the closing stock less Stock-in-Hand's closing balance at 1" in x
         for x in summary.lines()
     )
-
-
-# --- the ADR-043 stopgap: a group holding foreign-currency ledgers taken where ours differs --
 
 
 def _tally_current_assets(source, debit: int = 0, credit: int = 0):  # noqa: ANN001, ANN202

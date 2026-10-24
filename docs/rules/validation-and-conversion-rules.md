@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.9 |
+| Version | 1.10 |
 | Date | 2026-10-24 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
@@ -344,7 +344,7 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 ### 16.2 Stock in the statements is the source's own figure
 
 - **What:** the opening and closing stock are those of Tally's Profit and Loss, stored in `stock_values`. In both settings the stock ledgers are replaced by that stock: at its opening value in the Trial Balance and its closing value in the Balance Sheet, under the stock ledgers' primary group (Current Assets). Integrated, it is the items' value; not integrated, the stock ledgers' own, which in Tally can be closing values entered on the ledger by date rather than its balance. The stored value is checked against Tally's at each date validated (LB-VAL-023).
-- **Across a year end (recorded 2026-10-24, books from 1 April 2025, integration on and off):** Tally's Profit and Loss for the whole period opens with the books' opening stock and closes with the stock at the date; its Balance Sheet stock is that closing stock; Profit & Loss A/c carries over as its own opening plus the whole period's result. Ours equal at every date before, on and after the year end. One pilot company's Balance Sheet stock (integrated) differed from its Profit and Loss's after its first year end; that line is taken from the source (16.8).
+- **Across a year end (recorded 2026-10-24, books from 1 April 2025, integration on and off):** Tally's Profit and Loss for the whole period opens with the books' opening stock and closes with the stock at the date; its Balance Sheet stock is that closing stock; Profit & Loss A/c carries over as its own opening plus the whole period's result. Ours equal at every date before, on and after the year end. One pilot company's Balance Sheet stock (integrated) differed from its Profit and Loss's after its first year end; that line was taken from the source until the pilot matched at every date with ours (retired 2026-10-24).
 - **Why:** with integration off Tally takes the stock ledger's balances (1,500), not the items' values (2,010 / 5,580): following Tally's own figures keeps our statements equal whatever the setting. Pilot (2026-10-24, not integrated): the Balance Sheet differed by the stock at the last year end less the opening stock at 44 of 67 dates, which is a stock ledger counted at its balance instead of the closing value entered for the year end.
 - **Proven:** the recordings above; the connector reads Yes and No.
 - **Code:** `core/statements.py` (`Figures`), `core/validation.py` (`_statements`, `_stock_value`).
@@ -390,14 +390,13 @@ Only where no rule could be found, a line is the source's own figure, labelled "
 | Line | When | Why |
 | --- | --- | --- |
 | Unadjusted Forex Gain/Loss (Trial Balance and Balance Sheet) | always | 16.4: the pilot's line didn't follow the ledgers' book value less their revalued balance, and its rule couldn't be reproduced on the test company. |
-| The Balance Sheet line holding the stock (e.g. Current Assets) | integrated with inventory, after the first financial year end | 16.2: one pilot company's Balance Sheet stock differed from its Profit and Loss's from its first year end; the test company across a year end showed them equal. |
 | **Temporary stopgap:** a group line holding foreign-currency ledgers (Trial Balance and Balance Sheet; e.g. Current Assets) | only at dates where the source shows its Unadjusted Forex Gain/Loss line and ours differs from the source's by more than the tolerance; ours at every other date | Pilot entity 1 (2026-10-24): Current Assets differed at 18 of 78 dates, by no single ledger's revaluation nor a fixed mix of them (the revalued figure Tally's Balance Sheet uses isn't its ledger-balance export's). A detail line "Forex revaluation difference (per Tally, under review)" makes the ledgers plus it equal the group's total. **Exit:** replace with the computed figure once the revaluation rule is found. |
 
 - **"Differs":** by more than the validation tolerance, the same as the comparison's: `connections.config.validation_tolerance`, else `VALIDATION_TOLERANCE`, default 0 (exact). A trial balance line differs when its debit or its credit does.
 - **Open differences, not passes:** every date where a taken line differs from ours computed is a warning, "Statement line taken from the source (open difference)" (LB-VAL-026): not counted as passed, not a failure. Validation then reports OK with warnings and exits 0; the summary gives one line per statement line with its number of dates; `ledgerbridge_reporting.v_statement_open_differences` lists every date (any difference above zero).
 - **One number:** reports and the AI read the statement views' `main` lines; detail lines (ours computed, the reconciling line, notes) explain them.
 
-- **Code:** `core/statements.py` (`TAKEN`, `COMPUTED`, `Figures.stock_from_balance_sheet`, `taken_differences`), `core/statement_differences.py` (kind "taken").
+- **Code:** `core/statements.py` (`TAKEN`, `COMPUTED`, `Figures.foreign_group_from_source`, `_group_line`, `taken_differences`), `core/statement_differences.py` (kind "taken").
 - **Tests:** `tests/test_statements.py` (`test_the_forex_line_is_taken_from_the_source_and_ours_kept_as_detail`, `test_after_the_year_end_the_balance_sheet_stock_line_is_taken_from_the_source`).
 - **ADR:** ADR-043.
 
