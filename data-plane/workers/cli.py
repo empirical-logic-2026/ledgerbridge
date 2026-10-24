@@ -90,6 +90,7 @@ from core.models.system import (
     ValidationRun,
 )
 from core.problems import BY_CODE, for_error, title
+from core.statement_differences import KINDS
 from core.transform import trial_balance
 from core.validation import ValidationReport
 from workers import style
@@ -1098,13 +1099,24 @@ def _print_validation(reports: list[ValidationReport], labels: Labels) -> int:
     return 1 if any(r.status == "failed" for r in reports) else 0
 
 
+TAKEN_KIND = KINDS["taken"]  # a line taken from the source where ours differs
+
+
 def _print_statement_summary(lines: list[str]) -> None:
     """The statement lines that differ from the source's (core/statement_differences.py):
-    standard names, kinds and counts only."""
-    if lines:
-        print(f"  {title('statement_mismatch')}: lines that differ, and what the difference equals")
-        for line in lines:
-            print(f"    {line}")
+    standard names, kinds and counts only. Statement differences first, under their own
+    heading; open differences (lines taken from the source) under theirs."""
+    differing = [x for x in lines if TAKEN_KIND not in x]
+    taken = [x for x in lines if TAKEN_KIND in x]
+    for key, heading, found in (
+        ("statement_mismatch", "lines that differ, and what the difference equals", differing),
+        ("statement_taken_from_source", "lines taken from the source, and what ours differs by",
+         taken),
+    ):  # fmt: skip
+        if found:
+            print(f"  {title(key)}: {heading}")
+            for line in found:
+                print(f"    {line}")
 
 
 def _status(session: Session) -> int:

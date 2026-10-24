@@ -306,6 +306,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-24 | 0.26 | Open differences under their own heading; an old alert without a company resolved by passing validations. |
 | 2026-10-24 | 0.25 | Open differences (LB-VAL-026): OK with warnings. |
 | 2026-10-24 | 0.24 | "Expected company not loaded" (LB-SYNC-011); lines taken from the source in the statements. |
 | 2026-10-23 | 0.23 | The pilot-safe summary of statement differences. |

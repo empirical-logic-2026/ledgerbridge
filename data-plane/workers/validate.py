@@ -14,6 +14,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from connectors.base import Connector, SourceBalances, SourceControls, SourceEntity
@@ -22,7 +23,8 @@ from core.config import get_settings
 from core.dates import EVERY_DAY, DateRule, date_rule
 from core.errors import short_error
 from core.models import Connection
-from core.models.accounting import Entity
+from core.models.accounting import Entity, EntitySource
+from core.models.system import ValidationRun
 from core.validation import ValidationReport, Validator, financial_year_ends
 from workers.entities import ExpectedEntityNotLoadedError, Labels, ensure_loaded, select_entities
 from workers.sync import DELETION_CHECK, Progress, SyncResult, entity_ids_for
@@ -99,6 +101,7 @@ def run_validation(
             report.checks_failed,
         )
         reports.append(report)
+    _resolve_alert_without_entity(session, connection)
     return reports
 
 
@@ -155,6 +158,27 @@ def source_controls(
         year_ends=year_ends,
         statements=statements,
     )
+
+
+def _resolve_alert_without_entity(session: Session, connection: Connection) -> None:
+    """A validation alert raised before alerts were kept per entity has no entity, so no
+    entity's passing validation resolves it (pilot 2026-10-24: one from 2026-10-14 stayed
+    open with every validation passing). It is resolved once every entity of the connection
+    last validated as passed."""
+    entity_ids = session.scalars(
+        select(EntitySource.entity_id).where(EntitySource.connection_id == connection.id)
+    ).all()
+    latest = [
+        session.scalar(
+            select(ValidationRun.status)
+            .where(ValidationRun.entity_id == entity_id)
+            .order_by(ValidationRun.id.desc())
+            .limit(1)
+        )
+        for entity_id in set(entity_ids)
+    ]
+    if latest and all(status == "passed" for status in latest):
+        resolve_alert(session, "validation_failed", connection.id)
 
 
 def _alert(session: Session, connection: Connection, report: ValidationReport) -> None:
