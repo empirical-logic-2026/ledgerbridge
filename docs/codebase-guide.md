@@ -162,7 +162,7 @@ ledgerbridge/
 | `models/` | The database tables as Python classes, one file per database: `source.py` (raw layer), `accounting.py` (the standard accounting model, with the source figures `stock_values` and `fx_revaluation_snapshots`), `reporting.py` (statement lines for the reporting views), `system.py` (connections, sync runs, validation, users, alerts, settings); `base.py` (shared column types and the source-tracking columns); `schemas.py` (the four database names). The tables are described for people in [schema.md](schema.md). |
 | `statements.py` | The Trial Balance, Profit & Loss and Balance Sheet laid out as the source's, built from our ledgers and the source's own stock and revaluation figures (`build`), compared with the source's line by line (`compare`), both stored in `ledgerbridge_reporting.statement_lines` (`refresh`). |
 | `fx.py` | Foreign currency beside the books: voucher-derived rates (`refresh_voucher_rates`) and each ledger's balance in its own currency at a date (`foreign_balances`). |
-| `fx_rules.py` | The fx-rules finder: our statements laid out again under each candidate revaluation rule, counting the dates the groups holding foreign-currency ledgers and the forex line equal the source's (ADR-046). |
+| `fx_rules.py` | The fx-rules finder in three parts: each rule against the source's per-ledger revalued balances, the layout (rupee ledgers with foreign amounts, forms of the forex line) with the source's own figures, and each rule computed throughout; our statements laid out again under each candidate revaluation rule, counting the dates the groups holding foreign-currency ledgers and the forex line equal the source's (ADR-046). |
 | `base_check.py` | Every base amount and balance before and after a `transform rebuild`, compared by the source's keys (counts only). |
 | `statement_differences.py` | A pilot-safe summary of the statement lines that differ from the source's: safe labels (standard names; custom groups described by where they sit), missing or different, on how many dates, and which tested amounts each difference equals (Direct Expenses, stock, forex, the last year end's profit and stock). Printed by validation and `statements`. |
 | `canonical.py` | The standard ("canonical") records every connector produces: company, group, ledger, voucher, voucher line and so on. |
@@ -393,6 +393,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-26 | 0.28 | `core/fx_rules.py`: the finder's three parts; `workers/report.py`: a validation older than the data (LB-VAL-027, LB-VAL-028). |
 | 2026-10-24 | 0.27 | `core/fx.py`, `core/fx_rules.py`, `core/base_check.py`, `workers/fx_rules.py`, migration 0020; `tests/test_fx_core.py`, `tests/test_fx_rules.py`. |
 | 2026-10-24 | 0.26 | Images stamped with their git commit (Dockerfile, compose build args, `stack.ps1`); `dev.ps1` `Assert-CodeCurrent`. |
 | 2026-10-24 | 0.25 | Migration 0019 (`alerts.resolution`); `dev.ps1 backup`; `backups/` (git-ignored). |

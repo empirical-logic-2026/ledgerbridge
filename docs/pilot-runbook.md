@@ -13,6 +13,7 @@ This runbook loads the client's two Tally companies into the `pilot` environment
 - **Client data stays on this machine.** The pilot environment has its own database, ports and env file (`.env.pilot`), separate from `test` (ADR-012).
 - **What you may share with Claude Code:** the output of `./dev.ps1 summary -Env pilot`, `./dev.ps1 status -Env pilot`, and the output of `sync`, `validate` and `connect` in the pilot environment. Outside the test environment these print no company, ledger or party names, no amounts and no error messages (only their type), so they're safe to paste.
 - **Never share:** `.env.pilot`, anything from the API (`http://127.0.0.1:8010/api/...` returns amounts and names), database contents, Tally files, screenshots of Tally or the dashboard, or company names.
+- **Stop the test stack first:** `./dev.ps1 down -Env test` before loading the client companies in TallyPrime. Its worker syncs and checks deletions on a schedule and would otherwise ask Tally for its company list while the client companies are loaded (2026-10-24: it found no test company and fetched nothing, but it must not ask).
 - **AI:** the pilot uses a local model only (`AI_PROVIDER=ollama`); the data plane refuses `anthropic` when `APP_ENV=pilot` (PIL-005). Nothing in this runbook calls an AI model.
 
 ## What you need
@@ -299,6 +300,8 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 - **Transform failed records again** (no Tally needed): `./dev.ps1 transform retry -Env pilot` (step 7).
 - **Verdicts and exit codes (ADR-044):** OK; OK WITH WARNINGS (only open items, nothing to run: e.g. an open difference, LB-VAL-026); ACTION NEEDED (a warning with a next step to run); FAILED. `validate` and `report` exit 1 only for FAILED; validate prints "PASSED with N warnings".
 - **After updating the code, always `./dev.ps1 up -Env pilot` first:** `validate`, `report`, `statements` and `sync` stop with "The pilot stack runs code X but the checked-out code is Y: run ./dev.ps1 up -Env pilot" otherwise (ADR-045). The report's first line names the code it ran.
+- **A validation older than the data:** the report says ACTION NEEDED with `validate` as its next step when a validation couldn't run and none has passed since (LB-VAL-027), or a company was validated before the latest `transform retry` or `rebuild` (LB-VAL-028, e.g. after `-NoValidate`).
+- **Which rule Tally revalues by (ADR-043's time-box):** `./dev.ps1 validate fx-rules -Env pilot` prints, per company, the counts as `statements` lays the lines out today, then (1) per ledger, (2) layout with Tally's own per-ledger figures, (3) computed rules, the best combinations of 2 and 3 only, and three closing lines; the last says which combinations match every date, or none. Counts and rule names only: send the whole output.
 - **Foreign currency (ADR-046):** a sync now also reads the currency masters with their rate lists; foreign-currency lines keep their currency, foreign amount and rate beside the base amount, which never changes. After a code update that adds such fields, `./dev.ps1 transform rebuild -Env pilot` fills them from what is stored and ends with "Base figures before and after the rebuild: N vouchers and M ledgers compared, 0 vouchers and 0 ledgers differ (OK)"; anything else is LB-TRF-010 (exit 1: stop and send the line). The next line, "Foreign-currency amounts: N read, M not read", must say 0 not read; otherwise it is LB-TRF-011 (also in the report): send the line. `./dev.ps1 validate fx-rules -Env pilot` (after `statements`) prints, per company and candidate revaluation rule, at how many of the stored dates the groups holding foreign-currency ledgers and the Unadjusted Forex Gain/Loss line equal Tally's, exactly and within 1. Counts and rule names only: safe to share.
 - **Database backups:** `./dev.ps1 up -Env pilot` backs up the four databases before applying migrations and prints where (`backups\pilot\ledgerbridge-pilot-<date>-<time>.sql.gz`, git-ignored: it holds the client's data; keep it on this machine). `./dev.ps1 backup -Env pilot` takes one on demand. To restore one (it replaces the databases' contents; the stack must be up):
   ```powershell
@@ -314,6 +317,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-26 | 0.30 | A validation older than the data needs action; the fx-rules finder's three parts; stop the test stack before loading the client companies; `dev.ps1` exits 1 on FAILED also under `powershell -File`. |
 | 2026-10-24 | 0.29 | Foreign currency: the base check after `transform rebuild`, `validate fx-rules`. |
 | 2026-10-24 | 0.28 | Commands stop when the stack runs other code than the checked-out one. |
 | 2026-10-24 | 0.27 | Verdicts and exit codes; backups before migrations, and how to restore. |
