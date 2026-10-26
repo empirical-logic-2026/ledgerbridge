@@ -360,3 +360,35 @@ def test_unfinished_work_comes_before_analysis() -> None:
         HealthReport("pilot", datetime(2026, 10, 15), [Section("X", occurrences=found)])
     )
     assert r"Next step: .\dev.ps1 sync full -Env pilot" in text
+
+
+def test_a_validation_older_than_the_data_or_one_that_couldnt_run_needs_action(
+    db: Session, synced: S.Connection, connector: TallyConnector
+) -> None:
+    """Pilot 2026-10-26: a rebuild's validation timed out, yet the report said OK WITH
+    WARNINGS from validations run before the rebuild, the open alert only listed. Now a
+    transform since the latest validation (LB-VAL-028) and an open alert from a validation
+    that couldn't run (LB-VAL-027) each ask to validate again."""
+    from core.models.base import utcnow
+
+    run_validation(db, synced, connector, [COMPANY])
+
+    def codes() -> set[str]:
+        return {o.problem.code for o in build(db, "test").occurrences if o.active}
+
+    assert not codes() & {"LB-VAL-027", "LB-VAL-028"}
+    db.add(S.SyncRun(connection_id=synced.id, run_type="transform", status="succeeded",
+                     started_at=utcnow(), finished_at=utcnow()))  # fmt: skip
+    db.commit()
+    report = build(db, "test")
+    assert "LB-VAL-028" in codes() and report.verdict == ATTENTION
+    assert "Validated before the latest transform [validated_before_rebuild, LB-VAL-028]" in (
+        render_text(report)
+    )
+    run_validation(db, synced, connector, [COMPANY])  # validated again: up to date
+    assert "LB-VAL-028" not in codes()
+
+    db.add(S.Alert(kind="validation_failed", severity="error", connection_id=synced.id,
+                   message="Validation couldn't run: TallySlowError"))  # fmt: skip
+    db.commit()
+    assert "LB-VAL-027" in codes() and build(db, "test").verdict == ATTENTION

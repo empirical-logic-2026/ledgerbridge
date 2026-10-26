@@ -148,6 +148,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
+# 1 when a workers.cli command finished with problems (a FAILED verdict, failed checks or a
+# failed sync, ADR-044): the script exits with it at the end, so callers that run it with
+# `powershell -File` (CI, scheduled tasks) see it too, not only an interactive session.
+$script:ExitCode = 0
 $stack = Join-Path (Join-Path $PSScriptRoot 'deploy') 'stack.ps1'
 # Tests only (tests/test_dev_script_args.py): a stand-in for deploy/stack.ps1 that records
 # the docker compose arguments each command builds instead of running Docker.
@@ -190,7 +194,10 @@ function Invoke-Checked {
     & $stack -Env $Env @stackArgs
     switch ($LASTEXITCODE) {
         0 { }
-        1 { Write-Host "Finished with problems: see the FAILED / error lines above, or: ./dev.ps1 report -Env $Env" -ForegroundColor Yellow }
+        1 {
+            $script:ExitCode = 1
+            Write-Host "Finished with problems: see the FAILED / error lines above, or: ./dev.ps1 report -Env $Env" -ForegroundColor Yellow
+        }
         2 { Write-Host 'Refused or not found: see the message above.' -ForegroundColor Yellow }
         3 { Write-Host "A sync of this connection is already running (the worker may have started it) [LB-SYNC-008]. Wait, then: ./dev.ps1 sync watch -Env $Env" -ForegroundColor Yellow }
         default { throw "docker compose failed (exit $LASTEXITCODE)" }
@@ -433,6 +440,7 @@ switch ($Command) {
         $stackArgs = @(Add-ColorArgs (@('exec', '-T', 'api') + $reportArgs))
         & $stack -Env $Env @stackArgs
         if ($LASTEXITCODE -gt 1) { throw "The report failed (exit $LASTEXITCODE)." }
+        if ($LASTEXITCODE -eq 1) { $script:ExitCode = 1 }  # FAILED (ADR-044)
         Write-Host ''
         Write-Host "Saved (Markdown, no names or amounts): $file"
     }
@@ -748,3 +756,4 @@ switch ($Command) {
         Get-Help $PSCommandPath -Detailed
     }
 }
+exit $script:ExitCode
