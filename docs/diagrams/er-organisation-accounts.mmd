@@ -30,12 +30,26 @@ erDiagram
     currencies {
         varchar code PK
         varchar name
+        varchar symbol
+    }
+    currency_sources {
+        bigint id PK
+        bigint entity_id FK "to entities"
+        varchar name
+        varchar currency_code FK "to currencies"
+        varchar source_key UK
+        bool is_deleted
+        json extra
+        bigint connection_id FK, UK "to connections"
+        bigint import_batch_id FK "to import_batches"
     }
     exchange_rates {
         bigint id PK
-        varchar from_code FK, UK "to currencies"
-        varchar to_code FK, UK "to currencies"
+        bigint entity_id FK, UK "to entities"
+        varchar currency_name UK
+        varchar currency_code FK "to currencies"
         date rate_date UK
+        enum rate_kind UK
     }
     standard_accounts {
         bigint id PK
@@ -82,8 +96,10 @@ erDiagram
     entities ||--o{ entity_sources : "entity_id"
     entities ||--o{ branches : "entity_id"
     entities ||--o{ financial_years : "entity_id"
-    currencies ||--o{ exchange_rates : "from_code"
-    currencies ||--o{ exchange_rates : "to_code"
+    entities ||--o{ currency_sources : "entity_id"
+    currencies |o--o{ currency_sources : "currency_code"
+    entities ||--o{ exchange_rates : "entity_id"
+    currencies |o--o{ exchange_rates : "currency_code"
     standard_accounts |o--o{ standard_accounts : "parent_id"
     entities ||--o{ account_groups : "entity_id"
     account_groups |o--o{ account_groups : "parent_id"

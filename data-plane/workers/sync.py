@@ -118,6 +118,8 @@ class SyncResult:
     data_warnings: Counter[str] = field(default_factory=Counter)
     failed_by_object_type: Counter[str] = field(default_factory=Counter)
     retried: int = 0  # failed records set back to pending (transform retry)
+    foreign_read: int = 0  # amounts written in a foreign currency, read (TransformResult)
+    foreign_unread: int = 0  # ... and not readable (LB-TRF-011)
     error: str | None = None
     entity_results: list[EntityOutcome] = field(default_factory=list)
 
@@ -366,6 +368,8 @@ def _add_transformed(
     result.failed_by_object_type.update(transformed.failed_by_object_type)
     result.warnings.extend(transformed.warnings)
     result.data_warnings.update(transformed.data_warnings)
+    result.foreign_read += transformed.foreign_read
+    result.foreign_unread += transformed.foreign_unread
     result.retried += transformed.retried
     outcome.transformed, outcome.transform_failed = transformed.processed, transformed.failed
 

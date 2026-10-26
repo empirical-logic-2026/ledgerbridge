@@ -49,10 +49,12 @@ from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.orm import Session
 
 from connectors.base import Connector, SourceRecord
+from core import fx
 from core.canonical import (
     NO_STANDARD_ACCOUNT,
     CanonicalCompany,
     CanonicalCostCentre,
+    CanonicalCurrency,
     CanonicalGodown,
     CanonicalGroup,
     CanonicalItem,
@@ -77,6 +79,7 @@ PROGRESS_EVERY = 10_000  # records between progress lines
 
 # Canonical tables fed from each record kind, for deletion handling.
 MODELS_BY_KIND: dict[type, tuple[type, ...]] = {
+    CanonicalCurrency: (A.CurrencySource,),
     CanonicalGroup: (A.AccountGroup,),
     CanonicalLedger: (A.Ledger, A.Party),
     CanonicalVoucherType: (A.VoucherType,),
@@ -115,6 +118,14 @@ class TransformResult:
     # Values kept aside because they didn't fit their column: "<kind>: <table.column>; ..."
     # -> count. Kinds and column names only, never values (ADR-025).
     data_warnings: Counter[str] = field(default_factory=Counter)
+    # Amounts written in a foreign currency: read beside the base amount, or not readable
+    # (LB-TRF-011). Counts only, so a parsing failure can't pass unnoticed.
+    foreign_read: int = 0
+    foreign_unread: int = 0
+
+
+# The note on a record with a foreign amount that couldn't be read (LB-TRF-011).
+FOREIGN_UNREAD = "foreign amount not read"
 
 
 @dataclass
@@ -621,11 +632,32 @@ class Transformer:
         for item in items:
             item.row.process_status = "processed"
             item.row.process_error = None
+            self._count_foreign(item, result)
             warnings = list(dict.fromkeys(item.warnings))
             item.row.process_warning = "; ".join(warnings)[:2000] if warnings else None
             result.data_warnings.update(warnings)
             result.processed += 1
             result.by_object_type[item.row.object_type] += 1
+
+    @staticmethod
+    def _count_foreign(item: _Raw, result: TransformResult) -> None:
+        """Counts the record's foreign amounts read and not read; one not read is noted on
+        the record, by the column it would have filled (never its value)."""
+        for record in item.records:
+            if isinstance(record, CanonicalVoucher):
+                read = sum(line.amount_fc is not None for line in record.lines)
+                unread = sum(line.foreign_unread for line in record.lines)
+                column = "voucher_lines.amount_fc"
+            elif isinstance(record, CanonicalLedger):
+                read = int(record.opening_balance_fc is not None)
+                unread = int(record.opening_foreign_unread)
+                column = "ledgers.opening_balance_fc"
+            else:
+                continue
+            result.foreign_read += read
+            result.foreign_unread += unread
+            if unread:
+                item.warnings.append(f"{FOREIGN_UNREAD}: {column}")
 
     def _run_entity(self, entity_key: str, result: TransformResult) -> None:
         pending = self._pending_ids(entity_key)
@@ -643,6 +675,7 @@ class Transformer:
             return
         result.entity_ids.add(entity_id)
         self.entity_id = entity_id
+        self._currency_codes: dict[str, str] | None = None
         self.books_from = self.session.get_one(A.Entity, entity_id).books_from
         self.tree = _GroupTree(self._latest(entity_key, ("group", "ledger"), CanonicalGroup))
         self.types = _TypeTree(self._latest(entity_key, ("voucher_type",), CanonicalVoucherType))
@@ -668,6 +701,8 @@ class Transformer:
                     f"{label}: {object_type}: {total:,} done, "
                     f"{result.failed - failed_before:,} failed"
                 )
+        if pending:  # voucher-derived rates follow the lines just written (FX-003)
+            fx.refresh_voucher_rates(self.session, entity_id)
         result.unmapped_ledgers[entity_id] = list(
             self.session.scalars(
                 select(A.Ledger.name)
@@ -698,6 +733,7 @@ class Transformer:
             kind = next((type(r) for r in item.records if not isinstance(r, CanonicalGroup)), None)
             by_kind[kind or CanonicalGroup].append(item)
         for kind, writer in (
+            (CanonicalCurrency, self._currencies),
             (CanonicalGroup, self._groups),
             (CanonicalLedger, self._ledgers),
             (CanonicalVoucherType, self._voucher_types),
@@ -1069,7 +1105,10 @@ class Transformer:
                     "mapping_status": "auto" if standard else "unmapped",
                     "opening_balance": ledger.opening_balance,
                     "opening_balance_date": ledger.opening_balance_date or self.books_from,
-                    "currency_code": "INR",
+                    "currency_code": self._currency_code(ledger.currency_name),
+                    # The currency of its foreign figures: its opening's, else its own.
+                    "currency_name": ledger.opening_currency_name or ledger.currency_name,
+                    "opening_balance_fc": ledger.opening_balance_fc,
                     "is_bill_wise": ledger.is_bill_wise,
                     "is_cost_centre_applicable": ledger.is_cost_centre_applicable,
                     "gstin": ledger.gstin,
@@ -1177,6 +1216,82 @@ class Transformer:
             A.ItemGroup, [(r.source_key, r.parent_name) for i in done for r in i.records]
         )
         return done
+
+    def _currencies(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
+        """Currency masters (FX-001, FX-003): any ISO code not known yet, the entity's
+        currencies as its source names them, and their rate lists (replacing the ones
+        stored before for those currencies)."""
+        records = [r for i in items for r in i.records if isinstance(r, CanonicalCurrency)]
+        known = set(self.session.scalars(select(A.Currency.code)))
+        now = utcnow()
+        for record in records:
+            if record.code and record.code not in known:
+                self.session.add(
+                    A.Currency(
+                        code=record.code,
+                        name=(record.formal_name or record.code)[:255],
+                        decimal_places=record.decimal_places or 2,
+                        symbol=record.name[:16],
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                known.add(record.code)
+        self.session.flush()
+        done = self._simple(
+            items,
+            CanonicalCurrency,
+            A.CurrencySource,
+            lambda r: {
+                "name": r.name,
+                "currency_code": r.code,
+                "formal_name": r.formal_name,
+                "decimal_places": r.decimal_places,
+            },
+            result,
+            "currency",
+        )
+        for record in (r for i in done for r in i.records if isinstance(r, CanonicalCurrency)):
+            self.session.execute(
+                delete(A.ExchangeRate).where(
+                    A.ExchangeRate.entity_id == self.entity_id,
+                    A.ExchangeRate.currency_name == record.name,
+                    A.ExchangeRate.source == "source_rate_list",
+                )
+            )
+            for rate in {(r.kind, r.rate_date): r for r in record.rates}.values():
+                self.session.add(
+                    A.ExchangeRate(
+                        entity_id=self.entity_id,
+                        currency_name=record.name,
+                        currency_code=record.code,
+                        rate_date=rate.rate_date,
+                        rate=rate.rate,
+                        rate_kind=rate.kind,
+                        source="source_rate_list",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+        self._currency_codes = None
+        return done
+
+    def _currency_code(self, name: str | None) -> str:
+        """The ISO code of a currency as the entity's source names it; the entity's base
+        currency when it names none or one without a known code."""
+        if self._currency_codes is None:
+            self._currency_codes = {
+                n: c
+                for n, c in self.session.execute(
+                    select(A.CurrencySource.name, A.CurrencySource.currency_code).where(
+                        A.CurrencySource.entity_id == self.entity_id,
+                        A.CurrencySource.is_deleted.is_(False),
+                    )
+                )
+                if c
+            }
+        base = self.session.get_one(A.Entity, self.entity_id).base_currency_code
+        return self._currency_codes.get(name or "", base)
 
     def _godowns(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         done = self._simple(
@@ -1378,6 +1493,8 @@ class Transformer:
                             "ledger_id": lid,
                             "amount": line.amount,
                             "amount_fc": line.amount_fc,
+                            "currency_name": line.currency_name,
+                            "exchange_rate": line.exchange_rate,
                             "is_party_line": line.is_party_line,
                             "is_effective": effective,
                         },

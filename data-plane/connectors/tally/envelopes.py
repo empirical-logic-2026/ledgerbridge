@@ -26,6 +26,9 @@ class CollectionSpec:
     fetch: tuple[str, ...]
     # TDL formulas computed by Tally itself, as "NAME : formula"
     compute: tuple[str, ...] = ()
+    # The whole object (NATIVEMETHOD *) instead of `fetch`: only for small collections whose
+    # nested lists' fields aren't known yet (currencies' rate lists).
+    native: bool = False
 
 
 _KEYS = ("GUID", "ALTERID", "MASTERID", "NAME")
@@ -49,6 +52,10 @@ GROUPS = CollectionSpec(
     "group",
     (*_KEYS, "PARENT", "ISREVENUE", "ISDEEMEDPOSITIVE", "AFFECTSGROSSPROFIT"),
 )
+# Currency masters (FX-001, FX-003): a handful per company, read whole (`native`) so their
+# rate lists (DAILYSTDRATES.LIST, DAILYBUYINGRATES.LIST, DAILYSELLINGRATES.LIST, exported
+# empty on the test company, 2026-10-24) come with whatever fields Tally fills them with.
+CURRENCIES = CollectionSpec("LBCurrencies", "Currency", "CURRENCY", "currency", _KEYS, native=True)
 LEDGERS = CollectionSpec(
     "LBLedgers",
     "Ledger",
@@ -232,6 +239,7 @@ OPENING_SPECS = frozenset(("LBLedgers", "LBStockItems", "LBLedgerOpeningBills"))
 
 # Masters in the order they must be transformed (each may refer to the ones before it).
 MASTER_SPECS = (
+    CURRENCIES,
     GROUPS,
     LEDGERS,
     VOUCHER_TYPES,
@@ -350,6 +358,11 @@ def collection_request(
             f'<SYSTEM TYPE="Formulae" NAME="{_CHANGED_FILTER}">'
             f"$AlterID &gt; {int(since_alter_id)}</SYSTEM>"
         )
+    fields = (
+        "<NATIVEMETHOD>*</NATIVEMETHOD>"
+        if spec.native
+        else f"<FETCH>{', '.join(spec.fetch)}</FETCH>"
+    )
     return (
         "<ENVELOPE>"
         "<HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>"
@@ -359,7 +372,7 @@ def collection_request(
         "<TDL><TDLMESSAGE>"
         f'<COLLECTION NAME="{spec.collection_id}" ISMODIFY="No">'
         f"<TYPE>{spec.tally_type}</TYPE>"
-        f"<FETCH>{', '.join(spec.fetch)}</FETCH>"
+        f"{fields}"
         f"{extra}"
         "</COLLECTION>"
         f"{''.join(formulae)}"

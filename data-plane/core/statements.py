@@ -337,7 +337,12 @@ def build(
     session: Session, entity_id: int, source: SourceStatements, tolerance: Decimal = ZERO
 ) -> list[tuple[str | None, StatementLine]]:
     """Our three statements as of the source's date: (section, line) pairs."""
-    f = figures(session, entity_id, source, tolerance)
+    return lines_for(figures(session, entity_id, source, tolerance))
+
+
+def lines_for(f: Figures) -> list[tuple[str | None, StatementLine]]:
+    """Our three statements from figures already read: `build` without the database (the
+    fx-rules finder lays them out again with other revalued figures, workers/fx_rules.py)."""
     return [*trial_balance(f), *_profit_loss(f), *_balance_sheet(f, net_profit(f))]
 
 

@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.35 (Draft) |
-| Date | 2026-10-16 |
+| Version | 0.36 (Draft) |
+| Date | 2026-10-24 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
 This document describes the database inside each **client deployment**. The control plane has its own small database (users, clients, licences), described in `docs/architecture.md` Section 3.
@@ -415,7 +415,18 @@ Unique `(budget_id, standard_account_id, account_group_id, ledger_id, cost_centr
 
 Append-only history of every change (BUD-006): `id, budget_id, budget_line_id NULL, month DATE NULL, action ENUM('create','edit','spread','import','upload','copy','revise','approve','lock','unlock','delete_line'), old_amount DECIMAL(20,4) NULL, new_amount DECIMAL(20,4) NULL, changed_by CHAR(36), changed_at DATETIME(6), note VARCHAR(255) NULL`. Written in the same transaction as the change; the application user has INSERT and SELECT only on this table. Index `(budget_id, changed_at)`.
 
-### 4.8 Foreign currency (proposed for M4b; FX-001 to FX-007, ADR-037)
+### 4.8 Foreign currency (FX-001 to FX-007, ADR-037; core built in migration 0020, ADR-046)
+
+**Built in migration 0020 (A5 core).** It differs from the proposal below where the source's data needed it:
+
+- `currencies.symbol` added; a currency code the source names that isn't in `currencies` is added by the transform.
+- `currency_sources`: a [SRC] table (one row per currency master: `entity_id, name` as the source writes it, `currency_code NULL` FK, `formal_name, decimal_places`, plus the source tracking columns; unique `uq_currency_sources_source`). The code is the master's `EXPANDEDSYMBOL`, else `ISOCURRENCYCODE`; a name without a master falls back to the entity's base currency.
+- `ledgers.currency_name VARCHAR NULL` (as the source writes it; for a ledger opening in another currency than its own, the opening's) and `ledgers.opening_balance_fc DECIMAL(20,4) NULL`; `ledgers.currency_code` is filled from `CURRENCYNAME`.
+- `voucher_lines.currency_name VARCHAR NULL` and `voucher_lines.exchange_rate DECIMAL(20,8) NULL` beside `amount_fc` (the rate as written, base per unit). The proposed `currency_code` on lines isn't added: the name joins to `currency_sources`.
+- `exchange_rates` dropped and recreated: `id, entity_id, currency_name, currency_code NULL, rate_date, rate DECIMAL(20,8), rate_kind ENUM('standard','buying','selling','vouchers'), source ENUM('source_rate_list','vouchers'), voucher_count INT NULL, created_at, updated_at`; unique `(entity_id, currency_name, rate_date, rate_kind)`. No `connection_id` (the entity says where it came from). List rates are replaced whenever their currency master is transformed; voucher rates (Σ|amount| / Σ|amount_fc| per currency and day over effective lines) are recomputed after every transform that changed anything (`core/fx.py`).
+- Not yet built: `bill_allocations` foreign amounts, `fx_transactions`, `fx_realised` (the rest of A5).
+
+The proposal as written before the build:
 
 The base-currency columns (`amount`, `opening_balance`, bill `amount`) stay the books: every statement, balance and validation uses them. The columns and tables below hold foreign-currency information **beside** them and never change a base figure. Each object says how it is filled and whether its figures are **source-calculated** (stored as the source reports them, with the date they apply to) or **derived here** from stored lines. Amounts `DECIMAL(20,4)` in the canonical sign (debit positive); rates `DECIMAL(20,8)`, base currency per unit of the foreign currency. Proposed design, to be confirmed in the M4b plan.
 
@@ -804,6 +815,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-24 | 0.36 | Section 4.8: the A5 core built (migration 0020, ADR-046): `currencies.symbol`, `currency_sources` as a [SRC] table, the currency as the source names it on ledgers and voucher lines, `ledgers.opening_balance_fc`, `voucher_lines.exchange_rate`, `exchange_rates` recreated per entity and currency name. |
 | 2026-10-24 | 0.35 | `alerts.resolution` (migration 0019). |
 | 2026-10-24 | 0.34 | Section 6: `v_statement_open_differences` (migration 0018, ADR-043). |
 | 2026-10-22 | 0.33 | Section 4.9 source figures (`stock_values`), `fx_revaluation_snapshots` built; Section 6 `statement_lines` and the statement views; Section 5.2 statement and stock value checks (migration 0017, ADR-040). |

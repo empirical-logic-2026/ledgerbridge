@@ -658,7 +658,7 @@ class TallyConnector:
             item_values=None if integrated else self._item_values(entity, period),
             standard_names=mapping.RESERVED_GROUPS | reports.OWN_LINES,
             stock_candidates=self._stock_candidates(entity, period) if integrated else {},
-            netted_groups=self._netted_groups(entity),
+            netted_groups=self.netted_groups(entity),
         )
 
     def _stock_candidates(
@@ -686,11 +686,16 @@ class TallyConnector:
             found["this financial year's closing stock"] = closing
         return found
 
-    def _netted_groups(self, entity: SourceEntity) -> frozenset[str]:
-        """The groups Tally nets for reporting (ISADDABLE Yes), by GUID."""
+    def netted_groups(self, entity: SourceEntity) -> frozenset[str]:
+        """The groups Tally nets for reporting (ISADDABLE Yes), by GUID; none when Tally
+        rejects the request (a release without the field), so the statements still read."""
+        try:
+            groups = self._export_objects(entity, envelopes.GROUP_REPORTING)
+        except TallyRejectedError:
+            return frozenset()
         return frozenset(
             parser.source_key(group)
-            for group in self._export_objects(entity, envelopes.GROUP_REPORTING)
+            for group in groups
             if (group.findtext("ISADDABLE") or "").strip() == "Yes"
         )
 
