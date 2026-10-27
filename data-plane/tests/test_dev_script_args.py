@@ -29,6 +29,8 @@ param([string]$Env = 'test')
 $record = @{ env = $Env; args = @($args | ForEach-Object { "$_" }) } | ConvertTo-Json -Compress
 Add-Content -Path $env:LEDGERBRIDGE_DEV_STACK_LOG -Value $record -Encoding UTF8
 if (($args -join ' ') -eq 'ps --status running --services') { 'api'; 'mysql' }
+$failing = $env:LEDGERBRIDGE_FAKE_CLI_EXIT
+if ($failing -and ($args -contains 'workers.cli')) { exit [int]$failing }
 exit 0
 """
 GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -263,6 +265,26 @@ def test_each_command_passes_whole_arguments(name: str, tmp_path: Path) -> None:
     # `--job` comes last in the expected lists; dev.ps1 adds it before the entity options.
     assert [sorted(c) for c in calls] == [sorted(c) for c in expected], calls
     assert [c[:3] for c in calls] == [c[:3] for c in expected], calls
+
+
+@pytest.mark.parametrize("argv", [["report"], ["validate"]])
+def test_a_failed_verdict_exits_1_when_run_with_file(argv: list[str], tmp_path: Path) -> None:
+    """ADR-044 for callers of `powershell -File` too (CI, scheduled tasks): pilot
+    2026-10-26, `report` printed FAILED and exited 0 that way."""
+    stack, log = tmp_path / "fake-stack.ps1", tmp_path / "calls.jsonl"
+    stack.write_text(FAKE_STACK, encoding="utf-8")
+    env = {
+        **__import__("os").environ,
+        "LEDGERBRIDGE_DEV_STACK": str(stack),
+        "LEDGERBRIDGE_DEV_STACK_LOG": str(log),
+        "LEDGERBRIDGE_FAKE_CLI_EXIT": "1",
+    }
+    done = subprocess.run(  # noqa: S603 - fixed arguments, no shell
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-File", str(REPO / "dev.ps1"), *argv, "-Env", "test"],
+        capture_output=True, text=True, timeout=120, check=False, env=env, cwd=REPO,
+    )  # fmt: skip
+    assert done.returncode == 1, done.stdout + done.stderr
 
 
 @pytest.mark.parametrize(

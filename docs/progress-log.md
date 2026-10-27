@@ -4,6 +4,7 @@ Dated entries of what was done, newest first. The full story so far, PR by PR, i
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-26 | Pilot: A5 core verified (base check 0 of 724,716 vouchers differ, 319 foreign amounts read, 0 not); the finder's calibration matched the groups at 60 of 78 dates and the forex line at none, so the finder now has three parts (per ledger, layout, computed) for ADR-043's last round; the report asks to validate again when a validation couldn't run or is older than the latest transform (LB-VAL-027, LB-VAL-028). |
 | 2026-10-24 | A5 core: foreign-currency lines keep their currency and rate, ledgers their own currency and foreign opening, currency masters and their rate lists are read, voucher rates derived (migration 0020); `transform rebuild` checks every base figure is unchanged (LB-TRF-010); `validate fx-rules` counts, per candidate revaluation rule, the dates Tally's groups and forex line are matched (ADR-046). |
 | 2026-10-24 | Images carry their git commit; on the pilot, `validate`, `report`, `statements` and `sync` stop when the stack runs other code than the checked-out one (ADR-045); the report shows the commit. |
 | 2026-10-24 | One scale of verdicts (OK, OK WITH WARNINGS, ACTION NEEDED, FAILED; only FAILED exits 1; "PASSED with N warnings"); open items as next steps (LB-VAL-026: ADR-043's revaluation rule); alerts close with a reason (migration 0019), including those without a company or about one no longer connected; `up -Env pilot` backs up the databases before migrating (ADR-044). |

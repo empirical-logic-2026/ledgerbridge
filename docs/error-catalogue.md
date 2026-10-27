@@ -70,6 +70,8 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-024](#lb-val-024-statement-line-differs-from-the-source) | Statement line differs from the source | `statement_mismatch` | Error |
 | [LB-VAL-025](#lb-val-025-source-statements-couldnt-be-read) | Source statements couldn't be read | `statements_unavailable` | Error |
 | [LB-VAL-026](#lb-val-026-statement-line-taken-from-the-source-open-difference) | Statement line taken from the source (open difference) | `statement_taken_from_source` | Warning |
+| [LB-VAL-027](#lb-val-027-validation-couldnt-run-and-hasnt-passed-since) | Validation couldn't run and hasn't passed since | `validation_not_rerun` | Warning |
+| [LB-VAL-028](#lb-val-028-validated-before-the-latest-transform) | Validated before the latest transform | `validated_before_rebuild` | Warning |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
 | [LB-SYS-001](#lb-sys-001-unexpected-error) | Unexpected error | `unexpected_error` | Error |
@@ -1095,6 +1097,48 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Nothing to fix in the data; send the summary's lines.
 
 **Next step:** nothing to run: open item ADR-043, find the forex revaluation rule (rulebook 16.8).
+
+### LB-VAL-027: Validation couldn't run and hasn't passed since
+
+`validation_not_rerun` | Warning
+
+**What it means:** A validation after a sync, retry or rebuild couldn't run (e.g. the source didn't answer), and no validation has passed since: the results shown are from before it.
+
+**Usually a consequence of:** LB-VAL-020.
+
+**Common causes:**
+
+- The source didn't answer in time, or a company wasn't loaded.
+
+**How to investigate:**
+
+- .\dev.ps1 entity-check -Env <env>
+
+**How to fix:**
+
+- Check the source answers, then validate again.
+
+**Next step:** `.\dev.ps1 validate -Env <env>`
+
+### LB-VAL-028: Validated before the latest transform
+
+`validated_before_rebuild` | Warning
+
+**What it means:** The company's latest validation ran before the latest `transform rebuild` or `transform retry`, which changed its converted data: its result may no longer hold.
+
+**Common causes:**
+
+- The transform ran with -NoValidate, or its validation couldn't run.
+
+**How to investigate:**
+
+- .\dev.ps1 status -Env <env>
+
+**How to fix:**
+
+- Validate again.
+
+**Next step:** `.\dev.ps1 validate -Env <env>`
 
 
 ## Connection settings

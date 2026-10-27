@@ -49,13 +49,14 @@ from core.problems import (
     Problem,
     for_error,
     for_key,
+    title,
 )
 from core.transform import FOREIGN_UNREAD
 from workers.entities import Labels
 from workers.failures import failure_breakdown, format_group, warning_breakdown
 from workers.fields import catalogue_counts
 from workers.runs import FINISHED
-from workers.sync import DELETION_CHECK, entity_ids_for, last_run, running_run
+from workers.sync import DELETION_CHECK, TRANSFORM, entity_ids_for, last_run, running_run
 
 # OK; OK WITH WARNINGS (only warnings waiting on an open item: nothing to run); ACTION NEEDED
 # (a warning with something to run, e.g. an interrupted sync); FAILED (an error). Only FAILED
@@ -611,6 +612,13 @@ class Builder:
                     continue
                 lines = validation_lines(self.session, run, where)
                 s.lines.append(lines[0])
+                rebuilt = self._transformed_since(c, run.started_at)
+                if rebuilt is not None:
+                    s.lines.append(
+                        f"    {title('validated_before_rebuild')}: transform run {rebuilt.id} "
+                        f"finished {_when(rebuilt.finished_at)}, after this validation"
+                    )
+                    s.occurrences.append(Occurrence(BY_CODE["LB-VAL-028"], where))
                 s.occurrences += validation_occurrences(self.session, run, where)
                 # Short: the checks that found something; -Details: notes and fixed ones too.
                 for line in lines[1:]:
@@ -619,10 +627,37 @@ class Builder:
             s.lines.append("no company converted yet")
         return s
 
+    def _transformed_since(self, c: Connection, since: datetime) -> SyncRun | None:
+        """The latest succeeded `transform retry` or `rebuild` of the connection finished
+        after `since` (it changed the converted data a validation then saw)."""
+        return self.session.scalar(
+            select(SyncRun)
+            .where(
+                SyncRun.connection_id == c.id,
+                SyncRun.run_type == TRANSFORM,
+                SyncRun.status == "succeeded",
+                SyncRun.finished_at > since,
+            )
+            .order_by(SyncRun.finished_at.desc())
+            .limit(1)
+        )
+
     def warnings(self) -> Section:
-        """Warnings and notes found in the other sections, plus open alerts."""
+        """Warnings and notes found in the other sections, plus open alerts. An open
+        validation alert from a validation that couldn't run is a warning of its own: no
+        validation has passed since (LB-VAL-027)."""
         s = Section("Warnings")
         for c in self.connections:
+            unrun = self.session.scalar(
+                select(func.count()).where(
+                    Alert.connection_id == c.id,
+                    Alert.kind == "validation_failed",
+                    Alert.resolved_at.is_(None),
+                    Alert.validation_run_id.is_(None),
+                )
+            )
+            if unrun:
+                s.occurrences.append(Occurrence(BY_CODE["LB-VAL-027"], f"connection {c.id}", unrun))
             alerts = self.session.execute(
                 select(Alert.kind, func.count())
                 .where(Alert.connection_id == c.id, Alert.resolved_at.is_(None))
@@ -631,6 +666,10 @@ class Builder:
             listed = ", ".join(f"{k} {n}" for k, n in sorted(alerts)) or "none"
             s.lines.append(f"connection {c.id}: open alerts: {listed}")
         return s
+
+
+def _when(at: datetime | None) -> str:
+    return at.strftime("%Y-%m-%d %H:%M UTC") if at else "at an unknown time"
 
 
 def note_code(message: str) -> str:

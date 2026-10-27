@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.11 |
+| Version | 1.12 |
 | Date | 2026-10-24 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
@@ -413,7 +413,7 @@ Only where no rule could be found, a line is the source's own figure, labelled "
 - **What:** a foreign-currency amount is written `-$100.00 @ ₹82.00/$ = -₹8200.00` (the rupee sign exported as `?`): the base amount after `=` stays the books' figure; the currency (`$`), the foreign amount and the rate (₹ per unit) are kept beside it, on voucher lines and on ledger openings. A ledger's own currency is Tally's CURRENCYNAME, mapped to an ISO code through the currency masters (`EXPANDEDSYMBOL`, else `ISOCURRENCYCODE`); a ledger Tally keeps in rupees can still open in dollars (the test company's Customer Hotel USD), and keeps that opening's dollars. Rates: Tally's own lists (standard, buying, selling; each entry read as its first date and first other number, since their fields weren't known) and, per currency and day, the voucher lines' base over foreign amounts. Each ledger's foreign balance at a date is its foreign opening plus the foreign amounts of its counted lines up to it.
 - **Never changes the books:** `transform rebuild` compares every voucher's base lines and every ledger's opening and balance before and after, and reports the counts (LB-TRF-010 if any differ).
 - **No foreign amount unread unnoticed:** the rupee sign isn't read (only the digits around it), so `?`, `₹`, `Rs.`, `Rs` and `INR` all read the same. An amount written as a foreign one (with `@` or `=`) whose foreign part or base amount can't be read is counted and noted on its record (LB-TRF-011, in the report); `transform rebuild` prints "Foreign-currency amounts: N read, M not read".
-- **Which rule Tally revalues by:** `./dev.ps1 validate fx-rules` counts, for each candidate rule, the dates where the groups holding foreign-currency ledgers and the Unadjusted Forex Gain/Loss line equal Tally's (exactly and within 1), laid out with the statements' own code; "as exported" (Tally's ledger-balance export) is the calibration and must reproduce what `statements` found.
+- **Which rule Tally revalues by, in three parts (2026-10-26):** (1) per ledger, each rule's value against Tally's own revalued balance (to the paisa, rounded to the rupee, within 1); (2) the layout, with Tally's per-ledger figures: the ledgers kept in rupees but holding foreign amounts at book value or revalued by each rule, and the forex line ledger by ledger (losses the debit, gains the credit, as `statements` does) or netted in total, per currency or per group, each with either sign; (3) each rule computed throughout, in the same combinations. The last line names the combinations matching every date (ADR-043's time-box). Before that: `./dev.ps1 validate fx-rules` counts, for each candidate rule, the dates where the groups holding foreign-currency ledgers and the Unadjusted Forex Gain/Loss line equal Tally's (exactly and within 1), laid out with the statements' own code; "as exported" (Tally's ledger-balance export) is the calibration and must reproduce what `statements` found.
 - **Code:** `connectors/tally/signs.py` (`tally_foreign_parts`), `connectors/tally/mapping.py` (`currency`, `_foreign`), `core/transform.py` (`_currencies`), `core/fx.py`, `core/fx_rules.py`, `core/base_check.py`, `workers/fx_rules.py`.
 - **Tests:** `tests/test_fx_core.py`, `tests/test_fx_rules.py`, `tests/test_retransform.py` (`test_transform_rebuild_command`).
 - **ADR:** ADR-046 (and ADR-043, whose stopgap it is meant to end).
@@ -422,6 +422,7 @@ Only where no rule could be found, a line is the source's own figure, labelled "
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-26 | 1.12 | 18: the fx-rules finder in three parts (per ledger, layout, computed). |
 | 2026-10-24 | 1.11 | 18: foreign currency beside the books, the base check after a rebuild, the fx-rules finder. |
 | 2026-10-24 | 1.10 | 16.2 and 16.8: the Balance Sheet stock fallback retired; stock computed and compared everywhere. |
 | 2026-10-24 | 1.9 | 16.8: the Current Assets stopgap, the tolerance stated, open differences (LB-VAL-026). |

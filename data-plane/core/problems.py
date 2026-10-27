@@ -753,6 +753,31 @@ PROBLEMS: tuple[Problem, ...] = (
         ".\\dev.ps1 report -Env {env} -Details",
         open_item="ADR-043, find the forex revaluation rule (rulebook 16.8)",
     ),
+    _p(
+        "LB-VAL-027",
+        "validation_not_rerun",
+        "Validation couldn't run and hasn't passed since",
+        WARNING,
+        "A validation after a sync, retry or rebuild couldn't run (e.g. the source didn't "
+        "answer), and no validation has passed since: the results shown are from before it.",
+        ("The source didn't answer in time, or a company wasn't loaded.",),
+        (".\\dev.ps1 entity-check -Env {env}",),
+        ("Check the source answers, then validate again.",),
+        ".\\dev.ps1 validate -Env {env}",
+        consequence_of=("LB-VAL-020",),
+    ),
+    _p(
+        "LB-VAL-028",
+        "validated_before_rebuild",
+        "Validated before the latest transform",
+        WARNING,
+        "The company's latest validation ran before the latest `transform rebuild` or "
+        "`transform retry`, which changed its converted data: its result may no longer hold.",
+        ("The transform ran with -NoValidate, or its validation couldn't run.",),
+        (".\\dev.ps1 status -Env {env}",),
+        ("Validate again.",),
+        ".\\dev.ps1 validate -Env {env}",
+    ),
     # --- connection settings ------------------------------------------------------------
     _p(
         "LB-CON-001",

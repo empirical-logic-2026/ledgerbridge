@@ -65,8 +65,12 @@ def _netted(connector: Connector, entity: SourceEntity, label: str, out: Print) 
         return frozenset()
 
 
+SHOWN = 8  # parts 2 and 3: the best combinations printed; the rest counted
+
+
 def lines(label: str, f: fx_rules.Finding) -> list[str]:
-    """The finding as printed: counts and rule names only."""
+    """The finding as printed: counts and rule names only. The last line is the decision:
+    the combinations of part 3 matching every date, or none (ADR-043's time-box)."""
     kinds = ", ".join(f"{k} {n:,}" for k, n in sorted(f.rate_kinds.items())) or "none"
     out = [
         f"{label}: {f.dates:,} dates"
@@ -75,27 +79,63 @@ def lines(label: str, f: fx_rules.Finding) -> list[str]:
         f"{f.other_ledgers_with_foreign_figures:,} base-currency ledgers with foreign figures, "
         f"in {f.groups:,} group(s); rates stored: {kinds}"
     ]
-    for r in f.results:
-        missing = f"; no rate at {r.no_rate:,} ledger-dates" if r.no_rate else ""
+    if not f.foreign_ledgers:
+        out.append(f"{label}: no foreign-currency ledgers: nothing to find")
+        return out
+    calibration = f.calibration()
+    if calibration is not None:
         out.append(
-            f'  rule "{r.rule}" ({r.variant}): groups {r.groups_exact:,} of {f.dates:,} exact, '
-            f"{r.groups_near:,} within 1; forex line {r.forex_exact:,} of {f.dates:,} exact, "
-            f"{r.forex_near:,} within 1{missing}"
+            f"{label}: as `statements` lays them out today (the source's own per-ledger "
+            f"figures): {_counts(calibration, f.dates)}"
         )
-    full = [r for r in f.results if r.groups_exact == r.forex_exact == f.dates and f.dates]
-    calibrated = any(r.rule == fx_rules.CALIBRATION for r in full)
+    out.append("  1. Per ledger, each rule against the source's own revalued balance:")
+    for p in f.per_ledger:
+        missing = f"; no rate at {p.no_rate:,}" if p.no_rate else ""
+        out.append(
+            f'    rule "{p.rule}": {p.exact:,} of {p.compared + p.no_rate:,} ledger-dates '
+            f"to the paisa, {p.rupee:,} rounded to the rupee, {p.near:,} within 1{missing}"
+        )
+    out.append("  2. Layout, with the source's own per-ledger figures:")
+    out += _best(f.layouts, f.dates, lambda r: f"{r.rule}, {r.variant}")
+    out.append("  3. Computed, rule by rule:")
+    out += _best(f.results, f.dates, lambda r: f'rule "{r.rule}", {r.variant}')
+    every = [p.rule for p in f.per_ledger if p.compared and p.exact == p.compared + p.no_rate]
     out.append(
-        f"{label}: calibration "
-        + (
-            "reproduces the source at every date"
-            if calibrated
-            else "doesn't reproduce the source at every date: the counts below it can't be trusted"
-        )
+        f"{label}: per ledger, rules matching every ledger-date: "
+        + "; ".join(f'"{name}"' for name in every)
+        if every
+        else f"{label}: per ledger, no rule matches every ledger-date"
     )
-    full = [r for r in full if r.rule != fx_rules.CALIBRATION]
-    if full:
-        names = "; ".join(f'"{r.rule}" ({r.variant})' for r in full)
+    laid = [r for r in f.layouts if _all(r, f.dates)]
+    out.append(
+        f"{label}: with the source's own per-ledger figures, layouts matching every date: "
+        + ("; ".join(f"{r.rule}, {r.variant}" for r in laid) if laid else "none")
+    )
+    found = [r for r in f.results if _all(r, f.dates)]
+    if found:
+        names = "; ".join(f'"{r.rule}" ({r.variant})' for r in found)
         out.append(f"{label}: rules matching every date exactly: {names}")
     else:
         out.append(f"{label}: no rule matches every date exactly")
+    return out
+
+
+def _all(r: fx_rules.Result, dates: int) -> bool:
+    return bool(dates) and r.groups_exact == r.forex_exact == dates
+
+
+def _counts(r: fx_rules.Result, dates: int) -> str:
+    missing = f"; no rate at {r.no_rate:,} ledger-dates" if r.no_rate else ""
+    return (
+        f"groups {r.groups_exact:,} of {dates:,} exact, {r.groups_near:,} within 1; "
+        f"forex line {r.forex_exact:,} of {dates:,} exact, {r.forex_near:,} within 1{missing}"
+    )
+
+
+def _best(
+    results: list[fx_rules.Result], dates: int, name: Callable[[fx_rules.Result], str]
+) -> list[str]:
+    out = [f"    {name(r)}: {_counts(r, dates)}" for r in results[:SHOWN]]
+    if len(results) > SHOWN:
+        out.append(f"    ({len(results) - SHOWN:,} more combinations, none matching more dates)")
     return out
