@@ -89,6 +89,7 @@ ledgerbridge/
 │   ├── project-history.md      what was built and done so far, PR by PR
 │   ├── progress-log.md         dated progress entries
 │   ├── rules/                  the rulebook: conversion and validation rules
+│   ├── sql/                    ready-to-run SQL for accountants (monthly-sales.sql)
 │   ├── database/               the schema reference (generated)
 │   ├── export/                 Word and PDF copies of those (./dev.ps1 docs-export)
 │   ├── design/                 dashboard design and mockup
@@ -164,6 +165,7 @@ ledgerbridge/
 | `fx.py` | Foreign currency beside the books: voucher-derived rates (`refresh_voucher_rates`) and each ledger's balance in its own currency at a date (`foreign_balances`). |
 | `fx_rules.py` | The fx-rules finder in three parts: each rule against the source's per-ledger revalued balances, the layout (rupee ledgers with foreign amounts, forms of the forex line) with the source's own figures, and each rule computed throughout; our statements laid out again under each candidate revaluation rule, counting the dates the groups holding foreign-currency ledgers and the forex line equal the source's (ADR-046). |
 | `base_check.py` | Every base amount and balance before and after a `transform rebuild`, compared by the source's keys (counts only). |
+| `monthly_sales.py` | Monthly sales proven against the source (RPT-013): the Sales Accounts group by the source's predefined group and its cross-checks, the periods between stored statement dates, the comparison with the views, the refusal when the statements are older than the data. |
 | `statement_differences.py` | A pilot-safe summary of the statement lines that differ from the source's: safe labels (standard names; custom groups described by where they sit), missing or different, on how many dates, and which tested amounts each difference equals (Direct Expenses, stock, forex, the last year end's profit and stock). Printed by validation and `statements`. |
 | `canonical.py` | The standard ("canonical") records every connector produces: company, group, ledger, voucher, voucher line and so on. |
 | `raw_store.py` | Stores what a source sends, unchanged, in the raw records table, skipping copies that haven't changed. |
@@ -195,6 +197,7 @@ ledgerbridge/
 | `references.py` | The `transform explain` diagnostic: why names didn't resolve, in counts and kinds only. |
 | `report.py` | The health report (`./dev.ps1 report`): overall verdict, sections, problems with meaning, likely cause and next step; and the validation layout every command shares, compared with the previous run. Counts and codes only. |
 | `style.py` | Colours status words (green, yellow, red) when `dev.ps1` says the terminal supports it; plain text otherwise. |
+| `monthly_sales.py` | `./dev.ps1 validate monthly-sales`: the proof per company, from the database only, printed as counts and dates. |
 | `fx_rules.py` | `./dev.ps1 validate fx-rules`: the finder per company (the expected company checked, the netting setting read once), printed as counts. |
 | `statements.py` | `./dev.ps1 statements`: the stock values and statements at every month end and year end, read from the source, stored and compared (counts only). |
 | `compare.py` | `validate compare-ledger`: one ledger's vouchers in the source against ours, voucher by voucher; counts printed, details only as private lines for a local file. |
@@ -393,6 +396,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-29 | 0.29 | `core/monthly_sales.py`, `workers/monthly_sales.py`, migration 0021, `docs/sql/`; `tests/test_monthly_sales.py`, `tests/test_monthly_sales_integration.py`. |
 | 2026-10-26 | 0.28 | `core/fx_rules.py`: the finder's three parts; `workers/report.py`: a validation older than the data (LB-VAL-027, LB-VAL-028). |
 | 2026-10-24 | 0.27 | `core/fx.py`, `core/fx_rules.py`, `core/base_check.py`, `workers/fx_rules.py`, migration 0020; `tests/test_fx_core.py`, `tests/test_fx_rules.py`. |
 | 2026-10-24 | 0.26 | Images stamped with their git commit (Dockerfile, compose build args, `stack.ps1`); `dev.ps1` `Assert-CodeCurrent`. |

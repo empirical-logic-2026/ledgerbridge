@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.36 (Draft) |
-| Date | 2026-10-24 |
+| Version | 0.37 (Draft) |
+| Date | 2026-10-29 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
 This document describes the database inside each **client deployment**. The control plane has its own small database (users, clients, licences), described in `docs/architecture.md` Section 3.
@@ -226,6 +226,7 @@ Source group hierarchy (Tally groups), kept as-is per entity.
 | nature | ENUM('asset','liability','equity','income','expense') NULL | Derived from primary group. |
 | is_primary | BOOLEAN | Tally's 28 predefined primary groups. |
 | affects_gross_profit | BOOLEAN | Tally flag for P&L layout. |
+| predefined_role | VARCHAR(64) NULL | **Migration 0021 (RPT-013).** Which of the source's own predefined groups this is, renamed or not, in our vocabulary (Tally: RESERVEDNAME in lower case, words joined by `_`, e.g. `sales_accounts`); NULL for groups the user created. Filled by the transform: after migration 0021, `transform rebuild`. |
 | standard_account_id | BIGINT UNSIGNED NULL | Default mapping for ledgers under this group. |
 
 #### `ledgerbridge_accounting.ledgers` [SRC]
@@ -598,6 +599,10 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | `ledgerbridge_reporting.v_trial_balance`, `v_profit_loss`, `v_balance_sheet` | View | **Built (0017).** Our statement lines as of each stored date, laid out as the source's (RPT-012). |
 | `ledgerbridge_reporting.v_statement_check` | View | **Built (0017).** Per entity, date, statement and line: ours, the source's and the difference (`detail` lines left out). |
 | `ledgerbridge_reporting.v_statement_open_differences` | View | **Built (0018).** Lines taken from the source where ours (the "(computed)" detail line) differs: per entity, date, statement and line, both figures and the difference, also by debit and credit (ADR-043, LB-VAL-026). |
+| `ledgerbridge_reporting.v_sales_ledgers` | View | **Built (0021, RPT-013).** `entity_id, ledger_id, group_id, sales_group_id`: each ledger under the entity's Sales Accounts group (`predefined_role = 'sales_accounts'`) and its sub-groups at any depth. |
+| `ledgerbridge_reporting.v_daily_sales` | View | **Built (0021).** Per entity, voucher date and voucher type: `gross_sales` (Sales vouchers), `sales_returns` (Credit Notes), `other_adjustments` (every other voucher type), `net_sales`, `vouchers`, from effective lines of vouchers not deleted on those ledgers; sales positive. |
+| `ledgerbridge_reporting.v_monthly_sales` | View | **Built (0021).** Per entity and month: `financial_year` (its starting calendar year, from `entities.fy_start_month`), `month_of_year`, `month_start`, `month_label` (`Apr-26`), the four amounts and `vouchers`. Net sales equals the source's Sales Accounts line for the month; proven by `./dev.ps1 validate monthly-sales`. Ready-to-run pivot: `docs/sql/monthly-sales.sql`. |
+| `ledgerbridge_reporting.v_monthly_sales_by_voucher_type` | View | **Built (0021).** The same per voucher type (`voucher_type_id, voucher_type, base_type, net_sales, vouchers`): the channel breakdown, adding up to `v_monthly_sales.net_sales`. |
 | `ledgerbridge_reporting.agg_ledger_daily` | Table | `entity_id, ledger_id, date, debit, credit, net`, refreshed incrementally. |
 | `ledgerbridge_reporting.v_ledger_balances` | View | Opening + movements → closing per ledger per period. |
 | `ledgerbridge_reporting.v_trial_balance` | View | Trial balance per entity and period. |
@@ -815,6 +820,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-29 | 0.37 | `account_groups.predefined_role`; Section 6: the monthly sales views (migration 0021, RPT-013, ADR-047). |
 | 2026-10-24 | 0.36 | Section 4.8: the A5 core built (migration 0020, ADR-046): `currencies.symbol`, `currency_sources` as a [SRC] table, the currency as the source names it on ledgers and voucher lines, `ledgers.opening_balance_fc`, `voucher_lines.exchange_rate`, `exchange_rates` recreated per entity and currency name. |
 | 2026-10-24 | 0.35 | `alerts.resolution` (migration 0019). |
 | 2026-10-24 | 0.34 | Section 6: `v_statement_open_differences` (migration 0018, ADR-043). |
