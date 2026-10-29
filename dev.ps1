@@ -27,6 +27,8 @@
     ./dev.ps1 transform rebuild                 (transform every stored record again; no Tally)
     ./dev.ps1 transform explain [-CheckSource]  (why references didn't resolve; counts only)
     ./dev.ps1 validate analyse                  (test explanations for validation mismatches)
+    ./dev.ps1 validate fx-rules                 (which revaluation rule Tally follows; counts only)
+    ./dev.ps1 validate monthly-sales            (monthly sales proven against Tally's Sales Accounts; database only)
     ./dev.ps1 validate compare-ledger -Ledger 88 [-From 2020-04-01] [-To 2021-04-01]
     ./dev.ps1 statements [-From 2026-04-01]    (stock values and statements at every month end; compared with the source)
                                                 (a ledger's vouchers in Tally against ours; details to reports/<env>/private/)
@@ -545,10 +547,19 @@ switch ($Command) {
         # Validation as of today (M4): voucher balance, trial balance and closing balances
         # against the source. Prints counts, check codes and pass/fail only. Syncs validate
         # on their own; this runs it on demand.
-        Assert-Step 'validate' @('fx-rules', 'compare-ledger', 'analyse')
+        Assert-Step 'validate' @('fx-rules', 'monthly-sales', 'compare-ledger', 'analyse')
         Assert-EnvFile
         Assert-ApiRunning
         Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
+        if ($Service -eq 'monthly-sales') {
+            # Monthly sales proven against Tally's own Sales Accounts figure between the
+            # dates `statements` stored (RPT-013). Reads the database only (Tally needn't run);
+            # refuses when the statements are older than the latest sync or transform.
+            $salesArgs = @('python', '-m', 'workers.cli', 'monthly-sales', '--connection', $connection)
+            foreach ($name in $Company) { $salesArgs += @('--entity', $name) }
+            Invoke-Checked exec -T api @salesArgs
+            return
+        }
         if ($Service -eq 'fx-rules') {
             # Which revaluation rule Tally's statements follow (ADR-043): counts per candidate
             # rule over the dates `statements` stored. Reads the groups' netting setting only

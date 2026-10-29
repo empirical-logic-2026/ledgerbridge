@@ -93,7 +93,7 @@ from core.problems import BY_CODE, for_error, title
 from core.statement_differences import KINDS
 from core.transform import trial_balance
 from core.validation import ValidationReport
-from workers import fx_rules, style
+from workers import fx_rules, monthly_sales, style
 from workers.analyse import analyse
 from workers.compare import compare_ledger
 from workers.entities import (
@@ -284,6 +284,14 @@ def _parser() -> argparse.ArgumentParser:
     fx_rules_parser.add_argument(
         "--job", help="job id: also write the output to sync_logs, for `watch`"
     )
+
+    monthly_sales_parser = sub.add_parser(
+        "monthly-sales",
+        help="monthly sales proven against the source's own Sales Accounts figure between the "
+        "stored statement dates (RPT-013); reads the database only; counts and dates only",
+    )
+    connection_args(monthly_sales_parser)
+    monthly_sales_parser.add_argument("--entity", action="append", help="entity name (repeatable)")
 
     statements_parser = sub.add_parser(
         "statements",
@@ -543,6 +551,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _statements(session, args)
     if args.command == "fx-rules":
         return _fx_rules(session, args)
+    if args.command == "monthly-sales":
+        return _monthly_sales(session, args)
     if args.command == "summary":
         return _summary(session)
     if args.command == "report":
@@ -1542,6 +1552,40 @@ def _fx_rules(session: Session, args: argparse.Namespace) -> int:
     chosen = [(e, ids[e.key], labels.for_key(e.key, ids[e.key])) for e in entities if e.key in ids]
     code = fx_rules.run(session, connector, chosen)
     print("Result: fx-rules finished")
+    return code
+
+
+def _monthly_sales(session: Session, args: argparse.Namespace) -> int:
+    """Monthly sales proven against the stored statements (workers/monthly_sales.py). The
+    source isn't contacted."""
+    from core.models.accounting import EntitySource
+
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    if args.entity:
+        keys, missing = _entity_keys_by_name(session, connection, args.entity)
+        if missing:
+            print(
+                f"{len(missing)} of {len(args.entity)} named entities aren't known on this "
+                "connection (names must match exactly).",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        keys = list(
+            session.scalars(
+                select(EntitySource.source_entity_key).where(
+                    EntitySource.connection_id == connection.id
+                )
+            )
+        )
+    ids = entity_ids_for(session, connection.id, keys)
+    labels = Labels(session, connection)
+    chosen = [(ids[k], labels.for_key(k, ids[k])) for k in keys if k in ids]
+    code = monthly_sales.run(session, chosen)
+    print("Result: monthly-sales finished")
     return code
 
 
