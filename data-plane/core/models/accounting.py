@@ -218,6 +218,10 @@ class AccountGroup(SourceTrackingMixin, TimestampMixin, Base):
     nature: Mapped[str | None] = mapped_column(Enum(*NATURES, name="account_nature"), nullable=True)
     is_primary: Mapped[bool] = flag()
     affects_gross_profit: Mapped[bool] = flag()
+    # The source's own predefined group this is, renamed or not, in our vocabulary (e.g.
+    # "sales_accounts"; Tally: its RESERVEDNAME). NULL for groups the user created
+    # (migration 0021, RPT-013).
+    predefined_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
     standard_account_id: Mapped[int | None] = mapped_column(
         Id, _fk("standard_accounts"), nullable=True
     )

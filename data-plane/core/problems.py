@@ -778,6 +778,81 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Validate again.",),
         ".\\dev.ps1 validate -Env {env}",
     ),
+    _p(
+        "LB-VAL-029",
+        "monthly_sales_mismatch",
+        "Monthly sales differ from the source",
+        ERROR,
+        "For some periods between the stored statement dates, net sales from "
+        "`v_daily_sales` differ from the source's own Sales Accounts figure: the monthly sales "
+        "report isn't proven for those months.",
+        (
+            "Entries on sales ledgers the views don't count (or count twice).",
+            "The stored statements don't match the books (e.g. a sync since they were stored).",
+        ),
+        ("The output lists the periods by their dates.",),
+        ("Run ./dev.ps1 statements, then the check again; send the periods if they remain.",),
+        ".\\dev.ps1 validate monthly-sales -Env {env}",
+    ),
+    _p(
+        "LB-VAL-030",
+        "sales_group_not_found",
+        "Sales Accounts group not found",
+        WARNING,
+        "The company has no group the source predefines as Sales Accounts (renamed or not), "
+        "so the monthly sales views show nothing for it and nothing is compared.",
+        (
+            "The groups were converted before the source's predefined groups were recorded "
+            "(migration 0021).",
+        ),
+        (".\\dev.ps1 transform rebuild -Env {env}",),
+        ("Rebuild, then run the check again.",),
+        ".\\dev.ps1 transform rebuild -Env {env}",
+    ),
+    _p(
+        "LB-VAL-031",
+        "sales_ledgers_outside_group",
+        "Sales ledgers outside the Sales Accounts group",
+        WARNING,
+        "Some ledgers with entries are mapped to sale of goods (standard account 4110) but "
+        "don't sit under the source's Sales Accounts group: the monthly sales report, like the "
+        "source's Sales Accounts line, leaves them out.",
+        (
+            "A group or ledger mapped to sale of goods by hand, or a sales ledger under another "
+            "group in the source.",
+        ),
+        ("The output gives their count.",),
+        (
+            "Check where those ledgers belong in the source; nothing to fix here if they are "
+            "meant to be outside.",
+        ),
+        ".\\dev.ps1 validate monthly-sales -Env {env}",
+    ),
+    _p(
+        "LB-VAL-032",
+        "statements_older_than_data",
+        "Stored statements older than the data",
+        WARNING,
+        "The source's statements were stored before the latest sync or transform changed the "
+        "books: comparing with them could show differences that aren't there.",
+        ("A sync, rebuild or deletion check ran after `statements`.",),
+        (".\\dev.ps1 status -Env {env}",),
+        ("Store the statements again, then run the check.",),
+        ".\\dev.ps1 statements -Env {env}",
+    ),
+    _p(
+        "LB-VAL-033",
+        "sales_ledger_openings",
+        "Sales ledgers with an opening balance",
+        WARNING,
+        "Some ledgers under the Sales Accounts group have an opening balance at the books' "
+        "beginning. The monthly sales views count entries only, so the first period compared "
+        "may differ by it.",
+        ("An opening balance entered on an income ledger.",),
+        ("The output gives their count.",),
+        ("Check the openings in the source.",),
+        ".\\dev.ps1 validate monthly-sales -Env {env}",
+    ),
     # --- connection settings ------------------------------------------------------------
     _p(
         "LB-CON-001",

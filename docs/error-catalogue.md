@@ -72,6 +72,11 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-026](#lb-val-026-statement-line-taken-from-the-source-open-difference) | Statement line taken from the source (open difference) | `statement_taken_from_source` | Warning |
 | [LB-VAL-027](#lb-val-027-validation-couldnt-run-and-hasnt-passed-since) | Validation couldn't run and hasn't passed since | `validation_not_rerun` | Warning |
 | [LB-VAL-028](#lb-val-028-validated-before-the-latest-transform) | Validated before the latest transform | `validated_before_rebuild` | Warning |
+| [LB-VAL-029](#lb-val-029-monthly-sales-differ-from-the-source) | Monthly sales differ from the source | `monthly_sales_mismatch` | Error |
+| [LB-VAL-030](#lb-val-030-sales-accounts-group-not-found) | Sales Accounts group not found | `sales_group_not_found` | Warning |
+| [LB-VAL-031](#lb-val-031-sales-ledgers-outside-the-sales-accounts-group) | Sales ledgers outside the Sales Accounts group | `sales_ledgers_outside_group` | Warning |
+| [LB-VAL-032](#lb-val-032-stored-statements-older-than-the-data) | Stored statements older than the data | `statements_older_than_data` | Warning |
+| [LB-VAL-033](#lb-val-033-sales-ledgers-with-an-opening-balance) | Sales ledgers with an opening balance | `sales_ledger_openings` | Warning |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
 | [LB-SYS-001](#lb-sys-001-unexpected-error) | Unexpected error | `unexpected_error` | Error |
@@ -1139,6 +1144,107 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Validate again.
 
 **Next step:** `.\dev.ps1 validate -Env <env>`
+
+### LB-VAL-029: Monthly sales differ from the source
+
+`monthly_sales_mismatch` | Error
+
+**What it means:** For some periods between the stored statement dates, net sales from `v_daily_sales` differ from the source's own Sales Accounts figure: the monthly sales report isn't proven for those months.
+
+**Common causes:**
+
+- Entries on sales ledgers the views don't count (or count twice).
+- The stored statements don't match the books (e.g. a sync since they were stored).
+
+**How to investigate:**
+
+- The output lists the periods by their dates.
+
+**How to fix:**
+
+- Run ./dev.ps1 statements, then the check again; send the periods if they remain.
+
+**Next step:** `.\dev.ps1 validate monthly-sales -Env <env>`
+
+### LB-VAL-030: Sales Accounts group not found
+
+`sales_group_not_found` | Warning
+
+**What it means:** The company has no group the source predefines as Sales Accounts (renamed or not), so the monthly sales views show nothing for it and nothing is compared.
+
+**Common causes:**
+
+- The groups were converted before the source's predefined groups were recorded (migration 0021).
+
+**How to investigate:**
+
+- .\dev.ps1 transform rebuild -Env <env>
+
+**How to fix:**
+
+- Rebuild, then run the check again.
+
+**Next step:** `.\dev.ps1 transform rebuild -Env <env>`
+
+### LB-VAL-031: Sales ledgers outside the Sales Accounts group
+
+`sales_ledgers_outside_group` | Warning
+
+**What it means:** Some ledgers with entries are mapped to sale of goods (standard account 4110) but don't sit under the source's Sales Accounts group: the monthly sales report, like the source's Sales Accounts line, leaves them out.
+
+**Common causes:**
+
+- A group or ledger mapped to sale of goods by hand, or a sales ledger under another group in the source.
+
+**How to investigate:**
+
+- The output gives their count.
+
+**How to fix:**
+
+- Check where those ledgers belong in the source; nothing to fix here if they are meant to be outside.
+
+**Next step:** `.\dev.ps1 validate monthly-sales -Env <env>`
+
+### LB-VAL-032: Stored statements older than the data
+
+`statements_older_than_data` | Warning
+
+**What it means:** The source's statements were stored before the latest sync or transform changed the books: comparing with them could show differences that aren't there.
+
+**Common causes:**
+
+- A sync, rebuild or deletion check ran after `statements`.
+
+**How to investigate:**
+
+- .\dev.ps1 status -Env <env>
+
+**How to fix:**
+
+- Store the statements again, then run the check.
+
+**Next step:** `.\dev.ps1 statements -Env <env>`
+
+### LB-VAL-033: Sales ledgers with an opening balance
+
+`sales_ledger_openings` | Warning
+
+**What it means:** Some ledgers under the Sales Accounts group have an opening balance at the books' beginning. The monthly sales views count entries only, so the first period compared may differ by it.
+
+**Common causes:**
+
+- An opening balance entered on an income ledger.
+
+**How to investigate:**
+
+- The output gives their count.
+
+**How to fix:**
+
+- Check the openings in the source.
+
+**Next step:** `.\dev.ps1 validate monthly-sales -Env <env>`
 
 
 ## Connection settings

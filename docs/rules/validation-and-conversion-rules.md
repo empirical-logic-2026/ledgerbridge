@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.12 |
+| Version | 1.13 |
 | Date | 2026-10-24 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
@@ -418,10 +418,21 @@ Only where no rule could be found, a line is the source's own figure, labelled "
 - **Tests:** `tests/test_fx_core.py`, `tests/test_fx_rules.py`, `tests/test_retransform.py` (`test_transform_rebuild_command`).
 - **ADR:** ADR-046 (and ADR-043, whose stopgap it is meant to end).
 
+## 19. Monthly sales (RPT-013)
+
+- **What counts:** every effective entry (not cancelled, optional or memorandum; voucher not deleted in the source) on the ledgers under the source's own Sales Accounts group and its sub-groups at any depth, by voucher date. The group is the source's predefined one, renamed or not (Tally: RESERVEDNAME "Sales Accounts"), never found by its name.
+- **Split:** gross sales are the entries of Sales voucher types, sales returns those of Credit Note types, other adjustments those of every other type (e.g. debit notes, journals). Net sales = gross sales + sales returns + other adjustments. Sales are shown positive, returns negative.
+- **Cross-checks (warnings, counts only):** no predefined Sales Accounts group (LB-VAL-030: nothing compared); ledgers with entries mapped to sale of goods (4110) outside it (LB-VAL-031: not in the report, as not in the source's line); sales ledgers with an opening balance (LB-VAL-033).
+- **Proof:** `./dev.ps1 validate monthly-sales` compares, for each period between consecutive dates `statements` stored, the sum of `v_daily_sales` with the difference of the source's Sales Accounts line in its Profit and Loss (cumulative from the books' beginning); the first period starts at the books' beginning. Every day up to the last stored date is compared once; the output says how many periods were exact calendar months (in Educational mode a 30-day month's statements are stored on the 2nd of the next month). Refused when the statements are older than the latest sync or transform (LB-VAL-032). A differing period is LB-VAL-029 (exit 1).
+- **Code:** migration 0021 (the views), `connectors/tally/mapping.py` (`predefined_role`), `core/monthly_sales.py`, `workers/monthly_sales.py`, `docs/sql/monthly-sales.sql`.
+- **Tests:** `tests/test_monthly_sales.py` (the proof on the test company's recorded Profit and Loss), `tests/test_monthly_sales_integration.py` (the views and the SQL file on MySQL).
+- **ADR:** ADR-047.
+
 ## Change log
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-29 | 1.13 | 19: monthly sales and their proof. |
 | 2026-10-26 | 1.12 | 18: the fx-rules finder in three parts (per ledger, layout, computed). |
 | 2026-10-24 | 1.11 | 18: foreign currency beside the books, the base check after a rebuild, the fx-rules finder. |
 | 2026-10-24 | 1.10 | 16.2 and 16.8: the Balance Sheet stock fallback retired; stock computed and compared everywhere. |

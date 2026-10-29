@@ -49,6 +49,9 @@ class CanonicalGroup:
     nature: str | None = None  # asset/liability/equity/income/expense
     is_primary: bool = False
     affects_gross_profit: bool = False
+    # The source's own predefined group this is, renamed or not, in our vocabulary (e.g.
+    # "sales_accounts"); None for groups the user created. Not inherited.
+    predefined_role: str | None = None
     # Hints inherited by sub-groups and ledgers (the transform walks the group tree):
     standard_account_code: str | None = None
     ledger_kind: str | None = None  # bank/cash/tax/party/stock

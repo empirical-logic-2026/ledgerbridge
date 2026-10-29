@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-56 tables, 627 columns.
+56 tables, 628 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -315,6 +315,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `nature` | ENUM('asset','liability','equity','income','expense') | yes |  | Derived from primary group. |
 | `is_primary` | BOOL | no |  | Tally's 28 predefined primary groups. |
 | `affects_gross_profit` | BOOL | no |  | Tally flag for P&L layout. |
+| `predefined_role` | VARCHAR(64) | yes |  | **Migration 0021 (RPT-013).** Which of the source's own predefined groups this is, renamed or not, in our vocabulary (Tally: RESERVEDNAME in lower case, words joined by `_`, e.g. `sales_accounts`); NULL for groups the user created. Filled by the transform: after migration 0021, `transform rebuild`. |
 | `standard_account_id` | BIGINT UNSIGNED | yes | FK | Default mapping for ledgers under this group. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
 | `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
