@@ -1041,6 +1041,7 @@ class Transformer:
             "nature": info.nature if info else g.nature,
             "is_primary": g.is_primary,
             "affects_gross_profit": g.affects_gross_profit,
+            "predefined_role": g.predefined_role,
             "standard_account_id": self._standard_id(info.standard_code if info else None),
         }
 

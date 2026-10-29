@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.23 (Draft) |
+| Version | 0.24 (Draft) |
 | Date | 2026-10-19 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
@@ -180,6 +180,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | RPT-010 | Scheduled reports by email, generated inside the client deployment. | P2 |
 | RPT-011 | Over time, "all reports" requested by the client will be delivered; the phase 1 report set is listed in RPT-001 to RPT-004 and RPT-006 to RPT-008, pending confirmation. | — |
 | RPT-012 | Trial Balance, Profit & Loss and Balance Sheet laid out as the source lays them out (one line per primary group; Cost of Sales with opening stock, purchases and closing stock; Profit & Loss A/c as opening balance plus current period, on the liabilities side for a profit and the assets side for a loss, with the ledgers directly under Primary; Unadjusted Forex Gain/Loss) match the source's own reports **line by line and in total** at every date validated (LB-VAL-024), and are stored for every month end and year end (`./dev.ps1 statements`). Stock in them is the source's own figure, whatever its integration setting. | P1 |
+| RPT-013 | Monthly sales for accountants: gross sales, sales returns, other adjustments (any other voucher type posting to sales ledgers) and net sales per entity and month, net sales being every effective entry on the ledgers under the source's own Sales Accounts group (renamed or not) and its sub-groups, by voucher date; also by voucher type with the same net. Proven against the source's own Sales Accounts figure for every period between the stored statement dates (counts only), with a warning where the group isn't found or sales ledgers are mapped outside it. | P1 |
 
 ### 4.9 AI layer
 
@@ -394,6 +395,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-09 | 0.4 | AI data protection (Section 4.9.1): AI-011 to AI-018 (privacy modes with `private` as default, `schema-only`, `full`; masking; local embeddings; no outbound tools; audit of every model call) and SEC-010 (outbound network allowlist). AI-005 and AI-006 withdrawn and replaced. OPEN-007 partly resolved. See ADR-015. |
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
 | 2026-10-22 | 0.23 | DAT-013 (source figures), VAL-015 (stock values checked), RPT-012 (statements matching the source line by line); ADR-040. |
+| 2026-10-29 | 0.24 | RPT-013 (monthly sales, proven against the source). |
 | 2026-10-19 | 0.22 | SEC-009 widened: automated checks on every pull request, high-severity findings block merging (ADR-039). |
 | 2026-10-16 | 0.21 | VAL-013: the book value is the opening plus the source's own vouchers; DAT-012: the opening difference warning follows the source's own trial balance line. |
 | 2026-10-16 | 0.20 | Section 4.13 Foreign currency (FX-001 to FX-013): foreign-currency data kept alongside the base-currency books, revaluation snapshots, realised and unrealised gains, exposure, `forex.view` (ADR-037). |

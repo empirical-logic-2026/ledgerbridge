@@ -140,6 +140,15 @@ STANDARD_VOUCHER_TYPES = frozenset((
 # Tally's predefined (reserved) groups.
 RESERVED_GROUPS = frozenset(STANDARD_ACCOUNT_BY_GROUP)
 
+
+def predefined_role(reserved: str | None) -> str | None:
+    """A reserved group's role in our vocabulary: its reserved name in lower case, words
+    joined by "_" ("Sales Accounts" -> "sales_accounts"); None for other groups."""
+    if reserved not in RESERVED_GROUPS:
+        return None
+    return "_".join(re.findall(r"[a-z0-9]+", reserved.lower()))
+
+
 GST_DUTY_HEADS = {
     "Central Tax": "cgst",
     "State Tax": "sgst",
@@ -298,6 +307,7 @@ def group(element: ET.Element, key: str) -> CanonicalGroup:
         nature=nature,
         is_primary=parent is None,
         affects_gross_profit=_flag(element, "AFFECTSGROSSPROFIT"),
+        predefined_role=predefined_role(reserved),
         standard_account_code=STANDARD_ACCOUNT_BY_GROUP.get(reserved or ""),
         ledger_kind=LEDGER_KIND_BY_GROUP.get(reserved or ""),
         party_type=PARTY_TYPE_BY_GROUP.get(reserved or ""),
