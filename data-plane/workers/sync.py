@@ -205,7 +205,8 @@ def run_sync(
         labels = Labels(session, connection)
         outcomes = [EntityOutcome(labels.for_key(e.key), e.name, e.key) for e in entities]
         result.entity_results = outcomes
-        say(f"{len(outcomes)} companies in this run: {', '.join(o.label for o in outcomes)}")
+        listed = ", ".join(o.label for o in outcomes) or "none"
+        say(f"{len(outcomes)} companies in this run: {listed}")
         for entity, outcome in zip(entities, outcomes, strict=True):
             ensure_loaded(connector, entity)
             try:
