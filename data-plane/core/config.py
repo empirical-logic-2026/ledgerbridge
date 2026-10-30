@@ -69,6 +69,10 @@ class Settings(BaseSettings):
 
     frontend_origin: str = "http://localhost:5175"
 
+    # The host address compose publishes the API on (deploy/compose.yaml passes the same
+    # literal): the API warns at startup unless it is a loopback address (ADR-049).
+    api_published_address: str = "127.0.0.1"
+
     @model_validator(mode="after")
     def _client_data_stays_local(self) -> Self:
         # PIL-005: client data never goes to the Anthropic API.
