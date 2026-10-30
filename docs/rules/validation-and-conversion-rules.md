@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.14 |
+| Version | 1.15 |
 | Date | 2026-10-24 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
@@ -306,7 +306,7 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 | LB-VAL-005 | `profit_carrier_mismatch` | Profit & Loss A/c: its posted balance plus the period's profit (stock change included) against Tally's | tolerance | as of |
 | LB-VAL-006 | `year_end_mismatch` | The same ledger comparison at every financial year end before the as-of date | tolerance | year ends (reliable dates) |
 | LB-VAL-007 | `ledger_missing` | Ledgers on one side only | — | as of |
-| LB-VAL-008 | `voucher_count_mismatch` | Vouchers per month and voucher type (cancelled and optional included, deleted excluded) | exact | months up to as of |
+| LB-VAL-008 | `voucher_count_mismatch` | Vouchers per month and voucher type (cancelled and optional included, deleted excluded); the source's type names matched to ours by the name rules (`core/names.py`, as the transform does), a name matched only after normalisation noted as LB-VAL-036 (pilot 2026-10-30: a name with two spaces in a row was written with one in Tally's counts) | exact | months up to as of |
 | LB-VAL-009 | `stock_quantity_mismatch` | Each item's closing quantity (counted vouchers, counted godowns, Sections 5 and 6) | exact | as of |
 | LB-VAL-010 | `bills_mismatch` | Each party's bill-wise outstanding (opening bills plus allocations, on-account excluded) | tolerance | only as of today (Tally reports bills as of now) |
 | LB-VAL-011 | `closing_unavailable` | Tally's closing balances couldn't be read | — | — |
@@ -435,6 +435,7 @@ Only where no rule could be found, a line is the source's own figure, labelled "
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-30 | 1.15 | Voucher counts: the source's type names matched by the name rules (LB-VAL-036). |
 | 2026-10-30 | 1.14 | 16: Cost of Sales without stock; 18: each ledger's own currency. |
 | 2026-10-29 | 1.13 | 19: monthly sales and their proof. |
 | 2026-10-26 | 1.12 | 18: the fx-rules finder in three parts (per ledger, layout, computed). |

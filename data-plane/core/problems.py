@@ -885,6 +885,24 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Rebuild (`transform rebuild`), then check again; send the counts if they remain.",),
         ".\\dev.ps1 transform rebuild -Env {env}",
     ),
+    _p(
+        "LB-VAL-036",
+        "voucher_type_names_differ",
+        "Voucher type names written differently",
+        INFO,
+        "The source writes some voucher type names differently in its voucher counts than in "
+        "its vouchers (e.g. two spaces in a row as one, or other capitals); their counts are "
+        "compared with the type each name matches by the name rules (core/names.py). Names "
+        "that differ by more (close to one of ours) aren't matched: their counts differ, and "
+        "the note gives the kinds of difference.",
+        (
+            "A name with double or unusual spaces, or capitals the source changes when it lists "
+            "vouchers.",
+        ),
+        (".\\dev.ps1 report -Env {env} -Details",),
+        ("Nothing to fix for names the rules match; send the note's kinds for the others.",),
+        ".\\dev.ps1 report -Env {env} -Details",
+    ),
     # --- connection settings ------------------------------------------------------------
     _p(
         "LB-CON-001",
