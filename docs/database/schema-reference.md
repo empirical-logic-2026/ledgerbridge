@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-56 tables, 628 columns.
+56 tables, 630 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -353,9 +353,11 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `mapping_status` | ENUM('auto','suggested','confirmed','unmapped') | no |  | auto (a standard account was found) or unmapped. |
 | `opening_balance` | NUMERIC(20, 4) | no |  | Signed; as at `opening_balance_date`. |
 | `opening_balance_date` | DATE | yes |  | Opening balance date. |
-| `currency_code` | CHAR(3) | no | FK | Currency (ISO code). |
-| `currency_name` | VARCHAR(64) | yes |  | Currency name. |
-| `opening_balance_fc` | NUMERIC(20, 4) | yes |  | Opening balance fc. |
+| `currency_code` | CHAR(3) | yes | FK | The ledger's own currency's ISO code; the base currency's for ledgers kept in it; NULL when the source's currency master gives none (migration 0022). |
+| `currency_name` | VARCHAR(64) | yes |  | The ledger's own currency as the source names it (Tally CURRENCYNAME, e.g. `$`; migrations 0020, 0022). |
+| `is_foreign_currency` | BOOL | no |  | Kept in another currency than the entity's base one (`core/fx.py`: the base currency is the master with the entity's base ISO code, else the currency most ledgers are kept in). |
+| `opening_currency_name` | VARCHAR(64) | yes |  | The currency of the opening's foreign part (with `opening_balance_fc`); a ledger kept in the base currency can open in another. |
+| `opening_balance_fc` | NUMERIC(20, 4) | yes |  | The opening's foreign part. |
 | `is_bill_wise` | BOOL | no |  | Whether bill wise. |
 | `is_cost_centre_applicable` | BOOL | no |  | Whether cost centre applicable. |
 | `gstin` | VARCHAR(32) | yes |  | GST registration number. |

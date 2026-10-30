@@ -63,6 +63,7 @@ from core.models.reporting import StatementLine as LineRow
 
 ZERO = Decimal(0)
 PURCHASES = "5110"  # the standard account of purchase groups: inside Cost of Sales
+COST_OF_SALES = "Cost of Sales"  # the source's own block line
 NATURE_ORDER = {"equity": 0, "liability": 1, "asset": 2, "income": 3, "expense": 4}
 PROFIT_LOSS_ACCOUNT = "Profit & Loss A/c"
 UNADJUSTED_FOREX = "Unadjusted Forex Gain/Loss"
@@ -432,7 +433,13 @@ def _profit_loss(f: Figures) -> list[tuple[str | None, StatementLine]]:
     groups = f.ordered_groups(("income", "expense"))
     gross = [g for g in groups if g.affects_gross_profit]
     purchases = [g for g in gross if g.standard_code == PURCHASES]
-    has_stock = f.source.opening_stock is not None or f.source.closing_stock is not None
+    # Cost of Sales as the source lays it out: where it reports stock, or shows the block
+    # (with no stock it may show none: then stock counts as zero).
+    has_stock = (
+        f.source.opening_stock is not None
+        or f.source.closing_stock is not None
+        or f.source_line("profit_loss", COST_OF_SALES) is not None
+    )
     lines: list[tuple[str | None, StatementLine]] = []
 
     def main(section: str, label: str, amount: Decimal) -> None:

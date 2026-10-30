@@ -395,6 +395,12 @@ RATE_LISTS = {
 }
 
 
+# Where a currency master may hold its ISO code, in this order: the formal name, the ISO code
+# field, the mailing name (the test company's: EXPANDEDSYMBOL "USD", MAILINGNAME "INR" for
+# the rupee). Only a value of three capital letters is taken.
+CURRENCY_CODE_FIELDS = ("EXPANDEDSYMBOL", "ISOCURRENCYCODE", "MAILINGNAME")
+
+
 def currency(element: ET.Element, key: str) -> CanonicalCurrency:
     """A currency master: the name it is written with in amounts (ORIGINALNAME, else NAME),
     its ISO code (EXPANDEDSYMBOL or ISOCURRENCYCODE when three capital letters), formal name
@@ -403,15 +409,17 @@ def currency(element: ET.Element, key: str) -> CanonicalCurrency:
     its first other number: entries without both are left out (and counted by the fx-rules
     command, which reports what was read)."""
     code = next(
-        (c for c in (text_of(element, "EXPANDEDSYMBOL"), text_of(element, "ISOCURRENCYCODE"))
+        (c.strip() for c in (text_of(element, field) for field in CURRENCY_CODE_FIELDS)
          if c and _ISO.match(c.strip())),
         None,
     )  # fmt: skip
     decimals = _NUMBER.search(text_of(element, "DECIMALPLACES") or "")
+    name = text_of(element, "ORIGINALNAME") or _name(element)
     return CanonicalCurrency(
         source_key=key,
-        name=text_of(element, "ORIGINALNAME") or _name(element),
-        code=code.strip() if code else None,
+        name=name,
+        code=code,
+        aliases=tuple(n for n in (_name(element),) if n != name),
         formal_name=text_of(element, "MAILINGNAME"),
         decimal_places=int(decimals.group(0)) if decimals else None,
         rates=tuple(_rates(element)),

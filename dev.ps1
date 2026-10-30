@@ -29,6 +29,7 @@
     ./dev.ps1 validate analyse                  (test explanations for validation mismatches)
     ./dev.ps1 validate fx-rules                 (which revaluation rule Tally follows; counts only)
     ./dev.ps1 validate monthly-sales            (monthly sales proven against Tally's Sales Accounts; database only)
+    ./dev.ps1 validate currencies               (ledgers by their own currency; database only; counts)
     ./dev.ps1 validate compare-ledger -Ledger 88 [-From 2020-04-01] [-To 2021-04-01]
     ./dev.ps1 statements [-From 2026-04-01]    (stock values and statements at every month end; compared with the source)
                                                 (a ledger's vouchers in Tally against ours; details to reports/<env>/private/)
@@ -547,10 +548,18 @@ switch ($Command) {
         # Validation as of today (M4): voucher balance, trial balance and closing balances
         # against the source. Prints counts, check codes and pass/fail only. Syncs validate
         # on their own; this runs it on demand.
-        Assert-Step 'validate' @('fx-rules', 'monthly-sales', 'compare-ledger', 'analyse')
+        Assert-Step 'validate' @('fx-rules', 'monthly-sales', 'currencies', 'compare-ledger', 'analyse')
         Assert-EnvFile
         Assert-ApiRunning
         Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
+        if ($Service -eq 'currencies') {
+            # Each company's ledgers by their own currency, and which hold foreign amounts
+            # (FX-001). Reads the database only; counts and ISO codes only.
+            $currencyArgs = @('python', '-m', 'workers.cli', 'currencies', '--connection', $connection)
+            foreach ($name in $Company) { $currencyArgs += @('--entity', $name) }
+            Invoke-Checked exec -T api @currencyArgs
+            return
+        }
         if ($Service -eq 'monthly-sales') {
             # Monthly sales proven against Tally's own Sales Accounts figure between the
             # dates `statements` stored (RPT-013). Reads the database only (Tally needn't run);

@@ -388,6 +388,19 @@ def test_a_validation_older_than_the_data_or_one_that_couldnt_run_needs_action(
     run_validation(db, synced, connector, [COMPANY])  # validated again: up to date
     assert "LB-VAL-028" not in codes()
 
+    # A rebuild validates each company before the run itself finishes: that validation saw
+    # the rebuilt data (test company, 2026-10-30: ACTION NEEDED after a passing rebuild).
+    from datetime import timedelta
+
+    rebuild = S.SyncRun(connection_id=synced.id, run_type="transform", status="running",
+                        started_at=utcnow())  # fmt: skip
+    db.add(rebuild)
+    db.commit()
+    run_validation(db, synced, connector, [COMPANY], sync_run_id=rebuild.id)
+    rebuild.status, rebuild.finished_at = "succeeded", utcnow() + timedelta(seconds=5)
+    db.commit()
+    assert "LB-VAL-028" not in codes()
+
     db.add(S.Alert(kind="validation_failed", severity="error", connection_id=synced.id,
                    message="Validation couldn't run: TallySlowError"))  # fmt: skip
     db.commit()

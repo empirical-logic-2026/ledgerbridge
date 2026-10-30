@@ -77,6 +77,8 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-031](#lb-val-031-sales-ledgers-outside-the-sales-accounts-group) | Sales ledgers outside the Sales Accounts group | `sales_ledgers_outside_group` | Warning |
 | [LB-VAL-032](#lb-val-032-stored-statements-older-than-the-data) | Stored statements older than the data | `statements_older_than_data` | Warning |
 | [LB-VAL-033](#lb-val-033-sales-ledgers-with-an-opening-balance) | Sales ledgers with an opening balance | `sales_ledger_openings` | Warning |
+| [LB-VAL-034](#lb-val-034-foreign-currency-ledgers-without-an-iso-code) | Foreign-currency ledgers without an ISO code | `foreign_currency_without_iso_code` | Warning |
+| [LB-VAL-035](#lb-val-035-ledgers-the-source-revalues-not-marked-foreign) | Ledgers the source revalues not marked foreign | `revalued_ledger_not_foreign` | Warning |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
 | [LB-SYS-001](#lb-sys-001-unexpected-error) | Unexpected error | `unexpected_error` | Error |
@@ -1245,6 +1247,46 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Check the openings in the source.
 
 **Next step:** `.\dev.ps1 validate monthly-sales -Env <env>`
+
+### LB-VAL-034: Foreign-currency ledgers without an ISO code
+
+`foreign_currency_without_iso_code` | Warning
+
+**What it means:** Some ledgers are kept in another currency than the base one, but the source's currency master gives no ISO code (in its formal name, ISO code or mailing name): `ledgers.currency_code` is empty for them; `currency_name` and `is_foreign_currency` still identify them.
+
+**Common causes:**
+
+- The currency's formal name in the source is a word (e.g. a currency's name) rather than its three-letter code.
+
+**How to investigate:**
+
+- .\dev.ps1 validate currencies -Env <env>
+
+**How to fix:**
+
+- Nothing needed for the books; for reports by currency code, give the currency its three-letter code in the source and sync.
+
+**Next step:** `.\dev.ps1 validate currencies -Env <env>`
+
+### LB-VAL-035: Ledgers the source revalues not marked foreign
+
+`revalued_ledger_not_foreign` | Warning
+
+**What it means:** The source's statements revalue some ledgers (its forex revaluation snapshots) that aren't marked as kept in another currency: their own currency wasn't recognised.
+
+**Common causes:**
+
+- The ledgers were converted before their currency was recorded (migration 0022).
+
+**How to investigate:**
+
+- .\dev.ps1 validate currencies -Env <env>
+
+**How to fix:**
+
+- Rebuild (`transform rebuild`), then check again; send the counts if they remain.
+
+**Next step:** `.\dev.ps1 transform rebuild -Env <env>`
 
 
 ## Connection settings

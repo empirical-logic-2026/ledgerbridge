@@ -188,6 +188,10 @@ CASES = {
         ["validate", "analyse"],
         [SERVICES, _job("validate-analyse", "--connection", "tally-test"), WATCH_JOB],
     ),
+    "validate currencies": (
+        ["validate", "currencies"],
+        [SERVICES, _exec("currencies", "--connection", "tally-test")],
+    ),
     "validate monthly-sales": (
         ["validate", "monthly-sales", "-Company", "Sim Co"],
         [SERVICES, _exec("monthly-sales", "--connection", "tally-test", "--entity", "Sim Co")],

@@ -197,6 +197,7 @@ ledgerbridge/
 | `references.py` | The `transform explain` diagnostic: why names didn't resolve, in counts and kinds only. |
 | `report.py` | The health report (`./dev.ps1 report`): overall verdict, sections, problems with meaning, likely cause and next step; and the validation layout every command shares, compared with the previous run. Counts and codes only. |
 | `style.py` | Colours status words (green, yellow, red) when `dev.ps1` says the terminal supports it; plain text otherwise. |
+| `currencies.py` | `./dev.ps1 validate currencies`: each company's ledgers by their own currency, which hold foreign amounts, and the ledgers the source revalues that aren't marked foreign (counts and ISO codes). |
 | `monthly_sales.py` | `./dev.ps1 validate monthly-sales`: the proof per company, from the database only, printed as counts and dates. |
 | `fx_rules.py` | `./dev.ps1 validate fx-rules`: the finder per company (the expected company checked, the netting setting read once), printed as counts. |
 | `statements.py` | `./dev.ps1 statements`: the stock values and statements at every month end and year end, read from the source, stored and compared (counts only). |
@@ -396,6 +397,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-30 | 0.30 | `workers/currencies.py`, migration 0022; `tests/test_currencies.py`. |
 | 2026-10-29 | 0.29 | `core/monthly_sales.py`, `workers/monthly_sales.py`, migration 0021, `docs/sql/`; `tests/test_monthly_sales.py`, `tests/test_monthly_sales_integration.py`. |
 | 2026-10-26 | 0.28 | `core/fx_rules.py`: the finder's three parts; `workers/report.py`: a validation older than the data (LB-VAL-027, LB-VAL-028). |
 | 2026-10-24 | 0.27 | `core/fx.py`, `core/fx_rules.py`, `core/base_check.py`, `workers/fx_rules.py`, migration 0020; `tests/test_fx_core.py`, `tests/test_fx_rules.py`. |

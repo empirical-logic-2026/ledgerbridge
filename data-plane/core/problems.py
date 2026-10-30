@@ -853,6 +853,38 @@ PROBLEMS: tuple[Problem, ...] = (
         ("Check the openings in the source.",),
         ".\\dev.ps1 validate monthly-sales -Env {env}",
     ),
+    _p(
+        "LB-VAL-034",
+        "foreign_currency_without_iso_code",
+        "Foreign-currency ledgers without an ISO code",
+        WARNING,
+        "Some ledgers are kept in another currency than the base one, but the source's "
+        "currency master gives no ISO code (in its formal name, ISO code or mailing name): "
+        "`ledgers.currency_code` is empty for them; `currency_name` and `is_foreign_currency` "
+        "still identify them.",
+        (
+            "The currency's formal name in the source is a word (e.g. a currency's name) rather "
+            "than its three-letter code.",
+        ),
+        (".\\dev.ps1 validate currencies -Env {env}",),
+        (
+            "Nothing needed for the books; for reports by currency code, give the currency its "
+            "three-letter code in the source and sync.",
+        ),
+        ".\\dev.ps1 validate currencies -Env {env}",
+    ),
+    _p(
+        "LB-VAL-035",
+        "revalued_ledger_not_foreign",
+        "Ledgers the source revalues not marked foreign",
+        WARNING,
+        "The source's statements revalue some ledgers (its forex revaluation snapshots) that "
+        "aren't marked as kept in another currency: their own currency wasn't recognised.",
+        ("The ledgers were converted before their currency was recorded (migration 0022).",),
+        (".\\dev.ps1 validate currencies -Env {env}",),
+        ("Rebuild (`transform rebuild`), then check again; send the counts if they remain.",),
+        ".\\dev.ps1 transform rebuild -Env {env}",
+    ),
     # --- connection settings ------------------------------------------------------------
     _p(
         "LB-CON-001",

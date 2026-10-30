@@ -108,4 +108,4 @@ erDiagram
     account_groups ||--o{ ledgers : "group_id"
     parties |o--o{ ledgers : "party_id"
     standard_accounts |o--o{ ledgers : "standard_account_id"
-    currencies ||--o{ ledgers : "currency_code"
+    currencies |o--o{ ledgers : "currency_code"

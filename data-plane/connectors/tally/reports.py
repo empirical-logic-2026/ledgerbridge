@@ -89,12 +89,20 @@ def _amount_lines(
         elif element.tag == amount_tag and name is not None:
             sub = _canonical(element.findtext(sub_tag))
             main = _canonical(element.findtext("BSMAINAMT"))
-            if sub is not None:
-                lines.append(StatementLine(statement, name, "sub", sub))
+            if sub is not None or (main is None and _always_sub(name)):
+                lines.append(StatementLine(statement, name, "sub", sub or ZERO))
             else:
                 lines.append(StatementLine(statement, name, "main", main or ZERO))
             name = None
     return lines
+
+
+def _always_sub(name: str) -> bool:
+    """Tally writes a zero amount as an empty tag, so a line with both amounts empty can't
+    tell its level by them. These lines are always inside Tally's Cost of Sales block (its
+    stock lines and its "Add: " / "Less: " lines): zero, they are still sub lines (pilot
+    2026-10-30: a company without stock lost its Cost of Sales block that way)."""
+    return name in (OPENING_STOCK, CLOSING_STOCK) or name.startswith(("Add: ", "Less: "))
 
 
 def stock_values(lines: list[StatementLine]) -> tuple[Decimal | None, Decimal | None]:

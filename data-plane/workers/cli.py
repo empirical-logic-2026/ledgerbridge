@@ -93,7 +93,7 @@ from core.problems import BY_CODE, for_error, title
 from core.statement_differences import KINDS
 from core.transform import trial_balance
 from core.validation import ValidationReport
-from workers import fx_rules, monthly_sales, style
+from workers import currencies, fx_rules, monthly_sales, style
 from workers.analyse import analyse
 from workers.compare import compare_ledger
 from workers.entities import (
@@ -284,6 +284,14 @@ def _parser() -> argparse.ArgumentParser:
     fx_rules_parser.add_argument(
         "--job", help="job id: also write the output to sync_logs, for `watch`"
     )
+
+    currencies_parser = sub.add_parser(
+        "currencies",
+        help="each company's ledgers by their own currency, and which hold foreign amounts "
+        "(FX-001); reads the database only; counts and ISO codes only",
+    )
+    connection_args(currencies_parser)
+    currencies_parser.add_argument("--entity", action="append", help="entity name (repeatable)")
 
     monthly_sales_parser = sub.add_parser(
         "monthly-sales",
@@ -553,6 +561,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _fx_rules(session, args)
     if args.command == "monthly-sales":
         return _monthly_sales(session, args)
+    if args.command == "currencies":
+        return _currencies(session, args)
     if args.command == "summary":
         return _summary(session)
     if args.command == "report":
@@ -1555,15 +1565,26 @@ def _fx_rules(session: Session, args: argparse.Namespace) -> int:
     return code
 
 
-def _monthly_sales(session: Session, args: argparse.Namespace) -> int:
-    """Monthly sales proven against the stored statements (workers/monthly_sales.py). The
-    source isn't contacted."""
+def _currencies(session: Session, args: argparse.Namespace) -> int:
+    """Each company's ledgers by their own currency (workers/currencies.py). The source isn't
+    contacted."""
+    chosen = _stored_entities(session, args)
+    if chosen is None:
+        return 2
+    code = currencies.run(session, chosen)
+    print("Result: currencies finished")
+    return code
+
+
+def _stored_entities(session: Session, args: argparse.Namespace) -> list[tuple[int, str]] | None:
+    """(entity id, label) of the connection's entities, or those named; None (with the
+    message printed) when the connection or a name isn't known. The source isn't contacted."""
     from core.models.accounting import EntitySource
 
     connection = session.scalar(select(Connection).where(Connection.name == args.connection))
     if connection is None:
         print(f"No connection '{args.connection}'.", file=sys.stderr)
-        return 2
+        return None
     if args.entity:
         keys, missing = _entity_keys_by_name(session, connection, args.entity)
         if missing:
@@ -1572,7 +1593,7 @@ def _monthly_sales(session: Session, args: argparse.Namespace) -> int:
                 "connection (names must match exactly).",
                 file=sys.stderr,
             )
-            return 2
+            return None
     else:
         keys = list(
             session.scalars(
@@ -1583,7 +1604,15 @@ def _monthly_sales(session: Session, args: argparse.Namespace) -> int:
         )
     ids = entity_ids_for(session, connection.id, keys)
     labels = Labels(session, connection)
-    chosen = [(ids[k], labels.for_key(k, ids[k])) for k in keys if k in ids]
+    return [(ids[k], labels.for_key(k, ids[k])) for k in keys if k in ids]
+
+
+def _monthly_sales(session: Session, args: argparse.Namespace) -> int:
+    """Monthly sales proven against the stored statements (workers/monthly_sales.py). The
+    source isn't contacted."""
+    chosen = _stored_entities(session, args)
+    if chosen is None:
+        return 2
     code = monthly_sales.run(session, chosen)
     print("Result: monthly-sales finished")
     return code
