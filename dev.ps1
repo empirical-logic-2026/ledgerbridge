@@ -31,6 +31,7 @@
     ./dev.ps1 validate monthly-sales            (monthly sales proven against Tally's Sales Accounts; database only)
     ./dev.ps1 validate currencies               (ledgers by their own currency; database only; counts)
     ./dev.ps1 on-hold [set|clear -EntityId <id>]  (entities on hold: skipped unless named; listed without a step)
+    ./dev.ps1 dashboard                         (the dashboard on this computer only: http://127.0.0.1:<port>)
     ./dev.ps1 validate compare-ledger -Ledger 88 [-From 2020-04-01] [-To 2021-04-01]
     ./dev.ps1 statements [-From 2026-04-01]    (stock values and statements at every month end; compared with the source)
                                                 (a ledger's vouchers in Tally against ours; details to reports/<env>/private/)
@@ -65,7 +66,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'help')]
+    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'dashboard', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -716,6 +717,32 @@ switch ($Command) {
             }
             Write-Host "Rendered $name (svg, png)"
         }
+    }
+    'dashboard' {
+        # The dashboard (D1, ADR-049): Vite's dev server on this computer only, the browser
+        # calling this environment's API directly. No login yet, so it refuses to start when
+        # the API is published, or the dashboard expected, anywhere but this computer.
+        Assert-EnvFile
+        Assert-ApiRunning
+        Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
+        $published = Invoke-StackCaptured @('port', 'api', '8000')
+        $address = if ($published.Code -eq 0 -and $published.Output) { "$($published.Output[0])".Trim() } else { '' }
+        $parts = $address -split ':'
+        if ($parts.Count -ne 2 -or $parts[0] -ne '127.0.0.1' -or $parts[1] -notmatch '^[0-9]+$') {
+            throw "The $Env API is published on '$address', not on 127.0.0.1 only: there is no login yet (ADR-049)."
+        }
+        $origin = [uri](Get-EnvValue 'FRONTEND_ORIGIN' 'http://localhost:5175')
+        if ($origin.Scheme -ne 'http' -or $origin.Host -notin @('localhost', '127.0.0.1') -or $origin.AbsolutePath -ne '/') {
+            throw "FRONTEND_ORIGIN must be http://localhost:<port> (ADR-049); it is '$origin'."
+        }
+        $port = $origin.Port
+        $frontend = Join-Path $root 'frontend'
+        if (-not (Test-Path (Join-Path $frontend 'node_modules'))) { throw 'Run "npm install" in frontend/ first.' }
+        $env:VITE_API_BASE_URL = "http://127.0.0.1:$(Get-EnvValue 'API_HOST_PORT' '8001')"
+        Write-Host "Dashboard ($Env): http://127.0.0.1:$port  (this computer only; Ctrl+C stops it)" -ForegroundColor Green
+        Push-Location $frontend
+        try { & npm run dev -- --host 127.0.0.1 --port $port --strictPort }
+        finally { Pop-Location }
     }
     'docs-export' {
         # Word and PDF copies of the knowledge-base documents in docs/export/, with their

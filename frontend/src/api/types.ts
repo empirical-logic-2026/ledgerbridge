@@ -100,9 +100,29 @@ export interface Key {
   label: string
 }
 
+export interface MonthlySales {
+  month: string
+  net_sales: string
+}
+
 export interface Option {
   key: string
   label: string
+}
+
+export interface Overview {
+  companies: number[]
+  combined: boolean
+  period_start: string
+  as_of: string
+  sales: string
+  purchases: string
+  gross_profit: string | null
+  net_profit: string | null
+  cash_and_bank: string
+  receivables: string
+  payables: string
+  monthly_sales: MonthlySales[]
 }
 
 export interface Periods {

@@ -175,6 +175,16 @@ It also lists open alerts. **This is the output to share.**
 
 If Tally's data has **custom fields** (TDL customisations export them with prefixes such as `UDF:`), `summary` shows the prefix names, e.g. `XML prefixes seen in the source's data: UDF`. Each record keeps them (`extra`), and they are counted in a field catalogue: `./dev.ps1 fields -Env pilot` lists them by id, object type, prefix, kind and number of records (field names only in the test environment). A voucher field useful for reports can become a reporting dimension: `./dev.ps1 promote-field -Env pilot -FieldId <id> -Code SALESMAN -Name "Salesman"`.
 
+### 6a. The dashboard (on this computer only)
+
+```powershell
+cd frontend; npm install; cd ..         # once
+./dev.ps1 statements -Env pilot         # profit on the Overview needs stored statements
+./dev.ps1 dashboard -Env pilot          # then open http://127.0.0.1:5174
+```
+
+The dashboard has **no login yet** (ADR-049): `dashboard` starts it on this computer only and refuses to start if the API is published anywhere else. Never forward these ports or open them in the firewall. It shows every company not on hold. "All companies (combined)" adds the companies together **without inter-company eliminations**. Profit needs a statement stored for the chosen "as at" date and for the previous year end; the dates offered are those `statements` stored. Ctrl+C stops the dashboard.
+
 ### 7. Records that failed to transform: `transform explain`, `retry`, `rebuild`
 
 **First, find out why references didn't resolve** (no names or values in the output):
@@ -320,6 +330,7 @@ Problems print as `<plain name> [<technical key>, <code>]: <count> (<better, was
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-30 | 0.34 | Section 6a: the dashboard. |
 | 2026-10-30 | 0.33 | Companies on hold. |
 | 2026-10-30 | 0.32 | Ledger currencies; Cost of Sales without stock. |
 | 2026-10-29 | 0.31 | Monthly sales: the report and its proof. |

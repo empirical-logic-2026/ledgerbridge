@@ -20,3 +20,12 @@ Object.defineProperty(window, 'matchMedia', {
     dispatchEvent: () => false,
   }),
 })
+
+// Ant Design 6 watches element sizes with ResizeObserver, which jsdom does not provide.
+class NoResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+Object.defineProperty(window, 'ResizeObserver', { writable: true, value: NoResizeObserver })
+Object.defineProperty(globalThis, 'ResizeObserver', { writable: true, value: NoResizeObserver })

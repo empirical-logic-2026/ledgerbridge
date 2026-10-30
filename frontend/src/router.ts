@@ -1,0 +1,46 @@
+// A small router of our own (ADR-048: no new dependency): the page is the part of the URL
+// after "#", e.g. "#/overview?company=3&fy=2026&as_of=2026-09-30". Hash routes need no
+// server set-up, survive a reload and can be bookmarked; the query keeps the selection.
+
+import { useSyncExternalStore } from 'react'
+
+export interface Route {
+  path: string[] // "#/statements/profit-loss" -> ["statements", "profit-loss"]
+  query: URLSearchParams
+}
+
+export function parseHash(hash: string): Route {
+  const text = hash.replace(/^#/, '')
+  const [path = '', search = ''] = text.split('?', 2)
+  return {
+    path: path.split('/').filter(Boolean).map(decodeURIComponent),
+    query: new URLSearchParams(search),
+  }
+}
+
+export type Query = Record<string, string | number | null | undefined>
+
+/** "#/a/b?x=1": the href for a path and query (empty values left out). */
+export function href(path: string[], query: Query = {}): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== null && value !== undefined && value !== '') params.set(key, String(value))
+  }
+  const search = params.toString()
+  return `#/${path.map(encodeURIComponent).join('/')}${search ? `?${search}` : ''}`
+}
+
+export function navigate(path: string[], query: Query = {}): void {
+  window.location.hash = href(path, query)
+}
+
+function subscribe(onChange: () => void): () => void {
+  window.addEventListener('hashchange', onChange)
+  return () => window.removeEventListener('hashchange', onChange)
+}
+
+/** The current route; the component renders again when it changes. */
+export function useRoute(): Route {
+  const hash = useSyncExternalStore(subscribe, () => window.location.hash)
+  return parseHash(hash)
+}

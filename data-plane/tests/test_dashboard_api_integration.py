@@ -7,12 +7,13 @@ migrations applied)."""
 import csv
 import io
 from collections.abc import Iterator
+from datetime import date
 from decimal import Decimal
 
 import pytest
 from alembic import command
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select, text
+from sqlalchemy import bindparam, delete, func, select, text
 from sqlalchemy.orm import Session
 
 from api import access as access_module
@@ -193,3 +194,109 @@ def test_a_company_on_hold_is_hidden(client: TestClient, synced: int) -> None:
             session.get_one(A.Entity, synced).is_on_hold = False
             session.commit()
     assert access_module.current_access  # the one place M5 replaces
+
+
+# --- the Overview (D1 part b) -------------------------------------------------------------
+
+YEAR = 2026  # the test company's books begin 1-Apr-2025; its vouchers are Apr to Sep 2026
+YEAR_START, AS_OF, PREVIOUS_YEAR_END = date(2026, 4, 1), date(2026, 9, 30), date(2026, 3, 31)
+
+
+@pytest.fixture
+def statements_stored(synced: int) -> Iterator[None]:
+    """Our statements at the date and at the previous year end, as `./dev.ps1 statements`
+    stores them (the source's own lines aren't needed for ours)."""
+    from connectors.base import SourceStatements
+    from core import statements
+    from core.models.reporting import StatementLine
+
+    with Session(get_engine()) as session:
+        connection_id = session.scalar(
+            select(A.EntitySource.connection_id).where(A.EntitySource.entity_id == synced)
+        )
+        for on in (PREVIOUS_YEAR_END, AS_OF):
+            source = SourceStatements(as_of=on, lines=(), opening_stock=None, closing_stock=None)
+            statements.refresh(session, synced, connection_id, "live", source)
+        session.commit()
+        try:
+            yield
+        finally:
+            for model in (StatementLine, A.StockValue, A.FxRevaluationSnapshot):
+                session.execute(delete(model).where(model.entity_id == synced))
+            session.commit()
+
+
+def _stored_profit(entity_id: int, on: date, label: str) -> Decimal:
+    with Session(get_engine("report")) as session:
+        amount = session.scalar(
+            text("SELECT amount FROM ledgerbridge_reporting.v_profit_loss "
+                 "WHERE entity_id = :e AND as_of = :d AND label = :l"),
+            {"e": entity_id, "d": on, "l": label},
+        )  # fmt: skip
+    return -Decimal(str(amount))
+
+
+def test_the_overview_equals_the_views_and_the_validated_balances(
+    client: TestClient, synced: int, statements_stored: None
+) -> None:
+    from core.statements import GROSS_PROFIT, NET_PROFIT
+    from core.validation import Validator
+
+    found = _get(client, "/api/v1/overview", financial_year=YEAR, as_of=AS_OF.isoformat())
+    assert found["companies"] == [synced] and found["combined"] is False
+    assert found["period_start"] == YEAR_START.isoformat()
+
+    # Sales and the monthly chart: the monthly sales view (proven against the source).
+    with Session(get_engine("report")) as session:
+        view = {
+            f"{m:%Y-%m-%d}": Decimal(str(n))
+            for m, n in session.execute(
+                text("SELECT month_start, net_sales FROM ledgerbridge_reporting.v_monthly_sales "
+                     "WHERE entity_id = :e AND month_start BETWEEN :s AND :t"),
+                {"e": synced, "s": YEAR_START, "t": AS_OF},
+            )
+        }  # fmt: skip
+    monthly = {m["month"]: Decimal(m["net_sales"]) for m in found["monthly_sales"]}
+    assert monthly and monthly == view
+    assert Decimal(found["sales"]) == sum(view.values())
+
+    # Profit: the stored Profit & Loss at the date less the one at the previous year end.
+    for key, label in (("gross_profit", GROSS_PROFIT), ("net_profit", NET_PROFIT)):
+        expected = _stored_profit(synced, AS_OF, label) - _stored_profit(
+            synced, PREVIOUS_YEAR_END, label
+        )
+        assert Decimal(found[key]) == expected, key
+
+    # Balances: the validator's ledger balances (checked against the source's closing ones).
+    with Session(get_engine()) as session:
+        balances = {
+            b.id: b.balance for b in Validator(session, synced, AS_OF).ledger_balances(AS_OF)
+        }
+
+        def under(*roles: str) -> Decimal:
+            ids = session.scalars(
+                text("SELECT l.id FROM ledgerbridge_accounting.ledgers l JOIN "
+                     "ledgerbridge_reporting.v_group_ancestors a ON a.group_id = l.group_id "
+                     "JOIN ledgerbridge_accounting.account_groups g ON g.id = a.ancestor_id "
+                     "WHERE l.entity_id = :e AND g.predefined_role IN :r AND l.is_deleted = 0"
+                     ).bindparams(bindparam("r", expanding=True)),
+                {"e": synced, "r": list(roles)},
+            )  # fmt: skip
+            return sum((balances[i] for i in ids), Decimal(0))
+
+        assert Decimal(found["cash_and_bank"]) == under("cash_in_hand", "bank_accounts")
+        assert Decimal(found["receivables"]) == under("sundry_debtors")
+        assert Decimal(found["payables"]) == -under("sundry_creditors")
+    assert Decimal(found["cash_and_bank"]) != 0 and Decimal(found["receivables"]) != 0
+
+
+def test_the_overview_without_a_stored_statement_and_out_of_its_year(
+    client: TestClient, synced: int, statements_stored: None
+) -> None:
+    mid_month = _get(client, "/api/v1/overview", financial_year=YEAR, as_of="2026-09-15")
+    assert mid_month["gross_profit"] is None and mid_month["net_profit"] is None
+    assert Decimal(mid_month["sales"]) == sum(
+        Decimal(m["net_sales"]) for m in mid_month["monthly_sales"]
+    )
+    outside = client.get("/api/v1/overview", params={"financial_year": YEAR, "as_of": "2027-04-01"})
+    assert outside.status_code == 422
