@@ -612,7 +612,7 @@ class Builder:
                     continue
                 lines = validation_lines(self.session, run, where)
                 s.lines.append(lines[0])
-                rebuilt = self._transformed_since(c, run.started_at)
+                rebuilt = self._transformed_since(c, run)
                 if rebuilt is not None:
                     s.lines.append(
                         f"    {title('validated_before_rebuild')}: transform run {rebuilt.id} "
@@ -627,16 +627,19 @@ class Builder:
             s.lines.append("no company converted yet")
         return s
 
-    def _transformed_since(self, c: Connection, since: datetime) -> SyncRun | None:
+    def _transformed_since(self, c: Connection, validation: ValidationRun) -> SyncRun | None:
         """The latest succeeded `transform retry` or `rebuild` of the connection finished
-        after `since` (it changed the converted data a validation then saw)."""
+        after the validation started (it changed the converted data the validation saw). Not
+        the run the validation belongs to: a rebuild validates each company before the run
+        itself finishes (test company, 2026-10-30)."""
         return self.session.scalar(
             select(SyncRun)
             .where(
                 SyncRun.connection_id == c.id,
                 SyncRun.run_type == TRANSFORM,
                 SyncRun.status == "succeeded",
-                SyncRun.finished_at > since,
+                SyncRun.finished_at > validation.started_at,
+                SyncRun.id != func.coalesce(validation.sync_run_id, 0),
             )
             .order_by(SyncRun.finished_at.desc())
             .limit(1)
