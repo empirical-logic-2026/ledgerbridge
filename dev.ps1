@@ -731,11 +731,11 @@ switch ($Command) {
         if ($parts.Count -ne 2 -or $parts[0] -ne '127.0.0.1' -or $parts[1] -notmatch '^[0-9]+$') {
             throw "The $Env API is published on '$address', not on 127.0.0.1 only: there is no login yet (ADR-049)."
         }
-        $origin = [uri](Get-EnvValue 'FRONTEND_ORIGIN' 'http://localhost:5175')
-        if ($origin.Scheme -ne 'http' -or $origin.Host -notin @('localhost', '127.0.0.1') -or $origin.AbsolutePath -ne '/') {
-            throw "FRONTEND_ORIGIN must be http://localhost:<port> (ADR-049); it is '$origin'."
+        $frontendOrigin = [uri](Get-EnvValue 'FRONTEND_ORIGIN' 'http://localhost:5175')
+        if ($frontendOrigin.Scheme -ne 'http' -or $frontendOrigin.Host -notin @('localhost', '127.0.0.1') -or $frontendOrigin.AbsolutePath -ne '/') {
+            throw "FRONTEND_ORIGIN must be http://localhost:<port> (ADR-049); it is '$frontendOrigin'."
         }
-        $port = $origin.Port
+        $port = $frontendOrigin.Port
         $frontend = Join-Path $root 'frontend'
         if (-not (Test-Path (Join-Path $frontend 'node_modules'))) { throw 'Run "npm install" in frontend/ first.' }
         $env:VITE_API_BASE_URL = "http://127.0.0.1:$(Get-EnvValue 'API_HOST_PORT' '8001')"
