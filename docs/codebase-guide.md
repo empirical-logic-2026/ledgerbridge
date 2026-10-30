@@ -65,6 +65,7 @@ ledgerbridge/
 │   ├── Dockerfile, .dockerignore, pyproject.toml, uv.lock, .python-version, alembic.ini
 │   ├── ai/                     placeholder for the AI layer (M8)
 │   ├── api/                    the web API
+│   │   └── v1/                 the dashboard API (/api/v1, read-only)
 │   ├── connectors/
 │   │   ├── base.py, registry.py
 │   │   └── tally/              everything that knows about Tally
@@ -131,10 +132,12 @@ ledgerbridge/
 
 | File | What it is and what it's for |
 | --- | --- |
-| `main.py` | Creates the API application and plugs in its parts. |
+| `main.py` | Creates the API application and plugs in its parts; CORS for the dashboard on localhost only, GET only; the startup warning when the API is published on another address; one log line per request (method, path, status, time; never the query string) (ADR-049). |
 | `health.py` | `/health` and `/health/ready`: is the API up, and can it reach MySQL, Redis and Qdrant? `dev.ps1 up` and `status` use it. |
 | `validation.py` | Endpoints that return validation results and alerts. |
-| `deps.py` | Shared helpers, e.g. a database session per request. |
+| `deps.py` | Shared helpers: a database session per request (`app_rw`), and the read-only one for the dashboard (`report_ro`). |
+| `access.py` | Who may see which companies: `current_access`, the one dependency every `/api/v1` endpoint goes through. Until login (M5) it allows every company not on hold; M5 replaces it here (ADR-049). |
+| `v1/` | The dashboard API, `/api/v1`, GET only, as `report_ro`: `companies.py` (companies with their data health, financial years and "as at" dates), `datasets.py` (the table explorer's endpoints: catalogue, a page of a result, CSV), `dataset_specs.py` (each dataset's allow-listed dimensions, measures and filters, each a fixed SQL expression), `dataset_query.py` (reading a request against those allow-lists and answering it: groups with subtotals, lists, the CSV rows), `common.py`. |
 
 **`ai/`**: an empty package that will hold the AI layer (text-to-SQL, model providers, guardrails) in milestone M8 ([architecture.md](architecture.md) Section 5).
 
@@ -287,6 +290,7 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `index.html`, `public/favicon.svg` | The page that loads the app, and its icon. |
 | `src/main.tsx`, `src/App.tsx` | Start the app; `App.tsx` is the current starting page: the API's health and a sample chart. |
 | `src/api/client.ts` | How the dashboard calls the API. |
+| `src/api/types.ts` | The API's response types, generated from its OpenAPI schema by `python -m devtools.api_types` (never edited by hand; a test fails when stale). |
 | `src/components/EChart.tsx` | A reusable chart component. |
 | `src/index.css`, `src/test-setup.ts`, `src/App.test.tsx` | Styles, and the dashboard's test setup and test. |
 | `vite.config.ts`, `tsconfig*.json`, `.oxlintrc.json`, `.env.example`, `.gitignore` | Build, TypeScript and code-check settings, and the API address setting. |
@@ -398,6 +402,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-30 | 0.32 | Dashboard D1 (a): `api/access.py`, `api/v1/`, `core/reporting_views.py`, `devtools/api_types.py`, `frontend/src/api/types.ts`, migration 0024; tests `test_api_v1.py`, `test_api_types.py`, `test_dashboard_api_integration.py`. |
 | 2026-10-30 | 0.31 | `workers/on_hold.py`, migration 0023; `tests/test_on_hold.py`. |
 | 2026-10-30 | 0.30 | `workers/currencies.py`, migration 0022; `tests/test_currencies.py`. |
 | 2026-10-29 | 0.29 | `core/monthly_sales.py`, `workers/monthly_sales.py`, migration 0021, `docs/sql/`; `tests/test_monthly_sales.py`, `tests/test_monthly_sales_integration.py`. |

@@ -77,6 +77,9 @@ services:
       # passwords, even though the env file contains them.
       MYSQL_ROOT_PASSWORD: ""
       MYSQL_MIGRATOR_PASSWORD: ""
+      API_PUBLISHED_ADDRESS: "127.0.0.1"
+    # Localhost only: no login until M5 (ADR-049). API_PUBLISHED_ADDRESS above names the
+    # same address; the API warns at startup when it isn't a loopback address.
     ports:
       - "127.0.0.1:${API_HOST_PORT:?set API_HOST_PORT}:8000"
     extra_hosts:
