@@ -390,3 +390,55 @@ def test_a_count_finding_names_the_live_voucher_type(
     )
     (finding,) = [f for f in report.findings if f.check_code == "voucher_count_mismatch"]
     assert finding.object_id == f"{month[0]:%Y-%m}:{sales.id}"
+
+
+def test_a_voucher_type_name_written_differently_in_the_counts_still_matches(
+    db: Session, synced: S.Connection, connector: TallyConnector
+) -> None:
+    """Pilot 2026-10-30: a type named with two spaces in a row was written with one in the
+    source's voucher counts, so every voucher of the type was counted as another's. The
+    counts are matched by the transform's name rules, and the difference noted (kinds only)."""
+    from connectors.base import SourceControls
+
+    as_of = date(2026, 10, 2)
+    sales = db.scalars(select(A.VoucherType).where(A.VoucherType.name == "Sales")).one()
+    sales.name = "Sales  Invoice"
+    db.commit()
+    entity = connector.list_entities()[0]
+    counts = {
+        (month, "Sales Invoice" if kind == "Sales" else kind): n
+        for (month, kind), n in connector.voucher_counts(entity, entity.books_from, as_of).items()
+    }
+    report = Validator(db, sales.entity_id, as_of, connection_id=synced.id).run(
+        connector.closing_balances(entity, as_of), controls=SourceControls(voucher_counts=counts)
+    )
+    codes = [f.check_code for f in report.findings]
+    assert "voucher_count_mismatch" not in codes
+    (note,) = [f for f in report.findings if f.check_code == "voucher_type_names_differ"]
+    assert note.severity == "info"
+    assert "1 compared with the type each matches" in note.message
+    assert "double or unusual spaces 1" in note.message
+    assert "Sales" not in note.message
+
+
+def test_a_voucher_type_name_the_rules_dont_match_is_still_a_mismatch(
+    db: Session, synced: S.Connection, connector: TallyConnector
+) -> None:
+    """A name that differs by more than spaces or capitals isn't matched: its counts differ,
+    and the note says how it differs from the closest of ours (kinds only)."""
+    from connectors.base import SourceControls
+
+    as_of = date(2026, 10, 2)
+    entity_id = db.scalars(select(A.Entity)).one().id
+    entity = connector.list_entities()[0]
+    counts = {
+        (month, "Sales 2" if kind == "Sales" else kind): n
+        for (month, kind), n in connector.voucher_counts(entity, entity.books_from, as_of).items()
+    }
+    report = Validator(db, entity_id, as_of, connection_id=synced.id).run(
+        connector.closing_balances(entity, as_of), controls=SourceControls(voucher_counts=counts)
+    )
+    assert "voucher_count_mismatch" in [f.check_code for f in report.findings]
+    (note,) = [f for f in report.findings if f.check_code == "voucher_type_names_differ"]
+    assert "1 not matched: close to one of ours but differing by more (other 1)" in note.message
+    assert "Sales" not in note.message

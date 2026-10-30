@@ -79,6 +79,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-033](#lb-val-033-sales-ledgers-with-an-opening-balance) | Sales ledgers with an opening balance | `sales_ledger_openings` | Warning |
 | [LB-VAL-034](#lb-val-034-foreign-currency-ledgers-without-an-iso-code) | Foreign-currency ledgers without an ISO code | `foreign_currency_without_iso_code` | Warning |
 | [LB-VAL-035](#lb-val-035-ledgers-the-source-revalues-not-marked-foreign) | Ledgers the source revalues not marked foreign | `revalued_ledger_not_foreign` | Warning |
+| [LB-VAL-036](#lb-val-036-voucher-type-names-written-differently) | Voucher type names written differently | `voucher_type_names_differ` | Note |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
 | [LB-SYS-001](#lb-sys-001-unexpected-error) | Unexpected error | `unexpected_error` | Error |
@@ -1287,6 +1288,26 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Rebuild (`transform rebuild`), then check again; send the counts if they remain.
 
 **Next step:** `.\dev.ps1 transform rebuild -Env <env>`
+
+### LB-VAL-036: Voucher type names written differently
+
+`voucher_type_names_differ` | Note
+
+**What it means:** The source writes some voucher type names differently in its voucher counts than in its vouchers (e.g. two spaces in a row as one, or other capitals); their counts are compared with the type each name matches by the name rules (core/names.py). Names that differ by more (close to one of ours) aren't matched: their counts differ, and the note gives the kinds of difference.
+
+**Common causes:**
+
+- A name with double or unusual spaces, or capitals the source changes when it lists vouchers.
+
+**How to investigate:**
+
+- .\dev.ps1 report -Env <env> -Details
+
+**How to fix:**
+
+- Nothing to fix for names the rules match; send the note's kinds for the others.
+
+**Next step:** `.\dev.ps1 report -Env <env> -Details`
 
 
 ## Connection settings

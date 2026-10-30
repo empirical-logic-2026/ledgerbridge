@@ -27,7 +27,7 @@ runs a Validator after every sync (and on `validate`); the report is stored in
 """
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -42,6 +42,7 @@ from core.models import accounting as A  # noqa: N812
 from core.models.base import utcnow
 from core.models.source import RawRecord
 from core.models.system import Connection, ValidationIssue, ValidationRun
+from core.names import NORMALISED, NameIndex, close_match, differences
 from core.problems import title
 from core.statement_differences import Summary
 
@@ -74,7 +75,7 @@ CLOSING_COMPARED = (
 YEAR_END_READ = ("year_end_balances_unavailable", "year_end_balances_not_supported")
 YEAR_END_COMPARED = (*YEAR_END_READ, "year_end_mismatch")
 COUNTS_READ = ("voucher_counts_unavailable", "voucher_counts_not_supported")
-COUNTS_COMPARED = (*COUNTS_READ, "voucher_count_mismatch")
+COUNTS_COMPARED = (*COUNTS_READ, "voucher_count_mismatch", "voucher_type_names_differ")
 STOCK_READ = ("stock_quantities_unavailable", "stock_quantities_not_supported")
 STOCK_COMPARED = (*STOCK_READ, "stock_quantity_mismatch", "stock_values_not_compared")
 BILLS_READ = (
@@ -249,6 +250,12 @@ def _period_profit(ledgers: list[_LedgerBalance], source: SourceBalances) -> Dec
     if source.closing_stock is not None and source.opening_stock is not None:
         profit -= source.closing_stock - source.opening_stock
     return profit
+
+
+def _kinds(pairs: set[tuple[str, str]]) -> str:
+    """Kinds of difference between pairs of names, counted (never the names)."""
+    kinds = Counter(k for pair in pairs for k in differences(*pair))
+    return ", ".join(f"{k} {n:,}" for k, n in sorted(kinds.items()))
 
 
 class Validator:
@@ -799,8 +806,9 @@ class Validator:
             .group_by(A.Voucher.voucher_date, A.Voucher.voucher_type_id)
         ):
             ours[(voucher_date.replace(day=1), types.get(type_id, ""))] += count
-        for month, kind in sorted(set(ours) | set(theirs)):
-            expected, actual = theirs.get((month, kind), 0), ours.get((month, kind), 0)
+        counted = self._by_our_type_names(theirs, ids)
+        for month, kind in sorted(set(ours) | set(counted)):
+            expected, actual = counted.get((month, kind), 0), ours.get((month, kind), 0)
             if expected == actual:
                 self.passed += 1
                 continue
@@ -816,6 +824,46 @@ class Validator:
                     f"{expected} in the source.",
                 )
             )
+
+    def _by_our_type_names(
+        self, theirs: Mapping[tuple[date, str], int], names: Iterable[str]
+    ) -> Counter[tuple[date, str]]:
+        """The source's counts under our voucher types' names, matched by the transform's
+        name rules (core/names.py): a source that writes a type's name differently in its
+        counts than in its vouchers is still compared with that type (pilot 2026-10-30: a
+        name with two spaces in a row, every voucher of the type counted as another's).
+        Such names are noted with the kinds of difference only, and so are names the rules
+        don't match that are close to one of ours (their counts still differ)."""
+        names = list(names)
+        index = NameIndex.build((name, name) for name in names)
+        keyed: Counter[tuple[date, str]] = Counter()
+        matched: set[tuple[str, str]] = set()
+        near: set[tuple[str, str]] = set()
+        for (month, kind), count in theirs.items():
+            found = index.resolve(kind)
+            if found.how == NORMALISED:
+                matched.add((kind, found.value))
+            elif not found.found:
+                close, _ = close_match(kind, names)
+                if close is not None:
+                    near.add((kind, close))
+            keyed[(month, found.value if found.found else kind)] += count
+        parts = [
+            f"{len(pairs):,} {what} ({_kinds(pairs)})"
+            for pairs, what in (
+                (matched, "compared with the type each matches by the name rules"),
+                (near, "not matched: close to one of ours but differing by more"),
+            )
+            if pairs
+        ]
+        if parts:
+            self._note(
+                "voucher_type_names_differ",
+                str(self.entity.id),
+                "The source writes voucher type names differently in its voucher counts than "
+                f"in its vouchers: {'; '.join(parts)}.",
+            )
+        return keyed
 
     def _stock_quantities(self, theirs: Mapping[str, Decimal] | Exception | None) -> None:
         """VAL-006: each stock item's closing quantity (opening plus movements of effective
