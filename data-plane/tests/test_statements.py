@@ -622,3 +622,62 @@ def test_validate_prints_passed_with_warnings_and_exits_0(
     assert re.search(r": PASSED with \d+ warnings \(", out)
     assert "FAILED" not in out
     assert "[statement_taken_from_source, LB-VAL-026]: lines taken from the source" in out
+
+
+def test_zero_stock_lines_are_read_as_stock_lines() -> None:
+    """Tally writes a zero amount as an empty tag: its stock lines and "Add: " lines inside
+    Cost of Sales then still are sub lines worth 0, and the stock values 0, not missing
+    (pilot 2026-10-30: companies without stock lost the block)."""
+    from connectors.tally import reports
+
+    xml = (
+        "<ENVELOPE>"
+        + "".join(
+            f"<DSPACCNAME><DSPDISPNAME>{name}</DSPDISPNAME></DSPACCNAME><PLAMT><PLSUBAMT>{sub}"
+            f"</PLSUBAMT><BSMAINAMT>{main}</BSMAINAMT></PLAMT>"
+            for name, sub, main in (
+                ("Sales Accounts", "", "500.00"),
+                ("Cost of Sales :", "", "-300.00"),
+                ("Opening Stock", "", ""),
+                ("Add: Purchase Accounts", "-300.00", ""),
+                ("Less: Closing Stock", "", ""),
+                ("Indirect Expenses", "", ""),
+            )
+        )
+        + "</ENVELOPE>"
+    ).encode()
+    lines = reports.profit_and_loss(xml)
+    assert [(x.label, x.level) for x in lines] == [
+        ("Sales Accounts", "main"), ("Cost of Sales :", "main"), ("Opening Stock", "sub"),
+        ("Add: Purchase Accounts", "sub"), ("Less: Closing Stock", "sub"),
+        ("Indirect Expenses", "main"),
+    ]  # fmt: skip
+    assert reports.stock_values(lines) == (Decimal(0), Decimal(0))
+
+
+def test_without_stock_cost_of_sales_follows_the_sources_layout(
+    db: Session, books: S.Connection
+) -> None:
+    """Where the source shows its Cost of Sales block but no stock lines, ours has the block
+    too, stock counting as zero: purchases and direct expenses inside it, the totals equal."""
+    from dataclasses import replace
+
+    entity_id = db.scalars(select(A.Entity)).one().id
+    source = _source("integrated", AS_OF)
+    without = replace(
+        source,
+        opening_stock=None,
+        closing_stock=None,
+        lines=tuple(
+            x for x in source.lines if x.label not in ("Opening Stock", "Less: Closing Stock")
+        ),
+    )
+    lines = _lines(db, entity_id, without)
+    cost = lines[("profit_loss", "Cost of Sales :")]
+    inside = [x for (s, _), x in lines.items() if s == "profit_loss" and x.level == "sub"]
+    assert cost.level == "main" and inside
+    assert cost.amount == sum((x.amount for x in inside), Decimal(0))
+    plain = _lines(db, entity_id, replace(without, lines=tuple(
+        x for x in without.lines if statements.match_key(x.label) != "cost of sales"
+    )))  # fmt: skip
+    assert ("profit_loss", "Cost of Sales :") not in plain  # no block where the source has none
