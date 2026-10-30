@@ -259,14 +259,18 @@ class Ledger(SourceTrackingMixin, TimestampMixin, Base):
     )
     opening_balance: Mapped[Decimal] = mapped_column(Money, default=0, server_default="0")
     opening_balance_date: Mapped[date | None] = mapped_column(nullable=True)
-    currency_code: Mapped[str] = mapped_column(
-        CHAR(3), ForeignKey(f"{ACCOUNTING}.currencies.code"), default="INR"
+    # The ledger's own currency (FX-001; migration 0022): as the source names it (Tally
+    # CURRENCYNAME, e.g. "$"), its ISO code (NULL when the source's currency has none), and
+    # whether it is another than the entity's base currency. Base-currency figures stay the
+    # books; a ledger kept in the base currency can still hold foreign amounts (its lines'
+    # `amount_fc`, its opening's below).
+    currency_code: Mapped[str | None] = mapped_column(
+        CHAR(3), ForeignKey(f"{ACCOUNTING}.currencies.code"), nullable=True, default="INR"
     )
-    # The currency of the ledger's foreign figures as the source names it (its opening's
-    # foreign part when it has one, else the ledger's own, Tally CURRENCYNAME: e.g. "$"), and
-    # the opening in it (FX-001). `currency_code` is the ledger's own currency. Base-currency
-    # figures stay the books.
     currency_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    is_foreign_currency: Mapped[bool] = flag()
+    # The currency and amount of the opening's foreign part, when it has one.
+    opening_currency_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     opening_balance_fc: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     is_bill_wise: Mapped[bool] = flag()
     is_cost_centre_applicable: Mapped[bool] = flag()

@@ -121,6 +121,9 @@ class CanonicalCurrency:
     source_key: str
     name: str
     code: str | None = None  # ISO 4217, e.g. USD
+    # Other names records may refer to it by (Tally: the master's NAME when its ORIGINALNAME
+    # differs): a ledger's currency is matched by any of them.
+    aliases: tuple[str, ...] = ()
     formal_name: str | None = None
     decimal_places: int | None = None
     rates: tuple[CanonicalRate, ...] = ()

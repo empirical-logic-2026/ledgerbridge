@@ -217,9 +217,18 @@ def test_the_transform_stores_foreign_figures_and_leaves_base_figures_alone(
 
     by_name = {x.name: x for x in db.scalars(select(A.Ledger))}
     delta, hotel = by_name["Customer Delta USD"], by_name["Customer Hotel USD"]
-    assert (delta.currency_code, delta.currency_name) == ("USD", "$")
-    assert (hotel.currency_code, hotel.currency_name) == ("INR", "$")  # Tally keeps it in rupees
-    assert hotel.opening_balance_fc == Decimal(1000)
+    # Each ledger's own currency as Tally defines it (CURRENCYNAME), and whether it's foreign.
+    assert (delta.currency_code, delta.currency_name, delta.is_foreign_currency) == (
+        "USD", "$", True,
+    )  # fmt: skip
+    # Tally keeps Hotel in rupees ("?" is the rupee sign as exported); its opening is in dollars.
+    assert (hotel.currency_code, hotel.currency_name, hotel.is_foreign_currency) == (
+        "INR", "?", False,
+    )  # fmt: skip
+    assert (hotel.opening_currency_name, hotel.opening_balance_fc) == ("$", Decimal(1000))
+    foreign = {x.name for x in by_name.values() if x.is_foreign_currency}
+    assert foreign == {"Customer Delta USD", "Vendor Echo USD"}
+    assert all(x.currency_code == "INR" for x in by_name.values() if not x.is_foreign_currency)
 
     rates = {
         (r.source, r.rate_kind, r.rate_date): (r.rate, r.currency_code, r.voucher_count)
@@ -253,3 +262,54 @@ def test_the_base_check_finds_a_changed_amount(db: Session, foreign_books: S.Con
     found = base_check.compare(before, base_check.snapshot(db, foreign_books.id))
     assert (found.vouchers_differing, found.ledgers_differing) == (1, 1)
     assert not found.unchanged
+
+
+def test_a_master_without_an_iso_code_in_its_formal_name() -> None:
+    """The ISO code may be in another field than the formal name; a master renamed keeps its
+    other name as an alias (a ledger's CURRENCYNAME may use either)."""
+    master = mapping.currency(
+        _element(
+            '<CURRENCY NAME="Dollar"><ORIGINALNAME>$</ORIGINALNAME>'
+            "<EXPANDEDSYMBOL>US Dollar</EXPANDEDSYMBOL><MAILINGNAME>USD</MAILINGNAME></CURRENCY>"
+        ),
+        "k",
+    )
+    assert (master.name, master.code, master.aliases) == ("$", "USD", ("Dollar",))
+    plain = mapping.currency(
+        _element('<CURRENCY NAME="$"><EXPANDEDSYMBOL>US Dollar</EXPANDEDSYMBOL></CURRENCY>'), "k"
+    )
+    assert (plain.code, plain.aliases) == (None, ())
+
+
+def test_foreign_ledgers_are_found_without_iso_codes_and_by_alias(
+    db: Session, foreign_books: S.Connection
+) -> None:
+    """Pilot 2026-10-30: every ledger was INR. Without any ISO code from the masters, the
+    base currency is the one most ledgers are kept in, the others are foreign (code NULL);
+    a ledger naming its currency by the master's other name gets the master's code."""
+    connector = TallyConnector.from_config(
+        {"url": "http://tally.test:9000"}, transport=FixtureTransport(BOOKS)
+    )
+    Transformer(db, foreign_books.id, connector).run(rebuild=True)
+    entity_id = db.scalars(select(A.Entity.id)).one()
+    for master in db.scalars(select(A.CurrencySource)):
+        master.currency_code = None
+    db.commit()
+    assert fx.base_currency_name(db, entity_id) == "?"  # most ledgers are kept in rupees
+    assert fx.refresh_ledger_currencies(db, entity_id) == 2
+    by_name = {x.name: x for x in db.scalars(select(A.Ledger))}
+    assert (
+        by_name["Customer Delta USD"].is_foreign_currency,
+        by_name["Customer Delta USD"].currency_code,
+    ) == (True, None)
+    assert by_name["Cash"].currency_code == "INR" and not by_name["Cash"].is_foreign_currency
+
+    master = db.scalars(select(A.CurrencySource).where(A.CurrencySource.name == "$")).one()
+    master.currency_code = "USD"
+    master.extra = {"_aliases": ["Dollar"]}
+    by_name["Customer Delta USD"].currency_name = "Dollar"
+    db.commit()
+    assert fx.currency_codes(db, entity_id)["Dollar"] == "USD"
+    fx.refresh_ledger_currencies(db, entity_id)
+    delta = db.get(A.Ledger, by_name["Customer Delta USD"].id)
+    assert (delta.is_foreign_currency, delta.currency_code) == (True, "USD")

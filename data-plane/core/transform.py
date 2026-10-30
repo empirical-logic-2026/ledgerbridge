@@ -703,6 +703,7 @@ class Transformer:
                 )
         if pending:  # voucher-derived rates follow the lines just written (FX-003)
             fx.refresh_voucher_rates(self.session, entity_id)
+            fx.refresh_ledger_currencies(self.session, entity_id)
         result.unmapped_ledgers[entity_id] = list(
             self.session.scalars(
                 select(A.Ledger.name)
@@ -1106,9 +1107,11 @@ class Transformer:
                     "mapping_status": "auto" if standard else "unmapped",
                     "opening_balance": ledger.opening_balance,
                     "opening_balance_date": ledger.opening_balance_date or self.books_from,
+                    # Its own currency; whether it is foreign: fx.refresh_ledger_currencies,
+                    # once every ledger and currency of the entity is stored.
                     "currency_code": self._currency_code(ledger.currency_name),
-                    # The currency of its foreign figures: its opening's, else its own.
-                    "currency_name": ledger.opening_currency_name or ledger.currency_name,
+                    "currency_name": ledger.currency_name,
+                    "opening_currency_name": ledger.opening_currency_name,
                     "opening_balance_fc": ledger.opening_balance_fc,
                     "is_bill_wise": ledger.is_bill_wise,
                     "is_cost_centre_applicable": ledger.is_cost_centre_applicable,
@@ -1239,19 +1242,28 @@ class Transformer:
                 )
                 known.add(record.code)
         self.session.flush()
-        done = self._simple(
-            items,
-            CanonicalCurrency,
-            A.CurrencySource,
-            lambda r: {
-                "name": r.name,
-                "currency_code": r.code,
-                "formal_name": r.formal_name,
-                "decimal_places": r.decimal_places,
-            },
-            result,
-            "currency",
-        )
+        rows, done = [], []
+        for item in items:
+            item_rows = self._item_rows(
+                item,
+                CanonicalCurrency,
+                A.CurrencySource,
+                lambda r: {
+                    "name": r.name,
+                    "currency_code": r.code,
+                    "formal_name": r.formal_name,
+                    "decimal_places": r.decimal_places,
+                },
+                result,
+            )
+            if item_rows is None:
+                continue
+            masters = [r for r in item.records if isinstance(r, CanonicalCurrency)]
+            rows += [
+                _with_aliases(row, m.aliases) for row, m in zip(item_rows, masters, strict=True)
+            ]
+            done.append(item)
+        self.upsert(A.CurrencySource, rows, "currency")
         for record in (r for i in done for r in i.records if isinstance(r, CanonicalCurrency)):
             self.session.execute(
                 delete(A.ExchangeRate).where(
@@ -1277,22 +1289,15 @@ class Transformer:
         self._currency_codes = None
         return done
 
-    def _currency_code(self, name: str | None) -> str:
-        """The ISO code of a currency as the entity's source names it; the entity's base
-        currency when it names none or one without a known code."""
+    def _currency_code(self, name: str | None) -> str | None:
+        """The ISO code of a currency as the entity's source names it (by a master's name or
+        alias); the entity's base currency when it names none; None when its master gives no
+        code (fx.refresh_ledger_currencies then decides whether it is the base currency)."""
         if self._currency_codes is None:
-            self._currency_codes = {
-                n: c
-                for n, c in self.session.execute(
-                    select(A.CurrencySource.name, A.CurrencySource.currency_code).where(
-                        A.CurrencySource.entity_id == self.entity_id,
-                        A.CurrencySource.is_deleted.is_(False),
-                    )
-                )
-                if c
-            }
-        base = self.session.get_one(A.Entity, self.entity_id).base_currency_code
-        return self._currency_codes.get(name or "", base)
+            self._currency_codes = fx.currency_codes(self.session, self.entity_id)
+        if not name:
+            return self.session.get_one(A.Entity, self.entity_id).base_currency_code
+        return self._currency_codes.get(name)
 
     def _godowns(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         done = self._simple(
