@@ -43,7 +43,13 @@ from core.models.system import SyncMarker
 from core.raw_store import RawStore
 from core.transform import Transformer, TransformResult, mark_deleted
 from workers import locks
-from workers.entities import ExpectedEntityNotLoadedError, Labels, ensure_loaded, select_entities
+from workers.entities import (
+    ExpectedEntityNotLoadedError,
+    Labels,
+    ensure_loaded,
+    on_hold_line,
+    select_not_on_hold,
+)
 from workers.fetch import AUTO, ChunkFetcher, FetchSettings
 from workers.runs import (
     INTERRUPTED_BY_SIGNAL,
@@ -192,12 +198,15 @@ def run_sync(
     run_type = "full" if full or period is not None or has_markers is None else "incremental"
     run, result = _open_run(session, connection, run_type)
     try:
-        entities = select_entities(connector, connection, entity_names)
+        entities, held = select_not_on_hold(session, connector, connection, entity_names)
+        if line := on_hold_line(held):
+            say(line)
         result.entities = [e.name for e in entities]
         labels = Labels(session, connection)
         outcomes = [EntityOutcome(labels.for_key(e.key), e.name, e.key) for e in entities]
         result.entity_results = outcomes
-        say(f"{len(outcomes)} companies in this run: {', '.join(o.label for o in outcomes)}")
+        listed = ", ".join(o.label for o in outcomes) or "none"
+        say(f"{len(outcomes)} companies in this run: {listed}")
         for entity, outcome in zip(entities, outcomes, strict=True):
             ensure_loaded(connector, entity)
             try:
@@ -508,7 +517,11 @@ def run_deletion_check(
     say = progress or _quiet
     run, result = _open_run(session, connection, DELETION_CHECK)
     try:
-        entities = select_entities(connector, connection, entity_names, entity_keys)
+        entities, held = select_not_on_hold(
+            session, connector, connection, entity_names, entity_keys
+        )
+        if line := on_hold_line(held):
+            say(line)
         entity_ids = entity_ids_for(session, connection.id, [e.key for e in entities])
         labels = Labels(session, connection)
         for entity in entities:

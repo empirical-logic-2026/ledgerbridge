@@ -93,7 +93,7 @@ from core.problems import BY_CODE, for_error, title
 from core.statement_differences import KINDS
 from core.transform import trial_balance
 from core.validation import ValidationReport
-from workers import currencies, fx_rules, monthly_sales, style
+from workers import currencies, fx_rules, monthly_sales, on_hold, style
 from workers.analyse import analyse
 from workers.compare import compare_ledger
 from workers.entities import (
@@ -101,7 +101,10 @@ from workers.entities import (
     Labels,
     by_names,
     configured,
+    on_hold_keys,
+    on_hold_line,
     select_entities,
+    select_not_on_hold,
     to_config,
 )
 from workers.extract import connector_for, get_or_create_connection, run_extract
@@ -284,6 +287,16 @@ def _parser() -> argparse.ArgumentParser:
     fx_rules_parser.add_argument(
         "--job", help="job id: also write the output to sync_logs, for `watch`"
     )
+
+    on_hold_parser = sub.add_parser(
+        "on-hold",
+        help="put an entity on hold (skipped unless named), take it off, or list them "
+        "(SYN-007); reads and writes the database only",
+    )
+    on_hold_parser.add_argument(
+        "action", nargs="?", choices=("list", "set", "clear"), default="list"
+    )
+    on_hold_parser.add_argument("--entity-id", type=int, help="the entity's id (set, clear)")
 
     currencies_parser = sub.add_parser(
         "currencies",
@@ -561,6 +574,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _fx_rules(session, args)
     if args.command == "monthly-sales":
         return _monthly_sales(session, args)
+    if args.command == "on-hold":
+        return _on_hold(session, args)
     if args.command == "currencies":
         return _currencies(session, args)
     if args.command == "summary":
@@ -1521,7 +1536,9 @@ def _validate_analyse(session: Session, args: argparse.Namespace) -> int:
         print(f"No connection '{args.connection}'.", file=sys.stderr)
         return 2
     connector = connector_for(session, connection)
-    entities = select_entities(connector, connection, args.entity)
+    entities, held = select_not_on_hold(session, connector, connection, args.entity)
+    if line := on_hold_line(held):
+        print(line)
     ids = entity_ids_for(session, connection.id, [e.key for e in entities])
     labels = Labels(session, connection)
     asked = args.as_of or date.today()
@@ -1556,13 +1573,25 @@ def _fx_rules(session: Session, args: argparse.Namespace) -> int:
         print(f"No connection '{args.connection}'.", file=sys.stderr)
         return 2
     connector = connector_for(session, connection)
-    entities = select_entities(connector, connection, args.entity)
+    entities, held = select_not_on_hold(session, connector, connection, args.entity)
+    if line := on_hold_line(held):
+        print(line)
     ids = entity_ids_for(session, connection.id, [e.key for e in entities])
     labels = Labels(session, connection)
     chosen = [(e, ids[e.key], labels.for_key(e.key, ids[e.key])) for e in entities if e.key in ids]
     code = fx_rules.run(session, connector, chosen)
     print("Result: fx-rules finished")
     return code
+
+
+def _on_hold(session: Session, args: argparse.Namespace) -> int:
+    """Entities on hold: list, set or clear (workers/on_hold.py)."""
+    if args.action == "list":
+        return on_hold.list_entities(session)
+    if args.entity_id is None:
+        print(f"on-hold {args.action} needs --entity-id.", file=sys.stderr)
+        return 2
+    return on_hold.set_on_hold(session, args.entity_id, args.action == "set")
 
 
 def _currencies(session: Session, args: argparse.Namespace) -> int:
@@ -1595,13 +1624,18 @@ def _stored_entities(session: Session, args: argparse.Namespace) -> list[tuple[i
             )
             return None
     else:
-        keys = list(
-            session.scalars(
+        held = on_hold_keys(session, connection.id)
+        if line := on_hold_line(len(held)):
+            print(line)
+        keys = [
+            key
+            for key in session.scalars(
                 select(EntitySource.source_entity_key).where(
                     EntitySource.connection_id == connection.id
                 )
             )
-        )
+            if key not in held
+        ]
     ids = entity_ids_for(session, connection.id, keys)
     labels = Labels(session, connection)
     return [(ids[k], labels.for_key(k, ids[k])) for k in keys if k in ids]
@@ -1626,7 +1660,9 @@ def _statements(session: Session, args: argparse.Namespace) -> int:
         print(f"No connection '{args.connection}'.", file=sys.stderr)
         return 2
     connector = connector_for(session, connection)
-    entities = select_entities(connector, connection, args.entity)
+    entities, held = select_not_on_hold(session, connector, connection, args.entity)
+    if line := on_hold_line(held):
+        print(line)
     ids = entity_ids_for(session, connection.id, [e.key for e in entities])
     labels = Labels(session, connection)
     rule = date_rule(connector, entities[0]) if entities else EVERY_DAY

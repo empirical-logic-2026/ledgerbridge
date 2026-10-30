@@ -30,6 +30,7 @@
     ./dev.ps1 validate fx-rules                 (which revaluation rule Tally follows; counts only)
     ./dev.ps1 validate monthly-sales            (monthly sales proven against Tally's Sales Accounts; database only)
     ./dev.ps1 validate currencies               (ledgers by their own currency; database only; counts)
+    ./dev.ps1 on-hold [set|clear -EntityId <id>]  (entities on hold: skipped unless named; listed without a step)
     ./dev.ps1 validate compare-ledger -Ledger 88 [-From 2020-04-01] [-To 2021-04-01]
     ./dev.ps1 statements [-From 2026-04-01]    (stock values and statements at every month end; compared with the source)
                                                 (a ledger's vouchers in Tally against ours; details to reports/<env>/private/)
@@ -64,7 +65,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'help')]
+    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -135,6 +136,9 @@ param(
 
     # Plain output without colours (also when NO_COLOR is set or the output is redirected).
     [switch]$NoColor,
+
+    # For `on-hold set` / `on-hold clear`: the entity's id (as reports label companies).
+    [int]$EntityId = 0,
 
     # For `promote-field`: the catalogued field's id (from `fields`), and the dimension's
     # code and name.
@@ -649,6 +653,20 @@ switch ($Command) {
         Assert-EnvFile
         Assert-ApiRunning
         Invoke-Checked exec -T api python -m workers.cli promote-field --field-id $FieldId --code $Code --name $Name
+    }
+    'on-hold' {
+        # Entities on hold (SYN-007): skipped by sync, validate and statements unless named
+        # with -Company, and left out of the report's verdict. Database only; audited.
+        Assert-Step 'on-hold' @('set', 'clear')
+        Assert-EnvFile
+        Assert-ApiRunning
+        Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
+        if (-not $Service) {
+            Invoke-Checked exec -T api python -m workers.cli on-hold list
+            return
+        }
+        if ($EntityId -le 0) { throw "Usage: ./dev.ps1 on-hold $Service -EntityId <id>" }
+        Invoke-Checked exec -T api python -m workers.cli on-hold $Service --entity-id $EntityId
     }
     'logs' {
         Assert-EnvFile

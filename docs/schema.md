@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.38 (Draft) |
+| Version | 0.39 (Draft) |
 | Date | 2026-10-30 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -154,6 +154,7 @@ erDiagram
 | fy_start_month | TINYINT | Default 4 (April) (DAT-006). |
 | books_from | DATE NULL | Company inception / books start (IMP-001). |
 | is_active | BOOLEAN | |
+| is_on_hold | BOOLEAN | On hold (SYN-007): sync, validation and statements skip it unless it is named, the health report lists it outside the overall verdict, dashboards hide it. Set with `./dev.ps1 on-hold` (audited; migration 0023). |
 | extra | JSON NULL | The company record's fields with no column (ADR-025). |
 
 #### `ledgerbridge_accounting.entity_sources`
@@ -824,6 +825,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-30 | 0.39 | `entities.is_on_hold` (SYN-007, migration 0023). |
 | 2026-10-30 | 0.38 | Ledgers: their own currency (`currency_name`, `is_foreign_currency`, `currency_code` NULL without an ISO code) and `opening_currency_name` (migration 0022). |
 | 2026-10-29 | 0.37 | `account_groups.predefined_role`; Section 6: the monthly sales views (migration 0021, RPT-013, ADR-047). |
 | 2026-10-24 | 0.36 | Section 4.8: the A5 core built (migration 0020, ADR-046): `currencies.symbol`, `currency_sources` as a [SRC] table, the currency as the source names it on ledgers and voucher lines, `ledgers.opening_balance_fc`, `voucher_lines.exchange_rate`, `exchange_rates` recreated per entity and currency name. |

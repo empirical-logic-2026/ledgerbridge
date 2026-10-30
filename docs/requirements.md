@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.24 (Draft) |
+| Version | 0.25 (Draft) |
 | Date | 2026-10-19 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
@@ -114,6 +114,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | SYN-004 | A connector agent can run on the machine hosting Tally or other on-premise sources and push data outbound to the client deployment; it queues data locally if the connection drops. | P1 |
 | SYN-005 | Every sync run is logged (start, end, records, errors). | P1 |
 | SYN-006 | Sync failures and validation failures trigger alerts to configured users (email; in-app). Phase 1a delivers the log and in-app channels; email follows (architecture ADR-019). | P1 |
+| SYN-007 | An entity can be put **on hold** (and taken off again), an audited setting: sync, validation and statements skip it unless it is named explicitly, the health report lists it separately and leaves it out of the overall verdict, and dashboards hide it. Its stored data is kept. | P1 |
 
 ### 4.5 Historical and backup data import
 
@@ -396,6 +397,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-12 | 0.5 | SYN-006: phase 1a alerts go to the log and in-app; email later (M4, ADR-019). |
 | 2026-10-22 | 0.23 | DAT-013 (source figures), VAL-015 (stock values checked), RPT-012 (statements matching the source line by line); ADR-040. |
 | 2026-10-29 | 0.24 | RPT-013 (monthly sales, proven against the source). |
+| 2026-10-30 | 0.25 | SYN-007 (entities on hold). |
 | 2026-10-19 | 0.22 | SEC-009 widened: automated checks on every pull request, high-severity findings block merging (ADR-039). |
 | 2026-10-16 | 0.21 | VAL-013: the book value is the opening plus the source's own vouchers; DAT-012: the opening difference warning follows the source's own trial balance line. |
 | 2026-10-16 | 0.20 | Section 4.13 Foreign currency (FX-001 to FX-013): foreign-currency data kept alongside the base-currency books, revaluation snapshots, realised and unrealised gains, exposure, `forex.view` (ADR-037). |

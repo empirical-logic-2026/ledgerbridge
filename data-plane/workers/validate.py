@@ -26,7 +26,13 @@ from core.models import Connection
 from core.models.accounting import Entity, EntitySource
 from core.models.system import ValidationRun
 from core.validation import ValidationReport, Validator, financial_year_ends
-from workers.entities import ExpectedEntityNotLoadedError, Labels, ensure_loaded, select_entities
+from workers.entities import (
+    ExpectedEntityNotLoadedError,
+    Labels,
+    ensure_loaded,
+    on_hold_line,
+    select_not_on_hold,
+)
 from workers.sync import DELETION_CHECK, Progress, SyncResult, entity_ids_for
 
 logger = logging.getLogger(__name__)
@@ -58,7 +64,9 @@ def run_validation(
     year end. They take more requests to the source, so scheduled incremental syncs skip
     them; `validate`, full syncs and `transform retry` run them."""
     asked = as_of or date.today()
-    entities = select_entities(connector, connection, entity_names, entity_keys)
+    entities, held = select_not_on_hold(session, connector, connection, entity_names, entity_keys)
+    if progress and (line := on_hold_line(held)):
+        progress(line)
     rule = date_rule(connector, entities[0]) if entities else EVERY_DAY
     as_of = rule.on_or_before(asked)  # Educational mode: a reliable date (core/dates.py)
     entity_ids = entity_ids_for(session, connection.id, [e.key for e in entities])

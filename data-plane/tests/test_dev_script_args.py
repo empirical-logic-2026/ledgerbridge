@@ -37,7 +37,7 @@ GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 CLI = ["python", "-m", "workers.cli"]
 SERVICES = ["ps", "--status", "running", "--services"]
 # Commands that first check the stack runs the checked-out code (ADR-045).
-CHECKS_CODE = {"validate", "report", "statements", "sync"}
+CHECKS_CODE = {"validate", "report", "statements", "sync", "on-hold"}
 COMMIT = ["exec", "-T", "api", "printenv", "LEDGERBRIDGE_COMMIT"]
 
 
@@ -188,6 +188,15 @@ CASES = {
         ["validate", "analyse"],
         [SERVICES, _job("validate-analyse", "--connection", "tally-test"), WATCH_JOB],
     ),
+    "on-hold": (["on-hold"], [SERVICES, _exec("on-hold", "list")]),
+    "on-hold set": (
+        ["on-hold", "set", "-EntityId", "12"],
+        [SERVICES, _exec("on-hold", "set", "--entity-id", "12")],
+    ),
+    "on-hold clear": (
+        ["on-hold", "clear", "-EntityId", "12"],
+        [SERVICES, _exec("on-hold", "clear", "--entity-id", "12")],
+    ),
     "validate currencies": (
         ["validate", "currencies"],
         [SERVICES, _exec("currencies", "--connection", "tally-test")],
@@ -297,7 +306,13 @@ def test_a_failed_verdict_exits_1_when_run_with_file(argv: list[str], tmp_path: 
 
 @pytest.mark.parametrize(
     "argv",
-    [["validate", "fx-rulez"], ["sync", "ful"], ["statements", "all"], ["transform", "redo"]],
+    [
+        ["validate", "fx-rulez"],
+        ["sync", "ful"],
+        ["statements", "all"],
+        ["transform", "redo"],
+        ["on-hold", "unset"],
+    ],
 )
 def test_an_unknown_step_runs_nothing(argv: list[str], tmp_path: Path) -> None:
     """Pilot 2026-10-24: `validate fx-rules` on a branch without it ran a plain validation."""
