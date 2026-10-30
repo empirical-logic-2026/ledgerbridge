@@ -324,6 +324,8 @@ def test_api_binds_to_localhost_only() -> None:
             in_ports = False
     assert any(p.endswith(":8000") for p in published)
     assert all(p.startswith("127.0.0.1:") for p in published), published
+    # The API is told the same address, to warn if it ever changes (ADR-049).
+    assert 'API_PUBLISHED_ADDRESS: "127.0.0.1"' in compose.read_text(encoding="utf-8")
 
 
 def test_a_check_that_didnt_run_leaves_its_earlier_issues_open(

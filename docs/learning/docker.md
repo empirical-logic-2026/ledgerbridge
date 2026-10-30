@@ -225,7 +225,7 @@ environment: &container-overrides
 ports:
   - "127.0.0.1:${API_HOST_PORT}:8000"
 ```
-The API listens on 8000 inside the container, published on your PC at `127.0.0.1:${API_HOST_PORT}`, which is 8001 for test.
+The API listens on 8000 inside the container, published on your PC at `127.0.0.1:${API_HOST_PORT}`, which is 8001 for test. `127.0.0.1` means **only this computer** can reach it: there's no login yet, so nothing else may (ADR-049). The `environment:` block above also says `API_PUBLISHED_ADDRESS: "127.0.0.1"`: a container can't see which address Docker publishes it on, so Compose tells it, and the API prints a warning at start-up if that ever names another address. See it: `./deploy/stack.ps1 -Env test port api 8000` prints `127.0.0.1:8001`.
 
 ```yaml
 extra_hosts:
@@ -335,7 +335,7 @@ A Dockerfile is a recipe. Each instruction adds a **layer**, and Docker caches l
 | `RUN useradd --system --uid 10001 app && chown -R app /app` | Create an unprivileged user and give it the files. |
 | `USER app` | Run everything after this as that user, not root, so a compromised app has fewer rights (SEC-008, least privilege). |
 | `EXPOSE 8000` | Documents that the app listens on 8000. It doesn't publish anything by itself; `ports:` in Compose does that. |
-| `CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]` | The default command: start the FastAPI app. `0.0.0.0` means "listen on all of the container's network interfaces", which is needed for port mapping to reach it. |
+| `CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]` | The default command: start the FastAPI app. `0.0.0.0` means "listen on all of the container's network interfaces", which is needed for port mapping to reach it (the outside world still only reaches it through `ports:`, on 127.0.0.1). `--no-access-log` turns off uvicorn's own request log, which prints each request's query string; the dashboard's filters travel there and can hold amounts. The API logs one line per request itself instead (method, path, status, time). See it: `./dev.ps1 logs api`. |
 
 ### `data-plane/.dockerignore`
 
@@ -496,6 +496,7 @@ See it: the PR's checks, "Details" on a job, then the step "Initialize container
 
 | Date | Change |
 | --- | --- |
+| 2026-10-30 | Dashboard D1: section 6.5, `API_PUBLISHED_ADDRESS` (the API warns if it is ever published beyond this computer); section 7, `--no-access-log` (no query strings in logs). |
 | 2026-10-24 | Section 3: the commit stamp (`GIT_COMMIT` build argument, `LEDGERBRIDGE_COMMIT` in the image, the check before commands). |
 | 2026-10-24 | Section 3: backing up the databases (`./dev.ps1 backup`, `docker compose exec` and `cp`). |
 | 2026-10-22 | Section 3: `./dev.ps1 statements`, a background job like `validate analyse`. |

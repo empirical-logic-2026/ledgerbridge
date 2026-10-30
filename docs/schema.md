@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.39 (Draft) |
+| Version | 0.40 (Draft) |
 | Date | 2026-10-30 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -607,6 +607,8 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | `ledgerbridge_reporting.v_sales_ledgers` | View | **Built (0021, RPT-013).** `entity_id, ledger_id, group_id, sales_group_id`: each ledger under the entity's Sales Accounts group (`predefined_role = 'sales_accounts'`) and its sub-groups at any depth. |
 | `ledgerbridge_reporting.v_daily_sales` | View | **Built (0021).** Per entity, voucher date and voucher type: `gross_sales` (Sales vouchers), `sales_returns` (Credit Notes), `other_adjustments` (every other voucher type), `net_sales`, `vouchers`, from effective lines of vouchers not deleted on those ledgers; sales positive. |
 | `ledgerbridge_reporting.v_monthly_sales` | View | **Built (0021).** Per entity and month: `financial_year` (its starting calendar year, from `entities.fy_start_month`), `month_of_year`, `month_start`, `month_label` (`Apr-26`), the four amounts and `vouchers`. Net sales equals the source's Sales Accounts line for the month; proven by `./dev.ps1 validate monthly-sales`. Ready-to-run pivot: `docs/sql/monthly-sales.sql`. |
+| `ledgerbridge_reporting.v_group_ancestors` | View | **Built (0024).** Each account group with every group above it, itself included (`entity_id, group_id, ancestor_id, depth`): the dashboard's ledger-group filter finds the ledgers of the sub-groups too. |
+| `ledgerbridge_reporting.v_data_health` | View | **Built (0024).** Per entity: `last_sync_at` (the last succeeded full or incremental sync of its connections), `validation_status`, `validated_as_of`, `validated_at` (its latest validation). Reads `ledgerbridge_system` with its definer's rights, so `report_ro` (and `ai_ro`) see these dates and statuses without access to that database (ADR-049). |
 | `ledgerbridge_reporting.v_monthly_sales_by_voucher_type` | View | **Built (0021).** The same per voucher type (`voucher_type_id, voucher_type, base_type, net_sales, vouchers`): the channel breakdown, adding up to `v_monthly_sales.net_sales`. |
 | `ledgerbridge_reporting.agg_ledger_daily` | Table | `entity_id, ledger_id, date, debit, credit, net`, refreshed incrementally. |
 | `ledgerbridge_reporting.v_ledger_balances` | View | Opening + movements → closing per ledger per period. |
@@ -825,6 +827,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-30 | 0.40 | Section 6: `v_group_ancestors`, `v_data_health` (migration 0024, dashboard D1). |
 | 2026-10-30 | 0.39 | `entities.is_on_hold` (SYN-007, migration 0023). |
 | 2026-10-30 | 0.38 | Ledgers: their own currency (`currency_name`, `is_foreign_currency`, `currency_code` NULL without an ISO code) and `opening_currency_name` (migration 0022). |
 | 2026-10-29 | 0.37 | `account_groups.predefined_role`; Section 6: the monthly sales views (migration 0021, RPT-013, ADR-047). |

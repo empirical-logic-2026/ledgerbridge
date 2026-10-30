@@ -697,6 +697,8 @@ switch ($Command) {
             Invoke-Uv run python -m devtools.error_catalogue
             # So is the schema reference (every table and column, from the models).
             Invoke-Uv run python -m devtools.schema_reference
+            # And the dashboard's API types (frontend/src/api/types.ts, from OpenAPI).
+            Invoke-Uv run python -m devtools.api_types
         }
         finally { Pop-Location }
         # Remove renders of sources that no longer exist (e.g. a diagram split in two).
