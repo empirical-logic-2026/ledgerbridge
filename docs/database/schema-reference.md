@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-56 tables, 630 columns.
+56 tables, 631 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -126,6 +126,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `fy_start_month` | TINYINT | no |  | Default 4 (April) (DAT-006). |
 | `books_from` | DATE | yes |  | Company inception / books start (IMP-001). |
 | `is_active` | BOOL | no |  | Whether it is in use. |
+| `is_on_hold` | BOOL | no |  | On hold (SYN-007): sync, validation and statements skip it unless it is named, the health report lists it outside the overall verdict, dashboards hide it. Set with `./dev.ps1 on-hold` (audited; migration 0023). |
 | `extra` | JSON | yes |  | ADR-025 |
 | `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
 | `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |

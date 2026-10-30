@@ -73,6 +73,9 @@ class Entity(TimestampMixin, Base):
     fy_start_month: Mapped[int] = mapped_column(TinyInt, default=4, server_default="4")
     books_from: Mapped[date | None] = mapped_column(nullable=True)
     is_active: Mapped[bool] = flag(True)
+    # On hold (SYN-007): skipped by sync, validation and statements unless named, left out of
+    # the report's verdict and hidden from dashboards; set with `./dev.ps1 on-hold`.
+    is_on_hold: Mapped[bool] = flag()
     extra: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)  # ADR-025
 
 

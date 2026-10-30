@@ -12,14 +12,20 @@ exactly as the source reports them: no trimming, no case or whitespace folding.
 
 Older connections stored plain names; those are still found by exact name until
 `connect` stores their keys.
+
+Entities **on hold** (SYN-007, `entities.is_on_hold`) are left out before the source is asked
+about them (a company on hold needn't be loaded), unless they are named on the command line.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from sqlalchemy import select
+
 from connectors.base import Connector, SourceEntity
 from core.models import Connection
+from core.models import accounting as A  # noqa: N812
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -107,30 +113,66 @@ def resolve(
     return found, missing
 
 
+def on_hold_keys(session: "Session", connection_id: int) -> set[str]:
+    """Source keys of the connection's entities on hold (SYN-007)."""
+    return set(
+        session.scalars(
+            select(A.EntitySource.source_entity_key)
+            .join(A.Entity, A.Entity.id == A.EntitySource.entity_id)
+            .where(A.EntitySource.connection_id == connection_id, A.Entity.is_on_hold.is_(True))
+        )
+    )
+
+
+def on_hold_line(skipped: int) -> str | None:
+    """The line a command prints when it skipped entities on hold (a count only)."""
+    if not skipped:
+        return None
+    return (
+        f"{skipped} {'company' if skipped == 1 else 'companies'} on hold, skipped "
+        "(name it with -Company to include it; ./dev.ps1 on-hold lists them)"
+    )
+
+
 def select_entities(
     connector: Connector,
     connection: Connection,
     names: Sequence[str] | None = None,
     keys: Sequence[str] | None = None,
+    on_hold: Collection[str] = (),
 ) -> list[SourceEntity]:
     """The entities to work with: by `keys` (e.g. those a sync just ran), else by `names`
-    typed on the command line, else those configured on the connection, else all."""
-    available = connector.list_entities()
+    typed on the command line, else those configured on the connection, else all; the last
+    two without the entities `on_hold` (their keys), which the source isn't asked about."""
     if keys:
         wanted = [ConfiguredEntity(k, "") for k in keys]
     elif names:
-        found, missing_names = by_names(available, names)
+        found, missing_names = by_names(connector.list_entities(), names)
         if missing_names:
             raise EntityLookupError(len(missing_names), len(names))
         return found
     else:
-        wanted = configured(connection)
-        if not wanted:
-            return list(available)
+        wanted = [e for e in configured(connection) if e.key is None or e.key not in on_hold]
+        if not configured(connection):
+            return [e for e in connector.list_entities() if e.key not in on_hold]
+    available = connector.list_entities()
     found, missing = resolve(available, wanted)
     if missing:
         raise EntityLookupError(len(missing), len(wanted))
     return found
+
+
+def select_not_on_hold(
+    session: "Session",
+    connector: Connector,
+    connection: Connection,
+    names: Sequence[str] | None = None,
+    keys: Sequence[str] | None = None,
+) -> tuple[list[SourceEntity], int]:
+    """`select_entities` without the entities on hold unless `names` or `keys` choose them,
+    and how many were skipped (for `on_hold_line`)."""
+    held = set() if names or keys else on_hold_keys(session, connection.id)
+    return select_entities(connector, connection, names, keys, held), len(held)
 
 
 class Labels:

@@ -24,7 +24,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from core.config import get_settings
@@ -62,6 +62,7 @@ from workers.sync import DELETION_CHECK, TRANSFORM, entity_ids_for, last_run, ru
 # (a warning with something to run, e.g. an interrupted sync); FAILED (an error). Only FAILED
 # makes `report` and `validate` exit 1.
 OK, OK_WARNINGS, ATTENTION, FAILED = "OK", "OK WITH WARNINGS", "ACTION NEEDED", "FAILED"
+ON_HOLD = "On hold"  # the section of companies on hold (SYN-007): outside the verdict
 _RANK = {ERROR: 0, WARNING: 1, INFO: 2}
 _MARK = {ERROR: "FAILED", WARNING: "WARNING", INFO: "note"}
 # Checks that only run in a thorough validation (the source's controls).
@@ -370,13 +371,20 @@ class Builder:
         self.connections = list(session.scalars(select(Connection).order_by(Connection.id)))
         self.only = entity_names  # exact names typed by the developer (never printed)
 
-    def _entities(self, connection: Connection) -> list[tuple[int, str]]:
-        """(entity id, source key) of the connection, optionally only the named ones."""
-        query = select(A.EntitySource.entity_id, A.EntitySource.source_entity_key).where(
-            A.EntitySource.connection_id == connection.id
+    def _entities(self, connection: Connection, on_hold: bool = False) -> list[tuple[int, str]]:
+        """(entity id, source key) of the connection: the named ones, else those not on hold
+        (SYN-007), or with `on_hold` those on hold (none when names are given)."""
+        query = (
+            select(A.EntitySource.entity_id, A.EntitySource.source_entity_key)
+            .join(A.Entity, A.Entity.id == A.EntitySource.entity_id)
+            .where(A.EntitySource.connection_id == connection.id)
         )
         if self.only:
+            if on_hold:
+                return []
             query = query.where(A.EntitySource.source_entity_name.in_(self.only))
+        else:
+            query = query.where(A.Entity.is_on_hold.is_(on_hold))
         return list(self.session.execute(query.order_by(A.EntitySource.entity_id)).all())
 
     def build(self) -> HealthReport:
@@ -387,6 +395,9 @@ class Builder:
             self.validation(),
             self.warnings(),
         ]
+        held = self.on_hold()
+        if held.lines:
+            sections.append(held)
         return HealthReport(self.env, utcnow(), sections, get_settings().ledgerbridge_commit)
 
     # --- sections -------------------------------------------------------------------------
@@ -429,12 +440,14 @@ class Builder:
             labels = Labels(self.session, c)
             entities = self._entities(c)
             keys = [key for _, key in entities] if self.only else None
+            held = [key for _, key in self._entities(c, on_hold=True)]
             raw = Counter()
             for status, n in self.session.execute(
                 select(RawRecord.process_status, func.count())
                 .where(
                     RawRecord.connection_id == c.id,
                     *([RawRecord.source_entity_key.in_(keys)] if keys is not None else []),
+                    *([RawRecord.source_entity_key.not_in(held)] if held else []),
                 )
                 .group_by(RawRecord.process_status)
             ):
@@ -627,6 +640,22 @@ class Builder:
             s.lines.append("no company converted yet")
         return s
 
+    def on_hold(self) -> Section:
+        """Companies on hold (SYN-007): listed with their latest validation, never part of
+        the overall verdict (the section has no occurrences)."""
+        s = Section(ON_HOLD)
+        for c in self.connections:
+            labels = Labels(self.session, c)
+            for entity_id, _key in self._entities(c, on_hold=True):
+                run = latest_validation(self.session, entity_id)
+                last = (
+                    f"latest validation {run.status.upper()} as of {run.as_of} (run {run.id})"
+                    if run is not None
+                    else "never validated"
+                )
+                s.lines.append(f"{labels.for_entity(entity_id)}: on hold; {last}")
+        return s
+
     def _transformed_since(self, c: Connection, validation: ValidationRun) -> SyncRun | None:
         """The latest succeeded `transform retry` or `rebuild` of the connection finished
         after the validation started (it changed the converted data the validation saw). Not
@@ -651,12 +680,18 @@ class Builder:
         validation has passed since (LB-VAL-027)."""
         s = Section("Warnings")
         for c in self.connections:
+            held = [entity_id for entity_id, _ in self._entities(c, on_hold=True)]
             unrun = self.session.scalar(
                 select(func.count()).where(
                     Alert.connection_id == c.id,
                     Alert.kind == "validation_failed",
                     Alert.resolved_at.is_(None),
                     Alert.validation_run_id.is_(None),
+                    *(
+                        [or_(Alert.entity_id.is_(None), Alert.entity_id.not_in(held))]
+                        if held
+                        else []
+                    ),
                 )
             )
             if unrun:
@@ -702,6 +737,11 @@ def _warnings_lines(report: HealthReport, details: bool) -> list[str]:
     return out
 
 
+def _status(section: Section) -> str:
+    """A section's verdict; companies on hold are outside the verdict."""
+    return "not part of the overall verdict" if section.title == ON_HOLD else section.status
+
+
 def render_text(report: HealthReport, details: bool = False) -> str:
     occurrences = report.occurrences
     errors = sum(1 for g in ordered(occurrences) if g[0].problem.severity == ERROR)
@@ -721,7 +761,7 @@ def render_text(report: HealthReport, details: bool = False) -> str:
             status = verdict(o for o in occurrences if o.problem.severity != ERROR)
         else:
             lines = section.lines + (section.details if details else [])
-            status = section.status
+            status = _status(section)
         out.append(f"== {section.title}: {status} ==")
         out += [f"  {line}" for line in lines]
     problems = problem_lines(occurrences, report.env, details)
@@ -753,7 +793,7 @@ def render_markdown(report: HealthReport) -> str:
             status = verdict(o for o in occurrences if o.problem.severity != ERROR)
         else:
             lines = section.lines + section.details
-            status = section.status
+            status = _status(section)
         out += ["", f"## {section.title}: {status}", ""]
         out += [_bullet(line) for line in lines]
     problems = problem_lines(occurrences, report.env, True)
