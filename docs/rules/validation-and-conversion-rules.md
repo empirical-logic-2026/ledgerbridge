@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.13 |
+| Version | 1.14 |
 | Date | 2026-10-24 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
@@ -335,6 +335,7 @@ Every check compares our figures with Tally's own, **as of a date** (default tod
 ### 16.1 Statements are laid out as Tally's and match them line by line
 
 - **What:** our Trial Balance, Profit & Loss and Balance Sheet have one line per primary group (its current name), plus Tally's own lines: Cost of Sales (Opening Stock, Add: the purchase groups, Less: Closing Stock, then Direct Expenses and any other expense group that affects gross profit, each under its own name), Profit & Loss A/c and Unadjusted Forex Gain/Loss. Direct Incomes is a line of its own, beside the sales. Each is compared with Tally's own report export line by line (by label, without "Add: " / "Less: ") and in total at the as-of date and every year end (LB-VAL-024); `./dev.ps1 statements` does the same at every month end. Trial balance lines compare their debit and credit totals.
+- **Cost of Sales without stock (2026-10-30):** Tally writes a zero amount as an empty tag. Its stock lines and "Add: " / "Less: " lines are always inside Cost of Sales, so with both amounts empty they are read as sub lines worth 0 (`connectors/tally/reports.py`), and ours shows the Cost of Sales block wherever Tally's report does, stock counting as zero (`core/statements.py`). Pilot: four companies whose stock was zero at some dates lost the block and their totals differed by it. Tests: `tests/test_statements.py` (`test_zero_stock_lines_are_read_as_stock_lines`, `test_without_stock_cost_of_sales_follows_the_sources_layout`).
 - **Why:** reports must equal what the client sees in Tally (RPT-012).
 - **Proven:** the test company at four dates (books' beginning, two month ends, the as-of date), with integration on and off: every line and total equal. Then, after the statement layout seed (2026-10-23: a Direct Expenses ledger with a 300 payment, a Direct Incomes ledger with a 120 receipt), Tally's Cost of Sales was 12,980 = 2,010 + 16,250 − 5,580 + 300, with "Direct Expenses" listed after Closing Stock, and Direct Incomes a main line: ours equal at both dates recorded. The pilot's steady two Profit & Loss differences per date (Cost of Sales and the total) were this.
 - **Code:** `core/statements.py`, `connectors/tally/reports.py`, `connector.source_statements`.
@@ -418,6 +419,8 @@ Only where no rule could be found, a line is the source's own figure, labelled "
 - **Tests:** `tests/test_fx_core.py`, `tests/test_fx_rules.py`, `tests/test_retransform.py` (`test_transform_rebuild_command`).
 - **ADR:** ADR-046 (and ADR-043, whose stopgap it is meant to end).
 
+- **Each ledger's own currency (2026-10-30):** `currency_name` is Tally's CURRENCYNAME; `is_foreign_currency` says whether it is another than the base currency (the currency master with the entity's base ISO code, else the currency most ledgers are kept in: Tally's company record doesn't name it); `currency_code` is its ISO code from the master's formal name, ISO code or mailing name (three capital letters), matched by the master's NAME or ORIGINALNAME, NULL without one (LB-VAL-034). A ledger kept in rupees can still hold foreign amounts (its opening's currency is `opening_currency_name`). `./dev.ps1 validate currencies` counts them per company and warns about ledgers the source revalues that aren't marked foreign (LB-VAL-035). Tests: `tests/test_fx_core.py`, `tests/test_currencies.py`.
+
 ## 19. Monthly sales (RPT-013)
 
 - **What counts:** every effective entry (not cancelled, optional or memorandum; voucher not deleted in the source) on the ledgers under the source's own Sales Accounts group and its sub-groups at any depth, by voucher date. The group is the source's predefined one, renamed or not (Tally: RESERVEDNAME "Sales Accounts"), never found by its name.
@@ -432,6 +435,7 @@ Only where no rule could be found, a line is the source's own figure, labelled "
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-30 | 1.14 | 16: Cost of Sales without stock; 18: each ledger's own currency. |
 | 2026-10-29 | 1.13 | 19: monthly sales and their proof. |
 | 2026-10-26 | 1.12 | 18: the fx-rules finder in three parts (per ledger, layout, computed). |
 | 2026-10-24 | 1.11 | 18: foreign currency beside the books, the base check after a rebuild, the fx-rules finder. |

@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.37 (Draft) |
-| Date | 2026-10-29 |
+| Version | 0.38 (Draft) |
+| Date | 2026-10-30 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
 This document describes the database inside each **client deployment**. The control plane has its own small database (users, clients, licences), described in `docs/architecture.md` Section 3.
@@ -244,7 +244,11 @@ Source group hierarchy (Tally groups), kept as-is per entity.
 | mapping_status | ENUM('auto','suggested','confirmed','unmapped') | AI-suggested mappings stay `suggested` until confirmed. |
 | opening_balance | DECIMAL(20,4) | Signed; as at `opening_balance_date`. |
 | opening_balance_date | DATE NULL | |
-| currency_code | CHAR(3) | |
+| currency_code | CHAR(3) NULL | The ledger's own currency's ISO code; the base currency's for ledgers kept in it; NULL when the source's currency master gives none (migration 0022). |
+| currency_name | VARCHAR(64) NULL | The ledger's own currency as the source names it (Tally CURRENCYNAME, e.g. `$`; migrations 0020, 0022). |
+| is_foreign_currency | BOOLEAN | Kept in another currency than the entity's base one (`core/fx.py`: the base currency is the master with the entity's base ISO code, else the currency most ledgers are kept in). |
+| opening_currency_name | VARCHAR(64) NULL | The currency of the opening's foreign part (with `opening_balance_fc`); a ledger kept in the base currency can open in another. |
+| opening_balance_fc | DECIMAL(20,4) NULL | The opening's foreign part. |
 | is_bill_wise | BOOLEAN | |
 | is_cost_centre_applicable | BOOLEAN | |
 | gstin | VARCHAR(32) NULL | |
@@ -820,6 +824,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-30 | 0.38 | Ledgers: their own currency (`currency_name`, `is_foreign_currency`, `currency_code` NULL without an ISO code) and `opening_currency_name` (migration 0022). |
 | 2026-10-29 | 0.37 | `account_groups.predefined_role`; Section 6: the monthly sales views (migration 0021, RPT-013, ADR-047). |
 | 2026-10-24 | 0.36 | Section 4.8: the A5 core built (migration 0020, ADR-046): `currencies.symbol`, `currency_sources` as a [SRC] table, the currency as the source names it on ledgers and voucher lines, `ledgers.opening_balance_fc`, `voucher_lines.exchange_rate`, `exchange_rates` recreated per entity and currency name. |
 | 2026-10-24 | 0.35 | `alerts.resolution` (migration 0019). |
