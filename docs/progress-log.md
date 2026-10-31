@@ -4,6 +4,7 @@ Dated entries of what was done, newest first. The full story so far, PR by PR, i
 
 | Date | Entry |
 | --- | --- |
+| 2026-10-31 | Security review SR-002: the API refuses requests addressed to any host name but localhost or 127.0.0.1 (DNS rebinding). |
 | 2026-10-30 | Dashboard D1 (a): `/api/v1` (GET only, `report_ro`, one access dependency allowing every company not on hold until M5): companies with data health, periods, and the table explorer's datasets (voucher lines, vouchers) with allow-listed dimensions, measures and filters, groups with subtotals, lists and CSV up to 1,00,000 rows; API types generated for the frontend; ADR-048 (the Odoo way of working on our own stack), ADR-049 (dashboard before login, localhost only). |
 | 2026-10-30 | Entities on hold (SYN-007, migration 0023): sync, validate and statements skip them unless named (and don't ask Tally about them), the report lists them outside the overall verdict; `./dev.ps1 on-hold` sets, clears and lists them, audited. |
 | 2026-10-30 | Voucher counts: the source's voucher type names matched to ours by the transform's name rules (pilot: one type per company, named with two spaces in a row, was written with one in Tally's counts, so all six companies failed the count check after statements were fixed); LB-VAL-036 notes it. |

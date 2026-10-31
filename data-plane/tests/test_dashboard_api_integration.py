@@ -70,7 +70,7 @@ def synced() -> Iterator[int]:
 
 @pytest.fixture
 def client(synced: int) -> TestClient:
-    return TestClient(create_app())
+    return TestClient(create_app(), base_url="http://localhost")
 
 
 def _get(client: TestClient, path: str, **params: object) -> dict:

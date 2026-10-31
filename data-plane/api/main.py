@@ -2,7 +2,8 @@
 
 Until login (M5) the API is for this computer only (ADR-049): CORS allows only the
 dashboard's dev server on localhost, GET only, and startup warns when the API is published
-on, or expects a frontend from, any other address. Requests are logged as method, path,
+on, or expects a frontend from, any other address. Requests addressed to any host name but
+localhost or 127.0.0.1 are refused (DNS rebinding, SR-002). Requests are logged as method, path,
 status and time only: never query strings (they can hold filter values) or bodies.
 """
 
@@ -14,6 +15,7 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from api import v1
 from api.health import router as health_router
@@ -23,6 +25,10 @@ from core.config import Settings, get_settings
 # A child of uvicorn's logger, so its handlers (and level) print these lines.
 logger = logging.getLogger("uvicorn.error.ledgerbridge")
 LOOPBACK_NAMES = ("localhost", "127.0.0.1", "::1")
+# The host names a request may be addressed to (its Host header, port aside). Anything else
+# is refused with 400 before any route runs: a web page that points its own domain name at
+# 127.0.0.1 (DNS rebinding) can't read the API through the browser (security review SR-002).
+ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 
 def is_loopback(host: str) -> bool:
@@ -79,6 +85,8 @@ def create_app() -> FastAPI:
         allow_headers=["Content-Type"],
         expose_headers=["X-Row-Limit-Reached", "Content-Disposition"],
     )
+    # Added after CORS, so it runs first (Starlette runs the last-added middleware outermost).
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
     app.middleware("http")(log_request)
     app.include_router(health_router)
     app.include_router(validation_router)
