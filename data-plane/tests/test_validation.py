@@ -273,7 +273,7 @@ def test_failed_deletion_check_has_its_own_alert(
 @pytest.fixture
 def client(db: Session) -> Iterator[TestClient]:
     app.dependency_overrides[get_session] = lambda: db
-    yield TestClient(app)
+    yield TestClient(app, base_url="http://localhost")
     app.dependency_overrides.clear()
 
 

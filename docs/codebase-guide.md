@@ -132,7 +132,7 @@ ledgerbridge/
 
 | File | What it is and what it's for |
 | --- | --- |
-| `main.py` | Creates the API application and plugs in its parts; CORS for the dashboard on localhost only, GET only; the startup warning when the API is published on another address; one log line per request (method, path, status, time; never the query string) (ADR-049). |
+| `main.py` | Creates the API application and plugs in its parts; CORS for the dashboard on localhost only, GET only; requests addressed to any host name but localhost or 127.0.0.1 refused (DNS rebinding, SR-002); the startup warning when the API is published on another address; one log line per request (method, path, status, time; never the query string) (ADR-049). |
 | `health.py` | `/health` and `/health/ready`: is the API up, and can it reach MySQL, Redis and Qdrant? `dev.ps1 up` and `status` use it. |
 | `validation.py` | Endpoints that return validation results and alerts. |
 | `deps.py` | Shared helpers: a database session per request (`app_rw`), and the read-only one for the dashboard (`report_ro`). |

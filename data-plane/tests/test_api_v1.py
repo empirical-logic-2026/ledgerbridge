@@ -40,7 +40,7 @@ def test_every_v1_endpoint_is_a_get_behind_the_access_dependency() -> None:
 
     app.dependency_overrides[current_access] = refused
     app.dependency_overrides[get_report_session] = lambda: None
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     for path in paths:
         assert client.get(path.replace("{name}", "voucher_lines")).status_code == 401, path
 
@@ -58,7 +58,7 @@ def test_cors_allows_only_the_dashboard_on_localhost() -> None:
 
 
 def test_cors_preflight_refuses_other_origins_and_methods() -> None:
-    client = TestClient(create_app())
+    client = TestClient(create_app(), base_url="http://localhost")
     asked = {"Access-Control-Request-Method": "GET"}
     ok = client.options("/api/v1/datasets", headers={"Origin": "http://localhost:5175", **asked})
     assert ok.headers.get("access-control-allow-origin") == "http://localhost:5175"
@@ -163,7 +163,7 @@ def client_without_db() -> Iterator[TestClient]:
     app = create_app()
     app.dependency_overrides[current_access] = lambda: Access(frozenset({3, 4}))
     app.dependency_overrides[get_report_session] = lambda: None
-    yield TestClient(app)
+    yield TestClient(app, base_url="http://localhost")
 
 
 def test_refusals_over_http(client_without_db: TestClient) -> None:
@@ -191,3 +191,21 @@ def test_request_logs_have_no_query_strings(
     lines = [r.getMessage() for r in caplog.records if r.name == "uvicorn.error.ledgerbridge"]
     assert lines and lines[-1].startswith("GET /api/v1/datasets/voucher_lines 422 ")
     assert all("123456" not in line and "amount_min" not in line for line in lines)
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["evil.example", "attacker.test:8001", "localhost.evil.example", "192.168.1.20:8001", ""],
+)
+def test_requests_for_other_host_names_are_refused(host: str) -> None:
+    """SR-002 (DNS rebinding): a web page that points its own name at 127.0.0.1 sends that
+    name as the Host header; such requests are refused before any route runs."""
+    app = create_app()
+    app.dependency_overrides[current_access] = lambda: Access(frozenset({3}))
+    app.dependency_overrides[get_report_session] = lambda: None
+    client = TestClient(app, base_url="http://localhost")
+    for path in ("/health", "/api/v1/datasets", "/api/validation/status"):
+        response = client.get(path, headers={"Host": host})
+        assert response.status_code == 400, (host, path)
+    assert client.get("/health", headers={"Host": "127.0.0.1:8001"}).status_code == 200
+    assert client.get("/health", headers={"Host": "localhost:8001"}).status_code == 200
