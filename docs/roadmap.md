@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.11 |
+| Version | 0.12 |
 | Date | 2026-10-19 |
 | Current milestone | **M4** |
 
@@ -87,6 +87,8 @@ Starts when validation of every pilot company passes with zero failures. It cons
 > Plan milestone M6: implement the ledgerbridge_reporting database objects from docs/schema.md Section 6, incremental refresh of aggregate tables after each sync, the semantic_catalog with descriptions of every view and column, and API endpoints for requirements RPT-001 to RPT-004 and RPT-006 to RPT-008, all respecting the user's entity access. Also provide the data for the dashboard home page in docs/design/dashboard.md Section 4: propose a business health score formula (components, weights, label bands) and a cash-cover definition for my approval and document them in docs/schema.md; rule-based alerts with severity, message and suggested action; a recent-events feed written after each sync for the LIVE ticker; and the last-sync status per connection. Every report calculates **as of a date** (default today): vouchers dated after it, including post-dated ones, are excluded, the same rule as validation in M4. Update docs/schema.md for any new tables or views in the same change. Show me the plan first.
 
 ## M7 — Dashboard
+
+Built in steps, each reviewed before the next (2026-10-30): **D1** the API (`/api/v1`, read-only, one access dependency, allow-listed datasets), the app shell, Overview, Statements with drill-down and the table explorer, before login and on localhost only (ADR-048, ADR-049), on the existing statement views ahead of the rest of M6; **D2** Sales and purchases registers, monthly sales, Day Book, Ledger statement, Cash and bank, Receivables and payables with ageing, Data health. Login (M5) comes before any network exposure.
 
 **Done when:** the React app supports login, entity and consolidated selection, period filters, MIS overview with health indicators, all statements from M6, ageing, drill-down to voucher detail, a data-quality page, and the Forex page per docs/design/dashboard.md Section 8 (FX-008 to FX-012); and the home page matches the approved design in docs/design/dashboard.md and dashboard-mockup.png in layout, wording and visual style (top bar with company and period switchers and sync status, LIVE ticker, plain-language sidebar, greeting, five KPI cards, sales vs expenses chart, "Needs your attention" panel, "Ask a question" panel), with real data from the M6 API in place of the sample figures.
 
@@ -188,3 +190,4 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | 2026-10-16 | 0.9 | New step M4b "Consolidation" after pilot validation reaches zero, starting with the foreign-currency data layer (FX-001 to FX-007, ADR-037). M5 seeds `forex.view`; M6 adds the foreign-currency reports (FX-008 to FX-011); M7 the Forex page (dashboard.md Section 8); M8 currency questions (FX-013). |
 | 2026-10-19 | 0.11 | M4b: country codes for parties outside India (simplicity review finding). |
 | 2026-10-19 | 0.10 | M9: production hardening, including third-party images without high-severity findings, pinned by digest. |
+| 2026-10-30 | 0.12 | M7 built in steps D1 and D2; D1 before login, on localhost only (ADR-048, ADR-049). |
