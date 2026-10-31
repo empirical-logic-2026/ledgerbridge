@@ -93,7 +93,7 @@ ledgerbridge/
 │   ├── sql/                    ready-to-run SQL for accountants (monthly-sales.sql)
 │   ├── database/               the schema reference (generated)
 │   ├── export/                 Word and PDF copies of those (./dev.ps1 docs-export)
-│   ├── design/                 dashboard design and mockup
+│   ├── design/                 dashboard design, approved mockups, screenshots per step
 │   ├── security/               threat model and security guide
 │   ├── diagrams/               ER, database and data flow diagrams (source and images)
 │   └── learning/               the Docker guide
@@ -275,7 +275,8 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | [progress-log.md](progress-log.md) | Dated progress entries. |
 | `export/` | Word and PDF copies of the rulebook, schema reference and history (`./dev.ps1 docs-export`). |
 | [pilot-runbook.md](pilot-runbook.md) | Step by step for running the pilot on client data (the developer runs it, never Claude Code), and how to read the output. |
-| [design/dashboard.md](design/dashboard.md), `design/dashboard-mockup.png` | The dashboard design: the approved home page and the proposed Budget page. |
+| [design/dashboard.md](design/dashboard.md), `design/dashboard-mockup.png`, `design/mockup-1..6-*.png` | The dashboard design: the approved screens (Section 0.1) and the proposed Budget and Forex pages. |
+| `design/screenshots/<step>/` | Screenshots of each dashboard step on the test company, for review (e.g. `d1b`: apps home, Dashboard light, dark and narrow). |
 | [learning/docker.md](learning/docker.md) | Docker explained for this project, file by file. |
 | [security/threat-model.md](security/threat-model.md), [security/security-guide.md](security/security-guide.md) | What we protect, from whom and what protects it today, with the security roadmap by milestone; and how to work securely, including what the automated checks catch. |
 | [diagrams/README.md](diagrams/README.md), `diagrams/*.mmd`, `*.svg`, `*.png` | The diagrams: ER diagrams (generated from the models), the databases and users, the data flow, the planned budget tables; each as Mermaid source and as images. |

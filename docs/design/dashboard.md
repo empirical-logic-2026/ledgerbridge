@@ -47,7 +47,7 @@ Six screens, approved by the developer on 2026-10-31. Build to them: their **lay
 
 Cards, each following the selection:
 - **Profit & Loss:** net sales, cost of sales, gross profit, net profit, each with the change against last year. From the stored statements (`v_profit_loss`, validated against Tally's): a period's figure is the statement at its end less the one before its start. Whole months use the stored month ends; where the source's statements exist only for some days of the month (Tally's Educational mode: the 1st, 2nd and 31st), a 30-day month runs to the 2nd of the next month and the card says so. Other from/to ranges show "—" with the reason. "Open" leads to the Profit & Loss report (D1 c1).
-- **Balance Sheet:** total assets, current assets, current liabilities, capital and reserves (the capital account and the Profit & Loss A/c), at the period's end, from the stored statement for that date.
+- **Balance Sheet:** total assets, current assets, current liabilities, "capital and reserves (incl. profit to date)": the capital account and the Profit & Loss A/c, at the period's end, from the stored statement for that date.
 - **Cash & bank, Receivables, Payables:** balances at the period's end (ledgers under Cash-in-Hand and Bank Accounts, Sundry Debtors, Sundry Creditors, by the source's predefined groups).
 - **Stock value:** the source's closing stock at that date ("from Tally"), stored with the statements.
 

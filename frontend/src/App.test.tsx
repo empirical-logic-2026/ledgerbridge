@@ -129,7 +129,7 @@ describe('the dashboard', () => {
     expect(within(pl).getByText('₹48.20 Cr')).toBeInTheDocument()
     expect(within(pl).getByText('▲ 12%')).toHaveClass('good')
     expect(within(pl).getByText('▲ 9%')).toHaveClass('watch') // costs up: watch
-    expect(within(pl).getByText(/Runs to 02-Oct-2026/)).toBeInTheDocument()
+    expect(within(pl).getByText(/Months ending on the 30th .* run to the 2nd of the next month/)).toBeInTheDocument()
     const bs = screen.getByRole('region', { name: 'Balance Sheet' })
     expect(within(bs).getByText('₹62.80 Cr')).toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: 'Stock value' })).getByText('—')).toBeInTheDocument()
