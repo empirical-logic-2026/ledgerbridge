@@ -52,10 +52,16 @@ function Change({ figure, higherIsBetter }: { figure: Figure; higherIsBetter: bo
   )
 }
 
-function Row({ label, value, missing, change }: { label: string; value: string | null | undefined; missing?: string | null; change?: React.ReactNode }) {
+function Row({ label, value, missing, change, to }: { label: string; value: string | null | undefined; missing?: string | null; change?: React.ReactNode; to?: string }) {
   return (
     <div className="card-row">
-      <span>{label}</span>
+      {to ? (
+        <a href={to} className="card-row-link">
+          {label}
+        </a>
+      ) : (
+        <span>{label}</span>
+      )}
       <span className="card-row-value">
         <Amount value={value} missing={missing} />
         {change}
@@ -76,12 +82,13 @@ function ProfitLossCard({ home, query }: { home: Home; query: Query }) {
     <section className="card card-wide" aria-label="Profit & Loss">
       <div className="card-head">
         <h2 className="card-title">Profit &amp; Loss</h2>
-        <a href={href(['reports', 'profit-loss'], query)} className="card-open">
+        <a href={href(['statements', 'profit-loss'], query)} className="card-open">
           Open →
         </a>
       </div>
       {lines.map(([label, figure, higher]) => (
-        <Row key={label} label={label} value={figure.value} missing={pl.reason} change={<Change figure={figure} higherIsBetter={higher} />} />
+        <Row key={label} label={label} value={figure.value} missing={pl.reason} change={<Change figure={figure} higherIsBetter={higher} />}
+          to={href(['statements', 'profit-loss'], query)} />
       ))}
       {pl.reason && <p className="card-note">Profit isn't available: {pl.reason}.</p>}
       {pl.shifted && (

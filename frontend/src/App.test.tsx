@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { App as AntApp } from 'antd'
 import App from './App.tsx'
 import type { Company, Home, Periods } from './api/types.ts'
 
@@ -100,7 +101,9 @@ function renderApp(hash: string, onMode = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <App mode="light" onMode={onMode} today="2026-10-30" now={new Date('2026-10-30T09:00:00')} />
+      <AntApp>
+        <App mode="light" onMode={onMode} today="2026-10-30" />
+      </AntApp>
     </QueryClientProvider>,
   )
   return onMode
@@ -114,17 +117,45 @@ describe('the dashboard', () => {
   )
   afterEach(() => vi.unstubAllGlobals())
 
-  it('opens on the apps home: greeting, sync status and a tile per app', async () => {
+  it('opens on the Dashboard, with the side bar of built pages and its status', async () => {
     renderApp('#/')
-    expect(await screen.findByRole('heading', { name: 'Good morning' })).toBeInTheDocument()
-    expect(await screen.findByText('Choose an app. Everything updates automatically from Tally.')).toBeInTheDocument()
-    expect(screen.getByText(/Tally: 1 loaded · synced .* · all checks passed/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Reports/ })).toHaveAttribute('href', '#/reports')
-    expect(screen.getByText('This computer only')).toBeInTheDocument()
+    await screen.findByRole('region', { name: 'Profit & Loss' })
+    const side = screen.getByRole('navigation', { name: 'Pages' })
+    expect(within(side).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
+    expect(within(side).getByRole('link', { name: 'Profit & Loss' })).toHaveAttribute('href', '#/statements/profit-loss')
+    expect(within(side).queryByText('Balance Sheet')).toBeNull() // not built yet: not offered
+    expect(within(side).queryByText('Sales')).toBeNull() // a group shows once it has a page
+    expect(within(side).getByText(/Tally: 1 of 2 loaded · synced .* · all checks passed/)).toBeInTheDocument()
+    expect(within(side).getByText('This computer only')).toBeInTheDocument()
+    expect(document.querySelector('.top-crumbs')).toHaveTextContent('Overview/Dashboard')
+  })
+
+  it('collapses the side bar', async () => {
+    renderApp('#/overview/dashboard')
+    const side = await screen.findByRole('navigation', { name: 'Pages' })
+    fireEvent.click(within(side).getByRole('button', { name: 'Close the side bar' }))
+    expect(within(side).queryByRole('link', { name: 'Profit & Loss' })).toBeNull()
+    fireEvent.click(within(side).getByRole('button', { name: 'Open the side bar' }))
+    expect(within(side).getByRole('link', { name: 'Profit & Loss' })).toBeInTheDocument()
+  })
+
+  it('shows the facets the page can apply, and says why the others are off', async () => {
+    renderApp('#/overview/dashboard')
+    const customer = await screen.findByRole('button', { name: 'Customer (not used on this page)' })
+    expect(customer).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Voucher type (not used on this page)' })).toBeDisabled()
+  })
+
+  it('copies the page\'s link, which holds the whole selection', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderApp('#/overview/dashboard?company=4&month=2026-05')
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy link' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('#/overview/dashboard?company=4&month=2026-05')))
   })
 
   it('shows the Profit & Loss and Balance Sheet cards, combined, in lakhs and crores', async () => {
-    renderApp('#/reports')
+    renderApp('#/overview/dashboard')
     const pl = await screen.findByRole('region', { name: 'Profit & Loss' })
     expect(within(pl).getByText('₹48.20 Cr')).toBeInTheDocument()
     expect(within(pl).getByText('▲ 12%')).toHaveClass('good')
@@ -139,7 +170,8 @@ describe('the dashboard', () => {
   })
 
   it('marks each company loaded or not loaded, as the last check found it', async () => {
-    renderApp('#/reports')
+    renderApp('#/overview/dashboard')
+    fireEvent.click(await screen.findByRole('button', { name: 'Company: All combined ▾' }))
     const alpha = await screen.findByRole('button', { name: /Alpha/ })
     expect(within(alpha).getByText('loaded')).toBeInTheDocument()
     expect(within(screen.getByRole('button', { name: /Beta/ })).getByText('not loaded')).toBeInTheDocument()
@@ -147,22 +179,24 @@ describe('the dashboard', () => {
   })
 
   it('asks for the months up to now by default, and any company combination chosen', async () => {
-    renderApp('#/reports')
+    renderApp('#/overview/dashboard')
     await screen.findByRole('region', { name: 'Profit & Loss' })
     const asked = lastHomeRequest()
     expect(asked).toContain('company=3&company=4')
     expect(asked).toContain('month=2026-04')
     expect(asked).toContain('month=2026-10')
     expect(asked).not.toContain('month=2026-11')
-    fireEvent.click(screen.getByRole('button', { name: /Beta/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Company: All combined ▾' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Beta/ }))
     expect(window.location.hash).toContain('company=4')
   })
 
   it('takes chosen months, or a date range typed as DD-MMM-YYYY', async () => {
-    renderApp('#/reports?month=2026-04&month=2026-06')
+    renderApp('#/overview/dashboard?month=2026-04&month=2026-06')
     await screen.findByRole('region', { name: 'Profit & Loss' })
     expect(lastHomeRequest()).toMatch(/month=2026-04&month=2026-06.*compare=true/)
-    const from = screen.getByLabelText('From')
+    fireEvent.click(screen.getByRole('button', { name: /FY 2026-27 · Apr–Jun \(some months\) · vs last year/ }))
+    const from = await screen.findByLabelText('From')
     fireEvent.change(from, { target: { value: '15-Apr-2026' } })
     fireEvent.blur(from)
     expect(window.location.hash).toContain('from=2026-04-15')
@@ -187,7 +221,7 @@ describe('the dashboard', () => {
         },
       },
     })
-    renderApp('#/reports?from=2026-04-01&to=2026-09-15')
+    renderApp('#/overview/dashboard?from=2026-04-01&to=2026-09-15')
     expect(
       await screen.findByText(/Profit isn't available: no statement is stored for 15-Sep-2026/),
     ).toBeInTheDocument()
@@ -195,26 +229,26 @@ describe('the dashboard', () => {
   })
 
   it('switches between light and dark', async () => {
-    const onMode = renderApp('#/reports')
+    const onMode = renderApp('#/overview/dashboard')
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to dark mode' }))
     expect(onMode).toHaveBeenCalledWith('dark')
   })
 
   it('says so when no company is visible', async () => {
     stubApi({ '/api/v1/companies': [] })
-    renderApp('#/reports')
+    renderApp('#/overview/dashboard')
     expect(await screen.findByText('No companies to show yet.')).toBeInTheDocument()
   })
 
   it('shows the API being unreachable plainly', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
-    renderApp('#/reports')
+    renderApp('#/overview/dashboard')
     expect(await screen.findByText("The dashboard can't reach the data plane.")).toBeInTheDocument()
   })
 
   it('has a page for unknown addresses', async () => {
     renderApp('#/nowhere')
-    expect(await screen.findByText('There is no such page')).toBeInTheDocument()
+    expect(await screen.findByText('Choose a page in the side bar.')).toBeInTheDocument()
   })
 })
 
@@ -260,7 +294,7 @@ describe('the Profit & Loss page', () => {
   const lastRequest = () => requests.filter((r) => r.includes('/reports/profit-loss')).pop() ?? ''
 
   it('shows the statement company by company with the total, last year and change', async () => {
-    renderApp('#/reports/profit-loss')
+    renderApp('#/statements/profit-loss')
     expect(await screen.findByRole('heading', { name: 'Profit & Loss · Alpha + Beta' })).toBeInTheDocument()
     expect(screen.getByText(/without inter-company eliminations/)).toBeInTheDocument()
     const table = await screen.findByRole('table')
@@ -270,19 +304,19 @@ describe('the Profit & Loss page', () => {
     expect(within(table).getByText('3,822.9')).toBeInTheDocument() // ₹ lakh
     expect(within(table).getByText('-40.9').closest('td')).toHaveClass('negative') // a loss in crimson
     expect(within(table).getByText('▲ 22.5%')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Profit & Loss' })).toHaveAttribute('aria-current', 'page')
+    expect(within(screen.getByRole('navigation', { name: 'Pages' })).getByRole('link', { name: 'Profit & Loss' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('says it matches Tally, explains itself, and links to related pages', async () => {
-    renderApp('#/reports/profit-loss')
+    renderApp('#/statements/profit-loss')
     const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
     expect(await within(panel).findByRole('status')).toHaveTextContent(/✓ Matches Tally for both companies \(checked at 2 statement dates up to 02-Oct-2026\)/)
     expect(within(panel).getByRole('region', { name: 'What is this?' })).toHaveTextContent(/To compare with Tally/)
-    expect(within(panel).getByRole('link', { name: 'Dashboard →' })).toHaveAttribute('href', '#/reports/dashboard')
+    expect(within(panel).getByRole('link', { name: 'Dashboard →' })).toHaveAttribute('href', '#/overview/dashboard')
   })
 
   it('changes the view and columns through the URL, keeping the selection', async () => {
-    renderApp('#/reports/profit-loss?company=3&company=4')
+    renderApp('#/statements/profit-loss?company=3&company=4')
     const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
     fireEvent.click(within(panel).getByLabelText('Month by month'))
     expect(window.location.hash).toContain('view=month')
@@ -293,11 +327,11 @@ describe('the Profit & Loss page', () => {
   })
 
   it('saves a view in this browser and opens it again', async () => {
-    renderApp('#/reports/profit-loss?view=quarter')
+    renderApp('#/statements/profit-loss?view=quarter')
     const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
     fireEvent.change(within(panel).getByLabelText('Name of the view'), { target: { value: 'By quarter' } })
     fireEvent.click(within(panel).getByRole('button', { name: '+ Save current view' }))
-    window.location.hash = '#/reports/profit-loss'
+    window.location.hash = '#/statements/profit-loss'
     fireEvent.click(await within(panel).findByRole('button', { name: 'By quarter' }))
     expect(window.location.hash).toContain('view=quarter')
   })
@@ -305,7 +339,7 @@ describe('the Profit & Loss page', () => {
   it('exports exactly the table as CSV', async () => {
     const created: Blob[] = []
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: (b: Blob) => (created.push(b), 'blob:x'), revokeObjectURL: () => {} }))
-    renderApp('#/reports/profit-loss')
+    renderApp('#/statements/profit-loss')
     await screen.findByRole('table')
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
     const text = await created[0].text()
@@ -314,7 +348,7 @@ describe('the Profit & Loss page', () => {
   })
 
   it('closes and reopens the options panel', async () => {
-    renderApp('#/reports/profit-loss')
+    renderApp('#/statements/profit-loss')
     const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
     fireEvent.click(within(panel).getByRole('button', { name: 'Close the options' }))
     expect(window.location.hash).toContain('panel=0')
@@ -324,8 +358,8 @@ describe('the Profit & Loss page', () => {
 
   it('opens from the Dashboard card', async () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/home': home })
-    renderApp('#/reports?company=3')
+    renderApp('#/overview/dashboard?company=3')
     const pl = await screen.findByRole('region', { name: 'Profit & Loss' })
-    expect(within(pl).getByRole('link', { name: 'Open →' })).toHaveAttribute('href', '#/reports/profit-loss?company=3')
+    expect(within(pl).getByRole('link', { name: 'Open →' })).toHaveAttribute('href', '#/statements/profit-loss?company=3')
   })
 })

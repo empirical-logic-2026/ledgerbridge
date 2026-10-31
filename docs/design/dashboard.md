@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.6 |
+| Version | 0.7 |
 | Date | 2026-10-31 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1) |
@@ -38,6 +38,8 @@ Six screens, approved by the developer on 2026-10-31. Build to them: their **lay
 | [3 · Accounting: Ledgers](mockup-3-accounting-ledgers.png) | A list with the search bar (group-by and filter facets, Filters, Group By, Favourites), view switcher (list, kanban, pivot, graph), groups with counts and subtotals, "Matches Tally" per row, paging. | D2 |
 | [4 · Voucher](mockup-4-voucher.png) | One voucher: header fields, accounting, stock, GST and bill lines, debit and credit totals, "Synced → Converted → Validated", activity. | D2 |
 | [5 · Dashboard home](mockup-5-dashboard-home.png) | The Reports app's **Dashboard** (below). | D1 (b) |
+| [7 · Sales dashboard](mockup-7-sales-dashboard.png) | The side bar and the top filter bar (Section 0.2); the Sales dashboard: KPI cards (net sales, invoices, average invoice, sales returns, each against the previous period), monthly net sales as a line chart (a month opens its sales register), top customers and the largest invoices, every name and number a link. | D2 (c) |
+| [8 · Customer](mockup-8-customer.png) | The detail-page pattern (Section 0.3) for a customer: header with key facts and actions, KPI cards (balance due, overdue, net sales this year, average days to pay), tabs (invoices and credit notes, receipts, ledger statement, outstanding bills, monthly trend), each voucher a link. | D2 (c) |
 | [6 · Profit & Loss](mockup-6-profit-and-loss.png) | A report page with the options side panel (below). Built in D1 (c1): the panel is charcoal (Section 5); "Matches Tally" holds only when every company and statement date used was compared with the source's own and nothing differs. | D1 (c1) |
 
 **Dashboard home (screen 5).** Top menu of the Reports app: Dashboard, Profit & Loss, Balance Sheet, Trial Balance, Sales, Purchases, Books, Parties (each shown once it is built). Under it a filter bar:
@@ -58,6 +60,47 @@ Charts: **sales and purchases by month** (₹ lakh, ECharts), **sales by channel
 - **View as:** Tally layout, company by company, month by month, quarter by quarter, % of sales;
 - **Columns:** each company, total, last year, change %, % of sales (budget later);
 - **Open related** reports, **Saved views** (per browser until login), **Export:** CSV now (Excel and PDF later).
+
+## 0.1a Build order (2026-10-31), one PR each, reviewed with screenshots
+
+1. Navigation (Section 0.2) and the pattern (Section 0.3).
+2. B (c2): Balance Sheet and Trial Balance; the ledger group and ledger detail pages; drill-down from a line to its ledgers and from a ledger to its vouchers.
+3. D2 (a): Day Book, the vouchers list, the voucher detail page (screen 4: items with quantities and rates, ledger, GST and bill lines, totals, narration, its history: synced, converted, validated).
+4. D2 (b): Ledgers list and the ledger statement with a running balance.
+5. D2 (c): the Sales dashboard (screen 7), Sales and Purchase registers (Day Book style, with narration), Customers and Vendors (screen 8), Channels, monthly sales.
+6. D2 (d): Cash & Bank, Receivables and Payables with ageing.
+7. D2 (e): Data health and Companies.
+
+Every page gets the side panel, the table explorer, "matches Tally" where it applies and a short "What is this?" help: what the figures mean, where they come from, how to compare them with Tally.
+
+## 0.2 Navigation (screens 7 and 8, decision 2026-10-31)
+
+A **collapsible side bar** on charcoal replaces the top menu and the apps home (screen 1 and ADR-048's apps home are superseded; the logo and `#/` open the Dashboard). Its groups and items, in this order; an item appears once its page is built, a group once it has an item:
+
+| Group | Items |
+| --- | --- |
+| Overview | Dashboard |
+| Sales | Sales dashboard, Sales register, Customers, Channels |
+| Purchases | Purchase register, Vendors |
+| Statements | Profit & Loss, Balance Sheet, Trial Balance |
+| Books | Day Book, Vouchers, Ledgers, Cash & Bank |
+| Parties | Receivables, Payables |
+| Data | Data health, Companies |
+
+At its foot: "This computer only · synced HH:MM" and light/dark mode. On narrow screens it starts collapsed.
+
+A **top filter bar** on every page: the breadcrumbs (group / page / deeper levels, each a link back), then the **period** (financial year, months, from/to dates, compare with last year), the **company** (all combined or any combination, each marked loaded or not loaded in Tally), the **facets** customer, channel, ledger group and voucher type, and **Copy link** (the page's address, which holds the whole selection). A page applies the facets its figures can be filtered by; the others are shown but disabled, saying why (a whole statement can't be filtered by customer).
+
+## 0.3 Everything clickable, and one detail page per entity
+
+**Everything clickable, all the way down.** Every figure, row, name and chart point opens a deeper page, with breadcrumbs back: for example Dashboard → Profit & Loss → a group → a ledger → its vouchers → a voucher → its lines. A chart point opens the same figure's register (screen 7: a month opens that month's sales register).
+
+**One detail-page pattern for every entity** (company, ledger group, ledger, customer, vendor, channel, voucher type, voucher), as screen 8 shows for a customer:
+- **Header:** where it sits (e.g. "Customer · Sundry Debtors › Online customers"), its name, key facts (companies, channel, credit period), actions (ledger statement, outstanding bills, Export CSV).
+- **KPI cards** with the change against the previous period (crimson only when bad for the business).
+- **A trend chart** (monthly), each point clickable.
+- **Tabs** with the related lists (e.g. invoices and credit notes, receipts, ledger statement, outstanding bills), each using the table explorer (columns, group by, filters, CSV of exactly the list).
+- **"Matches Tally"** where it applies (statements, ledger balances, voucher counts), with the side panel's "What is this?" help.
 
 ## 1. Principles
 
@@ -326,6 +369,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-31 | 0.7 | Screens 7 and 8; Section 0.2: the side bar and the top filter bar replace the top menu and the apps home; Section 0.3: everything clickable, one detail-page pattern; the build order with the Sales dashboard and the Customer and Vendor pages. |
 | 2026-10-31 | 0.6 | Section 5: charcoal black, forest green and crimson as the theme's tokens, light and dark, WCAG AA; no amber, red used sparingly. |
 | 2026-10-31 | 0.5 | Section 0.1: the six approved screens (apps home, Overview, Accounting ledgers, voucher, dashboard home, Profit & Loss with its options panel); the dashboard home's filter bar (company chips with "loaded in Tally", months, dates, compare), cards and charts; what is left for later. |
 | 2026-10-30 | 0.4 | Section 0: the Odoo way of working on our own identity (ADR-048): apps home, app menus, breadcrumbs, search with facets and favourites replace the sidebar; combined companies; companies on hold hidden; D1 scope. |

@@ -30,8 +30,8 @@ const companies: Company[] = [3, 4, 5].map((id) => ({
 describe('the selection', () => {
   it('round-trips through the URL and ignores what it cannot read', () => {
     const read = readSelection(new URLSearchParams('company=3&company=x&fy=2026&month=2026-04&month=bad'))
-    expect(read).toEqual({ companies: [3], fy: 2026, months: ['2026-04'], from: undefined, to: undefined, compare: true })
-    expect(selectionQuery(read)).toEqual({ company: ['3'], fy: '2026', month: ['2026-04'], from: undefined, to: undefined, compare: undefined })
+    expect(read).toEqual({ companies: [3], fy: 2026, months: ['2026-04'], from: undefined, to: undefined, compare: true, facets: { customer: [], channel: [], ledger_group: [], voucher_type: [] } })
+    expect(selectionQuery(read)).toEqual({ company: ['3'], fy: '2026', month: ['2026-04'], from: undefined, to: undefined, compare: undefined, customer: [], channel: [], group: [], vtype: [] })
     // Compared with last year unless turned off.
     const off = readSelection(new URLSearchParams('compare=0'))
     expect(off.compare).toBe(false)

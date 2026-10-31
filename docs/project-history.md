@@ -72,7 +72,8 @@ Design work alongside: AI data protection (#3), the dashboard home page design (
 | #61, #62 | 2026-10-30 | Dashboard API `/api/v1`: access dependency, read-only sessions, companies and periods, explorer datasets with allow-lists and CSV; generated API types (ADR-048, ADR-049) | M7 in steps; D1 reviewed in three parts. |
 | #63 | 2026-10-31 | The API answers only requests addressed to localhost or 127.0.0.1 | Security review SR-002 (DNS rebinding). |
 | #64 | 2026-10-31 | Dashboard shell and home to the approved screens; `/api/v1/home`; company chips loaded in Tally (migration 0025); `./dev.ps1 dashboard` (ADR-048, ADR-049) | D1 part b, reworked to the mockups of 2026-10-31. |
-| feat/dashboard-profit-loss (c1) | 2026-10-31 | Colour theme (charcoal, forest green, crimson); the Profit & Loss page with the options side panel; `/api/v1/reports/profit-loss` | D1 part c1. |
+| #65 | 2026-10-31 | Colour theme (charcoal, forest green, crimson); the Profit & Loss page with the options side panel; `/api/v1/reports/profit-loss` | D1 part c1. |
+| feat/dashboard-navigation | 2026-10-31 | Side bar and top filter bar (period, companies, facets, Copy link); `/api/v1/facets`; the detail-page pattern and build order (`dashboard.md` 0.7) | Screens 7 and 8. |
 | #56 | 2026-10-26 | The fx-rules finder in three parts; a validation older than the data needs action (LB-VAL-027, LB-VAL-028) | ADR-043's time-boxed last round; the pilot's report hid a validation that couldn't run. |
 | #55 | 2026-10-24 | Foreign currency beside the books (currency, rate, foreign openings, currency masters, rates), the base check after a rebuild, the fx-rules finder (ADR-046) | A5 before M5; find the rule behind ADR-043's stopgap from the pilot's own data. |
 | #54 | 2026-10-24 | Images stamped with their commit; the pilot refuses other code (ADR-045) | Pilot ran an old image after an update. |

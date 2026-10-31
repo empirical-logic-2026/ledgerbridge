@@ -15,7 +15,6 @@ function localToday(): string {
 export function Root() {
   const [mode, setMode] = useState<Mode>(initialMode)
   const [today] = useState(localToday)
-  const [now] = useState(() => new Date())
   useEffect(() => {
     const root = document.documentElement
     root.dataset.mode = mode
@@ -28,7 +27,7 @@ export function Root() {
   return (
     <ConfigProvider theme={themeConfig(mode)}>
       <AntApp>
-        <App mode={mode} onMode={changeMode} today={today} now={now} />
+        <App mode={mode} onMode={changeMode} today={today} />
       </AntApp>
     </ConfigProvider>
   )
