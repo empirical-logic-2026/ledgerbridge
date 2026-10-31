@@ -1,7 +1,9 @@
 """Companies and periods for the dashboard's switchers (D1; RPT-006, RPT-008).
 
 - `GET /api/v1/companies`: the companies the caller may see (not on hold), with their data
-  health: last successful sync and latest validation (`v_data_health`).
+  health: last successful sync and latest validation (`v_data_health`), their source's name,
+  and whether the source had them loaded when a sync or `entity-check` last asked
+  (`entity_sources.source_loaded`; the dashboard never asks the source itself).
 - `GET /api/v1/periods`: the financial years the selected companies' books cover, and the
   "as at" dates their statements are stored for (for several companies, the dates all of
   them have).
@@ -27,6 +29,10 @@ class DataHealth(BaseModel):
     validation_status: str | None  # passed, failed, running; None: never validated
     validated_as_of: date | None
     validated_at: datetime | None
+    source_name: str | None  # "Tally"
+    source_loaded: bool | None  # None: never asked
+    source_checked_at: datetime | None
+    source_checked_by: str | None  # sync, entity_check
 
 
 class Company(BaseModel):
@@ -57,6 +63,11 @@ def companies(session: ReportSession, access: CurrentAccess) -> list[Company]:
         row.entity_id: row
         for row in session.execute(select(DATA_HEALTH).where(DATA_HEALTH.c.entity_id.in_(ids)))
     }
+    checked = {}
+    for link in session.scalars(
+        select(A.EntitySource).where(A.EntitySource.entity_id.in_(ids)).order_by(A.EntitySource.id)
+    ):
+        checked.setdefault(link.entity_id, link)  # the first source of each company
     entities = session.scalars(select(A.Entity).where(A.Entity.id.in_(ids)).order_by(A.Entity.id))
     return [
         Company(
@@ -70,6 +81,10 @@ def companies(session: ReportSession, access: CurrentAccess) -> list[Company]:
                 validation_status=getattr(health.get(e.id), "validation_status", None),
                 validated_as_of=getattr(health.get(e.id), "validated_as_of", None),
                 validated_at=getattr(health.get(e.id), "validated_at", None),
+                source_name=_short_name(getattr(health.get(e.id), "source_name", None)),
+                source_loaded=getattr(checked.get(e.id), "source_loaded", None),
+                source_checked_at=getattr(checked.get(e.id), "source_checked_at", None),
+                source_checked_by=getattr(checked.get(e.id), "source_checked_by", None),
             ),
         )
         for e in entities
@@ -105,6 +120,11 @@ def periods(
     ).all()
     held_by_all = sorted((on for on, n in dated if n == len(ids)), reverse=True)
     return Periods(financial_years=years, as_at_dates=held_by_all)
+
+
+def _short_name(name: str | None) -> str | None:
+    """A source's name as people say it: "Tally (XML over HTTP)" -> "Tally"."""
+    return name.split(" (", 1)[0] if name else None
 
 
 def financial_years(first: date, last: date, start_month: int) -> list[FinancialYear]:

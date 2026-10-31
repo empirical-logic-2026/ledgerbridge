@@ -64,6 +64,8 @@ from core.models.reporting import StatementLine as LineRow
 ZERO = Decimal(0)
 PURCHASES = "5110"  # the standard account of purchase groups: inside Cost of Sales
 COST_OF_SALES = "Cost of Sales"  # the source's own block line
+# Our own lines (detail, never compared); the dashboard reads them (core/overview.py).
+GROSS_PROFIT, NET_PROFIT = "Gross Profit", "Net Profit"
 NATURE_ORDER = {"equity": 0, "liability": 1, "asset": 2, "income": 3, "expense": 4}
 PROFIT_LOSS_ACCOUNT = "Profit & Loss A/c"
 UNADJUSTED_FOREX = "Unadjusted Forex Gain/Loss"
@@ -468,12 +470,12 @@ def _profit_loss(f: Figures) -> list[tuple[str | None, StatementLine]]:
         for group in expenses:
             main("gross", group.name, totals[group.id])
     gross_profit = sum((line.amount for _, line in lines if line.level == "main"), ZERO)
-    lines.append(("gross", StatementLine("profit_loss", "Gross Profit", "detail", gross_profit)))
+    lines.append(("gross", StatementLine("profit_loss", GROSS_PROFIT, "detail", gross_profit)))
     for group in groups:
         if not group.affects_gross_profit:
             main("net", group.name, totals[group.id])
     net = sum((line.amount for _, line in lines if line.level == "main"), ZERO)
-    lines.append(("net", StatementLine("profit_loss", "Net Profit", "detail", net)))
+    lines.append(("net", StatementLine("profit_loss", NET_PROFIT, "detail", net)))
     return lines
 
 

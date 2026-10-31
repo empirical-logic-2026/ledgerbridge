@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-56 tables, 631 columns.
+56 tables, 634 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -153,6 +153,9 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `precedence` | SMALLINT | no |  | Higher wins on overlap (IMP-005). |
 | `active_from` | DATE | yes |  | Active from. |
 | `active_to` | DATE | yes |  | Active to. |
+| `source_checked_at` | DATETIME(6) | yes |  | When the source was last asked which companies it has loaded (migration 0025). NULL: never asked. |
+| `source_loaded` | BOOL | yes |  | Whether it had this company loaded then. The dashboard's company chips show it; the dashboard never contacts the source. |
+| `source_checked_by` | ENUM('sync','entity_check') | yes |  | What asked: a sync (at its start and end) or `entity-check`. |
 | `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
 | `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
 

@@ -21,7 +21,7 @@ LedgerBridge reads a company's accounting data from its accounting software (Tal
   - the **core**, with the database tables, the transform and the validation checks;
   - the **API**, which the dashboard will call;
   - the **migrations**, which create and change the database tables.
-- **`frontend/`** is the dashboard that people will use in the browser (React). So far it is a small starting page; the real pages come in milestone M7 ([roadmap.md](roadmap.md)).
+- **`frontend/`** is the dashboard that people use in the browser (React), built in steps from milestone M7 ([roadmap.md](roadmap.md)) to the approved screens ([design/dashboard.md](design/dashboard.md) Section 0.1): so far the apps home and the Reports app's Dashboard, with the filter bar (company chips, months or dates, compare).
 - **`control-plane/`** will be the service the provider hosts for logins and licences. It must never see client data. For now it is only a README: it comes after the pilot.
 - **`agent/`** will be a small program installed next to Tally at a client's office, sending changes to the data plane. Also only a README for now; during the pilot the data plane talks to Tally directly.
 - **`deploy/`** holds what runs the system in Docker: the list of containers, the database's first-start script, and helper scripts. [learning/docker.md](learning/docker.md) explains it in detail.
@@ -93,7 +93,7 @@ ledgerbridge/
 │   ├── sql/                    ready-to-run SQL for accountants (monthly-sales.sql)
 │   ├── database/               the schema reference (generated)
 │   ├── export/                 Word and PDF copies of those (./dev.ps1 docs-export)
-│   ├── design/                 dashboard design and mockup
+│   ├── design/                 dashboard design, approved mockups, screenshots per step
 │   ├── security/               threat model and security guide
 │   ├── diagrams/               ER, database and data flow diagrams (source and images)
 │   └── learning/               the Docker guide
@@ -137,7 +137,7 @@ ledgerbridge/
 | `validation.py` | Endpoints that return validation results and alerts. |
 | `deps.py` | Shared helpers: a database session per request (`app_rw`), and the read-only one for the dashboard (`report_ro`). |
 | `access.py` | Who may see which companies: `current_access`, the one dependency every `/api/v1` endpoint goes through. Until login (M5) it allows every company not on hold; M5 replaces it here (ADR-049). |
-| `v1/` | The dashboard API, `/api/v1`, GET only, as `report_ro`: `companies.py` (companies with their data health, financial years and "as at" dates), `datasets.py` (the table explorer's endpoints: catalogue, a page of a result, CSV), `dataset_specs.py` (each dataset's allow-listed dimensions, measures and filters, each a fixed SQL expression), `dataset_query.py` (reading a request against those allow-lists and answering it: groups with subtotals, lists, the CSV rows), `common.py`. |
+| `v1/` | The dashboard API, `/api/v1`, GET only, as `report_ro`: `companies.py` (companies with their data health, financial years and "as at" dates), `datasets.py` (the table explorer's endpoints: catalogue, a page of a result, CSV), `dataset_specs.py` (each dataset's allow-listed dimensions, measures and filters, each a fixed SQL expression), `dataset_query.py` (reading a request against those allow-lists and answering it: groups with subtotals, lists, the CSV rows), `home.py` (the dashboard home's figures: `GET /api/v1/home`), `common.py`. |
 
 **`ai/`**: an empty package that will hold the AI layer (text-to-SQL, model providers, guardrails) in milestone M8 ([architecture.md](architecture.md) Section 5).
 
@@ -190,7 +190,7 @@ ledgerbridge/
 | `sync.py` | Runs a sync: company by company, fetch, store, transform, then hand over to validation; records each run. Also the deletion check and the transform-only runs (retry, rebuild). |
 | `fetch.py` | Fetches one company piece by piece ("chunks", usually a month of vouchers), saves progress so an interrupted sync can resume, and copes with a slow or busy Tally. |
 | `extract.py` | Finding or creating a connection, and the older "raw records only" extraction. |
-| `entities.py` | Which companies a connection works with (found by their key, not their name; those on hold left out unless named: `select_not_on_hold`, SYN-007), the shared way to name them in output (`entity <id> (company <n>)`), and the guard every comparing step uses: the expected company loaded, no namesake (`ensure_loaded`, LB-SYNC-011). |
+| `entities.py` | Which companies a connection works with (found by their key, not their name; those on hold left out unless named: `select_not_on_hold`, SYN-007; which ones the source has loaded, stored by a sync and `entity-check` for the dashboard: `record_loaded`), the shared way to name them in output (`entity <id> (company <n>)`), and the guard every comparing step uses: the expected company loaded, no namesake (`ensure_loaded`, LB-SYNC-011). |
 | `validate.py` | Runs validation after syncs and on demand, gathers Tally's own figures through the connector, and raises alerts. |
 | `celery_app.py` | The scheduled worker: every minute it checks which connections are due for a sync or a deletion check and starts them. |
 | `locks.py` | The connection's run lock (Redis): taken when a run opens, renewed by its heartbeat, released when it ends, cleared when orphaned, so it can't outlive its job. |
@@ -275,7 +275,8 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | [progress-log.md](progress-log.md) | Dated progress entries. |
 | `export/` | Word and PDF copies of the rulebook, schema reference and history (`./dev.ps1 docs-export`). |
 | [pilot-runbook.md](pilot-runbook.md) | Step by step for running the pilot on client data (the developer runs it, never Claude Code), and how to read the output. |
-| [design/dashboard.md](design/dashboard.md), `design/dashboard-mockup.png` | The dashboard design: the approved home page and the proposed Budget page. |
+| [design/dashboard.md](design/dashboard.md), `design/dashboard-mockup.png`, `design/mockup-1..6-*.png` | The dashboard design: the approved screens (Section 0.1) and the proposed Budget and Forex pages. |
+| `design/screenshots/<step>/` | Screenshots of each dashboard step on the test company, for review (e.g. `d1b`: apps home, Dashboard light, dark and narrow). |
 | [learning/docker.md](learning/docker.md) | Docker explained for this project, file by file. |
 | [security/threat-model.md](security/threat-model.md), [security/security-guide.md](security/security-guide.md) | What we protect, from whom and what protects it today, with the security roadmap by milestone; and how to work securely, including what the automated checks catch. |
 | [diagrams/README.md](diagrams/README.md), `diagrams/*.mmd`, `*.svg`, `*.png` | The diagrams: ER diagrams (generated from the models), the databases and users, the data flow, the planned budget tables; each as Mermaid source and as images. |
@@ -288,11 +289,16 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | --- | --- |
 | `package.json`, `package-lock.json` | The JavaScript libraries (React, Ant Design, ECharts, TanStack Query) and the commands `npm run dev`, `lint`, `test`, `build`. |
 | `index.html`, `public/favicon.svg` | The page that loads the app, and its icon. |
-| `src/main.tsx`, `src/App.tsx` | Start the app; `App.tsx` is the current starting page: the API's health and a sample chart. |
-| `src/api/client.ts` | How the dashboard calls the API. |
+| `src/main.tsx`, `src/Root.tsx`, `src/App.tsx` | Start the app; `Root.tsx` holds the theme (light or dark, remembered in the browser) and today's date; `App.tsx` picks the page from the URL and holds the selection, the shell around the page and the company and period controls. |
+| `src/router.ts`, `src/selection.ts` | Our small router (pages are `#/<app>/<page>?company=..&month=..`, ADR-048) and the selection kept in that query: any combination of companies, the financial year, months or a date range, compare with last year, with their defaults. |
+| `src/format.ts` | Amounts in rupees with Indian grouping, lakhs and crores, from the API's decimal strings without floating point; dates DD-MMM-YYYY. |
+| `src/theme.ts` | Our colours as Ant Design theme tokens, light and dark. |
+| `src/shell/` | The app shell: `AppShell.tsx` (the top bar with the logo, the app's menu, "This computer only" and light/dark mode; breadcrumbs), `FilterBar.tsx` (company chips marked loaded or not loaded in the source, financial year, month chips, dates, compare, the status pill), `AppsHome.tsx` and `greeting.ts` (screen 1: a tile per app), `apps.ts` (the apps and their pages), `SearchBar.tsx` and `search.ts` (text, filter and group-by facets, favourites saved in the browser, for lists), `icons.tsx`. |
+| `src/apps/dashboard/DashboardHome.tsx` | The Reports app's Dashboard (screen 5): the Profit & Loss and Balance Sheet cards, cash and bank, receivables, payables, stock value, and the charts (sales and purchases by month, sales by channel, share of sales by company). |
+| `src/api/client.ts`, `src/api/queries.ts` | How the dashboard calls the API (`getJson`, the API's own message on a refusal), and one cached query per endpoint. |
 | `src/api/types.ts` | The API's response types, generated from its OpenAPI schema by `python -m devtools.api_types` (never edited by hand; a test fails when stale). |
 | `src/components/EChart.tsx` | A reusable chart component. |
-| `src/index.css`, `src/test-setup.ts`, `src/App.test.tsx` | Styles, and the dashboard's test setup and test. |
+| `src/index.css`, `src/test-setup.ts`, `src/*.test.ts(x)` | Styles, the tests' setup, and the tests (formats, router and selection, search bar, the shell and Overview against a stubbed API). |
 | `vite.config.ts`, `tsconfig*.json`, `.oxlintrc.json`, `.env.example`, `.gitignore` | Build, TypeScript and code-check settings, and the API address setting. |
 
 ### 2.7 `control-plane/` and `agent/`
@@ -354,7 +360,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 | Where is the health report? | `data-plane/workers/report.py` (`./dev.ps1 report`). |
 | Where are the validation checks? | `data-plane/core/validation.py`; run by `data-plane/workers/validate.py`; described in [schema.md](schema.md) Section 5.2. Why they differ: `data-plane/workers/analyse.py` (`./dev.ps1 validate analyse`). |
 | Where are the environment settings? | `.env.test` / `.env.pilot` (not in git; templates `.env.*.example`), read by `data-plane/core/config.py`. |
-| Where are the tests? | `data-plane/tests/` (Python) and `frontend/src/App.test.tsx`; recorded Tally answers in `data-plane/tests/fixtures/tally/`. |
+| Where are the tests? | `data-plane/tests/` (Python) and `frontend/src/**/*.test.ts(x)`; recorded Tally answers in `data-plane/tests/fixtures/tally/`. |
 | Where is a `dev.ps1` command implemented? | The command's block in `dev.ps1`, which calls `python -m workers.cli <command>`, implemented in `data-plane/workers/cli.py`. |
 | Where is the scheduled sync? | `data-plane/workers/celery_app.py`. |
 | Where is the transform? | `data-plane/core/transform.py`, with `core/names.py` and `core/fit.py`. |
@@ -402,6 +408,8 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-31 | 0.34 | Dashboard D1 (b) to the approved screens: `core/home.py`, `core/report_periods.py`, `api/v1/home.py` replace the Overview's; `FilterBar.tsx`, `apps/dashboard/DashboardHome.tsx`; migration 0025 (`record_loaded` in `workers/entities.py`); `tests/test_loaded_in_source.py`. |
+| 2026-10-30 | 0.33 | Dashboard D1 (b): the frontend's shell, router, selection, formats, theme and Overview; `api/v1/overview.py`, `core/overview.py`; `./dev.ps1 dashboard`. |
 | 2026-10-30 | 0.32 | Dashboard D1 (a): `api/access.py`, `api/v1/`, `core/reporting_views.py`, `devtools/api_types.py`, `frontend/src/api/types.ts`, migration 0024; tests `test_api_v1.py`, `test_api_types.py`, `test_dashboard_api_integration.py`. |
 | 2026-10-30 | 0.31 | `workers/on_hold.py`, migration 0023; `tests/test_on_hold.py`. |
 | 2026-10-30 | 0.30 | `workers/currencies.py`, migration 0022; `tests/test_currencies.py`. |

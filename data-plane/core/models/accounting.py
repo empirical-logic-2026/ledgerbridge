@@ -44,6 +44,8 @@ from core.models.base import (
 )
 from core.models.schemas import ACCOUNTING, SYSTEM
 
+SOURCE_CHECKS = ("sync", "entity_check")  # what asked the source which companies are loaded
+
 NATURES = ("asset", "liability", "equity", "income", "expense")
 _A = {"schema": ACCOUNTING}
 
@@ -96,6 +98,13 @@ class EntitySource(TimestampMixin, Base):
     precedence: Mapped[int] = mapped_column(SmallInt, default=0, server_default="0")
     active_from: Mapped[date | None] = mapped_column(nullable=True)
     active_to: Mapped[date | None] = mapped_column(nullable=True)
+    # Whether the source had this company loaded when last asked (by a sync or entity-check;
+    # migration 0025): the dashboard shows it without contacting the source. NULL: never asked.
+    source_checked_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
+    source_loaded: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    source_checked_by: Mapped[str | None] = mapped_column(
+        Enum(*SOURCE_CHECKS, name="source_check"), nullable=True
+    )
 
 
 class Branch(TimestampMixin, Base):

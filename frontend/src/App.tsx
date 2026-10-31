@@ -1,54 +1,86 @@
-import { useQuery } from '@tanstack/react-query'
-import type { EChartsOption } from 'echarts'
-import { Card, Descriptions, Layout, Space, Tag, Typography } from 'antd'
-import { getJson, type Health } from './api/client.ts'
-import { EChart } from './components/EChart.tsx'
+// The dashboard: which page the URL asks for, the selection (companies, year, months or
+// dates, compare), and the shell around the page. Pages: the apps home ("#/") and the Reports
+// app's Dashboard ("#/reports", "#/reports/dashboard").
 
-// Placeholder data so the chart wiring is visible; real figures arrive with M6/M7.
-const sampleChart: EChartsOption = {
-  title: { text: 'Sample chart (placeholder)', left: 'center' },
-  xAxis: { type: 'category', data: ['Apr', 'May', 'Jun', 'Jul'] },
-  yAxis: { type: 'value' },
-  series: [{ type: 'bar', data: [3, 5, 4, 6] }],
+import { Alert, Result } from 'antd'
+import type { ReactNode } from 'react'
+import { useCompanies, useHome, usePeriods } from './api/queries.ts'
+import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
+import { useRoute } from './router.ts'
+import { chosenPeriod, chosenYear, selectedIds, selectionQuery, useSelection } from './selection.ts'
+import { AppShell } from './shell/AppShell.tsx'
+import { findApp } from './shell/apps.ts'
+import { AppsHome } from './shell/AppsHome.tsx'
+import { FilterBar, StatusPill } from './shell/FilterBar.tsx'
+import type { Mode } from './theme.ts'
+
+interface Props {
+  mode: Mode
+  onMode: (mode: Mode) => void
+  today: string // YYYY-MM-DD, from the root (tests set it)
+  now: Date
 }
 
-function HealthCard() {
-  const { data, isPending, isError } = useQuery({
-    queryKey: ['health'],
-    queryFn: () => getJson<Health>('/health'),
-  })
+export default function App({ mode, onMode, today, now }: Props) {
+  const route = useRoute()
+  const [selection, select] = useSelection()
+  const companies = useCompanies()
+  const ids = selectedIds(selection, companies.data)
+  const periods = usePeriods(ids)
+  const year = chosenYear(selection, periods.data)
+  const period = chosenPeriod(selection, year, today)
+  const app = findApp(route.path[0])
+  const page = app ? (route.path[1] ?? app.pages[0].key) : undefined
+  const onDashboard = app?.key === 'reports' && page === 'dashboard'
+  const home = useHome(onDashboard ? ids : undefined, period, selection.compare)
+  const query = selectionQuery(selection)
+  const all = companies.data ?? []
+  const selected = all.filter((c) => ids?.includes(c.id))
 
-  let status = <Tag>checking</Tag>
-  if (isError) status = <Tag color="error">unreachable</Tag>
-  else if (!isPending) status = <Tag color="success">{data.status}</Tag>
+  let content: ReactNode
+  if (companies.error) {
+    content = <Alert type="error" showIcon message="The dashboard can't reach the data plane." description={companies.error.message} />
+  } else if (companies.data && companies.data.length === 0) {
+    content = <Alert type="info" showIcon message="No companies to show yet." description="Connect and sync a company first (companies on hold aren't shown)." />
+  } else if (route.path.length === 0) {
+    content = (
+      <AppsHome
+        query={query}
+        sourceName={all[0]?.health.source_name ?? 'your books'}
+        status={<StatusPill companies={all} />}
+        now={now}
+      />
+    )
+  } else if (onDashboard) {
+    content = (
+      <DashboardHome
+        companies={selected}
+        home={home.data}
+        loading={companies.isPending || periods.isPending || home.isPending}
+        error={periods.error ?? home.error}
+        dark={mode === 'dark'}
+      />
+    )
+  } else {
+    content = <Result status="404" title="There is no such page" subTitle="Choose an app from the apps home." />
+  }
+
+  const filterBar =
+    onDashboard && all.length > 0 ? (
+      <FilterBar
+        companies={all}
+        selection={selection}
+        selectedIds={ids ?? []}
+        years={periods.data?.financial_years ?? []}
+        year={year}
+        period={period}
+        onChange={select}
+      />
+    ) : undefined
 
   return (
-    <Card title="Data plane API">
-      <Descriptions column={1} size="small">
-        <Descriptions.Item label="Status">{status}</Descriptions.Item>
-        <Descriptions.Item label="Environment">{data?.env ?? '—'}</Descriptions.Item>
-        <Descriptions.Item label="Version">{data?.version ?? '—'}</Descriptions.Item>
-      </Descriptions>
-    </Card>
-  )
-}
-
-export default function App() {
-  return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Layout.Header>
-        <Typography.Title level={4} style={{ color: '#fff', margin: '14px 0' }}>
-          LedgerBridge
-        </Typography.Title>
-      </Layout.Header>
-      <Layout.Content style={{ padding: 24 }}>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <HealthCard />
-          <Card>
-            <EChart option={sampleChart} />
-          </Card>
-        </Space>
-      </Layout.Content>
-    </Layout>
+    <AppShell app={app} page={page} filterBar={filterBar} query={query} mode={mode} onMode={onMode}>
+      {content}
+    </AppShell>
   )
 }

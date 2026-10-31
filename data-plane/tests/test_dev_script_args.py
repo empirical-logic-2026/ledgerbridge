@@ -357,3 +357,34 @@ def test_the_pilot_stops_when_the_stack_runs_other_code(tmp_path: Path) -> None:
     )  # fmt: skip
     assert done.returncode == 0
     assert "runs code unknown but the checked-out code is" in done.stdout + done.stderr
+
+
+@pytest.mark.parametrize(
+    ("published", "message"),
+    [
+        ("", "not on 127.0.0.1 only"),  # not published at all
+        ("0.0.0.0:8001", "not on 127.0.0.1 only"),
+        ("192.168.1.20:8001", "not on 127.0.0.1 only"),
+    ],
+)
+def test_the_dashboard_starts_only_on_this_computer(
+    published: str, message: str, tmp_path: Path
+) -> None:
+    """ADR-049: no login yet, so `dashboard` refuses (and starts nothing) unless Docker
+    publishes the API on 127.0.0.1."""
+    stack, log = tmp_path / "fake-stack.ps1", tmp_path / "calls.jsonl"
+    answer = f"if (($args -join ' ') -eq 'port api 8000') {{ '{published}' }}\n"
+    stack.write_text(FAKE_STACK.replace("exit 0", answer + "exit 0"), encoding="utf-8")
+    env = {
+        **__import__("os").environ,
+        "LEDGERBRIDGE_DEV_STACK": str(stack),
+        "LEDGERBRIDGE_DEV_STACK_LOG": str(log),
+    }
+    done = subprocess.run(  # noqa: S603 - fixed arguments, no shell
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-File", str(REPO / "dev.ps1"), "dashboard", "-Env", "test"],
+        capture_output=True, text=True, timeout=120, check=False, env=env, cwd=REPO,
+    )  # fmt: skip
+    assert done.returncode != 0
+    assert message in done.stdout + done.stderr
+    assert "Dashboard (test)" not in done.stdout  # nothing started

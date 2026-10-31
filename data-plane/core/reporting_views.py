@@ -1,6 +1,7 @@
 """The reporting views the dashboard API reads, as SQLAlchemy tables (read-only).
 
-They are created by migrations (0024: `v_group_ancestors`, `v_data_health`), not by the
+They are created by migrations (0024: `v_group_ancestors`, `v_data_health`, extended in
+0025), not by the
 models, so they are declared on their own metadata: Alembic's model comparison never sees
 them.
 """
@@ -31,5 +32,6 @@ DATA_HEALTH = Table(
     Column("validation_status", String(16)),
     Column("validated_as_of", Date),
     Column("validated_at", DateTime),
+    Column("source_name", String(255)),  # migration 0025
     schema=REPORTING,
 )

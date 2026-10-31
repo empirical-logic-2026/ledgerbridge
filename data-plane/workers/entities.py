@@ -26,6 +26,7 @@ from sqlalchemy import select
 from connectors.base import Connector, SourceEntity
 from core.models import Connection
 from core.models import accounting as A  # noqa: N812
+from core.models.base import utcnow
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -140,22 +141,25 @@ def select_entities(
     names: Sequence[str] | None = None,
     keys: Sequence[str] | None = None,
     on_hold: Collection[str] = (),
+    available: Sequence[SourceEntity] | None = None,
 ) -> list[SourceEntity]:
     """The entities to work with: by `keys` (e.g. those a sync just ran), else by `names`
     typed on the command line, else those configured on the connection, else all; the last
-    two without the entities `on_hold` (their keys), which the source isn't asked about."""
+    two without the entities `on_hold` (their keys), which the source isn't asked about.
+    `available`: the source's list of loaded entities when the caller has it already."""
+    if available is None:
+        available = connector.list_entities()
     if keys:
         wanted = [ConfiguredEntity(k, "") for k in keys]
     elif names:
-        found, missing_names = by_names(connector.list_entities(), names)
+        found, missing_names = by_names(available, names)
         if missing_names:
             raise EntityLookupError(len(missing_names), len(names))
         return found
     else:
         wanted = [e for e in configured(connection) if e.key is None or e.key not in on_hold]
         if not configured(connection):
-            return [e for e in connector.list_entities() if e.key not in on_hold]
-    available = connector.list_entities()
+            return [e for e in available if e.key not in on_hold]
     found, missing = resolve(available, wanted)
     if missing:
         raise EntityLookupError(len(missing), len(wanted))
@@ -168,11 +172,30 @@ def select_not_on_hold(
     connection: Connection,
     names: Sequence[str] | None = None,
     keys: Sequence[str] | None = None,
+    available: Sequence[SourceEntity] | None = None,
 ) -> tuple[list[SourceEntity], int]:
     """`select_entities` without the entities on hold unless `names` or `keys` choose them,
-    and how many were skipped (for `on_hold_line`)."""
+    and how many were skipped (for `on_hold_line`). `available`: the source's list of
+    loaded entities when the caller has it already."""
     held = set() if names or keys else on_hold_keys(session, connection.id)
-    return select_entities(connector, connection, names, keys, held), len(held)
+    return select_entities(connector, connection, names, keys, held, available), len(held)
+
+
+def record_loaded(
+    session: "Session", connection: Connection, available: Sequence[SourceEntity], step: str
+) -> None:
+    """Stores, for each of the connection's companies, whether the source has it loaded now
+    (`entity_sources.source_loaded`, `source_checked_at`, `source_checked_by`: the
+    dashboard reads them and never asks the source itself)."""
+    loaded = {e.key for e in available}
+    now = utcnow()
+    for link in session.scalars(
+        select(A.EntitySource).where(A.EntitySource.connection_id == connection.id)
+    ):
+        link.source_loaded = link.source_entity_key in loaded
+        link.source_checked_at = now
+        link.source_checked_by = step
+    session.commit()
 
 
 class Labels:
