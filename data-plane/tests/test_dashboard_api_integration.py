@@ -358,3 +358,102 @@ def test_the_companies_show_whether_the_source_had_them_loaded(
     assert health["source_name"] == "Tally"
     assert health["source_loaded"] is True and health["source_checked_by"] == "sync"
     assert health["source_checked_at"] is not None
+
+
+# --- the Profit & Loss report page (D1 part c1) -------------------------------------------
+
+PL = "/api/v1/reports/profit-loss"
+
+
+def _line(report: dict, label: str) -> dict:
+    return next(line for line in report["lines"] if line["label"] == label)
+
+
+def test_the_profit_and_loss_report_adds_up(
+    client: TestClient, synced: int, statements_stored: None
+) -> None:
+    from core.statements import GROSS_PROFIT, NET_PROFIT
+
+    home = _get(client, "/api/v1/home", month=MONTHS)["profit_loss"]
+    by_company = _get(client, PL, month=MONTHS, view="company")
+    assert [c["key"] for c in by_company["columns"]] == [f"company:{synced}", "total"]
+    assert by_company["combined"] is False and by_company["reason"] is None
+    labels = [line["label"] for line in by_company["lines"]]
+    assert labels.index(GROSS_PROFIT) < labels.index(NET_PROFIT)  # the source's order
+    for label, key in ((NET_PROFIT, "net_profit"), (GROSS_PROFIT, "gross_profit")):
+        line = _line(by_company, label)
+        assert Decimal(line["values"]["total"]) == Decimal(home[key]["value"])
+        assert line["values"]["total"] == line["values"][f"company:{synced}"]
+
+    # Month by month and quarter by quarter: every line's columns add up to its total.
+    for view in ("month", "quarter"):
+        report = _get(client, PL, month=MONTHS, view=view)
+        kinds = {c["kind"] for c in report["columns"]}
+        assert kinds == {view, "total"}
+        for line in report["lines"]:
+            parts = [Decimal(v) for k, v in line["values"].items() if k != "total" and v]
+            assert sum(parts, Decimal(0)) == Decimal(line["values"]["total"]), (view, line["label"])
+
+    # % of sales: net sales is 100% of itself.
+    sales = next(line for line in by_company["lines"] if line["pct_of_sales"]["total"] == "100.0")
+    assert Decimal(sales["values"]["total"]) == Decimal(home["net_sales"]["value"])
+
+    # Last year: a column, unavailable (no statements for 2025's month ends here), and why.
+    compared = _get(client, PL, month=MONTHS, compare="true")
+    assert compared["columns"][-1]["key"] == "last_year"
+    assert all(line["values"]["last_year"] is None for line in compared["lines"])
+    assert "no statement is stored" in compared["last_year_reason"]
+
+    # A range not ending on a stored date: no figures, with the reason.
+    mid = _get(client, PL, date_from="2026-04-01", date_to="2026-09-15")
+    assert mid["lines"] == [] and "15-Sep-2026" in mid["reason"]
+    assert client.get(PL, params={"month": MONTHS, "view": "ledger"}).status_code == 422
+
+
+def test_matches_tally_counts_the_source_lines_that_differ(
+    client: TestClient, synced: int, statements_stored: None
+) -> None:
+    """With the source's own lines stored equal to ours, the report matches; one differing
+    line makes it not match (stored as `./dev.ps1 statements` stores them)."""
+    from connectors.base import SourceStatements, StatementLine
+    from core import statements
+    from core.models.reporting import StatementLine as Row
+
+    before = _get(client, PL, month=MONTHS)["matching"]
+    assert before["compared"] == 0 and before["matches"] is False  # nothing to compare yet
+    assert before["unchecked"] > 0
+
+    def store_source(on: date, change: Decimal) -> None:
+        with Session(get_engine()) as session:
+            ours = session.execute(
+                select(Row.label, Row.level, Row.amount).where(
+                    Row.entity_id == synced, Row.as_of == on, Row.figures == "ours",
+                    Row.statement == "profit_loss", Row.level != "detail",
+                )
+            ).all()  # fmt: skip
+            lines = tuple(
+                StatementLine("profit_loss", label, level, amount + (change if i == 0 else 0))
+                for i, (label, level, amount) in enumerate(ours)
+            )
+            connection_id = session.scalar(
+                select(A.EntitySource.connection_id).where(A.EntitySource.entity_id == synced)
+            )
+            source = SourceStatements(as_of=on, lines=lines, opening_stock=None, closing_stock=None)
+            statements.refresh(session, synced, connection_id, "live", source)
+            session.commit()
+
+    store_source(MONTH_ENDS[-1], Decimal(0))
+    partly = _get(client, PL, month=MONTHS)["matching"]
+    assert partly["differing"] == 0 and partly["unchecked"] > 0  # other dates not compared
+    assert partly["matches"] is False
+    for on in MONTH_ENDS:
+        store_source(on, Decimal(0))
+    matched = _get(client, PL, month=MONTHS)["matching"]
+    assert matched["compared"] > 0 and matched["differing"] == 0 and matched["unchecked"] == 0
+    assert matched["matches"] is True
+    used = matched["dates"]  # the month ends (31-Mar too where the books began earlier)
+    assert used[-1] == "2026-09-30" and set(used) <= {f"{d:%Y-%m-%d}" for d in MONTH_ENDS}
+
+    store_source(MONTH_ENDS[-1], Decimal(1))
+    differs = _get(client, PL, month=MONTHS)["matching"]
+    assert differs["differing"] >= 1 and differs["matches"] is False

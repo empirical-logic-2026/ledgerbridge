@@ -23,7 +23,10 @@ export const APPS: DashboardApp[] = [
     title: 'Reports',
     description: 'Profit and loss, balance sheet and sales, per company or combined.',
     icon: 'reports',
-    pages: [{ key: 'dashboard', label: 'Dashboard' }],
+    pages: [
+      { key: 'dashboard', label: 'Dashboard' },
+      { key: 'profit-loss', label: 'Profit & Loss' },
+    ],
   },
 ]
 

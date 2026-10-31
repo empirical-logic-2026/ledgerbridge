@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App.tsx'
 import type { Company, Home, Periods } from './api/types.ts'
@@ -128,7 +128,7 @@ describe('the dashboard', () => {
     const pl = await screen.findByRole('region', { name: 'Profit & Loss' })
     expect(within(pl).getByText('₹48.20 Cr')).toBeInTheDocument()
     expect(within(pl).getByText('▲ 12%')).toHaveClass('good')
-    expect(within(pl).getByText('▲ 9%')).toHaveClass('watch') // costs up: watch
+    expect(within(pl).getByText('▲ 9%')).toHaveClass('neutral') // costs up: neutral, not red
     expect(within(pl).getByText(/Months ending on the 30th .* run to the 2nd of the next month/)).toBeInTheDocument()
     const bs = screen.getByRole('region', { name: 'Balance Sheet' })
     expect(within(bs).getByText('₹62.80 Cr')).toBeInTheDocument()
@@ -215,5 +215,117 @@ describe('the dashboard', () => {
   it('has a page for unknown addresses', async () => {
     renderApp('#/nowhere')
     expect(await screen.findByText('There is no such page')).toBeInTheDocument()
+  })
+})
+
+const statement = {
+  companies: [3, 4],
+  combined: true,
+  view: 'company',
+  period_start: '2026-04-01',
+  period_end: '2026-09-30',
+  columns: [
+    { key: 'company:3', label: 'Alpha', kind: 'company' },
+    { key: 'company:4', label: 'Beta', kind: 'company' },
+    { key: 'total', label: 'Total', kind: 'total' },
+    { key: 'last_year', label: 'Last year', kind: 'last_year' },
+  ],
+  lines: [
+    {
+      key: 'sales accounts', label: 'Sales Accounts', level: 'main', section: 'gross', higher_is_better: true,
+      values: { 'company:3': '341260000', 'company:4': '41030000', total: '382290000', last_year: '340100000' },
+      pct_of_sales: { 'company:3': '100.0', 'company:4': '100.0', total: '100.0', last_year: '100.0' },
+      change_pct: '12.4',
+    },
+    {
+      key: 'net profit', label: 'Net Profit', level: 'detail', section: 'net', higher_is_better: true,
+      values: { 'company:3': '50660000', 'company:4': '-4090000', total: '46570000', last_year: '38020000' },
+      pct_of_sales: { 'company:3': '14.8', 'company:4': '-10.0', total: '12.2', last_year: '11.2' },
+      change_pct: '22.5',
+    },
+  ],
+  reason: null,
+  shifted: false,
+  last_year_reason: null,
+  matching: { matches: true, dates: ['2026-08-31', '2026-10-02'], differing: 0, compared: 40, unchecked: 0 },
+}
+
+describe('the Profit & Loss page', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/reports/profit-loss': statement })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const lastRequest = () => requests.filter((r) => r.includes('/reports/profit-loss')).pop() ?? ''
+
+  it('shows the statement company by company with the total, last year and change', async () => {
+    renderApp('#/reports/profit-loss')
+    expect(await screen.findByRole('heading', { name: 'Profit & Loss · Alpha + Beta' })).toBeInTheDocument()
+    expect(screen.getByText(/without inter-company eliminations/)).toBeInTheDocument()
+    const table = await screen.findByRole('table')
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
+      'Particulars', 'Alpha', 'Beta', 'Total', 'Last year', 'Change',
+    ])
+    expect(within(table).getByText('3,822.9')).toBeInTheDocument() // ₹ lakh
+    expect(within(table).getByText('-40.9').closest('td')).toHaveClass('negative') // a loss in crimson
+    expect(within(table).getByText('▲ 22.5%')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Profit & Loss' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('says it matches Tally, explains itself, and links to related pages', async () => {
+    renderApp('#/reports/profit-loss')
+    const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
+    expect(await within(panel).findByRole('status')).toHaveTextContent(/✓ Matches Tally for both companies \(checked at 2 statement dates up to 02-Oct-2026\)/)
+    expect(within(panel).getByRole('region', { name: 'What is this?' })).toHaveTextContent(/To compare with Tally/)
+    expect(within(panel).getByRole('link', { name: 'Dashboard →' })).toHaveAttribute('href', '#/reports/dashboard')
+  })
+
+  it('changes the view and columns through the URL, keeping the selection', async () => {
+    renderApp('#/reports/profit-loss?company=3&company=4')
+    const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
+    fireEvent.click(within(panel).getByLabelText('Month by month'))
+    expect(window.location.hash).toContain('view=month')
+    expect(window.location.hash).toContain('company=3&company=4')
+    await waitFor(() => expect(lastRequest()).toContain('view=month'))
+    fireEvent.click(within(panel).getByLabelText('Last year'))
+    expect(window.location.hash).toMatch(/col=each&col=total&col=change/)
+  })
+
+  it('saves a view in this browser and opens it again', async () => {
+    renderApp('#/reports/profit-loss?view=quarter')
+    const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
+    fireEvent.change(within(panel).getByLabelText('Name of the view'), { target: { value: 'By quarter' } })
+    fireEvent.click(within(panel).getByRole('button', { name: '+ Save current view' }))
+    window.location.hash = '#/reports/profit-loss'
+    fireEvent.click(await within(panel).findByRole('button', { name: 'By quarter' }))
+    expect(window.location.hash).toContain('view=quarter')
+  })
+
+  it('exports exactly the table as CSV', async () => {
+    const created: Blob[] = []
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: (b: Blob) => (created.push(b), 'blob:x'), revokeObjectURL: () => {} }))
+    renderApp('#/reports/profit-loss')
+    await screen.findByRole('table')
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
+    const text = await created[0].text()
+    expect(text).toContain('Particulars,Alpha (₹),Beta (₹),Total (₹),Last year (₹),Change (%)')
+    expect(text).toContain('Net Profit,50660000.00,-4090000.00,46570000.00,38020000.00,22.5')
+  })
+
+  it('closes and reopens the options panel', async () => {
+    renderApp('#/reports/profit-loss')
+    const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Close the options' }))
+    expect(window.location.hash).toContain('panel=0')
+    fireEvent.click(await screen.findByRole('button', { name: 'Options' }))
+    expect(window.location.hash).not.toContain('panel=0')
+  })
+
+  it('opens from the Dashboard card', async () => {
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/home': home })
+    renderApp('#/reports?company=3')
+    const pl = await screen.findByRole('region', { name: 'Profit & Loss' })
+    expect(within(pl).getByRole('link', { name: 'Open →' })).toHaveAttribute('href', '#/reports/profit-loss?company=3')
   })
 })

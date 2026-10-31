@@ -40,6 +40,12 @@ export interface Channel {
   net_sales: string
 }
 
+export interface ColumnOut {
+  key: string
+  label: string
+  kind: "company" | "month" | "quarter" | "total" | "last_year"
+}
+
 export interface Company {
   id: number
   code: string
@@ -152,6 +158,25 @@ export interface Key {
   label: string
 }
 
+export interface LineOut {
+  key: string
+  label: string
+  level: "main" | "sub" | "detail"
+  section: string | null
+  higher_is_better: boolean
+  values: Record<string, string | null>
+  pct_of_sales: Record<string, string | null>
+  change_pct: string | null
+}
+
+export interface MatchingOut {
+  matches: boolean
+  dates: string[]
+  differing: number
+  compared: number
+  unchecked: number
+}
+
 export interface MonthFigures {
   month: string
   sales: string
@@ -197,6 +222,20 @@ export interface Row {
   keys: Record<string, Key>
   values: Record<string, string | number>
   level?: number | null
+}
+
+export interface StatementReport {
+  companies: number[]
+  combined: boolean
+  view: "company" | "month" | "quarter"
+  period_start: string
+  period_end: string
+  columns: ColumnOut[]
+  lines: LineOut[]
+  reason: string | null
+  shifted: boolean
+  last_year_reason: string | null
+  matching: MatchingOut
 }
 
 export interface ValidationError {

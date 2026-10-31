@@ -38,6 +38,22 @@ export function navigate(path: string[], query: Query = {}): void {
   window.location.hash = href(path, query)
 }
 
+/** The query as plain values (repeated keys as lists). */
+export function queryValues(query: URLSearchParams): Query {
+  const values: Query = {}
+  for (const key of new Set(query.keys())) {
+    const all = query.getAll(key)
+    values[key] = all.length > 1 ? all : all[0]
+  }
+  return values
+}
+
+/** Goes to the same page with some query keys changed (undefined removes one); the other
+ *  keys stay, so the selection and a page's own options don't overwrite each other. */
+export function updateQuery(route: Route, change: Query): void {
+  navigate(route.path, { ...queryValues(route.query), ...change })
+}
+
 function subscribe(onChange: () => void): () => void {
   window.addEventListener('hashchange', onChange)
   return () => window.removeEventListener('hashchange', onChange)
