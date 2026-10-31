@@ -294,7 +294,7 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `src/format.ts` | Amounts in rupees with Indian grouping, lakhs and crores, from the API's decimal strings without floating point; dates DD-MMM-YYYY. |
 | `src/theme.ts` | Our colours as Ant Design theme tokens, light and dark. |
 | `src/shell/` | The app shell: `AppShell.tsx` (the top bar with the logo, the app's menu, "This computer only" and light/dark mode; breadcrumbs), `FilterBar.tsx` (company chips marked loaded or not loaded in the source, financial year, month chips, dates, compare, the status pill), `AppsHome.tsx` and `greeting.ts` (screen 1: a tile per app), `apps.ts` (the apps and their pages), `SearchBar.tsx` and `search.ts` (text, filter and group-by facets, favourites saved in the browser, for lists), `icons.tsx`. |
-| `src/apps/reports/DashboardHome.tsx` | The Reports app's Dashboard (screen 5): the Profit & Loss and Balance Sheet cards, cash and bank, receivables, payables, stock value, and the charts (sales and purchases by month, sales by channel, share of sales by company). |
+| `src/apps/dashboard/DashboardHome.tsx` | The Reports app's Dashboard (screen 5): the Profit & Loss and Balance Sheet cards, cash and bank, receivables, payables, stock value, and the charts (sales and purchases by month, sales by channel, share of sales by company). |
 | `src/api/client.ts`, `src/api/queries.ts` | How the dashboard calls the API (`getJson`, the API's own message on a refusal), and one cached query per endpoint. |
 | `src/api/types.ts` | The API's response types, generated from its OpenAPI schema by `python -m devtools.api_types` (never edited by hand; a test fails when stale). |
 | `src/components/EChart.tsx` | A reusable chart component. |
@@ -408,7 +408,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
-| 2026-10-31 | 0.34 | Dashboard D1 (b) to the approved screens: `core/home.py`, `core/report_periods.py`, `api/v1/home.py` replace the Overview's; `FilterBar.tsx`, `apps/reports/DashboardHome.tsx`; migration 0025 (`record_loaded` in `workers/entities.py`); `tests/test_loaded_in_source.py`. |
+| 2026-10-31 | 0.34 | Dashboard D1 (b) to the approved screens: `core/home.py`, `core/report_periods.py`, `api/v1/home.py` replace the Overview's; `FilterBar.tsx`, `apps/dashboard/DashboardHome.tsx`; migration 0025 (`record_loaded` in `workers/entities.py`); `tests/test_loaded_in_source.py`. |
 | 2026-10-30 | 0.33 | Dashboard D1 (b): the frontend's shell, router, selection, formats, theme and Overview; `api/v1/overview.py`, `core/overview.py`; `./dev.ps1 dashboard`. |
 | 2026-10-30 | 0.32 | Dashboard D1 (a): `api/access.py`, `api/v1/`, `core/reporting_views.py`, `devtools/api_types.py`, `frontend/src/api/types.ts`, migration 0024; tests `test_api_v1.py`, `test_api_types.py`, `test_dashboard_api_integration.py`. |
 | 2026-10-30 | 0.31 | `workers/on_hold.py`, migration 0023; `tests/test_on_hold.py`. |

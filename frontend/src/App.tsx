@@ -5,7 +5,7 @@
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
 import { useCompanies, useHome, usePeriods } from './api/queries.ts'
-import { DashboardHome } from './apps/reports/DashboardHome.tsx'
+import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { useRoute } from './router.ts'
 import { chosenPeriod, chosenYear, selectedIds, selectionQuery, useSelection } from './selection.ts'
 import { AppShell } from './shell/AppShell.tsx'
