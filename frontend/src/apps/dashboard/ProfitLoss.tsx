@@ -218,9 +218,7 @@ export function ProfitLoss(props: Props) {
           onView={(view) => props.onOptions(optionsQuery({ ...options, view }))}
           extraViews={
             <>
-              <Checkbox checked disabled>
-                Tally layout (always: {sourceName}'s order)
-              </Checkbox>
+              <p className="options-muted">Always in {sourceName}'s layout and order.</p>
               <Checkbox checked={options.asPercent} onChange={(e) => props.onOptions(optionsQuery({ ...options, asPercent: e.target.checked }))}>
                 As % of sales
               </Checkbox>
