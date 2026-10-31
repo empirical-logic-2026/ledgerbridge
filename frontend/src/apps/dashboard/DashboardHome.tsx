@@ -10,6 +10,7 @@ import type { EChartsOption } from 'echarts'
 import type { Company, Figure, Home } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
 import { formatChange, formatCompact, formatDate, formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
+import { href, type Query } from '../../router.ts'
 import { tokens, type Tokens } from '../../theme.ts'
 
 export const COMBINED_NOTE = 'combined, without inter-company eliminations'
@@ -20,6 +21,7 @@ interface Props {
   loading: boolean
   error: Error | null
   dark: boolean
+  query: Query // the selection, for the cards' Open links
 }
 
 function Amount({ value, missing }: { value: string | null | undefined; missing?: string | null }) {
@@ -62,7 +64,7 @@ function Row({ label, value, missing, change }: { label: string; value: string |
   )
 }
 
-function ProfitLossCard({ home }: { home: Home }) {
+function ProfitLossCard({ home, query }: { home: Home; query: Query }) {
   const pl = home.profit_loss
   const lines: [string, Figure, boolean][] = [
     ['Net sales', pl.net_sales, true],
@@ -72,7 +74,12 @@ function ProfitLossCard({ home }: { home: Home }) {
   ]
   return (
     <section className="card card-wide" aria-label="Profit & Loss">
-      <h2 className="card-title">Profit &amp; Loss</h2>
+      <div className="card-head">
+        <h2 className="card-title">Profit &amp; Loss</h2>
+        <a href={href(['reports', 'profit-loss'], query)} className="card-open">
+          Open →
+        </a>
+      </div>
       {lines.map(([label, figure, higher]) => (
         <Row key={label} label={label} value={figure.value} missing={pl.reason} change={<Change figure={figure} higherIsBetter={higher} />} />
       ))}
@@ -169,7 +176,7 @@ function shareOf(amount: string, largest: string): number {
   return Number((toScaled(amount) * 1000n) / top) / 10
 }
 
-export function DashboardHome({ companies, home, loading, error, dark }: Props) {
+export function DashboardHome({ companies, home, loading, error, dark, query }: Props) {
   if (error) return <Alert type="error" showIcon message="The figures couldn't be loaded." description={error.message} />
   if (loading || !home) return <Skeleton active paragraph={{ rows: 8 }} />
   const colours = tokens[dark ? 'dark' : 'light']
@@ -187,7 +194,7 @@ export function DashboardHome({ companies, home, loading, error, dark }: Props) 
         </Typography.Text>
       </div>
       <div className="home-cards">
-        <ProfitLossCard home={home} />
+        <ProfitLossCard home={home} query={query} />
         <BalanceSheetCard home={home} />
         <div className="home-small">
           <SmallCard label="Cash & bank" value={home.balances.cash_and_bank} note={asAt} />

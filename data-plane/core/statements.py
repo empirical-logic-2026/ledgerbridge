@@ -66,6 +66,7 @@ PURCHASES = "5110"  # the standard account of purchase groups: inside Cost of Sa
 COST_OF_SALES = "Cost of Sales"  # the source's own block line
 # Our own lines (detail, never compared); the dashboard reads them (core/overview.py).
 GROSS_PROFIT, NET_PROFIT = "Gross Profit", "Net Profit"
+CLOSING_STOCK_LINE = "Less: Closing Stock"  # inside Cost of Sales
 NATURE_ORDER = {"equity": 0, "liability": 1, "asset": 2, "income": 3, "expense": 4}
 PROFIT_LOSS_ACCOUNT = "Profit & Loss A/c"
 UNADJUSTED_FOREX = "Unadjusted Forex Gain/Loss"
@@ -463,7 +464,7 @@ def _profit_loss(f: Figures) -> list[tuple[str | None, StatementLine]]:
         sub("Opening Stock", opening)
         for group in purchases:
             sub(f"Add: {group.name}", totals[group.id])
-        sub("Less: Closing Stock", closing)
+        sub(CLOSING_STOCK_LINE, closing)
         for group in direct:
             sub(group.name, totals[group.id])
     else:

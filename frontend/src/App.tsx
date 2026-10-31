@@ -1,12 +1,15 @@
 // The dashboard: which page the URL asks for, the selection (companies, year, months or
-// dates, compare), and the shell around the page. Pages: the apps home ("#/") and the Reports
-// app's Dashboard ("#/reports", "#/reports/dashboard").
+// dates, compare), and the shell around the page. Pages: the apps home ("#/"), the Reports
+// app's Dashboard ("#/reports", "#/reports/dashboard") and Profit & Loss
+// ("#/reports/profit-loss", with its options in the URL too: view, col, pct, sub, zero, panel).
 
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useCompanies, useHome, usePeriods } from './api/queries.ts'
+import { useCompanies, useHome, usePeriods, useProfitLoss } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
-import { useRoute } from './router.ts'
+import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
+import { readOptions } from './reporting/reportTable.ts'
+import { navigate, updateQuery, useRoute } from './router.ts'
 import { chosenPeriod, chosenYear, selectedIds, selectionQuery, useSelection } from './selection.ts'
 import { AppShell } from './shell/AppShell.tsx'
 import { findApp } from './shell/apps.ts'
@@ -32,7 +35,10 @@ export default function App({ mode, onMode, today, now }: Props) {
   const app = findApp(route.path[0])
   const page = app ? (route.path[1] ?? app.pages[0].key) : undefined
   const onDashboard = app?.key === 'reports' && page === 'dashboard'
+  const onProfitLoss = app?.key === 'reports' && page === 'profit-loss'
   const home = useHome(onDashboard ? ids : undefined, period, selection.compare)
+  const options = readOptions(route.query)
+  const profitLoss = useProfitLoss(onProfitLoss ? ids : undefined, period, options.view, selection.compare)
   const query = selectionQuery(selection)
   const all = companies.data ?? []
   const selected = all.filter((c) => ids?.includes(c.id))
@@ -59,6 +65,24 @@ export default function App({ mode, onMode, today, now }: Props) {
         loading={companies.isPending || periods.isPending || home.isPending}
         error={periods.error ?? home.error}
         dark={mode === 'dark'}
+        query={query}
+      />
+    )
+  } else if (onProfitLoss) {
+    content = (
+      <ProfitLoss
+        companies={selected}
+        report={profitLoss.data}
+        loading={companies.isPending || periods.isPending || profitLoss.isPending}
+        error={periods.error ?? profitLoss.error}
+        options={options}
+        onOptions={(change) => updateQuery(route, change)}
+        panelOpen={route.query.get('panel') !== '0'}
+        onPanel={(open) => updateQuery(route, { panel: open ? undefined : '0' })}
+        query={query}
+        currentQuery={route.query.toString()}
+        onApplyView={(saved) => navigate(route.path, Object.fromEntries(new URLSearchParams(saved)))}
+        related={[{ label: 'Dashboard', path: ['reports', 'dashboard'] }]}
       />
     )
   } else {
@@ -66,7 +90,7 @@ export default function App({ mode, onMode, today, now }: Props) {
   }
 
   const filterBar =
-    onDashboard && all.length > 0 ? (
+    (onDashboard || onProfitLoss) && all.length > 0 ? (
       <FilterBar
         companies={all}
         selection={selection}

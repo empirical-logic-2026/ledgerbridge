@@ -4,7 +4,7 @@
 // year. Kept in the URL's query, so a view can be bookmarked and the back button works.
 
 import type { Company, FinancialYear, Periods } from './api/types.ts'
-import { navigate, useRoute } from './router.ts'
+import { updateQuery, useRoute } from './router.ts'
 
 export interface Selection {
   companies: number[] // empty: all of them, combined
@@ -49,7 +49,7 @@ export function selectionQuery(s: Selection): Record<string, string | string[] |
 export function useSelection(): [Selection, Change] {
   const route = useRoute()
   const selection = readSelection(route.query)
-  const change: Change = (next) => navigate(route.path, selectionQuery({ ...selection, ...next }))
+  const change: Change = (next) => updateQuery(route, selectionQuery({ ...selection, ...next }))
   return [selection, change]
 }
 

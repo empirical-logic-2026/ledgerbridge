@@ -38,7 +38,7 @@ Six screens, approved by the developer on 2026-10-31. Build to them: their **lay
 | [3 · Accounting: Ledgers](mockup-3-accounting-ledgers.png) | A list with the search bar (group-by and filter facets, Filters, Group By, Favourites), view switcher (list, kanban, pivot, graph), groups with counts and subtotals, "Matches Tally" per row, paging. | D2 |
 | [4 · Voucher](mockup-4-voucher.png) | One voucher: header fields, accounting, stock, GST and bill lines, debit and credit totals, "Synced → Converted → Validated", activity. | D2 |
 | [5 · Dashboard home](mockup-5-dashboard-home.png) | The Reports app's **Dashboard** (below). | D1 (b) |
-| [6 · Profit & Loss](mockup-6-profit-and-loss.png) | A report page with the options side panel (below). | D1 (c1) |
+| [6 · Profit & Loss](mockup-6-profit-and-loss.png) | A report page with the options side panel (below). Built in D1 (c1): the panel is charcoal (Section 5); "Matches Tally" holds only when every company and statement date used was compared with the source's own and nothing differs. | D1 (c1) |
 
 **Dashboard home (screen 5).** Top menu of the Reports app: Dashboard, Profit & Loss, Balance Sheet, Trial Balance, Sales, Purchases, Books, Parties (each shown once it is built). Under it a filter bar:
 - **Companies:** "All combined" or any combination of chips, one per company, each marked **loaded** or **not loaded** in Tally as recorded at the last sync or `entity-check` (`entity_sources.source_loaded`, migration 0025; the dashboard never contacts Tally). Several companies are added together: combined, without inter-company eliminations.

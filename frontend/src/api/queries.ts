@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import type { PeriodChoice } from '../selection.ts'
-import type { Company, Home, Periods } from './types.ts'
+import type { Company, Home, Periods, StatementReport } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -29,6 +29,22 @@ export function useHome(companies: number[] | undefined, period: PeriodChoice | 
         month: period?.months.length ? period.months : undefined,
         date_from: period?.months.length ? undefined : period?.from,
         date_to: period?.months.length ? undefined : period?.to,
+        compare: compare ? 'true' : undefined,
+      }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+export function useProfitLoss(companies: number[] | undefined, period: PeriodChoice | undefined, view: string, compare: boolean) {
+  return useQuery({
+    queryKey: ['profit-loss', companies, period, view, compare],
+    queryFn: () =>
+      getJson<StatementReport>('/api/v1/reports/profit-loss', {
+        company: companies,
+        month: period?.months.length ? period.months : undefined,
+        date_from: period?.months.length ? undefined : period?.from,
+        date_to: period?.months.length ? undefined : period?.to,
+        view,
         compare: compare ? 'true' : undefined,
       }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
