@@ -49,8 +49,18 @@ body,
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  height: auto;
+  min-height: 56px;
+  line-height: normal;
+  padding: 8px 16px;
   background: var(--navy);
+}
+
+.shell,
+.shell-top > * {
+  min-width: 0;
 }
 
 .shell-brand {
@@ -80,7 +90,7 @@ body,
 
 .shell-menu-item {
   color: #cbd5e1;
-  padding: 6px 14px;
+  padding: 8px 14px;
   border-radius: 8px;
   white-space: nowrap;
 }
@@ -483,6 +493,15 @@ body,
 }
 
 @media (max-width: 700px) {
+  .shell-menu {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .filter-label {
+    min-width: 0;
+  }
+
   .shell-content,
   .filter-bar {
     padding-left: 12px;

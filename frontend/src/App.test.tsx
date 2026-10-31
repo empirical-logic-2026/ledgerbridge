@@ -159,7 +159,7 @@ describe('the dashboard', () => {
   })
 
   it('takes chosen months, or a date range typed as DD-MMM-YYYY', async () => {
-    renderApp('#/reports?month=2026-04&month=2026-06&compare=1')
+    renderApp('#/reports?month=2026-04&month=2026-06')
     await screen.findByRole('region', { name: 'Profit & Loss' })
     expect(lastHomeRequest()).toMatch(/month=2026-04&month=2026-06.*compare=true/)
     const from = screen.getByLabelText('From')

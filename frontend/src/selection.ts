@@ -30,7 +30,7 @@ export function readSelection(query: URLSearchParams): Selection {
     months: query.getAll('month').filter((m) => MONTH.test(m)),
     from: from && ISO_DATE.test(from) ? from : undefined,
     to: to && ISO_DATE.test(to) ? to : undefined,
-    compare: query.get('compare') === '1',
+    compare: query.get('compare') !== '0', // compared with last year unless turned off
   }
 }
 
@@ -42,7 +42,7 @@ export function selectionQuery(s: Selection): Record<string, string | string[] |
     month: s.months,
     from: s.from,
     to: s.to,
-    compare: s.compare ? '1' : undefined,
+    compare: s.compare ? undefined : '0',
   }
 }
 
@@ -64,6 +64,20 @@ export function selectedIds(selection: Selection, companies: Company[] | undefin
 export function chosenYear(selection: Selection, periods: Periods | undefined): FinancialYear | undefined {
   const years = periods?.financial_years ?? []
   return years.find((y) => y.start_year === selection.fy) ?? years[0]
+}
+
+/** "2026-09" -> "2026-09-30". */
+export function monthEnd(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  const day = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  return `${month}-${String(day).padStart(2, '0')}`
+}
+
+/** The first and last day a period covers. */
+export function periodDates(period: PeriodChoice): [string, string] {
+  if (!period.months.length) return [period.from ?? '', period.to ?? '']
+  const sorted = [...period.months].sort()
+  return [`${sorted[0]}-01`, monthEnd(sorted[sorted.length - 1])]
 }
 
 /** The year's twelve months, "2026-04" to "2027-03". */

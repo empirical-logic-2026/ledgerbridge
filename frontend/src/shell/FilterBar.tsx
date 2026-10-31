@@ -9,7 +9,7 @@ import { Input, Select, Tooltip } from 'antd'
 import { useState } from 'react'
 import type { Company, FinancialYear } from '../api/types.ts'
 import { formatDate, formatMonth, parseDisplayDate, timeAgo } from '../format.ts'
-import { yearMonths, type Change, type PeriodChoice, type Selection } from '../selection.ts'
+import { periodDates, yearMonths, type Change, type PeriodChoice, type Selection } from '../selection.ts'
 
 interface Props {
   companies: Company[]
@@ -99,7 +99,7 @@ function PeriodRow({ selection, years, year, period, onChange }: Omit<Props, 'co
     const next = current.includes(m) ? current.filter((x) => x !== m) : [...current, m].sort()
     onChange({ months: next, from: undefined, to: undefined })
   }
-  const range = period && !period.months.length
+  const [from, to] = period ? periodDates(period) : [undefined, undefined]
   return (
     <div className="filter-row">
       <span className="filter-label">Period</span>
@@ -116,8 +116,8 @@ function PeriodRow({ selection, years, year, period, onChange }: Omit<Props, 'co
         </button>
       ))}
       <span className="filter-or">or dates</span>
-      <DateInput label="From" value={range ? period.from : year?.start} onDate={(from) => onChange({ from, to: selection.to ?? period?.to ?? year?.end, months: [] })} />
-      <DateInput label="To" value={range ? period.to : undefined} onDate={(to) => onChange({ to, from: selection.from ?? period?.from ?? year?.start, months: [] })} />
+      <DateInput label="From" value={from} onDate={(day) => onChange({ from: day, to, months: [] })} />
+      <DateInput label="To" value={to} onDate={(day) => onChange({ to: day, from, months: [] })} />
       <Select
         aria-label="Compare"
         value={selection.compare ? 'last_year' : 'none'}

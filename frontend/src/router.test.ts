@@ -29,9 +29,13 @@ const companies: Company[] = [3, 4, 5].map((id) => ({
 
 describe('the selection', () => {
   it('round-trips through the URL and ignores what it cannot read', () => {
-    const read = readSelection(new URLSearchParams('company=3&company=x&fy=2026&month=2026-04&month=bad&compare=1'))
+    const read = readSelection(new URLSearchParams('company=3&company=x&fy=2026&month=2026-04&month=bad'))
     expect(read).toEqual({ companies: [3], fy: 2026, months: ['2026-04'], from: undefined, to: undefined, compare: true })
-    expect(selectionQuery(read)).toEqual({ company: ['3'], fy: '2026', month: ['2026-04'], from: undefined, to: undefined, compare: '1' })
+    expect(selectionQuery(read)).toEqual({ company: ['3'], fy: '2026', month: ['2026-04'], from: undefined, to: undefined, compare: undefined })
+    // Compared with last year unless turned off.
+    const off = readSelection(new URLSearchParams('compare=0'))
+    expect(off.compare).toBe(false)
+    expect(selectionQuery(off).compare).toBe('0')
   })
 
   it('covers every company when none is chosen, else any combination', () => {
