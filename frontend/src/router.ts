@@ -18,13 +18,17 @@ export function parseHash(hash: string): Route {
   }
 }
 
-export type Query = Record<string, string | number | null | undefined>
+type Value = string | number | null | undefined
+export type Query = Record<string, Value | Value[]>
 
-/** "#/a/b?x=1": the href for a path and query (empty values left out). */
+/** "#/a/b?x=1&m=2&m=3": the href for a path and query (lists repeat their key; empty values
+ *  are left out). */
 export function href(path: string[], query: Query = {}): string {
   const params = new URLSearchParams()
   for (const [key, value] of Object.entries(query)) {
-    if (value !== null && value !== undefined && value !== '') params.set(key, String(value))
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (item !== null && item !== undefined && item !== '') params.append(key, String(item))
+    }
   }
   const search = params.toString()
   return `#/${path.map(encodeURIComponent).join('/')}${search ? `?${search}` : ''}`

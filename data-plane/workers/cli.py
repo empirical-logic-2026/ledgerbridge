@@ -103,6 +103,7 @@ from workers.entities import (
     configured,
     on_hold_keys,
     on_hold_line,
+    record_loaded,
     select_entities,
     select_not_on_hold,
     to_config,
@@ -981,13 +982,16 @@ def _fetch_settings_line(connection: Connection) -> str:
 
 
 def _entity_check(session: Session, args: argparse.Namespace) -> int:
-    """Read-only diagnostic: which configured entities the source has, and for those it
-    doesn't, how the names differ. Kinds and counts only, never names (any environment)."""
+    """Diagnostic, read-only towards the source: which configured entities the source has,
+    and for those it doesn't, how the names differ. Kinds and counts only, never names (any
+    environment). Its one write is ours: which companies are loaded, for the dashboard."""
     connection, connector = _reading_connector(session, args)
     if connector is None:
         return 2
-    session.rollback()  # read-only from here
     available = connector.list_entities()
+    if connection is not None:  # which companies are loaded, for the dashboard (only write)
+        record_loaded(session, connection, available, "entity_check")
+    session.rollback()  # read-only from here
     number = {e.key: i for i, e in enumerate(available, start=1)}
     print(f"Source: {len(available)} entities loaded")
     for i, entity in enumerate(available, start=1):

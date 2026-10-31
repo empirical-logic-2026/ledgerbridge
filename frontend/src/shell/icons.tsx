@@ -1,11 +1,21 @@
-// The few icons the shell needs, drawn inline (no icon package: no new dependency).
+// The few icons the dashboard needs, drawn inline (no icon package: no new dependency).
 
 const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'currentColor', 'aria-hidden': true }
+const outline = { ...common, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
 
-export function AppsIcon() {
+export function LogoIcon() {
   return (
-    <svg {...common}>
-      <path d="M4 4h4v4H4zM10 4h4v4h-4zM16 4h4v4h-4zM4 10h4v4H4zM10 10h4v4h-4zM16 10h4v4h-4zM4 16h4v4H4zM10 16h4v4h-4zM16 16h4v4h-4z" />
+    <svg {...outline} width={22} height={22}>
+      <path d="M3 3v18h18" />
+      <path d="M7 15l4-4 3 3 5-6" />
+    </svg>
+  )
+}
+
+export function ReportsIcon() {
+  return (
+    <svg {...outline} width={26} height={26}>
+      <path d="M6 20V10M12 20V4M18 20v-7" />
     </svg>
   )
 }

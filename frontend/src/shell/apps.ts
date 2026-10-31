@@ -1,25 +1,29 @@
-// The dashboard's apps (ADR-048): one tile each on the apps home, each with its own menu.
-// D1 part b has Overview; Statements and Explore arrive with part c. Only apps that work
-// are listed, so the dashboard never offers something that isn't there yet.
+// The dashboard's apps (ADR-048; docs/design/dashboard.md Section 0.1, screen 1): a tile each
+// on the apps home, each with its own top menu. Only apps and pages that work are listed, so
+// the dashboard never offers something that isn't there yet.
 
-export interface AppMenuItem {
-  key: string // the second part of the path: "#/overview/<key>"
+export interface AppPage {
+  key: string // the second part of the path: "#/<app>/<page>"
   label: string
 }
 
+export type AppIcon = 'reports'
+
 export interface DashboardApp {
-  key: string // the first part of the path: "#/<key>"
+  key: string // the first part of the path: "#/<app>"
   title: string
   description: string
-  menu: AppMenuItem[]
+  icon: AppIcon
+  pages: AppPage[] // the first is the app's start page
 }
 
 export const APPS: DashboardApp[] = [
   {
-    key: 'overview',
-    title: 'Overview',
-    description: 'Sales, profit, cash and what is owed, for one company or all of them.',
-    menu: [{ key: 'summary', label: 'Summary' }],
+    key: 'reports',
+    title: 'Reports',
+    description: 'Profit and loss, balance sheet and sales, per company or combined.',
+    icon: 'reports',
+    pages: [{ key: 'dashboard', label: 'Dashboard' }],
   },
 ]
 

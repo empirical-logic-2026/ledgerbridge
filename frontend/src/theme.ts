@@ -12,6 +12,7 @@ export const palette = {
   good: '#15803D',
   watch: '#B45309',
   bad: '#B91C1C',
+  purple: '#6D28D9', // share of sales by company
 }
 
 export function themeConfig(mode: Mode): ThemeConfig {

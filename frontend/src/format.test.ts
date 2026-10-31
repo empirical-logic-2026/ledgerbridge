@@ -65,3 +65,22 @@ describe('dates', () => {
     expect(timeAgo('2026-10-27T12:00:00Z', now)).toBe('3 days ago')
   })
 })
+
+describe('typed dates and changes', () => {
+  it('reads DD-MMM-YYYY and refuses dates that do not exist', async () => {
+    const { parseDisplayDate } = await import('./format.ts')
+    expect(parseDisplayDate('01-Apr-2026')).toBe('2026-04-01')
+    expect(parseDisplayDate(' 1-apr-2026 ')).toBe('2026-04-01')
+    expect(parseDisplayDate('29-Feb-2028')).toBe('2028-02-29')
+    expect(parseDisplayDate('29-Feb-2026')).toBeNull()
+    expect(parseDisplayDate('2026-04-01')).toBeNull()
+    expect(parseDisplayDate('01-Abc-2026')).toBeNull()
+  })
+
+  it('show a change with its direction', async () => {
+    const { formatChange } = await import('./format.ts')
+    expect(formatChange('12.0')).toBe('▲ 12%')
+    expect(formatChange('-3.5')).toBe('▼ 3.5%')
+    expect(formatChange('0.0')).toBe('▲ 0%')
+  })
+})

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.40 (Draft) |
+| Version | 0.41 (Draft) |
 | Date | 2026-10-30 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -170,6 +170,9 @@ Links a source company (e.g. a Tally company) to an entity. One entity can have 
 | source_entity_name | VARCHAR(255) | |
 | precedence | SMALLINT | Higher wins on overlap (IMP-005). |
 | active_from / active_to | DATE NULL | Period this source is authoritative for. |
+| source_checked_at | DATETIME(6) NULL | When the source was last asked which companies it has loaded (migration 0025). NULL: never asked. |
+| source_loaded | BOOLEAN NULL | Whether it had this company loaded then. The dashboard's company chips show it; the dashboard never contacts the source. |
+| source_checked_by | ENUM('sync','entity_check') NULL | What asked: a sync (at its start and end) or `entity-check`. |
 
 Unique: `(connection_id, source_entity_key)`.
 
@@ -827,6 +830,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-10-31 | 0.41 | `entity_sources.source_checked_at`, `source_loaded`, `source_checked_by` (migration 0025, the dashboard's company chips). |
 | 2026-10-30 | 0.40 | Section 6: `v_group_ancestors`, `v_data_health` (migration 0024, dashboard D1). |
 | 2026-10-30 | 0.39 | `entities.is_on_hold` (SYN-007, migration 0023). |
 | 2026-10-30 | 0.38 | Ledgers: their own currency (`currency_name`, `is_foreign_currency`, `currency_code` NULL without an ISO code) and `opening_currency_name` (migration 0022). |

@@ -92,3 +92,23 @@ export function timeAgo(isoUtc: string, now: Date = new Date()): string {
   if (hours < 48) return `${hours} h ago`
   return `${Math.round(hours / 24)} days ago`
 }
+
+/** "01-Apr-2026" (any case) -> "2026-04-01"; null for anything that isn't a real date. */
+export function parseDisplayDate(text: string): string | null {
+  const match = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(text.trim())
+  if (!match) return null
+  const month = MONTHS.findIndex((m) => m.toLowerCase() === match[2].toLowerCase()) + 1
+  const day = Number(match[1])
+  const year = Number(match[3])
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  if (month === 0 || day < 1 || day > days) return null
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+/** A change in percent as text: "▲ 12%", "▼ 3.5%" (one decimal unless whole). */
+export function formatChange(pct: string): string {
+  const value = toScaled(pct)
+  const arrow = value < 0n ? '▼' : '▲'
+  const text = pct.replace(/^-/, '').replace(/\.0+$/, '')
+  return `${arrow} ${text}%`
+}

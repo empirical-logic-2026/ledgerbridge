@@ -2,7 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
-import type { Company, Overview, Periods } from './types.ts'
+import type { PeriodChoice } from '../selection.ts'
+import type { Company, Home, Periods } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -19,11 +20,17 @@ export function usePeriods(companies: number[] | undefined) {
   })
 }
 
-export function useOverview(companies: number[] | undefined, fy: number | undefined, asOf: string | undefined) {
+export function useHome(companies: number[] | undefined, period: PeriodChoice | undefined, compare: boolean) {
   return useQuery({
-    queryKey: ['overview', companies, fy, asOf],
+    queryKey: ['home', companies, period, compare],
     queryFn: () =>
-      getJson<Overview>('/api/v1/overview', { company: companies, financial_year: fy, as_of: asOf }),
-    enabled: companies !== undefined && companies.length > 0 && fy !== undefined,
+      getJson<Home>('/api/v1/home', {
+        company: companies,
+        month: period?.months.length ? period.months : undefined,
+        date_from: period?.months.length ? undefined : period?.from,
+        date_to: period?.months.length ? undefined : period?.to,
+        compare: compare ? 'true' : undefined,
+      }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }

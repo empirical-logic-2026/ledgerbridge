@@ -179,11 +179,11 @@ If Tally's data has **custom fields** (TDL customisations export them with prefi
 
 ```powershell
 cd frontend; npm install; cd ..         # once
-./dev.ps1 statements -Env pilot         # profit on the Overview needs stored statements
+./dev.ps1 statements -Env pilot         # profit and the Balance Sheet on the dashboard need stored statements
 ./dev.ps1 dashboard -Env pilot          # then open http://127.0.0.1:5174
 ```
 
-The dashboard has **no login yet** (ADR-049): `dashboard` starts it on this computer only and refuses to start if the API is published anywhere else. Never forward these ports or open them in the firewall. It shows every company not on hold. "All companies (combined)" adds the companies together **without inter-company eliminations**. Profit needs a statement stored for the chosen "as at" date and for the previous year end; the dates offered are those `statements` stored. Ctrl+C stops the dashboard.
+The dashboard has **no login yet** (ADR-049): `dashboard` starts it on this computer only and refuses to start if the API is published anywhere else. Never forward these ports or open them in the firewall. It shows every company not on hold, each marked **loaded** or **not loaded** in Tally as the last `sync` or `entity-check` found it (the dashboard never asks Tally). "All combined" or any combination of companies adds them together **without inter-company eliminations**. Choose months (one or several) or a from/to date range. Profit and the Balance Sheet need statements stored at the period's end and just before its start (`statements` stores every month end); a date range ending on another day shows "—" with the reason. In Educational mode a 30-day month runs to the 2nd of the next month, and the card says so. Ctrl+C stops the dashboard.
 
 ### 7. Records that failed to transform: `transform explain`, `retry`, `rebuild`
 

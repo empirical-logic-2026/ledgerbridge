@@ -1,43 +1,63 @@
-// What the user is looking at: the company (or all, combined), the financial year and the
-// "as at" date. Kept in the URL's query, so a view can be bookmarked and the browser's
-// back button works; the defaults (latest year, latest stored date) fill what's missing.
+// What the user is looking at (docs/design/dashboard.md Section 0.1): any combination of
+// companies (none chosen = all, combined), the financial year, and either whole months (one
+// or several, adjacent or not) or a from/to date range, and whether to compare with last
+// year. Kept in the URL's query, so a view can be bookmarked and the back button works.
 
 import type { Company, FinancialYear, Periods } from './api/types.ts'
 import { navigate, useRoute } from './router.ts'
 
-export const ALL = 'all'
-
 export interface Selection {
-  company: number | typeof ALL
+  companies: number[] // empty: all of them, combined
   fy: number | undefined
-  asOf: string | undefined
+  months: string[] // "2026-04"
+  from: string | undefined // "2026-04-01"
+  to: string | undefined
+  compare: boolean
 }
 
-export function useSelection(): [Selection, (change: Partial<Selection>) => void] {
-  const route = useRoute()
-  const company = route.query.get('company')
-  const fy = route.query.get('fy')
-  const selection: Selection = {
-    company: company && /^\d+$/.test(company) ? Number(company) : ALL,
+export type Change = (change: Partial<Selection>) => void
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+const MONTH = /^\d{4}-\d{2}$/
+
+export function readSelection(query: URLSearchParams): Selection {
+  const fy = query.get('fy')
+  const from = query.get('from') ?? undefined
+  const to = query.get('to') ?? undefined
+  return {
+    companies: query.getAll('company').filter((c) => /^\d+$/.test(c)).map(Number),
     fy: fy && /^\d{4}$/.test(fy) ? Number(fy) : undefined,
-    asOf: route.query.get('as_of') ?? undefined,
+    months: query.getAll('month').filter((m) => MONTH.test(m)),
+    from: from && ISO_DATE.test(from) ? from : undefined,
+    to: to && ISO_DATE.test(to) ? to : undefined,
+    compare: query.get('compare') === '1',
   }
-  const change = (next: Partial<Selection>) => {
-    const merged = { ...selection, ...next }
-    navigate(route.path, {
-      company: merged.company === ALL ? undefined : merged.company,
-      fy: merged.fy,
-      as_of: merged.asOf,
-    })
+}
+
+/** The selection as URL query values (repeated keys for lists). */
+export function selectionQuery(s: Selection): Record<string, string | string[] | undefined> {
+  return {
+    company: s.companies.map(String),
+    fy: s.fy === undefined ? undefined : String(s.fy),
+    month: s.months,
+    from: s.from,
+    to: s.to,
+    compare: s.compare ? '1' : undefined,
   }
+}
+
+export function useSelection(): [Selection, Change] {
+  const route = useRoute()
+  const selection = readSelection(route.query)
+  const change: Change = (next) => navigate(route.path, selectionQuery({ ...selection, ...next }))
   return [selection, change]
 }
 
-/** The company ids the selection covers (every visible company for "all"). */
+/** The company ids the selection covers (every visible company when none is chosen). */
 export function selectedIds(selection: Selection, companies: Company[] | undefined): number[] | undefined {
   if (!companies) return undefined
-  if (selection.company === ALL) return companies.map((c) => c.id)
-  return companies.some((c) => c.id === selection.company) ? [selection.company] : []
+  const chosen = companies.filter((c) => selection.companies.includes(c.id)).map((c) => c.id)
+  return chosen.length ? chosen : companies.map((c) => c.id)
 }
 
 /** The year asked for, else the latest one. */
@@ -46,18 +66,37 @@ export function chosenYear(selection: Selection, periods: Periods | undefined): 
   return years.find((y) => y.start_year === selection.fy) ?? years[0]
 }
 
-/** The "as at" dates stored inside the year, latest first. */
-export function datesInYear(periods: Periods | undefined, year: FinancialYear | undefined): string[] {
-  if (!periods || !year) return []
-  return periods.as_at_dates.filter((d) => d >= year.start && d <= year.end)
+/** The year's twelve months, "2026-04" to "2027-03". */
+export function yearMonths(year: FinancialYear): string[] {
+  const months: string[] = []
+  let [y, m] = year.start.split('-').map(Number)
+  for (let i = 0; i < 12; i++) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`)
+    m += 1
+    if (m > 12) {
+      m = 1
+      y += 1
+    }
+  }
+  return months
 }
 
-/** The date asked for if it lies in the year, else the latest stored one, else the year's
- *  end or today, whichever is earlier. */
-export function chosenDate(selection: Selection, periods: Periods | undefined, year: FinancialYear | undefined, today: string): string | undefined {
+export interface PeriodChoice {
+  months: string[] // empty for a date range
+  from?: string
+  to?: string
+}
+
+/** The period to show: the dates given, else the months asked for inside the year, else the
+ *  year's months up to this month. */
+export function chosenPeriod(selection: Selection, year: FinancialYear | undefined, today: string): PeriodChoice | undefined {
+  if (selection.from && selection.to && selection.from <= selection.to) {
+    return { months: [], from: selection.from, to: selection.to }
+  }
   if (!year) return undefined
-  if (selection.asOf && selection.asOf >= year.start && selection.asOf <= year.end) return selection.asOf
-  const stored = datesInYear(periods, year)
-  if (stored.length) return stored[0]
-  return year.end < today ? year.end : today
+  const all = yearMonths(year)
+  const asked = selection.months.filter((m) => all.includes(m))
+  if (asked.length) return { months: asked }
+  const upToNow = all.filter((m) => m <= today.slice(0, 7))
+  return { months: upToNow.length ? upToNow : all }
 }

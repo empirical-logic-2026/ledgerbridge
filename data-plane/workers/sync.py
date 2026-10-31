@@ -48,6 +48,7 @@ from workers.entities import (
     Labels,
     ensure_loaded,
     on_hold_line,
+    record_loaded,
     select_not_on_hold,
 )
 from workers.fetch import AUTO, ChunkFetcher, FetchSettings
@@ -198,7 +199,13 @@ def run_sync(
     run_type = "full" if full or period is not None or has_markers is None else "incremental"
     run, result = _open_run(session, connection, run_type)
     try:
-        entities, held = select_not_on_hold(session, connector, connection, entity_names)
+        # Which companies the source has loaded, stored for the dashboard: now, and again at
+        # the end for the companies this run converts for the first time.
+        available = connector.list_entities()
+        record_loaded(session, connection, available, "sync")
+        entities, held = select_not_on_hold(
+            session, connector, connection, entity_names, available=available
+        )
         if line := on_hold_line(held):
             say(line)
         result.entities = [e.name for e in entities]
@@ -231,6 +238,7 @@ def run_sync(
             result.entity_keys.append(entity.key)
             if after_entity is not None:
                 after_entity(result, entity, True)
+        record_loaded(session, connection, available, "sync")
         failed = [o for o in outcomes if o.status != "succeeded"]
         if failed:
             first = next((o for o in failed if o.error), failed[0])

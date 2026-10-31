@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.4 |
-| Date | 2026-10-30 |
+| Version | 0.5 |
+| Date | 2026-10-31 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
-| Mockup | [dashboard-mockup.png](dashboard-mockup.png) |
+| Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1) |
 
 The mockup is the approved design for the dashboard home page. M7 must match its **layout, wording and visual style**. The figures, company names, party names and voucher numbers in it are illustrative sample data; the built page shows real values from the reporting API (M6). The footer text "Illustrative mockup with sample figures" belongs to the mockup only and is not part of the product.
 
@@ -17,7 +17,7 @@ Requirements covered: RPT-001 (MIS dashboard), RPT-002 (health indicators with g
 
 The dashboard works the way business users know from Odoo, on our own stack and visual identity (no Odoo name, logo, colours or screen designs):
 
-- **Apps home:** tiles, one per app (D1: Overview, Statements, Explore; later Sales and purchases, Day Book, Ledgers, Cash and bank, Receivables and payables, Data health, Budget, Foreign currency, Ask a question).
+- **Apps home:** tiles, one per app (screen 1; D1: Reports, with its Dashboard and reports; later Overview, Accounting, Budgets, Data Quality, AI Assistant, Settings).
 - **Top bar:** product name, the apps menu, the current app's own menu, then the company switcher, the period controls and light/dark mode.
 - **Breadcrumbs** under the top bar for every drill-down (for example Statements / Profit & Loss / Indirect Expenses / Rent).
 - **Search bar** on every list: free text, filter facets and group-by facets, with saved favourites (per browser until login).
@@ -26,6 +26,38 @@ The dashboard works the way business users know from Odoo, on our own stack and 
 This replaces the mockup's left sidebar: its items become app tiles and app menus, with the same plain-language wording. The mockup's greeting, KPI cards, chart and panels stay the target for the Overview app; the business health score, the LIVE ticker and "Needs your attention" need the M6 data (Section 4) and come after D1. The company switcher shows each company and **"All companies (combined)"**, labelled "combined, without inter-company eliminations"; companies on hold (SYN-007) are not shown. Amounts are in rupees with lakh and crore units, exact amounts in Indian grouping on hover; dates are written DD-MMM-YYYY (for example 02-Oct-2026). Light and dark mode come from the same theme tokens (Section 5).
 
 Until login (M5) the dashboard runs on this computer only (ADR-049).
+
+## 0.1 The approved screens (2026-10-31)
+
+Six screens, approved by the developer on 2026-10-31. Build to them: their **layout, wording and visual style**. Every figure, name and voucher number in them is illustrative (company labels are state codes, channels are public marketplace names); the built pages show the data. Where a screen shows something whose data doesn't exist yet, it is left out until it does (decision 2026-10-31): ageing ("over 60 days", "due this week"), cash cover in months, the business health score, the LIVE ticker, "Needs your attention" and the AI question panel.
+
+| Screen | What it shows | Built in |
+| --- | --- | --- |
+| [1 · Apps home](mockup-1-apps-home.png) | Greeting, sync status pill, a tile per app with an icon and a one-line description (Overview, Accounting, Reports, Budgets, Data Quality, AI Assistant, Settings). Only apps that work are shown. | D1 (b) |
+| [2 · Overview app](mockup-2-overview-app.png) | Health score, ticker, attention panel, questions. | Later (M6, M8) |
+| [3 · Accounting: Ledgers](mockup-3-accounting-ledgers.png) | A list with the search bar (group-by and filter facets, Filters, Group By, Favourites), view switcher (list, kanban, pivot, graph), groups with counts and subtotals, "Matches Tally" per row, paging. | D2 |
+| [4 · Voucher](mockup-4-voucher.png) | One voucher: header fields, accounting, stock, GST and bill lines, debit and credit totals, "Synced → Converted → Validated", activity. | D2 |
+| [5 · Dashboard home](mockup-5-dashboard-home.png) | The Reports app's **Dashboard** (below). | D1 (b) |
+| [6 · Profit & Loss](mockup-6-profit-and-loss.png) | A report page with the options side panel (below). | D1 (c1) |
+
+**Dashboard home (screen 5).** Top menu of the Reports app: Dashboard, Profit & Loss, Balance Sheet, Trial Balance, Sales, Purchases, Books, Parties (each shown once it is built). Under it a filter bar:
+- **Companies:** "All combined" or any combination of chips, one per company, each marked **loaded** or **not loaded** in Tally as recorded at the last sync or `entity-check` (`entity_sources.source_loaded`, migration 0025; the dashboard never contacts Tally). Several companies are added together: combined, without inter-company eliminations.
+- **Period:** the financial year, month chips (one or several, adjacent or not), or a from/to date range ("or dates"), and **Compare: last year** (the same period a year earlier) or no comparison.
+- **Status pill:** how many selected companies were loaded in Tally, the last sync, and whether every latest validation passed.
+
+Cards, each following the selection:
+- **Profit & Loss:** net sales, cost of sales, gross profit, net profit, each with the change against last year. From the stored statements (`v_profit_loss`, validated against Tally's): a period's figure is the statement at its end less the one before its start. Whole months use the stored month ends; where the source's statements exist only for some days of the month (Tally's Educational mode: the 1st, 2nd and 31st), a 30-day month runs to the 2nd of the next month and the card says so. Other from/to ranges show "—" with the reason. "Open" leads to the Profit & Loss report (D1 c1).
+- **Balance Sheet:** total assets, current assets, current liabilities, capital and reserves (the capital account and the Profit & Loss A/c), at the period's end, from the stored statement for that date.
+- **Cash & bank, Receivables, Payables:** balances at the period's end (ledgers under Cash-in-Hand and Bank Accounts, Sundry Debtors, Sundry Creditors, by the source's predefined groups).
+- **Stock value:** the source's closing stock at that date ("from Tally"), stored with the statements.
+
+Charts: **sales and purchases by month** (₹ lakh, ECharts), **sales by channel** (net sales by voucher type, the four largest and "Others"), **share of sales by company**. These come from the entries themselves, so they are exact for any months or dates.
+
+**Report pages (screen 6), starting with Profit & Loss.** Title with the selected companies, the period and "combined, without inter-company eliminations"; the table explorer's **Columns, Group by, Filters, Export CSV** above the table; a column per selected company plus **Total**, **Last year** and **Change**; click a line for its ledgers, a ledger for its vouchers. The **options side panel**:
+- "Matches Tally" for the selection (every selected company and stored date in it without open statement differences; otherwise how many differ, as counts);
+- **View as:** Tally layout, company by company, month by month, quarter by quarter, % of sales;
+- **Columns:** each company, total, last year, change %, % of sales (budget later);
+- **Open related** reports, **Saved views** (per browser until login), **Export:** CSV now (Excel and PDF later).
 
 ## 1. Principles
 
@@ -298,6 +330,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-31 | 0.5 | Section 0.1: the six approved screens (apps home, Overview, Accounting ledgers, voucher, dashboard home, Profit & Loss with its options panel); the dashboard home's filter bar (company chips with "loaded in Tally", months, dates, compare), cards and charts; what is left for later. |
 | 2026-10-30 | 0.4 | Section 0: the Odoo way of working on our own identity (ADR-048): apps home, app menus, breadcrumbs, search with facets and favourites replace the sidebar; combined companies; companies on hold hidden; D1 scope. |
 | 2026-10-16 | 0.3 | Forex page (Section 8, proposed for M7): filters, summary cards, own-currency balances and ageing, gains and losses, exposure and rate graphs; source-calculated figures marked (FX-008 to FX-013, ADR-037). |
 | 2026-10-13 | 0.2 | Budget page (Section 7, proposed for M7b): filters, summary cards, four graphs, budget vs actual table, planning view, budget questions; sidebar item "Budget"; budget variance alerts in "Needs your attention". |

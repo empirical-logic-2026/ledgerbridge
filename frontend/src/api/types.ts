@@ -16,6 +16,30 @@ export interface AlertOut {
   acknowledged_at: string | null
 }
 
+export interface BalanceSheet {
+  available: boolean
+  reason: string | null
+  as_of: string | null
+  total_assets: string | null
+  current_assets: string | null
+  current_liabilities: string | null
+  capital_and_reserves: string | null
+}
+
+export interface Balances {
+  as_of: string
+  cash_and_bank: string
+  receivables: string
+  payables: string
+  stock_value: string | null
+  stock_value_as_of: string | null
+}
+
+export interface Channel {
+  name: string
+  net_sales: string
+}
+
 export interface Company {
   id: number
   code: string
@@ -25,11 +49,21 @@ export interface Company {
   health: DataHealth
 }
 
+export interface CompanyShare {
+  company: number
+  net_sales: string
+  share_pct: string | null
+}
+
 export interface DataHealth {
   last_sync_at: string | null
   validation_status: string | null
   validated_as_of: string | null
   validated_at: string | null
+  source_name: string | null
+  source_loaded: boolean | null
+  source_checked_at: string | null
+  source_checked_by: string | null
 }
 
 export interface DatasetInfo {
@@ -72,6 +106,12 @@ export interface EntityValidationStatus {
   open_alerts: number
 }
 
+export interface Figure {
+  value: string | null
+  last_year?: string | null
+  change_pct?: string | null
+}
+
 export interface FilterOption {
   key: string
   label: string
@@ -95,14 +135,27 @@ export interface Health {
   version: string
 }
 
+export interface Home {
+  companies: number[]
+  combined: boolean
+  period: PeriodOut
+  profit_loss: ProfitLoss
+  balance_sheet: BalanceSheet
+  balances: Balances
+  monthly: MonthFigures[]
+  channels: Channel[]
+  by_company: CompanyShare[]
+}
+
 export interface Key {
   id: number | string
   label: string
 }
 
-export interface MonthlySales {
+export interface MonthFigures {
   month: string
-  net_sales: string
+  sales: string
+  purchases: string
 }
 
 export interface Option {
@@ -110,24 +163,27 @@ export interface Option {
   label: string
 }
 
-export interface Overview {
-  companies: number[]
-  combined: boolean
-  period_start: string
-  as_of: string
-  sales: string
-  purchases: string
-  gross_profit: string | null
-  net_profit: string | null
-  cash_and_bank: string
-  receivables: string
-  payables: string
-  monthly_sales: MonthlySales[]
+export interface PeriodOut {
+  start: string
+  end: string
+  months: string[]
 }
 
 export interface Periods {
   financial_years: FinancialYear[]
   as_at_dates: string[]
+}
+
+export interface ProfitLoss {
+  available: boolean
+  reason: string | null
+  as_of: string | null
+  shifted: boolean
+  last_year_reason: string | null
+  net_sales: Figure
+  cost_of_sales: Figure
+  gross_profit: Figure
+  net_profit: Figure
 }
 
 export interface Readiness {
