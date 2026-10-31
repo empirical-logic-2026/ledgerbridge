@@ -112,6 +112,11 @@ export interface EntityValidationStatus {
   open_alerts: number
 }
 
+export interface FacetValue {
+  value: string
+  companies: number
+}
+
 export interface Figure {
   value: string | null
   last_year?: string | null

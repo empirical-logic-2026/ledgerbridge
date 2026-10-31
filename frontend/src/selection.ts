@@ -1,10 +1,12 @@
-// What the user is looking at (docs/design/dashboard.md Section 0.1): any combination of
-// companies (none chosen = all, combined), the financial year, and either whole months (one
-// or several, adjacent or not) or a from/to date range, and whether to compare with last
-// year. Kept in the URL's query, so a view can be bookmarked and the back button works.
+// What the user is looking at (docs/design/dashboard.md Sections 0.1 and 0.2): any combination
+// of companies (none chosen = all, combined), the financial year, either whole months (one or
+// several, adjacent or not) or a from/to date range, whether to compare with last year, and
+// the facets (customers, channels, ledger groups, voucher types, by name). Kept in the URL's
+// query, so a view can be bookmarked, shared with Copy link, and the back button works.
 
 import type { Company, FinancialYear, Periods } from './api/types.ts'
 import { updateQuery, useRoute } from './router.ts'
+import type { Facet } from './shell/nav.ts'
 
 export interface Selection {
   companies: number[] // empty: all of them, combined
@@ -13,6 +15,7 @@ export interface Selection {
   from: string | undefined // "2026-04-01"
   to: string | undefined
   compare: boolean
+  facets: Record<Facet, string[]> // names; empty: all
 }
 
 export type Change = (change: Partial<Selection>) => void
@@ -31,6 +34,12 @@ export function readSelection(query: URLSearchParams): Selection {
     from: from && ISO_DATE.test(from) ? from : undefined,
     to: to && ISO_DATE.test(to) ? to : undefined,
     compare: query.get('compare') !== '0', // compared with last year unless turned off
+    facets: {
+      customer: query.getAll('customer'),
+      channel: query.getAll('channel'),
+      ledger_group: query.getAll('group'),
+      voucher_type: query.getAll('vtype'),
+    },
   }
 }
 
@@ -43,6 +52,10 @@ export function selectionQuery(s: Selection): Record<string, string | string[] |
     from: s.from,
     to: s.to,
     compare: s.compare ? undefined : '0',
+    customer: s.facets.customer,
+    channel: s.facets.channel,
+    group: s.facets.ledger_group,
+    vtype: s.facets.voucher_type,
   }
 }
 

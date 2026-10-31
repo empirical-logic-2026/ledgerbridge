@@ -12,14 +12,6 @@ export function LogoIcon() {
   )
 }
 
-export function ReportsIcon() {
-  return (
-    <svg {...outline} width={26} height={26}>
-      <path d="M6 20V10M12 20V4M18 20v-7" />
-    </svg>
-  )
-}
-
 export function SunIcon() {
   return (
     <svg {...common}>

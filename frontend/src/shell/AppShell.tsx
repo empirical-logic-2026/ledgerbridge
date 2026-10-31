@@ -1,75 +1,27 @@
-// The frame around every page (ADR-048; docs/design/dashboard.md Section 0.1, screen 5): the
-// top bar (logo, the current app's menu, "This computer only", light/dark mode), an optional
-// filter bar under it, breadcrumbs when the page has them, and the page. "This computer
-// only" reminds that there is no login yet (ADR-049).
+// The frame around every page (docs/design/dashboard.md Section 0.2, screen 7): the charcoal
+// side bar on the left (collapsible; collapsed on narrow screens at first), and on the right
+// the top filter bar above the page.
 
-import { Breadcrumb, Button, Layout, Tooltip } from 'antd'
-import type { ReactNode } from 'react'
-import { href, type Query } from '../router.ts'
-import type { Mode } from '../theme.ts'
-import type { DashboardApp } from './apps.ts'
-import { LogoIcon, MoonIcon, SunIcon } from './icons.tsx'
-
-export interface Crumb {
-  label: string
-  path?: string[] // omitted for the current page
-}
+import { Layout } from 'antd'
+import { useState, type ReactNode } from 'react'
 
 interface Props {
-  app: DashboardApp | undefined
-  page: string | undefined
-  crumbs?: Crumb[]
-  filterBar?: ReactNode
-  query?: Query // the selection, kept on every link
-  mode: Mode
-  onMode: (mode: Mode) => void
+  sideBar: (collapsed: boolean, onCollapse: (collapsed: boolean) => void) => ReactNode
+  topBar: ReactNode
   children: ReactNode
 }
 
-export function AppShell({ app, page, crumbs = [], filterBar, query = {}, mode, onMode, children }: Props) {
-  const current = page ?? app?.pages[0].key
+const NARROW = '(max-width: 800px)'
+
+export function AppShell({ sideBar, topBar, children }: Props) {
+  const [collapsed, setCollapsed] = useState(() => window.matchMedia(NARROW).matches)
   return (
-    <Layout className="shell">
-      <Layout.Header className="shell-top">
-        <a href={href([], query)} className="shell-brand" aria-label="LedgerBridge: all apps">
-          <LogoIcon />
-          <span>LedgerBridge</span>
-        </a>
-        <nav className="shell-menu" aria-label={app ? `${app.title} menu` : 'Menu'}>
-          {app?.pages.map((p) => (
-            <a
-              key={p.key}
-              href={href([app.key, p.key], query)}
-              className={p.key === current ? 'shell-menu-item active' : 'shell-menu-item'}
-              aria-current={p.key === current ? 'page' : undefined}
-            >
-              {p.label}
-            </a>
-          ))}
-        </nav>
-        <Tooltip title="No login yet: the dashboard runs on this computer only (ADR-049).">
-          <span className="local-pill">This computer only</span>
-        </Tooltip>
-        <Tooltip title={mode === 'dark' ? 'Light mode' : 'Dark mode'}>
-          <Button
-            type="text"
-            className="on-dark"
-            aria-label={mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            icon={mode === 'dark' ? <SunIcon /> : <MoonIcon />}
-            onClick={() => onMode(mode === 'dark' ? 'light' : 'dark')}
-          />
-        </Tooltip>
-      </Layout.Header>
-      {filterBar}
-      <Layout.Content className="shell-content">
-        {crumbs.length > 0 && (
-          <Breadcrumb
-            className="shell-crumbs"
-            items={crumbs.map((c) => ({ title: c.path ? <a href={href(c.path, query)}>{c.label}</a> : c.label }))}
-          />
-        )}
-        {children}
-      </Layout.Content>
+    <Layout className={collapsed ? 'shell side-collapsed' : 'shell'}>
+      {sideBar(collapsed, setCollapsed)}
+      <div className="shell-main">
+        {topBar}
+        <Layout.Content className="shell-content">{children}</Layout.Content>
+      </div>
     </Layout>
   )
 }

@@ -457,3 +457,37 @@ def test_matches_tally_counts_the_source_lines_that_differ(
     store_source(MONTH_ENDS[-1], Decimal(1))
     differs = _get(client, PL, month=MONTHS)["matching"]
     assert differs["differing"] >= 1 and differs["matches"] is False
+
+
+# --- the top filter bar's facets (navigation) ----------------------------------------------
+
+
+def test_facet_values_for_the_selected_companies(client: TestClient, synced: int) -> None:
+    with Session(get_engine("report")) as session:
+        customers = set(
+            session.scalars(
+                select(A.Party.name).where(
+                    A.Party.entity_id == synced,
+                    A.Party.party_type.in_(("customer", "both")),
+                    A.Party.is_deleted.is_(False),
+                )
+            )
+        )
+        sales_types = set(
+            session.scalars(
+                select(A.VoucherType.name).where(
+                    A.VoucherType.entity_id == synced, A.VoucherType.base_type == "sales"
+                )
+            )
+        )
+    found = _get(client, "/api/v1/facets/customer")
+    assert {v["value"] for v in found} == customers and all(v["companies"] == 1 for v in found)
+    assert {v["value"] for v in _get(client, "/api/v1/facets/channel")} == sales_types
+    assert _get(client, "/api/v1/facets/voucher_type")
+    assert _get(client, "/api/v1/facets/ledger_group")
+    first = sorted(customers)[0]
+    narrowed = _get(client, "/api/v1/facets/customer", search=first[1:4].upper())
+    assert first in {v["value"] for v in narrowed}
+    assert _get(client, "/api/v1/facets/customer", search="%_no such name_%") == []
+    assert client.get("/api/v1/facets/ledger").status_code == 422
+    assert client.get("/api/v1/facets/customer", params={"search": "x" * 101}).status_code == 422
