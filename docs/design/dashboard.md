@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.5 |
+| Version | 0.6 |
 | Date | 2026-10-31 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1) |
@@ -208,23 +208,19 @@ All of it respects the user's entity access and the selected companies and perio
 
 ## 5. Visual style
 
-Approximate colours sampled from the mockup; define them once as Ant Design theme tokens.
+Three colours carry meaning (decision 2026-10-31; they replace the teal, navy and amber of the first mockups). They are defined once, as tokens in `frontend/src/theme.ts`, for light and dark mode; the stylesheet, Ant Design and the charts all read them. Every text colour meets **WCAG AA** (4.5:1) on the surface it is used on, measured by `frontend/src/theme.test.ts`.
 
-| Use | Colour |
-| --- | --- |
-| Top bar background | Dark navy, about `#1F2937` |
-| Primary (Sales bars, Ask button, active sidebar text, panel title) | Dark teal, about `#0F766E` |
-| Active sidebar item, chips | Pale teal, about `#CCFBF1` background |
-| LIVE block | Red, about `#C62828` |
-| Sync pill | Dark green background, light green text |
-| Page background | Light grey, about `#F5F6F8`; cards white with a light grey border and rounded corners (about 8 px) |
-| Expenses bars | Light grey-blue, about `#CBD5E1` |
-| Profit line, amber status | Orange, about `#B45309` |
-| Good status | Green, about `#15803D` |
-| Bad status | Red, about `#B91C1C` |
-| Text | Near-black headings, grey secondary text |
+| Colour | Used for | Light mode | Dark mode |
+| --- | --- | --- | --- |
+| **Charcoal black** | Top bar, side panels, dark surfaces | `#1C1F23` | `#1C1F23` (page `#141619`, cards `#202327`) |
+| **Forest green** | Primary buttons, the active menu item, links, selections (chips), positive figures and good changes, the main chart series | `#1E6B3A` (on white 6.5:1); selected chips `#DCEFE2` | text `#6FCF97` (8.3:1 on cards); buttons `#1E6B3A` with white text |
+| **Crimson red** | Negative figures, losses, bad changes (sales or profit down), alerts and warnings | `#B0102D` (7.1:1) | `#FF7A8A` (6.3:1) |
 
-Typography: the Ant Design sans-serif font stack; bold for card values and panel titles; small grey labels.
+- **Red is used sparingly**, so it keeps its meaning: a cost going up is shown neutral (grey), not red; there is no amber.
+- Neutral greys for text (`#16181B`, secondary `#5F6368`; dark `#E6E8EA`, `#9AA1A9`), borders and the second chart series (purchases).
+- Cards are white (dark: `#202327`) with a light border and 8 px rounded corners on a light grey page (`#F4F5F6`).
+
+Typography: IBM Plex Sans where installed, else the system's sans-serif; bold for card values and titles; small grey labels.
 
 ## 6. Open points for M7 planning
 
@@ -330,6 +326,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-10-31 | 0.6 | Section 5: charcoal black, forest green and crimson as the theme's tokens, light and dark, WCAG AA; no amber, red used sparingly. |
 | 2026-10-31 | 0.5 | Section 0.1: the six approved screens (apps home, Overview, Accounting ledgers, voucher, dashboard home, Profit & Loss with its options panel); the dashboard home's filter bar (company chips with "loaded in Tally", months, dates, compare), cards and charts; what is left for later. |
 | 2026-10-30 | 0.4 | Section 0: the Odoo way of working on our own identity (ADR-048): apps home, app menus, breadcrumbs, search with facets and favourites replace the sidebar; combined companies; companies on hold hidden; D1 scope. |
 | 2026-10-16 | 0.3 | Forex page (Section 8, proposed for M7): filters, summary cards, own-currency balances and ageing, gains and losses, exposure and rate graphs; source-calculated figures marked (FX-008 to FX-013, ADR-037). |

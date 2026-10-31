@@ -4,7 +4,7 @@
 import { App as AntApp, ConfigProvider } from 'antd'
 import { useEffect, useState } from 'react'
 import App from './App.tsx'
-import { initialMode, saveMode, themeConfig, type Mode } from './theme.ts'
+import { cssVariables, initialMode, saveMode, themeConfig, type Mode } from './theme.ts'
 
 function localToday(): string {
   const now = new Date()
@@ -17,7 +17,9 @@ export function Root() {
   const [today] = useState(localToday)
   const [now] = useState(() => new Date())
   useEffect(() => {
-    document.documentElement.dataset.mode = mode
+    const root = document.documentElement
+    root.dataset.mode = mode
+    for (const [name, value] of Object.entries(cssVariables(mode))) root.style.setProperty(name, value)
   }, [mode])
   const changeMode = (next: Mode) => {
     saveMode(next)

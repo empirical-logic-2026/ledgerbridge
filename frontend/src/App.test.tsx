@@ -128,7 +128,7 @@ describe('the dashboard', () => {
     const pl = await screen.findByRole('region', { name: 'Profit & Loss' })
     expect(within(pl).getByText('₹48.20 Cr')).toBeInTheDocument()
     expect(within(pl).getByText('▲ 12%')).toHaveClass('good')
-    expect(within(pl).getByText('▲ 9%')).toHaveClass('watch') // costs up: watch
+    expect(within(pl).getByText('▲ 9%')).toHaveClass('neutral') // costs up: neutral, not red
     expect(within(pl).getByText(/Months ending on the 30th .* run to the 2nd of the next month/)).toBeInTheDocument()
     const bs = screen.getByRole('region', { name: 'Balance Sheet' })
     expect(within(bs).getByText('₹62.80 Cr')).toBeInTheDocument()

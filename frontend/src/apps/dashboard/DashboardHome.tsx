@@ -10,7 +10,7 @@ import type { EChartsOption } from 'echarts'
 import type { Company, Figure, Home } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
 import { formatChange, formatCompact, formatDate, formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
-import { palette } from '../../theme.ts'
+import { tokens, type Tokens } from '../../theme.ts'
 
 export const COMBINED_NOTE = 'combined, without inter-company eliminations'
 
@@ -32,19 +32,20 @@ function Amount({ value, missing }: { value: string | null | undefined; missing?
   }
   return (
     <Tooltip title={formatExact(value)}>
-      <span>{formatCompact(value)}</span>
+      <span className={toScaled(value) < 0n ? 'negative' : undefined}>{formatCompact(value)}</span>
     </Tooltip>
   )
 }
 
-/** ▲ 12% in green when the change is good for the business, amber or red when not. */
+/** ▲ 12% in green when the change is good for the business; red when it is bad for it
+ *  (sales or profit down); neutral for costs going up, so that red keeps its meaning. */
 function Change({ figure, higherIsBetter }: { figure: Figure; higherIsBetter: boolean }) {
   if (!figure.change_pct) return null
   const up = toScaled(figure.change_pct) >= 0n
   const good = up === higherIsBetter
   return (
     <Tooltip title={figure.last_year ? `Last year ${formatExact(figure.last_year)}` : undefined}>
-      <span className={good ? 'change good' : higherIsBetter ? 'change bad' : 'change watch'}>{formatChange(figure.change_pct)}</span>
+      <span className={good ? 'change good' : higherIsBetter ? 'change bad' : 'change neutral'}>{formatChange(figure.change_pct)}</span>
     </Tooltip>
   )
 }
@@ -118,9 +119,9 @@ function SmallCard({ label, value, note, missing }: { label: string; value: stri
   )
 }
 
-function salesAndPurchases(home: Home, dark: boolean): EChartsOption {
+function salesAndPurchases(home: Home, colours: Tokens): EChartsOption {
   const months = home.monthly
-  const text = dark ? '#CBD5E1' : '#475569'
+  const text = colours.muted
   return {
     backgroundColor: 'transparent',
     grid: { left: 48, right: 8, top: 16, bottom: 28 },
@@ -133,10 +134,10 @@ function salesAndPurchases(home: Home, dark: boolean): EChartsOption {
       },
     },
     xAxis: { type: 'category', data: months.map((m) => formatMonth(m.month).slice(0, 3)), axisLabel: { color: text } },
-    yAxis: { type: 'value', axisLabel: { color: text } },
+    yAxis: { type: 'value', axisLabel: { color: text }, splitLine: { lineStyle: { color: colours.border } } },
     series: [
-      { type: 'bar', name: 'Sales', data: months.map((m) => toLakhs(m.sales)), itemStyle: { color: palette.primary } },
-      { type: 'bar', name: 'Purchases', data: months.map((m) => toLakhs(m.purchases)), itemStyle: { color: '#94A3B8' } },
+      { type: 'bar', name: 'Sales', data: months.map((m) => toLakhs(m.sales)), itemStyle: { color: colours.primary } },
+      { type: 'bar', name: 'Purchases', data: months.map((m) => toLakhs(m.purchases)), itemStyle: { color: colours.neutralBar } },
     ],
   }
 }
@@ -171,6 +172,7 @@ function shareOf(amount: string, largest: string): number {
 export function DashboardHome({ companies, home, loading, error, dark }: Props) {
   if (error) return <Alert type="error" showIcon message="The figures couldn't be loaded." description={error.message} />
   if (loading || !home) return <Skeleton active paragraph={{ rows: 8 }} />
+  const colours = tokens[dark ? 'dark' : 'light']
   const names = new Map(companies.map((c) => [c.id, c.name]))
   const source = companies[0]?.health.source_name ?? 'the source'
   const asAt = `As at ${formatDate(home.balances.as_of)}`
@@ -204,17 +206,17 @@ export function DashboardHome({ companies, home, loading, error, dark }: Props) 
           <div className="card-head">
             <h2 className="card-title">Sales and purchases by month (₹ lakh)</h2>
             <span className="legend">
-              <span className="legend-key" style={{ background: palette.primary }} /> Sales <span className="legend-key" style={{ background: '#94A3B8' }} /> Purchases
+              <span className="legend-key" style={{ background: colours.primary }} /> Sales <span className="legend-key" style={{ background: colours.neutralBar }} /> Purchases
             </span>
           </div>
-          <EChart key={dark ? 'dark' : 'light'} option={salesAndPurchases(home, dark)} dark={dark} height={300} />
+          <EChart key={dark ? 'dark' : 'light'} option={salesAndPurchases(home, colours)} dark={dark} height={300} />
         </section>
         <section className="card" aria-label="Sales by channel">
           <h2 className="card-title">Sales by channel</h2>
           {channels.length ? (
             <Bars
               rows={channels.map((c) => ({ label: c.name, amount: c.net_sales, share: shareOf(c.net_sales, largestChannel) }))}
-              colour="#14B8A6"
+              colour={colours.primaryLine}
               value={(r) => formatCompact(r.amount)}
             />
           ) : (
@@ -229,7 +231,7 @@ export function DashboardHome({ companies, home, loading, error, dark }: Props) 
               amount: c.net_sales,
               share: c.share_pct ? Number(c.share_pct) : 0,
             }))}
-            colour={palette.purple}
+            colour={colours.primary}
             value={(r) => (r.share ? `${Math.round(r.share)}%` : '—')}
           />
         </section>
