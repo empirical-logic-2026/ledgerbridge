@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.9 |
+| Version | 0.10 |
 | Date | 2026-11-02 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1) |
@@ -80,8 +80,8 @@ A **collapsible side bar** on charcoal replaces the top menu and the apps home (
 | Group | Items |
 | --- | --- |
 | Overview | Dashboard |
-| Sales | Sales dashboard, Sales register, Customers, Channels |
-| Purchases | Purchase register, Vendors |
+| Sales | Sales dashboard, Sales register, Monthly sales, Customers, Channels |
+| Purchases | Purchase register, Monthly purchases, Vendors |
 | Statements | Profit & Loss, Balance Sheet, Trial Balance |
 | Books | Day Book, Vouchers, Ledgers, Cash & Bank |
 | Parties | Receivables, Payables |
@@ -109,6 +109,11 @@ Day Book style, one row per voucher: **Date, Particulars, Vch Type, Vch No., Deb
 - **Sales value** (Purchase value), under Columns: the voucher's entries on the Sales (Purchase) Accounts ledgers, returns negative. A month's total of it is that month's gross less returns of the monthly sales views.
 - Facets: the Sales register takes customer and channel; the Purchase register voucher type. At most 20,000 vouchers are loaded, with a warning to choose fewer months.
 - The Sales dashboard's months open the register for that month; a party opens their page once built (until then the Sales register filtered to that customer); a voucher its page once built.
+
+### Monthly sales, monthly purchases and channels (D2 c3)
+
+- **Monthly sales** and **Monthly purchases:** each month's gross, returns, other adjustments, net and invoices, and the **closing balance**: the net from the start of the financial year to the month's end, as Tally's monthly summary of the Sales (Purchase) Accounts group shows it (each company its own financial year). A chart of net by month with the closing balance; a month opens its register. The closing balance has no total.
+- **Channels:** each sales voucher type with its net sales, share, returns, invoices and a column per month (shown up to six months, the rest under Columns); a channel opens the Sales register filtered to it, a month that month's register. All channels together are the Sales dashboard's net sales.
 
 ### The table explorer
 
@@ -392,6 +397,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-02 | 0.10 | Monthly sales and purchases with the closing balance; sales by channel; the side bar's new items. |
 | 2026-11-02 | 0.9 | The Sales and Purchase registers (Day Book style, monthly subtotals). |
 | 2026-11-02 | 0.8 | Build order: the Sales and Purchases pages brought forward, one PR per area; the Sales dashboard's definitions; the table explorer on every table. |
 | 2026-10-31 | 0.7 | Screens 7 and 8; Section 0.2: the side bar and the top filter bar replace the top menu and the apps home; Section 0.3: everything clickable, one detail-page pattern; the build order with the Sales dashboard and the Customer and Vendor pages. |

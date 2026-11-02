@@ -689,3 +689,68 @@ def test_a_long_register_says_it_was_cut(synced: int) -> None:
         months = Period.of_months([date(2026, m, 1) for m in range(4, 10)])
         found = register(session, [synced], months, SALES_SIDE, limit=1)
     assert len(found.rows) == 1 and found.truncated is True
+
+
+# --- monthly sales and purchases, sales by channel (D2) -------------------------------------
+
+
+def test_monthly_sales_with_the_closing_balance_equal_the_view(
+    client: TestClient, synced: int
+) -> None:
+    found = _get(client, "/api/v1/monthly/sales", month=MONTHS)
+    view = _sales_view(synced)
+    months = {
+        m["month"]: (
+            Decimal(m["gross"]),
+            Decimal(m["returns"]),
+            Decimal(m["other"]),
+            Decimal(m["net"]),
+        )
+        for m in found["months"]
+    }
+    assert {m: v for m, v in months.items() if any(v)} == view
+    # The closing balance runs from the financial year's start (April): net added up.
+    running = Decimal(0)
+    for m in found["months"]:
+        running += Decimal(m["net"])
+        assert Decimal(m["closing"]) == running
+    # A later month alone still closes on the year to date.
+    september = _get(client, "/api/v1/monthly/sales", month="2026-09")["months"]
+    assert [m["closing"] for m in september] == [found["months"][-1]["closing"]]
+
+
+def test_monthly_purchases_equal_the_home_figures(client: TestClient, synced: int) -> None:
+    found = _get(client, "/api/v1/monthly/purchases", month=MONTHS)
+    home = _get(client, "/api/v1/home", month=MONTHS)
+    assert {m["month"]: Decimal(m["net"]) for m in found["months"]} == {
+        m["month"]: Decimal(m["purchases"]) for m in home["monthly"]
+    }
+    assert any(Decimal(m["net"]) for m in found["months"])
+    assert Decimal(found["months"][-1]["closing"]) == sum(
+        Decimal(m["net"]) for m in found["months"]
+    )
+
+
+def test_sales_by_channel_equal_the_view_by_voucher_type(client: TestClient, synced: int) -> None:
+    found = _get(client, "/api/v1/sales/channels", month=MONTHS)
+    with Session(get_engine("report")) as session:
+        rows = session.execute(
+            text("SELECT voucher_type, month_start, SUM(net_sales) FROM "
+                 "ledgerbridge_reporting.v_monthly_sales_by_voucher_type WHERE entity_id = :e "
+                 "AND month_start BETWEEN '2026-04-01' AND '2026-09-30' "
+                 "GROUP BY voucher_type, month_start"),
+            {"e": synced},
+        ).all()  # fmt: skip
+    view = {(name, f"{m:%Y-%m-%d}"): Decimal(str(n)) for name, m, n in rows if n}
+    ours = {
+        (c["name"], m["month"]): Decimal(m["net"])
+        for c in found["channels"]
+        for m in c["months"]
+        if Decimal(m["net"])
+    }
+    assert ours and ours == view
+    nets = [Decimal(c["net"]) for c in found["channels"]]
+    assert nets == sorted(nets, reverse=True)
+    assert all(len(c["months"]) == len(MONTHS) for c in found["channels"])
+    shares = sum(Decimal(c["share_pct"]) for c in found["channels"])
+    assert abs(shares - 100) <= Decimal("0.1") * len(found["channels"])

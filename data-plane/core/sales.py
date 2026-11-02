@@ -20,6 +20,7 @@ one are counted as "no party". Several companies are added together: combined, w
 inter-company eliminations.
 """
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
@@ -236,3 +237,71 @@ def _largest(
         Invoice(int(vid), int(entity), on, number, vtype, party_id, party, Decimal(amount or 0))
         for vid, entity, on, number, vtype, party_id, party, amount in session.execute(query)
     ]
+
+
+# --- monthly figures with the closing balance, and by channel -------------------------------
+
+
+def fy_start(day: date, start_month: int) -> date:
+    """The first day of the financial year the day falls in."""
+    return date(day.year if day.month >= start_month else day.year - 1, start_month, 1)
+
+
+def monthly_with_closing(
+    session: Session,
+    companies: list[int],
+    period: Period,
+    facets: Facets = Facets(),  # noqa: B008
+    side: Side = SALES_SIDE,
+) -> list[tuple[date, Totals, Decimal]]:
+    """Each month of the period with its figures and its closing balance: the net from the
+    start of that month's financial year to its end, as the source's monthly summary of the
+    group shows it (each company its own financial year; added up)."""
+    closing: dict[date, Decimal] = defaultdict(lambda: ZERO)
+    starts = {
+        entity: start_month
+        for entity, start_month in session.execute(
+            select(A.Entity.id, A.Entity.fy_start_month).where(A.Entity.id.in_(companies))
+        )
+    }
+    for company in companies:
+        start_month = int(starts.get(company) or 4)
+        whole = Period(fy_start(period.start, start_month), period.end)
+        running = ZERO
+        for month, totals in _monthly(session, [company], whole, facets, side):
+            if month.month == start_month:
+                running = ZERO
+            running += totals.net
+            closing[month] += running
+    return [(m, t, closing[m]) for m, t in _monthly(session, companies, period, facets, side)]
+
+
+@dataclass
+class ChannelFigures:
+    name: str  # the voucher type's name (types of the same name in several companies together)
+    months: dict[date, Decimal]  # net per month
+    totals: Totals
+
+
+def by_channel(
+    session: Session,
+    companies: list[int],
+    period: Period,
+    facets: Facets = Facets(),  # noqa: B008
+    side: Side = SALES_SIDE,
+) -> list[ChannelFigures]:
+    """Each voucher type's figures and net per month, the largest net first."""
+    year, month = func.year(A.VoucherLine.voucher_date), func.month(A.VoucherLine.voucher_date)
+    query = lines(
+        companies, period, facets, side, A.VoucherType.name, year, month, *_split(side)
+    ).group_by(A.VoucherType.name, year, month)
+    found: dict[str, ChannelFigures] = {}
+    for name, y, m, *split in session.execute(query):
+        figures = found.setdefault(name, ChannelFigures(name, {}, Totals()))
+        totals = _to_totals(side, *split)
+        figures.months[date(int(y), int(m), 1)] = totals.net
+        figures.totals.gross += totals.gross
+        figures.totals.returns += totals.returns
+        figures.totals.other += totals.other
+        figures.totals.invoices += totals.invoices
+    return sorted(found.values(), key=lambda c: c.totals.net, reverse=True)

@@ -52,6 +52,7 @@ describe('the table explorer', () => {
   it('adds up amounts without rounding, and counts', () => {
     expect(totals(rows, columns)).toEqual({ amount: '380.2500', lines: 6 })
     expect(fromScaled(-5n)).toBe('-0.0005')
+    expect(totals(rows, [{ ...columns[3], summed: false }])).toEqual({})
   })
 
   it('groups with subtotals, in the order groups appear', () => {

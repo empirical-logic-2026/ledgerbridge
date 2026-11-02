@@ -9,7 +9,7 @@ figures and how they are found: core/sales.py.
 """
 
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from api.access import CurrentAccess
 from api.v1.common import ReportSession, parse_period
 from api.v1.home import PeriodOut, change_pct
-from core.sales import Facets, Totals, dashboard
+from core.sales import Facets, Totals, by_channel, dashboard
 
 router = APIRouter(prefix="/sales", tags=["sales"])
 
@@ -167,4 +167,68 @@ def _key_figures(now: Totals, before: Totals | None) -> KeyFigures:
         invoices=figure(now.invoices, before.invoices if before else None),
         average_invoice=figure(now.average_invoice, before.average_invoice if before else None),
         sales_returns=figure(returns(now), returns(before) if before else None),
+    )
+
+
+class ChannelMonth(BaseModel):
+    month: date
+    net: Decimal
+
+
+class ChannelOut(BaseModel):
+    name: str  # a voucher type's name
+    months: list[ChannelMonth]  # every month of the period, 0 where none
+    gross: Decimal
+    returns: Decimal
+    other: Decimal
+    net: Decimal
+    invoices: int
+    share_pct: Decimal | None  # of the selection's net sales, one decimal
+
+
+class ChannelsOut(BaseModel):
+    companies: list[int]
+    combined: bool
+    period: PeriodOut
+    channels: list[ChannelOut]  # the largest net sales first
+
+
+@router.get("/channels")
+def sales_by_channel(
+    session: ReportSession,
+    access: CurrentAccess,
+    company: list[int] | None = Query(default=None),  # noqa: B008
+    month: list[str] | None = Query(default=None),  # noqa: B008
+    date_from: date | None = None,
+    date_to: date | None = None,
+    customer: list[str] | None = Query(default=None),  # noqa: B008
+    channel: list[str] | None = Query(default=None),  # noqa: B008
+) -> ChannelsOut:
+    companies = access.entities(company)
+    period = parse_period(month, date_from, date_to)
+    facets = Facets(facet_names(customer, "customer"), facet_names(channel, "channel"))
+    found = by_channel(session, companies, period, facets)
+    total = sum((c.totals.net for c in found), Decimal(0))
+    return ChannelsOut(
+        companies=companies,
+        combined=len(companies) > 1,
+        period=PeriodOut(start=period.start, end=period.end, months=list(period.months)),
+        channels=[
+            ChannelOut(
+                name=c.name,
+                months=[
+                    ChannelMonth(month=m, net=c.months.get(m, Decimal(0)))
+                    for m in period.month_starts()
+                ],
+                gross=c.totals.gross,
+                returns=c.totals.returns,
+                other=c.totals.other,
+                net=c.totals.net,
+                invoices=c.totals.invoices,
+                share_pct=(c.totals.net / total * 100).quantize(Decimal("0.1"), ROUND_HALF_UP)
+                if total
+                else None,
+            )
+            for c in found
+        ],
     )

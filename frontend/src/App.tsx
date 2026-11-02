@@ -5,10 +5,12 @@
 
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useCompanies, useHome, usePeriods, useProfitLoss, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useChannels, useCompanies, useHome, useMonthly, usePeriods, useProfitLoss, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
+import { Monthly } from './apps/registers/Monthly.tsx'
 import { Register } from './apps/registers/Register.tsx'
+import { Channels } from './apps/sales/Channels.tsx'
 import { SalesDashboard } from './apps/sales/SalesDashboard.tsx'
 import { readOptions } from './reporting/reportTable.ts'
 import { navigate, updateQuery, useRoute } from './router.ts'
@@ -49,6 +51,18 @@ export default function App({ mode, onMode, today }: Props) {
   const purchaseRegister = useRegister('purchases', at === 'purchases/register' ? ids : undefined, period, {
     party: [],
     voucherType: selection.facets.voucher_type,
+  })
+  const monthlySales = useMonthly('sales', at === 'sales/monthly' ? ids : undefined, period, {
+    party: selection.facets.customer,
+    voucherType: selection.facets.channel,
+  })
+  const monthlyPurchases = useMonthly('purchases', at === 'purchases/monthly' ? ids : undefined, period, {
+    party: [],
+    voucherType: selection.facets.voucher_type,
+  })
+  const channels = useChannels(at === 'sales/channels' ? ids : undefined, period, {
+    customer: selection.facets.customer,
+    channel: selection.facets.channel,
   })
   const query = selectionQuery(selection)
   const panelOpen = route.query.get('panel') !== '0'
@@ -139,6 +153,62 @@ export default function App({ mode, onMode, today }: Props) {
                 { label: 'Profit & Loss', path: ['statements', 'profit-loss'] },
               ]
         }
+      />
+    )
+  } else if (at === 'sales/monthly' || at === 'purchases/monthly') {
+    const side = at === 'sales/monthly' ? 'sales' : 'purchases'
+    const found = side === 'sales' ? monthlySales : monthlyPurchases
+    crumbs =
+      side === 'sales'
+        ? [{ label: 'Sales', path: ['sales', 'dashboard'] }, { label: 'Monthly sales' }]
+        : [{ label: 'Purchases', path: ['purchases', 'register'] }, { label: 'Monthly purchases' }]
+    content = (
+      <Monthly
+        key={side}
+        side={side}
+        companies={selected}
+        monthly={found.data}
+        loading={companies.isPending || periods.isPending || found.isPending}
+        error={periods.error ?? found.error}
+        dark={mode === 'dark'}
+        query={query}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
+        currentQuery={route.query.toString()}
+        onApplyView={onApplyView}
+        related={
+          side === 'sales'
+            ? [
+                { label: 'Sales register', path: ['sales', 'register'] },
+                { label: 'Sales by channel', path: ['sales', 'channels'] },
+                { label: 'Monthly purchases', path: ['purchases', 'monthly'] },
+              ]
+            : [
+                { label: 'Purchase register', path: ['purchases', 'register'] },
+                { label: 'Monthly sales', path: ['sales', 'monthly'] },
+              ]
+        }
+      />
+    )
+  } else if (at === 'sales/channels') {
+    crumbs = [{ label: 'Sales', path: ['sales', 'dashboard'] }, { label: 'Channels' }]
+    content = (
+      <Channels
+        companies={selected}
+        channels={channels.data}
+        loading={companies.isPending || periods.isPending || channels.isPending}
+        error={periods.error ?? channels.error}
+        dark={mode === 'dark'}
+        query={query}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
+        currentQuery={route.query.toString()}
+        onApplyView={onApplyView}
+        related={[
+          { label: 'Sales dashboard', path: ['sales', 'dashboard'] },
+          { label: 'Monthly sales', path: ['sales', 'monthly'] },
+          { label: 'Sales register', path: ['sales', 'register'] },
+        ]}
       />
     )
   } else {
