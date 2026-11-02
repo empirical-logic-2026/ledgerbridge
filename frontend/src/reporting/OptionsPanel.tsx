@@ -27,18 +27,18 @@ interface Props<V extends string, C extends string> {
   matching: MatchingOut | undefined
   companiesLabel: string // "both companies", "LedgerBridge Test Co"
   sourceName: string
-  views: Choice<V>[]
-  view: V
-  onView: (view: V) => void
+  views?: Choice<V>[] // none: no "View as" section (e.g. a dashboard page)
+  view?: V
+  onView?: (view: V) => void
   extraViews?: ReactNode // e.g. "As % of sales"
-  columns: Choice<C>[]
-  shown: C[]
-  onColumns: (columns: C[]) => void
+  columns?: Choice<C>[] // none: no "Columns" section (the tables have their own)
+  shown?: C[]
+  onColumns?: (columns: C[]) => void
   related: Related[]
   query: Query // kept on the related links
   currentQuery: string // saved with a view
   onApplyView: (query: string) => void
-  onExport: () => void
+  onExport?: () => void // none: no "Export" section (the tables export their own)
   help: ReactNode
   onClose: () => void
 }
@@ -89,9 +89,10 @@ export function OptionsPanel<V extends string, C extends string>(props: Props<V,
       </div>
       <MatchStatus matching={props.matching} companiesLabel={props.companiesLabel} sourceName={props.sourceName} />
 
+      {props.views && props.views.length > 0 && (
       <section aria-label="View as">
         <h3>View as</h3>
-        <Radio.Group value={props.view} onChange={(e) => props.onView(e.target.value)} className="options-list">
+        <Radio.Group value={props.view} onChange={(e) => props.onView?.(e.target.value)} className="options-list">
           {props.views.map((v) => (
             <Radio key={v.key} value={v.key} disabled={v.disabled}>
               {v.label}
@@ -100,10 +101,12 @@ export function OptionsPanel<V extends string, C extends string>(props: Props<V,
         </Radio.Group>
         {props.extraViews}
       </section>
+      )}
 
+      {props.columns && props.columns.length > 0 && (
       <section aria-label="Columns">
         <h3>Columns</h3>
-        <Checkbox.Group value={props.shown} onChange={(values) => props.onColumns(values as C[])} className="options-list">
+        <Checkbox.Group value={props.shown} onChange={(values) => props.onColumns?.(values as C[])} className="options-list">
           {props.columns.map((c) => (
             <Checkbox key={c.key} value={c.key} disabled={c.disabled}>
               {c.label}
@@ -111,6 +114,7 @@ export function OptionsPanel<V extends string, C extends string>(props: Props<V,
           ))}
         </Checkbox.Group>
       </section>
+      )}
 
       {props.related.length > 0 && (
         <section aria-label="Open related">
@@ -144,6 +148,7 @@ export function OptionsPanel<V extends string, C extends string>(props: Props<V,
         </div>
       </section>
 
+      {props.onExport && (
       <section aria-label="Export">
         <h3>Export</h3>
         <div className="options-export">
@@ -154,6 +159,7 @@ export function OptionsPanel<V extends string, C extends string>(props: Props<V,
           <Button disabled>PDF (later)</Button>
         </div>
       </section>
+      )}
 
       <section aria-label="What is this?" className="options-help">
         <h3>What is this?</h3>

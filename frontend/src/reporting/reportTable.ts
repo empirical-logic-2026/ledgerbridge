@@ -133,7 +133,7 @@ export function buildCsv(report: StatementReport, o: ReportOptions): string {
   return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n'
 }
 
-function exactRupees(value: string): string {
+export function exactRupees(value: string): string {
   const scaled = toScaled(value)
   const negative = scaled < 0n
   const size = negative ? -scaled : scaled
@@ -141,7 +141,7 @@ function exactRupees(value: string): string {
   return `${negative ? '-' : ''}${paise / 100n}.${String(paise % 100n).padStart(2, '0')}`
 }
 
-function csvCell(text: string): string {
+export function csvCell(text: string): string {
   const safe = /^[=+\-@\t\r]/.test(text) && !/^-?\d/.test(text) ? `'${text}` : text
   return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
 }
