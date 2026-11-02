@@ -40,6 +40,29 @@ export interface Channel {
   net_sales: string
 }
 
+export interface ChannelMonth {
+  month: string
+  net: string
+}
+
+export interface ChannelOut {
+  name: string
+  months: ChannelMonth[]
+  gross: string
+  returns: string
+  other: string
+  net: string
+  invoices: number
+  share_pct: string | null
+}
+
+export interface ChannelsOut {
+  companies: number[]
+  combined: boolean
+  period: PeriodOut
+  channels: ChannelOut[]
+}
+
 export interface ColumnOut {
   key: string
   label: string
@@ -212,6 +235,16 @@ export interface MonthFigures {
   purchases: string
 }
 
+export interface MonthOut {
+  month: string
+  gross: string
+  returns: string
+  other: string
+  net: string
+  invoices: number
+  closing: string
+}
+
 export interface MonthSales {
   month: string
   gross: string
@@ -219,6 +252,14 @@ export interface MonthSales {
   other: string
   net: string
   invoices: number
+}
+
+export interface MonthlyOut {
+  side: string
+  companies: number[]
+  combined: boolean
+  period: PeriodOut
+  months: MonthOut[]
 }
 
 export interface Option {

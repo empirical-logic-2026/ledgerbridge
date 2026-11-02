@@ -38,11 +38,20 @@ export const NAV: NavGroup[] = [
     pages: [
       page('dashboard', 'Sales dashboard', true, ['customer', 'channel'], 'Sales are filtered by customer and channel (voucher type).'),
       page('register', 'Sales register', true, ['customer', 'channel'], 'The register is filtered by customer and channel (voucher type).'),
+      page('monthly', 'Monthly sales', true, ['customer', 'channel'], 'Monthly sales are filtered by customer and channel (voucher type).'),
       page('customers', 'Customers'),
-      page('channels', 'Channels'),
+      page('channels', 'Channels', true, ['customer', 'channel'], 'Channels are filtered by customer and channel (voucher type).'),
     ],
   },
-  { key: 'purchases', label: 'Purchases', pages: [page('register', 'Purchase register', true, ['voucher_type'], 'The register is filtered by voucher type.'), page('vendors', 'Vendors')] },
+  {
+    key: 'purchases',
+    label: 'Purchases',
+    pages: [
+      page('register', 'Purchase register', true, ['voucher_type'], 'The register is filtered by voucher type.'),
+      page('monthly', 'Monthly purchases', true, ['voucher_type'], 'Monthly purchases are filtered by voucher type.'),
+      page('vendors', 'Vendors'),
+    ],
+  },
   {
     key: 'statements',
     label: 'Statements',

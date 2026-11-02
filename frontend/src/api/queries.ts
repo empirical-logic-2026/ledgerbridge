@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import type { PeriodChoice } from '../selection.ts'
-import type { Company, Home, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
+import type { ChannelsOut, Company, Home, MonthlyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -89,6 +89,43 @@ export function useRegister(
         date_to: period?.months.length ? undefined : period?.to,
         party: facets.party.length ? facets.party : undefined,
         voucher_type: facets.voucherType.length ? facets.voucherType : undefined,
+      }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+export function useMonthly(
+  side: 'sales' | 'purchases',
+  companies: number[] | undefined,
+  period: PeriodChoice | undefined,
+  facets: { party: string[]; voucherType: string[] },
+) {
+  return useQuery({
+    queryKey: ['monthly', side, companies, period, facets],
+    queryFn: () =>
+      getJson<MonthlyOut>(`/api/v1/monthly/${side}`, {
+        company: companies,
+        month: period?.months.length ? period.months : undefined,
+        date_from: period?.months.length ? undefined : period?.from,
+        date_to: period?.months.length ? undefined : period?.to,
+        party: facets.party.length ? facets.party : undefined,
+        voucher_type: facets.voucherType.length ? facets.voucherType : undefined,
+      }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+export function useChannels(companies: number[] | undefined, period: PeriodChoice | undefined, facets: { customer: string[]; channel: string[] }) {
+  return useQuery({
+    queryKey: ['channels', companies, period, facets],
+    queryFn: () =>
+      getJson<ChannelsOut>('/api/v1/sales/channels', {
+        company: companies,
+        month: period?.months.length ? period.months : undefined,
+        date_from: period?.months.length ? undefined : period?.from,
+        date_to: period?.months.length ? undefined : period?.to,
+        customer: facets.customer.length ? facets.customer : undefined,
+        channel: facets.channel.length ? facets.channel : undefined,
       }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })

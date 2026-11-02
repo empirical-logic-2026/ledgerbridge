@@ -17,6 +17,7 @@ export interface ExplorerColumn<R> {
   link?: (row: R) => string | undefined // where the cell opens
   groupable?: boolean
   hidden?: boolean // not shown until chosen in Columns
+  summed?: boolean // false: no subtotal or total (e.g. a closing balance); amounts and counts are summed
 }
 
 export interface ExplorerState {
@@ -82,6 +83,7 @@ export function fromScaled(value: bigint): string {
 export function totals<R>(rows: R[], columns: ExplorerColumn<R>[]): Record<string, Cell> {
   const found: Record<string, Cell> = {}
   for (const c of columns) {
+    if (c.summed === false) continue
     if (c.kind === 'amount') {
       found[c.key] = fromScaled(rows.reduce((sum, row) => sum + toScaled(String(c.value(row) ?? '0')), 0n))
     } else if (c.kind === 'count') {

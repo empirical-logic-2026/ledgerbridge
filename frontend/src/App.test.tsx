@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp } from 'antd'
 import App from './App.tsx'
-import type { Company, Home, Periods, RegisterOut, SalesDashboard } from './api/types.ts'
+import type { ChannelsOut, Company, Home, MonthlyOut, Periods, RegisterOut, SalesDashboard } from './api/types.ts'
 
 // ECharts needs a real canvas; the wrapper is exercised in the browser, not jsdom.
 vi.mock('./components/EChart.tsx', () => ({ EChart: () => <div data-testid="chart" /> }))
@@ -527,5 +527,87 @@ describe('the Sales and Purchase registers', () => {
     const panel = screen.getByRole('complementary', { name: 'Purchase register options' })
     expect(within(panel).getByText(/Debit Note Register/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Customer (not used on this page)' })).toBeDisabled()
+  })
+})
+
+const month = (m: string, net: string, closing: string) => ({ month: m, gross: net, returns: '0', other: '0', net, invoices: 2, closing })
+const monthlySales: MonthlyOut = {
+  side: 'sales',
+  companies: [3],
+  combined: false,
+  period: { start: '2026-04-01', end: '2026-05-31', months: ['2026-04-01', '2026-05-01'] },
+  months: [month('2026-04-01', '100000', '100000'), month('2026-05-01', '50000', '150000')],
+}
+const channelsFound: ChannelsOut = {
+  companies: [3],
+  combined: false,
+  period: { start: '2026-04-01', end: '2026-05-31', months: ['2026-04-01', '2026-05-01'] },
+  channels: [
+    {
+      name: 'Online Sales',
+      months: [
+        { month: '2026-04-01', net: '90000' },
+        { month: '2026-05-01', net: '10000' },
+      ],
+      gross: '100000',
+      returns: '0',
+      other: '0',
+      net: '100000',
+      invoices: 3,
+      share_pct: '66.7',
+    },
+    {
+      name: 'Sales',
+      months: [
+        { month: '2026-04-01', net: '10000' },
+        { month: '2026-05-01', net: '40000' },
+      ],
+      gross: '50000',
+      returns: '0',
+      other: '0',
+      net: '50000',
+      invoices: 1,
+      share_pct: '33.3',
+    },
+  ],
+}
+
+describe('monthly sales and purchases, and sales by channel', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    stubApi({
+      '/api/v1/companies': [companies[0]],
+      '/api/v1/periods': periods,
+      '/api/v1/monthly/sales': monthlySales,
+      '/api/v1/monthly/purchases': { ...monthlySales, side: 'purchases' },
+      '/api/v1/sales/channels': channelsFound,
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows each month with its closing balance, without adding up the closing balances', async () => {
+    renderApp('#/sales/monthly')
+    const table = await screen.findByRole('table', { name: 'Monthly sales' })
+    expect(within(table).getByRole('link', { name: 'Apr-2026' }).getAttribute('href')).toMatch(/^#\/sales\/register\?.*month=2026-04/)
+    const total = within(table).getByText('Total').closest('tr') as HTMLElement
+    expect(total).toHaveTextContent('₹1,50,000.00') // net
+    expect(total.textContent?.match(/₹1,50,000\.00/g)).toHaveLength(2) // net and gross; no closing total
+    expect(screen.getByRole('complementary', { name: 'Monthly sales options' })).toHaveTextContent(/financial year/)
+  })
+
+  it('has monthly purchases opening the purchase register', async () => {
+    renderApp('#/purchases/monthly')
+    const table = await screen.findByRole('table', { name: 'Monthly purchases' })
+    expect(within(table).getByRole('link', { name: 'May-2026' }).getAttribute('href')).toMatch(/^#\/purchases\/register\?.*month=2026-05/)
+    expect(document.querySelector('.top-crumbs')).toHaveTextContent('Purchases/Monthly purchases')
+  })
+
+  it('lists the channels with their months, each opening the register filtered to it', async () => {
+    renderApp('#/sales/channels')
+    const table = await screen.findByRole('table', { name: 'Sales by channel' })
+    expect(within(table).getByRole('link', { name: 'Online Sales' }).getAttribute('href')).toContain('channel=Online+Sales')
+    expect(within(table).getByText('66.7%')).toBeInTheDocument()
+    const april = within(table).getAllByRole('link', { name: '₹90,000.00' })[0]
+    expect(april.getAttribute('href')).toMatch(/channel=Online\+Sales.*month=2026-04|month=2026-04.*channel=Online\+Sales/)
   })
 })
