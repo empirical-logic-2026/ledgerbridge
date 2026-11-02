@@ -392,6 +392,43 @@ def test_profit_runs_to_the_last_stored_date_and_compares_with_a_period_before(
     assert [m["net_profit"] is None for m in mid["monthly"]] == [False] * 5 + [True]
 
 
+def test_the_overview_trend_summary_and_top_customers(
+    client: TestClient, synced: int, statements_stored: None
+) -> None:
+    found = _get(client, "/api/v1/home", month=MONTHS)
+    # The trend (F-OVR-001): the twelve months to September, each month as the home has it.
+    trend = {t["month"]: t for t in found["trend"]}
+    assert list(trend)[0] == "2025-10-01" and list(trend)[-1] == "2026-09-01" and len(trend) == 12
+    for m in found["monthly"]:
+        assert _d(trend[m["month"]]["net_sales"]) == _d(m["sales"])
+        assert _d(trend[m["month"]]["net_profit"]) == _d(m["net_profit"])
+    september = _get(client, "/api/v1/home", month="2026-09")
+    assert _d(trend["2026-09-01"]["cash_and_bank"]) == _d(september["balances"]["cash_and_bank"])
+    assert trend["2026-09-01"]["customers"] == september["customers"]["value"]
+    assert trend["2025-10-01"]["gross_profit"] is None  # no statements before Mar-2026
+    # The summary against last year (F-OVR-003): this period as the card, last year none.
+    summary = {line["key"]: line for line in found["summary"]}
+    pl = found["profit_loss"]
+    assert _d(summary["net_profit"]["value"]) == _d(pl["net_profit"]["value"])
+    assert _d(summary["net_profit_pct"]["value"]) == _d(pl["net_profit_pct"]["value"])
+    assert summary["net_sales"]["last_year"] is None and found["summary_reason"]
+    # Top customers (F-OVR-002): the largest first, as their pages have them.
+    top = found["top_customers"]
+    assert top and [Decimal(c["net_sales"]) for c in top] == sorted(
+        (Decimal(c["net_sales"]) for c in top), reverse=True
+    )
+    first = top[0]
+    page = _get(client, f"/api/v1/parties/customers/{first['party_id']}", month=MONTHS)
+    assert _d(first["balance"]) == _d(page["balance"])
+    assert _d(first["overdue"]) == _d(page["overdue"])
+    assert _d(first["net_sales"]) == _d(page["net"]["value"])
+    assert first["status"] == ("overdue" if Decimal(first["overdue"]) > 0 else "current")
+
+
+def _d(value: str | None) -> Decimal | None:
+    return None if value is None else Decimal(value)
+
+
 def april_customers(client: TestClient) -> int:
     return _get(client, "/api/v1/home", month="2026-04")["customers"]["value"]
 

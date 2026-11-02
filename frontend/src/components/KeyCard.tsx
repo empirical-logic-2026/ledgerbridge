@@ -2,10 +2,14 @@
 // figure (short, the exact amount on hover; or a count, days, or a percentage), the change
 // against the comparison period when compared ("vs previous period", "vs last year"; in
 // percentage points for a percentage: F-CMP-001, F-CMP-003), and a note; the
-// label opens the page behind the figure when there is one. Green when the change is good for the business, crimson when
-// sales fall, neutral when e.g. returns rise, so that red keeps its meaning.
+// label opens the page behind the figure when there is one. In the reference pattern (Section 0.4):
+// a coloured top border, a small-capitals label and a sparkline of the recent months. Green when
+// the change is good for the business, crimson when sales fall, neutral when e.g. returns rise,
+// so that red keeps its meaning.
 
 import { Tooltip } from 'antd'
+import type { EChartsOption } from 'echarts'
+import { EChart } from './EChart.tsx'
 import { formatChange, formatCompact, formatExact, toScaled } from '../format.ts'
 
 export type Tone = 'up-good' | 'up-neutral'
@@ -26,6 +30,9 @@ interface Props {
   alert?: boolean // crimson figure (e.g. overdue)
   missing?: string // why there is no figure
   to?: string // the page behind the figure
+  accent?: string // the top border's colour
+  spark?: (number | null)[] // the recent months, oldest first (drawing only)
+  sparkColour?: string
 }
 
 function shown(value: string, unit: Props['unit']): string {
@@ -44,7 +51,17 @@ function changeText(change: string, unit: Props['unit']): string {
   return unit === 'percent' ? text.replace(/%$/, ' pts') : text
 }
 
-export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', against, note, alert, missing, to }: Props) {
+function sparkline(values: (number | null)[], colour: string): EChartsOption {
+  return {
+    backgroundColor: 'transparent',
+    grid: { left: 2, right: 2, top: 4, bottom: 2 },
+    xAxis: { type: 'category', show: false, data: values.map((_, i) => i) },
+    yAxis: { type: 'value', show: false, scale: true },
+    series: [{ type: 'line', data: values, symbol: 'none', smooth: true, lineStyle: { color: colour, width: 2 }, connectNulls: false }],
+  }
+}
+
+export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', against, note, alert, missing, to, accent, spark, sparkColour }: Props) {
   const value = figure.value
   const change = figure.change_pct
   let changeNode: React.ReactNode = null
@@ -62,7 +79,7 @@ export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', agai
   }
   const text = value === null ? '—' : shown(value, unit)
   return (
-    <section className="card card-small" aria-label={label}>
+    <section className={accent ? 'card card-small kpi-card' : 'card card-small'} aria-label={label} style={accent ? { borderTopColor: accent } : undefined}>
       {to ? (
         <a href={to} className="card-small-label card-row-link">
           {label}
@@ -81,6 +98,11 @@ export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', agai
       </span>
       {changeNode}
       {note && <span className="card-small-note">{note}</span>}
+      {spark && spark.some((v) => v !== null) && (
+        <div className="kpi-spark" aria-hidden>
+          <EChart option={sparkline(spark, sparkColour ?? accent ?? 'currentColor')} height={36} />
+        </div>
+      )}
     </section>
   )
 }

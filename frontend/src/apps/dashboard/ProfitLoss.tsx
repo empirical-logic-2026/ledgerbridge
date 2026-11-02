@@ -23,7 +23,7 @@ import {
   type View,
 } from '../../reporting/reportTable.ts'
 import type { Query } from '../../router.ts'
-import { COMBINED_NOTE } from './DashboardHome.tsx'
+import { COMBINED_NOTE } from './words.ts'
 
 const VIEWS: { key: View; label: string }[] = [
   { key: 'company', label: 'Company by company' },

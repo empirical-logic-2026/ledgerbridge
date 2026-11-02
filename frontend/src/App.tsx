@@ -87,7 +87,7 @@ export default function App({ mode, onMode, today }: Props) {
   } else if (at === 'overview/dashboard') {
     crumbs = [{ label: 'Overview' }]
     content = (
-      <DashboardHome companies={selected} home={home.data} loading={companies.isPending || periods.isPending || home.isPending}
+      <DashboardHome home={home.data} loading={companies.isPending || periods.isPending || home.isPending}
         error={periods.error ?? home.error} dark={mode === 'dark'} query={query} />
     )
   } else if (at === 'pnl/profit-loss') {

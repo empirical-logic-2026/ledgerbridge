@@ -443,7 +443,7 @@ body,
 
 .home-charts {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
   gap: 18px;
 }
 
@@ -892,4 +892,112 @@ body,
   color: var(--lb-text);
   background: var(--lb-page);
   border-color: var(--lb-border);
+}
+
+/* --- the reference pattern's components (Section 0.4) -------------------------------- */
+/* key cards: a coloured top border, a small-capitals label, a sparkline */
+.kpi-card {
+  border-top: 3px solid var(--lb-primary);
+}
+
+.kpi-card .card-small-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kpi-spark {
+  margin-top: 4px;
+}
+
+.home-tables {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.report-table.compact th,
+.report-table.compact td {
+  padding: 6px 8px;
+}
+
+.report-table .line-total th,
+.report-table .line-total td {
+  font-weight: 700;
+}
+
+/* a donut and its legend */
+.donut {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.donut-ring {
+  width: 150px;
+  flex: 0 0 150px;
+}
+
+.donut-legend {
+  flex: 1;
+  min-width: 160px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.donut-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.donut-legend .legend-key {
+  margin: 0;
+}
+
+.donut-amount {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.donut-share {
+  min-width: 48px;
+  text-align: right;
+  color: var(--lb-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* status pills in detail tables */
+.status-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-good {
+  color: var(--lb-positive);
+  background: var(--lb-primary-soft);
+}
+
+.status-bad {
+  color: var(--lb-negative);
+  background: var(--lb-negative-soft);
+}
+
+.status-neutral {
+  color: var(--lb-muted);
+  background: var(--lb-page);
+}
+
+@media (max-width: 1100px) {
+  .home-tables {
+    grid-template-columns: 1fr;
+  }
 }

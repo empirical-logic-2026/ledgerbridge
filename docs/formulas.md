@@ -451,6 +451,24 @@ Source for every `F-REG` entry: `vouchers` and their first effective `voucher_li
 - **Expression:** `−Σ amount` (sales) or `+Σ amount` (purchases), per voucher.
 - **Check in Tally:** the Sales (Purchase) Register, voucher by voucher.
 
+## 7a. Overview (`F-OVR`)
+
+#### F-OVR-001 Twelve-month trend (sparklines)
+
+- **In words:** the twelve months up to the period's end month, each with its net sales (F-SAL-004), gross and net profit (F-PL-003, F-PL-004), cash and bank at the month's end (F-BAL-002) and customers (F-SAL-011).
+
+#### F-OVR-002 Top customers
+
+- **In words:** the ten customers, by name across the companies, with the largest net sales (F-SAL-012), each with its balance due (F-PTY-001) and overdue (F-PTY-002) at the period's end. The status is "overdue" when anything is overdue, else "current".
+
+#### F-OVR-003 Profit & Loss summary against last year
+
+- **In words:** net sales, cost of sales, gross profit, gross margin %, net profit and net profit % (F-PL-001 to F-PL-006) for the period and for the same months or dates last year, with the change (F-CMP-001, or F-CMP-003 for a percentage).
+
+#### F-OVR-004 Customer share of net sales
+
+- **Expression:** `F-SAL-012 ÷ F-SAL-004 × 100`, one decimal.
+
 ## 8. Comparisons (`F-CMP`)
 
 #### F-CMP-001 Change %

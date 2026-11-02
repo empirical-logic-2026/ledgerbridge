@@ -85,6 +85,20 @@ const home: Home = {
     { company: 3, net_sales: '342000000', share_pct: '71.0' },
     { company: 4, net_sales: '140000000', share_pct: '29.0' },
   ],
+  trend: [
+    { month: '2026-03-01', net_sales: '7000000', gross_profit: null, net_profit: null, cash_and_bank: '10000000', customers: 900 },
+    { month: '2026-04-01', net_sales: '8000000', gross_profit: '2500000', net_profit: '900000', cash_and_bank: '11500000', customers: 1240 },
+  ],
+  summary: [
+    { key: 'net_sales', label: 'Net sales', unit: 'amount', higher_is_better: true, value: '482000000', last_year: '430357142.8571', change_pct: '12.0', change_pts: null },
+    { key: 'cost_of_sales', label: 'Cost of sales', unit: 'amount', higher_is_better: false, value: '331000000', last_year: '303669724.7706', change_pct: '9.0', change_pts: null },
+    { key: 'net_profit_pct', label: 'Net profit %', unit: 'percent', higher_is_better: true, value: '12.9', last_year: '14.0', change_pct: null, change_pts: '-1.1' },
+  ],
+  summary_reason: null,
+  top_customers: [
+    { party_id: 11, name: 'Customer One', net_sales: '18400000', share_pct: '3.8', balance: '1161000', overdue: '313000', status: 'overdue' },
+    { party_id: 12, name: 'Customer Two', net_sales: '9000000', share_pct: '1.9', balance: '0', overdue: '0', status: 'current' },
+  ],
 }
 
 let requests: string[] = []
@@ -125,7 +139,7 @@ describe('the dashboard', () => {
 
   it('opens on the Overview, with the top bar of modules and period toggles, and the page header', async () => {
     renderApp('#/')
-    await screen.findByRole('region', { name: 'Revenue' })
+    await screen.findByRole('region', { name: 'Net sales' })
     const top = screen.getByRole('banner')
     expect(within(top).getByRole('img', { name: 'Empirical Logic' })).toBeInTheDocument()
     expect(within(top).getByText('LedgerBridge')).toBeInTheDocument()
@@ -144,7 +158,7 @@ describe('the dashboard', () => {
 
   it('runs the period toggles to today and asks for the previous period by default (RPT-016)', async () => {
     renderApp('#/overview/dashboard')
-    await screen.findByRole('region', { name: 'Revenue' })
+    await screen.findByRole('region', { name: 'Net sales' })
     expect(lastHomeRequest()).toContain('date_from=2026-04-01&date_to=2026-10-30&compare=previous&span=year')
     fireEvent.click(screen.getByRole('button', { name: 'MTD' }))
     expect(window.location.hash).toContain('p=mtd')
@@ -157,7 +171,7 @@ describe('the dashboard', () => {
 
   it('takes no facets on the Overview', async () => {
     renderApp('#/overview/dashboard')
-    await screen.findByRole('region', { name: 'Revenue' })
+    await screen.findByRole('region', { name: 'Net sales' })
     expect(screen.queryByRole('combobox', { name: 'Customer' })).toBeNull()
     expect(screen.queryByRole('group', { name: 'Channels' })).toBeNull()
   })
@@ -170,29 +184,39 @@ describe('the dashboard', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('#/overview/dashboard?company=4&month=2026-05')))
   })
 
-  it('shows the key figures, combined, in lakhs and crores; no Profit & Loss or Balance Sheet card', async () => {
+  it('shows the key cards with sparklines, the charts, the summary against last year and the top customers', async () => {
     renderApp('#/overview/dashboard?compare=1')
-    const revenue = await screen.findByRole('region', { name: 'Revenue' })
-    expect(within(revenue).getByText('₹48.20 Cr')).toBeInTheDocument()
-    expect(within(revenue).getByText('▲ 12% vs last year')).toHaveClass('good')
-    const gross = screen.getByRole('region', { name: 'Gross margin' })
+    const net = await screen.findByRole('region', { name: 'Net sales' })
+    expect(within(net).getByText('₹48.20 Cr')).toBeInTheDocument()
+    expect(within(net).getByText('▲ 12% vs last year')).toHaveClass('good')
+    expect(net).toHaveClass('kpi-card')
+    const gross = screen.getByRole('region', { name: 'Gross profit' })
     expect(within(gross).getByText('₹15.10 Cr')).toBeInTheDocument()
-    expect(within(gross).getByText('31.3% of revenue')).toBeInTheDocument()
-    expect(within(screen.getByRole('region', { name: 'Net profit' })).getByText('₹6.24 Cr')).toBeInTheDocument()
-    const percent = screen.getByRole('region', { name: 'Net profit %' })
-    expect(within(percent).getByText('12.9%')).toBeInTheDocument()
-    expect(within(percent).getByText('▼ 1.1 pts vs last year')).toHaveClass('bad')
+    expect(within(gross).getByText('Gross margin 31.3%')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Net profit' })).getByText('Net margin 12.9%')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Cash & bank' })).getByText('₹1.15 Cr')).toBeInTheDocument()
     const customers = screen.getByRole('region', { name: 'Customers' })
     expect(within(customers).getByText('1,240')).toBeInTheDocument()
     expect(within(customers).getByText('▲ 12.7% vs last year')).toHaveClass('good')
     expect(screen.getByText(/Months ending on the 30th .* run to the 2nd of the next month/)).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Profit & Loss' })).toBeNull()
     expect(screen.queryByRole('region', { name: 'Balance Sheet' })).toBeNull()
-    expect(screen.getByRole('region', { name: 'Sales and purchases by month' })).toHaveTextContent(/Gross profit.*Net profit/) // the legend
-    expect(within(screen.getByRole('region', { name: 'Stock value' })).getByText('—')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Sales and purchases by month' })).toHaveTextContent(/Gross profit.*Net profit/)
+    // Sales by channel: a donut with each channel's share; a channel opens its register.
+    const channels = screen.getByRole('group', { name: 'Net sales by channel' })
+    expect(within(channels).getByRole('link', { name: 'Online' })).toHaveAttribute('href', expect.stringMatching(/^#\/sales\/register\?.*channel=Online/))
+    expect(within(channels).getByText('57.7%')).toBeInTheDocument()
+    expect(within(channels).queryByRole('link', { name: 'Others' })).toBeNull()
+    // The Profit & Loss summary against last year: a cost going up is neutral, a margin in points.
+    const summary = screen.getByRole('table', { name: 'Profit & Loss against last year' })
+    expect(within(summary).getByText('▲ 9%')).toHaveClass('neutral')
+    expect(within(summary).getByText('▼ 1.1 pts')).toHaveClass('bad')
+    // The top customers, each opening their page, with their status.
+    const top = screen.getByRole('table', { name: 'Top customers by net sales' })
+    expect(within(top).getByRole('link', { name: 'Customer One' })).toHaveAttribute('href', expect.stringMatching(/^#\/sales\/customers\/11/))
+    expect(within(top).getByText('Overdue')).toHaveClass('status-bad')
+    expect(within(top).getByText('Current')).toHaveClass('status-good')
     expect(screen.getByText(/without inter-company eliminations/)).toBeInTheDocument()
-    expect(screen.getByText('71%')).toBeInTheDocument()
-    expect(screen.getByTestId('chart')).toBeInTheDocument()
+    expect(screen.getAllByTestId('chart').length).toBeGreaterThan(1) // the charts and the sparklines
   })
 
   it('shows the companies as chips, all of them combined unless some are chosen', async () => {
@@ -208,7 +232,7 @@ describe('the dashboard', () => {
 
   it('takes chosen months, or a date range typed as DD-MMM-YYYY (Custom)', async () => {
     renderApp('#/overview/dashboard?month=2026-04&month=2026-06')
-    await screen.findByRole('region', { name: 'Revenue' })
+    await screen.findByRole('region', { name: 'Net sales' })
     expect(screen.getByRole('button', { name: 'Custom ▾' })).toHaveAttribute('aria-pressed', 'true')
     expect(lastHomeRequest()).toMatch(/month=2026-04&month=2026-06&compare=previous$/)
     fireEvent.click(screen.getByRole('button', { name: 'Custom ▾' }))
@@ -385,7 +409,7 @@ describe('the Profit & Loss page', () => {
     renderApp('#/overview/dashboard?company=3')
     const net = await screen.findByRole('region', { name: 'Net profit' })
     expect(within(net).getByRole('link', { name: 'Net profit' })).toHaveAttribute('href', '#/pnl/profit-loss?company=3')
-    expect(within(screen.getByRole('region', { name: 'Revenue' })).getByRole('link', { name: 'Revenue' })).toHaveAttribute('href', '#/sales/dashboard?company=3')
+    expect(within(screen.getByRole('region', { name: 'Net sales' })).getByRole('link', { name: 'Net sales' })).toHaveAttribute('href', '#/sales/dashboard?company=3')
     expect(within(screen.getByRole('region', { name: 'Customers' })).getByRole('link', { name: 'Customers' })).toHaveAttribute('href', '#/sales/customers?company=3')
   })
 })
