@@ -5,9 +5,10 @@
 
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useCompanies, useHome, usePeriods, useProfitLoss } from './api/queries.ts'
+import { useCompanies, useHome, usePeriods, useProfitLoss, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
+import { SalesDashboard } from './apps/sales/SalesDashboard.tsx'
 import { readOptions } from './reporting/reportTable.ts'
 import { navigate, updateQuery, useRoute } from './router.ts'
 import { chosenPeriod, chosenYear, selectedIds, selectionQuery, useSelection } from './selection.ts'
@@ -36,7 +37,14 @@ export default function App({ mode, onMode, today }: Props) {
   const home = useHome(at === 'overview/dashboard' ? ids : undefined, period, selection.compare)
   const options = readOptions(route.query)
   const profitLoss = useProfitLoss(at === 'statements/profit-loss' ? ids : undefined, period, options.view, selection.compare)
+  const sales = useSalesDashboard(at === 'sales/dashboard' ? ids : undefined, period, selection.compare, {
+    customer: selection.facets.customer,
+    channel: selection.facets.channel,
+  })
   const query = selectionQuery(selection)
+  const panelOpen = route.query.get('panel') !== '0'
+  const onPanel = (open: boolean) => updateQuery(route, { panel: open ? undefined : '0' })
+  const onApplyView = (saved: string) => navigate(route.path, Object.fromEntries(new URLSearchParams(saved)))
   const all = companies.data ?? []
   const selected = all.filter((c) => ids?.includes(c.id))
 
@@ -62,12 +70,32 @@ export default function App({ mode, onMode, today }: Props) {
         error={periods.error ?? profitLoss.error}
         options={options}
         onOptions={(change) => updateQuery(route, change)}
-        panelOpen={route.query.get('panel') !== '0'}
-        onPanel={(open) => updateQuery(route, { panel: open ? undefined : '0' })}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
         query={query}
         currentQuery={route.query.toString()}
-        onApplyView={(saved) => navigate(route.path, Object.fromEntries(new URLSearchParams(saved)))}
+        onApplyView={onApplyView}
         related={[{ label: 'Dashboard', path: ['overview', 'dashboard'] }]}
+      />
+    )
+  } else if (at === 'sales/dashboard') {
+    crumbs = [{ label: 'Sales', path: ['sales', 'dashboard'] }, { label: 'Sales dashboard' }]
+    content = (
+      <SalesDashboard
+        companies={selected}
+        dashboard={sales.data}
+        loading={companies.isPending || periods.isPending || sales.isPending}
+        error={periods.error ?? sales.error}
+        dark={mode === 'dark'}
+        query={query}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
+        currentQuery={route.query.toString()}
+        onApplyView={onApplyView}
+        related={[
+          { label: 'Dashboard', path: ['overview', 'dashboard'] },
+          { label: 'Profit & Loss', path: ['statements', 'profit-loss'] },
+        ]}
       />
     )
   } else {

@@ -2,6 +2,8 @@
 // page is listed once it is built (`built`); a group once it has a built page. Each page says
 // which of the top filter bar's facets its figures can be filtered by.
 
+import { href, type Query } from '../router.ts'
+
 export type Facet = 'customer' | 'channel' | 'ledger_group' | 'voucher_type'
 
 export interface NavPage {
@@ -33,7 +35,9 @@ export const NAV: NavGroup[] = [
   {
     key: 'sales',
     label: 'Sales',
-    pages: [page('dashboard', 'Sales dashboard'), page('register', 'Sales register'), page('customers', 'Customers'), page('channels', 'Channels')],
+    pages: [
+      page('dashboard', 'Sales dashboard', true, ['customer', 'channel'], 'Sales are filtered by customer and channel (voucher type).'),
+      page('register', 'Sales register'), page('customers', 'Customers'), page('channels', 'Channels')],
   },
   { key: 'purchases', label: 'Purchases', pages: [page('register', 'Purchase register'), page('vendors', 'Vendors')] },
   {
@@ -63,4 +67,10 @@ export function findPage(path: string[]): { group: NavGroup; page: NavPage } | u
   const group = NAV.find((g) => g.key === groupKey)
   const found = group?.pages.find((p) => p.key === (pageKey ?? group.pages[0]?.key))
   return group && found?.built ? { group, page: found } : undefined
+}
+
+/** A link to a page (and, for a detail page, its id: ["sales", "customers", "12"]), or
+ *  undefined while that page isn't built: nothing links to a page that isn't there. */
+export function builtHref(path: string[], query: Query): string | undefined {
+  return findPage(path) ? href(path, query) : undefined
 }

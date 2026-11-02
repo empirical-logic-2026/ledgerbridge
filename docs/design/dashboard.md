@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.7 |
-| Date | 2026-10-31 |
+| Version | 0.8 |
+| Date | 2026-11-02 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1) |
 
@@ -67,7 +67,7 @@ Charts: **sales and purchases by month** (₹ lakh, ECharts), **sales by channel
 2. B (c2): Balance Sheet and Trial Balance; the ledger group and ledger detail pages; drill-down from a line to its ledgers and from a ledger to its vouchers.
 3. D2 (a): Day Book, the vouchers list, the voucher detail page (screen 4: items with quantities and rates, ledger, GST and bill lines, totals, narration, its history: synced, converted, validated).
 4. D2 (b): Ledgers list and the ledger statement with a running balance.
-5. D2 (c): the Sales dashboard (screen 7), Sales and Purchase registers (Day Book style, with narration), Customers and Vendors (screen 8), Channels, monthly sales.
+5. D2 (c), the Sales and Purchases pages, brought forward (2026-11-01), one PR per area: (c1) the Sales dashboard (screen 7); (c2) the Sales and Purchase registers (Day Book style, with narration); (c3) monthly sales and purchases and sales by channel; (c4) Customers and Vendors with their pages (screen 8).
 6. D2 (d): Cash & Bank, Receivables and Payables with ageing.
 7. D2 (e): Data health and Companies.
 
@@ -90,6 +90,20 @@ A **collapsible side bar** on charcoal replaces the top menu and the apps home (
 At its foot: "This computer only · synced HH:MM" and light/dark mode. On narrow screens it starts collapsed.
 
 A **top filter bar** on every page: the breadcrumbs (group / page / deeper levels, each a link back), then the **period** (financial year, months, from/to dates, compare with last year), the **company** (all combined or any combination, each marked loaded or not loaded in Tally), the **facets** customer, channel, ledger group and voucher type, and **Copy link** (the page's address, which holds the whole selection). A page applies the facets its figures can be filtered by; the others are shown but disabled, saying why (a whole statement can't be filtered by customer).
+
+### The Sales dashboard (D2 c1, screen 7)
+
+The same definition as the monthly sales views (proven day by day against Tally's statements, RPT-013), for any companies, period, customers and channels (voucher types): the effective entries of vouchers not deleted on the ledgers under the Sales Accounts group (by its predefined role, at any depth).
+
+- **Key figures**, each against the same months (or dates) last year: **net sales** (gross + returns + other adjustments), **invoices** (sales vouchers with an entry on those ledgers), **average invoice** (gross ÷ invoices), **sales returns** (credit notes, shown positive; rising returns are neutral, not crimson).
+- **Net sales by month**, a line chart; a month opens its sales register (until that page is built, this page for that month). Below it every month's gross, returns, other adjustments, net and invoices, with the total.
+- **Top customers** (ten, by the voucher's party) with their share, and the rest and sales without a party as one figure; **largest invoices** (ten, by their entries on the sales ledgers, before taxes).
+- A customer opens their page (until built, this page filtered to them); an invoice its voucher page once built.
+- Written for both sides (`core/sales.py`), so the Purchases pages use the same definitions with Purchase Accounts, purchases and debit notes.
+
+### The table explorer
+
+Every table: a filter (any part of a text or date cell), **Columns**, **Group by** (subtotals per group), sorting by any header, **saved views** (in this browser until login, M5) and **Export CSV** of exactly what is shown (exact rupees, subtotals and total; text guarded against formulas). Long lists show the first rows and "Show more".
 
 ## 0.3 Everything clickable, and one detail page per entity
 
@@ -369,6 +383,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-02 | 0.8 | Build order: the Sales and Purchases pages brought forward, one PR per area; the Sales dashboard's definitions; the table explorer on every table. |
 | 2026-10-31 | 0.7 | Screens 7 and 8; Section 0.2: the side bar and the top filter bar replace the top menu and the apps home; Section 0.3: everything clickable, one detail-page pattern; the build order with the Sales dashboard and the Customer and Vendor pages. |
 | 2026-10-31 | 0.6 | Section 5: charcoal black, forest green and crimson as the theme's tokens, light and dark, WCAG AA; no amber, red used sparingly. |
 | 2026-10-31 | 0.5 | Section 0.1: the six approved screens (apps home, Overview, Accounting ledgers, voucher, dashboard home, Profit & Loss with its options panel); the dashboard home's filter bar (company chips with "loaded in Tally", months, dates, compare), cards and charts; what is left for later. |

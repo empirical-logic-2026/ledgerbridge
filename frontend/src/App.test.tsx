@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp } from 'antd'
 import App from './App.tsx'
-import type { Company, Home, Periods } from './api/types.ts'
+import type { Company, Home, Periods, SalesDashboard } from './api/types.ts'
 
 // ECharts needs a real canvas; the wrapper is exercised in the browser, not jsdom.
 vi.mock('./components/EChart.tsx', () => ({ EChart: () => <div data-testid="chart" /> }))
@@ -124,7 +124,8 @@ describe('the dashboard', () => {
     expect(within(side).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
     expect(within(side).getByRole('link', { name: 'Profit & Loss' })).toHaveAttribute('href', '#/statements/profit-loss')
     expect(within(side).queryByText('Balance Sheet')).toBeNull() // not built yet: not offered
-    expect(within(side).queryByText('Sales')).toBeNull() // a group shows once it has a page
+    expect(within(side).queryByText('Purchases')).toBeNull() // a group shows once it has a page
+    expect(within(side).getByRole('link', { name: 'Sales dashboard' })).toHaveAttribute('href', '#/sales/dashboard')
     expect(within(side).getByText(/Tally: 1 of 2 loaded · synced .* · all checks passed/)).toBeInTheDocument()
     expect(within(side).getByText('This computer only')).toBeInTheDocument()
     expect(document.querySelector('.top-crumbs')).toHaveTextContent('Overview/Dashboard')
@@ -361,5 +362,90 @@ describe('the Profit & Loss page', () => {
     renderApp('#/overview/dashboard?company=3')
     const pl = await screen.findByRole('region', { name: 'Profit & Loss' })
     expect(within(pl).getByRole('link', { name: 'Open →' })).toHaveAttribute('href', '#/statements/profit-loss?company=3')
+  })
+})
+
+const sales: SalesDashboard = {
+  companies: [3, 4],
+  combined: true,
+  period: { start: '2026-04-01', end: '2026-09-30', months: [] },
+  compared: true,
+  key_figures: {
+    net_sales: figure('482000000.0000', '430357142.8571', '12.0'),
+    invoices: figure('120', '100', '20.0'),
+    average_invoice: figure('4100000.00', null, null),
+    sales_returns: figure('10000000.0000', '8000000.0000', '25.0'),
+  },
+  monthly: [
+    { month: '2026-04-01', gross: '250000000', returns: '-5000000', other: '0', net: '245000000', invoices: 60 },
+    { month: '2026-05-01', gross: '242000000', returns: '-5000000', other: '0', net: '237000000', invoices: 60 },
+  ],
+  top_customers: [
+    { company: 3, party_id: 11, name: 'Customer One', net_sales: '300000000', invoices: 70 },
+    { company: 4, party_id: 12, name: 'Customer Two', net_sales: '100000000', invoices: 40 },
+  ],
+  other_customers: '82000000',
+  customers: 9,
+  largest_invoices: [
+    { voucher_id: 501, company: 3, date: '2026-05-04', number: 'S-17', voucher_type: 'Sales', party_id: 11, party: 'Customer One', amount: '50000000' },
+    { voucher_id: 502, company: 4, date: '2026-04-09', number: 'S-3', voucher_type: 'Online Sales', party_id: 12, party: 'Customer Two', amount: '20000000' },
+  ],
+}
+
+describe('the Sales dashboard', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/sales/dashboard': sales })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const lastRequest = () => requests.filter((r) => r.includes('/sales/dashboard')).pop() ?? ''
+
+  it('shows the key figures with the change against last year', async () => {
+    renderApp('#/sales/dashboard')
+    const net = await screen.findByRole('region', { name: 'Net sales' })
+    expect(net).toHaveTextContent('₹48.20 Cr')
+    expect(net).toHaveTextContent('▲ 12% vs last year')
+    expect(screen.getByRole('region', { name: 'Invoices' })).toHaveTextContent('120')
+    expect(within(screen.getByRole('region', { name: 'Sales returns' })).getByText(/▲ 25%/)).toHaveClass('change', 'neutral')
+    expect(document.querySelector('.top-crumbs')).toHaveTextContent('Sales/Sales dashboard')
+  })
+
+  it('applies the customer and channel facets, and no others', async () => {
+    renderApp('#/sales/dashboard?customer=Customer%20One&channel=Sales')
+    await screen.findByRole('region', { name: 'Net sales' })
+    expect(lastRequest()).toContain('customer=Customer+One')
+    expect(lastRequest()).toContain('channel=Sales')
+    expect(screen.getByRole('button', { name: 'Voucher type (not used on this page)' })).toBeDisabled()
+  })
+
+  it('lists the months, customers and invoices, each linking deeper where a page exists', async () => {
+    renderApp('#/sales/dashboard?company=3&company=4')
+    const months = await screen.findByRole('table', { name: 'Sales by month' })
+    // The register isn't built yet: a month opens this page for that month.
+    expect(within(months).getByRole('link', { name: 'Apr-2026' }).getAttribute('href')).toMatch(/^#\/sales\/dashboard\?.*month=2026-04/)
+    expect(within(months).getByText('Total')).toBeInTheDocument()
+    const customers = screen.getByRole('table', { name: 'Top customers' })
+    // The customer page isn't built yet: a customer filters this page.
+    expect(within(customers).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toContain('customer=Customer+One')
+    expect(within(customers).getByText('Beta')).toBeInTheDocument() // combined: the company shown
+    const invoices = screen.getByRole('table', { name: 'Largest invoices' })
+    expect(within(invoices).queryByRole('link', { name: 'S-17' })).toBeNull() // no voucher page yet
+    expect(within(invoices).getByText('04-May-2026')).toBeInTheDocument()
+  })
+
+  it('filters a table', async () => {
+    renderApp('#/sales/dashboard')
+    const invoices = await screen.findByRole('table', { name: 'Largest invoices' })
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filter Largest invoices' }), { target: { value: 'online' } })
+    expect(within(invoices).queryByText('S-17')).toBeNull()
+    expect(within(invoices).getByText('S-3')).toBeInTheDocument()
+  })
+
+  it('explains itself in the options panel', async () => {
+    renderApp('#/sales/dashboard')
+    const panel = await screen.findByRole('complementary', { name: 'Sales options' })
+    expect(within(panel).getByText(/Sales Accounts group/)).toBeInTheDocument()
+    expect(within(panel).getByRole('link', { name: 'Profit & Loss →' })).toBeInTheDocument()
   })
 })

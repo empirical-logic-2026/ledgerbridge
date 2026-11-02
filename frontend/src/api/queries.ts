@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import type { PeriodChoice } from '../selection.ts'
-import type { Company, Home, Periods, StatementReport } from './types.ts'
+import type { Company, Home, Periods, SalesDashboard, StatementReport } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -46,6 +46,28 @@ export function useProfitLoss(companies: number[] | undefined, period: PeriodCho
         date_to: period?.months.length ? undefined : period?.to,
         view,
         compare: compare ? 'true' : undefined,
+      }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+export function useSalesDashboard(
+  companies: number[] | undefined,
+  period: PeriodChoice | undefined,
+  compare: boolean,
+  facets: { customer: string[]; channel: string[] },
+) {
+  return useQuery({
+    queryKey: ['sales-dashboard', companies, period, compare, facets],
+    queryFn: () =>
+      getJson<SalesDashboard>('/api/v1/sales/dashboard', {
+        company: companies,
+        month: period?.months.length ? period.months : undefined,
+        date_from: period?.months.length ? undefined : period?.from,
+        date_to: period?.months.length ? undefined : period?.to,
+        compare: compare ? 'true' : undefined,
+        customer: facets.customer.length ? facets.customer : undefined,
+        channel: facets.channel.length ? facets.channel : undefined,
       }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })

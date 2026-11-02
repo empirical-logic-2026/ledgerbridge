@@ -158,9 +158,33 @@ export interface Home {
   by_company: CompanyShare[]
 }
 
+export interface InvoiceOut {
+  voucher_id: number
+  company: number
+  date: string
+  number: string
+  voucher_type: string
+  party_id: number | null
+  party: string | null
+  amount: string
+}
+
 export interface Key {
   id: number | string
   label: string
+}
+
+export interface KeyFigure {
+  value: string | null
+  last_year?: string | null
+  change_pct?: string | null
+}
+
+export interface KeyFigures {
+  net_sales: KeyFigure
+  invoices: KeyFigure
+  average_invoice: KeyFigure
+  sales_returns: KeyFigure
 }
 
 export interface LineOut {
@@ -188,9 +212,26 @@ export interface MonthFigures {
   purchases: string
 }
 
+export interface MonthSales {
+  month: string
+  gross: string
+  returns: string
+  other: string
+  net: string
+  invoices: number
+}
+
 export interface Option {
   key: string
   label: string
+}
+
+export interface PartySales {
+  company: number
+  party_id: number
+  name: string
+  net_sales: string
+  invoices: number
 }
 
 export interface PeriodOut {
@@ -227,6 +268,19 @@ export interface Row {
   keys: Record<string, Key>
   values: Record<string, string | number>
   level?: number | null
+}
+
+export interface SalesDashboard {
+  companies: number[]
+  combined: boolean
+  period: PeriodOut
+  compared: boolean
+  key_figures: KeyFigures
+  monthly: MonthSales[]
+  top_customers: PartySales[]
+  other_customers: string
+  customers: number
+  largest_invoices: InvoiceOut[]
 }
 
 export interface StatementReport {
