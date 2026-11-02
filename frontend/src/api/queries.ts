@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import type { PeriodChoice } from '../selection.ts'
-import type { Company, Home, Periods, SalesDashboard, StatementReport } from './types.ts'
+import type { Company, Home, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -68,6 +68,27 @@ export function useSalesDashboard(
         compare: compare ? 'true' : undefined,
         customer: facets.customer.length ? facets.customer : undefined,
         channel: facets.channel.length ? facets.channel : undefined,
+      }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+export function useRegister(
+  side: 'sales' | 'purchases',
+  companies: number[] | undefined,
+  period: PeriodChoice | undefined,
+  facets: { party: string[]; voucherType: string[] },
+) {
+  return useQuery({
+    queryKey: ['register', side, companies, period, facets],
+    queryFn: () =>
+      getJson<RegisterOut>(`/api/v1/registers/${side}`, {
+        company: companies,
+        month: period?.months.length ? period.months : undefined,
+        date_from: period?.months.length ? undefined : period?.from,
+        date_to: period?.months.length ? undefined : period?.to,
+        party: facets.party.length ? facets.party : undefined,
+        voucher_type: facets.voucherType.length ? facets.voucherType : undefined,
       }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })

@@ -264,6 +264,32 @@ export interface Readiness {
   qdrant: "ok" | "failed"
 }
 
+export interface RegisterOut {
+  side: string
+  companies: number[]
+  combined: boolean
+  period: PeriodOut
+  rows: RegisterRowOut[]
+  truncated: boolean
+}
+
+export interface RegisterRowOut {
+  voucher_id: number
+  company: number
+  date: string
+  voucher_type: string
+  is_return: boolean
+  number: string
+  ledger_id: number
+  particulars: string
+  party_id: number | null
+  party: string | null
+  debit: string | null
+  credit: string | null
+  side_value: string
+  narration: string | null
+}
+
 export interface Row {
   keys: Record<string, Key>
   values: Record<string, string | number>

@@ -5,9 +5,10 @@
 
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useCompanies, useHome, usePeriods, useProfitLoss, useSalesDashboard } from './api/queries.ts'
+import { useCompanies, useHome, usePeriods, useProfitLoss, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
+import { Register } from './apps/registers/Register.tsx'
 import { SalesDashboard } from './apps/sales/SalesDashboard.tsx'
 import { readOptions } from './reporting/reportTable.ts'
 import { navigate, updateQuery, useRoute } from './router.ts'
@@ -40,6 +41,14 @@ export default function App({ mode, onMode, today }: Props) {
   const sales = useSalesDashboard(at === 'sales/dashboard' ? ids : undefined, period, selection.compare, {
     customer: selection.facets.customer,
     channel: selection.facets.channel,
+  })
+  const salesRegister = useRegister('sales', at === 'sales/register' ? ids : undefined, period, {
+    party: selection.facets.customer,
+    voucherType: selection.facets.channel,
+  })
+  const purchaseRegister = useRegister('purchases', at === 'purchases/register' ? ids : undefined, period, {
+    party: [],
+    voucherType: selection.facets.voucher_type,
   })
   const query = selectionQuery(selection)
   const panelOpen = route.query.get('panel') !== '0'
@@ -93,9 +102,43 @@ export default function App({ mode, onMode, today }: Props) {
         currentQuery={route.query.toString()}
         onApplyView={onApplyView}
         related={[
+          { label: 'Sales register', path: ['sales', 'register'] },
           { label: 'Dashboard', path: ['overview', 'dashboard'] },
           { label: 'Profit & Loss', path: ['statements', 'profit-loss'] },
         ]}
+      />
+    )
+  } else if (at === 'sales/register' || at === 'purchases/register') {
+    const side = at === 'sales/register' ? 'sales' : 'purchases'
+    const found = side === 'sales' ? salesRegister : purchaseRegister
+    crumbs =
+      side === 'sales'
+        ? [{ label: 'Sales', path: ['sales', 'dashboard'] }, { label: 'Sales register' }]
+        : [{ label: 'Purchases', path: ['purchases', 'register'] }, { label: 'Purchase register' }]
+    content = (
+      <Register
+        key={side}
+        side={side}
+        companies={selected}
+        register={found.data}
+        loading={companies.isPending || periods.isPending || found.isPending}
+        error={periods.error ?? found.error}
+        query={query}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
+        currentQuery={route.query.toString()}
+        onApplyView={onApplyView}
+        related={
+          side === 'sales'
+            ? [
+                { label: 'Sales dashboard', path: ['sales', 'dashboard'] },
+                { label: 'Purchase register', path: ['purchases', 'register'] },
+              ]
+            : [
+                { label: 'Sales register', path: ['sales', 'register'] },
+                { label: 'Profit & Loss', path: ['statements', 'profit-loss'] },
+              ]
+        }
       />
     )
   } else {

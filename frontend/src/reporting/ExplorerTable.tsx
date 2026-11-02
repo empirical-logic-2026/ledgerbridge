@@ -31,6 +31,7 @@ interface Props<R> {
   rowKey: (row: R) => string
   sortKey?: string
   descending?: boolean
+  groupBy?: string // grouped this way at first (e.g. a register by month)
   pageSize?: number // rows shown before "Show more"
   totalLabel?: string // the total row's first cell; none without it
   note?: string // under the table
@@ -57,7 +58,7 @@ function numeric(kind: string): boolean {
 
 export function ExplorerTable<R>(props: Props<R>) {
   const { columns, rows } = props
-  const [state, setState] = useState<ExplorerState>(() => defaultState(columns, props.sortKey, props.descending))
+  const [state, setState] = useState<ExplorerState>(() => ({ ...defaultState(columns, props.sortKey, props.descending), groupBy: props.groupBy }))
   const [limit, setLimit] = useState(props.pageSize ?? 100)
   const [views, setViews] = useState<SavedView[]>(() => loadViews(`table.${props.id}`))
   const [name, setName] = useState('')
@@ -141,11 +142,15 @@ export function ExplorerTable<R>(props: Props<R>) {
   let body: React.ReactNode
   let hidden = 0
   if (state.groupBy) {
+    // Every group's subtotal row; its rows until `limit` rows are shown in all.
     const groupLabel = columns.find((c) => c.key === state.groupBy)?.label ?? ''
-    body = groupRows(visible, columns, state.groupBy).map((g) => [
-      sumRow(`group-${g.key}`, `${groupLabel}: ${g.key || '(none)'} (${g.rows.length})`, g.totals, 'explorer-group'),
-      ...g.rows.map(row),
-    ])
+    let room = limit
+    body = groupRows(visible, columns, state.groupBy).map((g) => {
+      const shownRows = g.rows.slice(0, Math.max(0, room))
+      room -= shownRows.length
+      hidden += g.rows.length - shownRows.length
+      return [sumRow(`group-${g.key}`, `${groupLabel}: ${g.key || '(none)'} (${g.rows.length})`, g.totals, 'explorer-group'), ...shownRows.map(row)]
+    })
   } else {
     hidden = Math.max(0, visible.length - limit)
     body = visible.slice(0, limit).map(row)

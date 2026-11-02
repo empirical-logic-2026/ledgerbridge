@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp } from 'antd'
 import App from './App.tsx'
-import type { Company, Home, Periods, SalesDashboard } from './api/types.ts'
+import type { Company, Home, Periods, RegisterOut, SalesDashboard } from './api/types.ts'
 
 // ECharts needs a real canvas; the wrapper is exercised in the browser, not jsdom.
 vi.mock('./components/EChart.tsx', () => ({ EChart: () => <div data-testid="chart" /> }))
@@ -124,7 +124,7 @@ describe('the dashboard', () => {
     expect(within(side).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
     expect(within(side).getByRole('link', { name: 'Profit & Loss' })).toHaveAttribute('href', '#/statements/profit-loss')
     expect(within(side).queryByText('Balance Sheet')).toBeNull() // not built yet: not offered
-    expect(within(side).queryByText('Purchases')).toBeNull() // a group shows once it has a page
+    expect(within(side).queryByText('Parties')).toBeNull() // a group shows once it has a page
     expect(within(side).getByRole('link', { name: 'Sales dashboard' })).toHaveAttribute('href', '#/sales/dashboard')
     expect(within(side).getByText(/Tally: 1 of 2 loaded · synced .* · all checks passed/)).toBeInTheDocument()
     expect(within(side).getByText('This computer only')).toBeInTheDocument()
@@ -422,8 +422,8 @@ describe('the Sales dashboard', () => {
   it('lists the months, customers and invoices, each linking deeper where a page exists', async () => {
     renderApp('#/sales/dashboard?company=3&company=4')
     const months = await screen.findByRole('table', { name: 'Sales by month' })
-    // The register isn't built yet: a month opens this page for that month.
-    expect(within(months).getByRole('link', { name: 'Apr-2026' }).getAttribute('href')).toMatch(/^#\/sales\/dashboard\?.*month=2026-04/)
+    // A month opens its register.
+    expect(within(months).getByRole('link', { name: 'Apr-2026' }).getAttribute('href')).toMatch(/^#\/sales\/register\?.*month=2026-04/)
     expect(within(months).getByText('Total')).toBeInTheDocument()
     const customers = screen.getByRole('table', { name: 'Top customers' })
     // The customer page isn't built yet: a customer filters this page.
@@ -447,5 +447,85 @@ describe('the Sales dashboard', () => {
     const panel = await screen.findByRole('complementary', { name: 'Sales options' })
     expect(within(panel).getByText(/Sales Accounts group/)).toBeInTheDocument()
     expect(within(panel).getByRole('link', { name: 'Profit & Loss →' })).toBeInTheDocument()
+  })
+})
+
+const row = (id: number, date: string, type: string, debit: string | null, credit: string | null, value: string) => ({
+  voucher_id: id,
+  company: 3,
+  date,
+  voucher_type: type,
+  is_return: credit !== null,
+  number: `V-${id}`,
+  ledger_id: 40 + id,
+  particulars: 'Customer One',
+  party_id: 11,
+  party: 'Customer One',
+  debit,
+  credit,
+  side_value: value,
+  narration: id === 1 ? 'First sale' : null,
+})
+const salesRegister: RegisterOut = {
+  side: 'sales',
+  companies: [3],
+  combined: false,
+  period: { start: '2026-04-01', end: '2026-09-30', months: [] },
+  rows: [
+    row(1, '2026-04-02', 'Sales', '118000', null, '100000'),
+    row(2, '2026-04-20', 'Credit Note', null, '11800', '-10000'),
+    row(3, '2026-05-05', 'Sales', '59000', null, '50000'),
+  ],
+  truncated: false,
+}
+
+describe('the Sales and Purchase registers', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    stubApi({
+      '/api/v1/companies': [companies[0]],
+      '/api/v1/periods': periods,
+      '/api/v1/registers/sales': salesRegister,
+      '/api/v1/registers/purchases': { ...salesRegister, side: 'purchases', rows: [], truncated: true },
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('lists the vouchers Day Book style, by month with subtotals and the grand total', async () => {
+    renderApp('#/sales/register')
+    const table = await screen.findByRole('table', { name: 'Sales register' })
+    const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers).toEqual(['Date', 'Particulars', 'Vch Type', 'Vch No.', 'Debit', 'Credit', 'Narration'])
+    expect(within(table).getByText('Month: Apr-2026 (2)')).toBeInTheDocument()
+    expect(within(table).getByText('Month: May-2026 (1)')).toBeInTheDocument()
+    const total = within(table).getByText('Grand total').closest('tr') as HTMLElement
+    expect(total).toHaveTextContent('₹1,77,000.00')
+    expect(total).toHaveTextContent('₹11,800.00')
+    expect(within(table).getByText('First sale')).toBeInTheDocument()
+    expect(document.querySelector('.top-crumbs')).toHaveTextContent('Sales/Sales register')
+  })
+
+  it('asks for the customer and channel facets by name', async () => {
+    renderApp('#/sales/register?customer=Customer%20One&channel=Sales')
+    await screen.findByRole('table', { name: 'Sales register' })
+    const asked = requests.filter((r) => r.includes('/registers/sales')).pop() ?? ''
+    expect(asked).toContain('party=Customer+One')
+    expect(asked).toContain('voucher_type=Sales')
+  })
+
+  it('links a customer to the register filtered to them while their page is not built', async () => {
+    renderApp('#/sales/register')
+    const table = await screen.findByRole('table', { name: 'Sales register' })
+    const link = within(table).getAllByRole('link', { name: 'Customer One' })[0]
+    expect(link.getAttribute('href')).toMatch(/^#\/sales\/register\?.*customer=Customer\+One/)
+    expect(within(table).queryByRole('link', { name: 'V-1' })).toBeNull() // no voucher page yet
+  })
+
+  it('says when a register was cut short, and explains itself', async () => {
+    renderApp('#/purchases/register')
+    expect(await screen.findByText(/Only the first 0 vouchers are shown/)).toBeInTheDocument()
+    const panel = screen.getByRole('complementary', { name: 'Purchase register options' })
+    expect(within(panel).getByText(/Debit Note Register/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Customer (not used on this page)' })).toBeDisabled()
   })
 })

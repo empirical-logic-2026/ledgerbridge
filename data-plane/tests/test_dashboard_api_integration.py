@@ -611,3 +611,81 @@ def test_the_sales_dashboard_facets_and_comparison(client: TestClient, synced: i
     assert (
         client.get("/api/v1/sales/dashboard", params={"month": MONTHS, "customer": "x" * 256})
     ).status_code == 422
+
+
+# --- the Sales and Purchase registers (D2) --------------------------------------------------
+
+
+def _books_vouchers(entity_id: int, bases: tuple[str, ...]) -> dict[int, tuple[Decimal, str]]:
+    """voucher id -> (first effective entry's amount, its ledger) from the books."""
+    with Session(get_engine("report")) as session:
+        rows = session.execute(
+            text("SELECT v.id, vl.amount, l.name FROM ledgerbridge_accounting.vouchers v "
+                 "JOIN ledgerbridge_accounting.voucher_types t ON t.id = v.voucher_type_id "
+                 "JOIN ledgerbridge_accounting.voucher_lines vl ON vl.voucher_id = v.id "
+                 "JOIN ledgerbridge_accounting.ledgers l ON l.id = vl.ledger_id "
+                 "WHERE v.entity_id = :e AND v.is_deleted = 0 AND vl.is_effective = 1 "
+                 "AND t.base_type IN :b AND v.voucher_date BETWEEN '2026-04-01' AND '2026-09-30' "
+                 "AND vl.line_no = (SELECT MIN(x.line_no) "
+                 "FROM ledgerbridge_accounting.voucher_lines x "
+                 "WHERE x.voucher_id = v.id AND x.is_effective = 1)"
+                 ).bindparams(bindparam("b", expanding=True)),
+            {"e": entity_id, "b": list(bases)},
+        )  # fmt: skip
+        return {vid: (Decimal(str(amount)), name) for vid, amount, name in rows}
+
+
+def test_the_sales_register_is_the_day_book_of_sales_and_credit_notes(
+    client: TestClient, synced: int
+) -> None:
+    found = _get(client, "/api/v1/registers/sales", month=MONTHS)
+    rows = found["rows"]
+    assert rows and found["truncated"] is False and found["side"] == "sales"
+
+    # Every sales voucher and credit note, once, with its first entry as Debit or Credit.
+    books = _books_vouchers(synced, ("sales", "credit_note"))
+    assert {r["voucher_id"] for r in rows} == set(books) and len(rows) == len(books)
+    for r in rows:
+        amount, ledger = books[r["voucher_id"]]
+        shown = Decimal(r["debit"] or 0) - Decimal(r["credit"] or 0)
+        assert shown == amount and r["particulars"] == ledger
+        assert (r["debit"] is None) != (r["credit"] is None)
+    assert [r["date"] for r in rows] == sorted(r["date"] for r in rows)
+    assert any(r["is_return"] for r in rows) or not any(v[1] for v in _sales_view(synced).values())
+
+    # Its value on the sales ledgers is gross plus returns, month by month, as the proven view.
+    by_month: dict[str, Decimal] = {}
+    for r in rows:
+        month = r["date"][:7] + "-01"
+        by_month[month] = by_month.get(month, Decimal(0)) + Decimal(r["side_value"])
+    view = {m: v[0] + v[1] for m, v in _sales_view(synced).items()}
+    assert {m: v for m, v in by_month.items() if v} == {m: v for m, v in view.items() if v}
+
+
+def test_the_purchase_register_and_the_facets(client: TestClient, synced: int) -> None:
+    found = _get(client, "/api/v1/registers/purchases", month=MONTHS)
+    books = _books_vouchers(synced, ("purchase", "debit_note"))
+    assert {r["voucher_id"] for r in found["rows"]} == set(books)
+    assert all(Decimal(r["side_value"]) >= 0 or r["is_return"] for r in found["rows"])
+
+    sales = _get(client, "/api/v1/registers/sales", month=MONTHS)["rows"]
+    one_type = sales[0]["voucher_type"]
+    narrowed = _get(client, "/api/v1/registers/sales", month=MONTHS, voucher_type=one_type)
+    assert {r["voucher_id"] for r in narrowed["rows"]} == {
+        r["voucher_id"] for r in sales if r["voucher_type"] == one_type
+    }
+    named = next(r["party"] for r in sales if r["party"])
+    by_party = _get(client, "/api/v1/registers/sales", month=MONTHS, party=named)["rows"]
+    assert by_party and all(r["party"] == named for r in by_party)
+    assert client.get("/api/v1/registers/receipts", params={"month": MONTHS}).status_code == 422
+
+
+def test_a_long_register_says_it_was_cut(synced: int) -> None:
+    from core.registers import register
+    from core.report_periods import Period
+    from core.sales import SALES_SIDE
+
+    with Session(get_engine("report")) as session:
+        months = Period.of_months([date(2026, m, 1) for m in range(4, 10)])
+        found = register(session, [synced], months, SALES_SIDE, limit=1)
+    assert len(found.rows) == 1 and found.truncated is True
