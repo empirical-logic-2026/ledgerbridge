@@ -17,7 +17,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from api.access import CurrentAccess
-from api.v1.common import ReportSession, parse_period
+from api.v1.common import ReportSession, formula, parse_period
 from api.v1.home import PeriodOut
 from api.v1.registers import SIDES
 from api.v1.sales import facet_names
@@ -28,12 +28,14 @@ router = APIRouter(prefix="/monthly", tags=["monthly"])
 
 class MonthOut(BaseModel):
     month: date
-    gross: Decimal
-    returns: Decimal  # negative
-    other: Decimal
-    net: Decimal
-    invoices: int
-    closing: Decimal  # the net from the start of the financial year to the month's end
+    gross: Decimal = formula("F-SAL-001")
+    returns: Decimal = formula("F-SAL-002")  # negative
+    other: Decimal = formula("F-SAL-003")
+    net: Decimal = formula("F-SAL-004")
+    invoices: int = formula("F-SAL-005")
+    closing: Decimal = formula(
+        "F-SAL-008"
+    )  # the net from the start of the financial year to the month's end
 
 
 class MonthlyOut(BaseModel):

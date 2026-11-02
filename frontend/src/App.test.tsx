@@ -35,23 +35,28 @@ const periods: Periods = {
 }
 const figure = (value: string | null, last: string | null = null, pct: string | null = null) => ({
   value,
-  last_year: last,
+  before: last,
   change_pct: pct,
 })
+const LAST_YEAR = { kind: 'last_year' as const, label: 'Last year', start: '2025-04-01', end: '2025-09-30', months: [] }
 const home: Home = {
   companies: [3, 4],
   combined: true,
   period: { start: '2026-04-01', end: '2026-09-30', months: [] },
+  compared_with: LAST_YEAR,
   profit_loss: {
+    cut: false,
     available: true,
     reason: null,
     as_of: '2026-10-02',
     shifted: true,
-    last_year_reason: null,
+    before_reason: null,
     net_sales: figure('482000000.0000', '430357142.8571', '12.0'),
     cost_of_sales: figure('331000000.0000', '303669724.7706', '9.0'),
     gross_profit: figure('151000000.0000'),
     net_profit: figure('62400000.0000'),
+    gross_margin_pct: { value: '31.3', before: '29.4', change_pts: '1.9' },
+    net_profit_pct: { value: '12.9', before: '14.0', change_pts: '-1.1' },
   },
   balance_sheet: {
     available: true,
@@ -70,7 +75,8 @@ const home: Home = {
     stock_value: null,
     stock_value_as_of: null,
   },
-  monthly: [{ month: '2026-04-01', sales: '8000000', purchases: '5000000' }],
+  customers: { value: 1240, before: 1100, change_pct: '12.7' },
+  monthly: [{ month: '2026-04-01', sales: '8000000', purchases: '5000000', gross_profit: '2500000', net_profit: '900000' }],
   channels: [
     { name: 'Online', net_sales: '142000000' },
     { name: 'Others', net_sales: '104000000' },
@@ -117,34 +123,43 @@ describe('the dashboard', () => {
   )
   afterEach(() => vi.unstubAllGlobals())
 
-  it('opens on the Dashboard, with the side bar of built pages and its status', async () => {
+  it('opens on the Overview, with the top bar of modules and period toggles, and the page header', async () => {
     renderApp('#/')
-    await screen.findByRole('region', { name: 'Profit & Loss' })
-    const side = screen.getByRole('navigation', { name: 'Pages' })
-    expect(within(side).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
-    expect(within(side).getByRole('link', { name: 'Profit & Loss' })).toHaveAttribute('href', '#/statements/profit-loss')
-    expect(within(side).queryByText('Balance Sheet')).toBeNull() // not built yet: not offered
-    expect(within(side).queryByText('Parties')).toBeNull() // a group shows once it has a page
-    expect(within(side).getByRole('link', { name: 'Sales dashboard' })).toHaveAttribute('href', '#/sales/dashboard')
-    expect(within(side).getByText(/Tally: 1 of 2 loaded · synced .* · all checks passed/)).toBeInTheDocument()
-    expect(within(side).getByText('This computer only')).toBeInTheDocument()
-    expect(document.querySelector('.top-crumbs')).toHaveTextContent('Overview/Dashboard')
+    await screen.findByRole('region', { name: 'Revenue' })
+    const top = screen.getByRole('banner')
+    expect(within(top).getByRole('img', { name: 'Empirical Logic' })).toBeInTheDocument()
+    expect(within(top).getByText('LedgerBridge')).toBeInTheDocument()
+    const modules = within(top).getByRole('navigation', { name: 'Modules' })
+    expect(within(modules).getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
+    expect(within(modules).getByRole('link', { name: 'Sales' })).toHaveAttribute('href', '#/sales/dashboard')
+    expect(within(modules).getByRole('link', { name: 'P&L & KPIs' })).toHaveAttribute('href', '#/pnl/profit-loss')
+    expect(within(modules).queryByText('Balance Sheet')).toBeNull() // not built yet: not offered
+    expect(within(modules).queryByText('Parties')).toBeNull()
+    expect(within(top).getByRole('button', { name: 'YTD' })).toHaveAttribute('aria-pressed', 'true') // the default
+    expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
+    expect(screen.getByText('01-Apr-2026 to 30-Oct-2026 · vs previous period')).toBeInTheDocument()
+    expect(screen.getByText(/Updated .* ago/)).toBeInTheDocument()
+    expect(screen.queryByRole('navigation', { name: 'Pages' })).toBeNull() // no side bar
   })
 
-  it('collapses the side bar', async () => {
+  it('runs the period toggles to today and asks for the previous period by default (RPT-016)', async () => {
     renderApp('#/overview/dashboard')
-    const side = await screen.findByRole('navigation', { name: 'Pages' })
-    fireEvent.click(within(side).getByRole('button', { name: 'Close the side bar' }))
-    expect(within(side).queryByRole('link', { name: 'Profit & Loss' })).toBeNull()
-    fireEvent.click(within(side).getByRole('button', { name: 'Open the side bar' }))
-    expect(within(side).getByRole('link', { name: 'Profit & Loss' })).toBeInTheDocument()
+    await screen.findByRole('region', { name: 'Revenue' })
+    expect(lastHomeRequest()).toContain('date_from=2026-04-01&date_to=2026-10-30&compare=previous&span=year')
+    fireEvent.click(screen.getByRole('button', { name: 'MTD' }))
+    expect(window.location.hash).toContain('p=mtd')
+    await waitFor(() => expect(lastHomeRequest()).toContain('date_from=2026-10-01&date_to=2026-10-30&compare=previous&span=month'))
+    fireEvent.click(screen.getByRole('button', { name: 'QTD' }))
+    await waitFor(() => expect(lastHomeRequest()).toContain('date_from=2026-10-01&date_to=2026-10-30&compare=previous&span=quarter'))
+    fireEvent.click(screen.getByRole('button', { name: 'FY' }))
+    await waitFor(() => expect(lastHomeRequest()).toContain('month=2027-03&compare=previous&span=year'))
   })
 
-  it('shows the facets the page can apply, and says why the others are off', async () => {
+  it('takes no facets on the Overview', async () => {
     renderApp('#/overview/dashboard')
-    const customer = await screen.findByRole('button', { name: 'Customer (not used on this page)' })
-    expect(customer).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Voucher type (not used on this page)' })).toBeDisabled()
+    await screen.findByRole('region', { name: 'Revenue' })
+    expect(screen.queryByRole('combobox', { name: 'Customer' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Channels' })).toBeNull()
   })
 
   it('copies the page\'s link, which holds the whole selection', async () => {
@@ -155,52 +170,53 @@ describe('the dashboard', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('#/overview/dashboard?company=4&month=2026-05')))
   })
 
-  it('shows the Profit & Loss and Balance Sheet cards, combined, in lakhs and crores', async () => {
-    renderApp('#/overview/dashboard')
-    const pl = await screen.findByRole('region', { name: 'Profit & Loss' })
-    expect(within(pl).getByText('₹48.20 Cr')).toBeInTheDocument()
-    expect(within(pl).getByText('▲ 12%')).toHaveClass('good')
-    expect(within(pl).getByText('▲ 9%')).toHaveClass('neutral') // costs up: neutral, not red
-    expect(within(pl).getByText(/Months ending on the 30th .* run to the 2nd of the next month/)).toBeInTheDocument()
-    const bs = screen.getByRole('region', { name: 'Balance Sheet' })
-    expect(within(bs).getByText('₹62.80 Cr')).toBeInTheDocument()
+  it('shows the key figures, combined, in lakhs and crores; no Profit & Loss or Balance Sheet card', async () => {
+    renderApp('#/overview/dashboard?compare=1')
+    const revenue = await screen.findByRole('region', { name: 'Revenue' })
+    expect(within(revenue).getByText('₹48.20 Cr')).toBeInTheDocument()
+    expect(within(revenue).getByText('▲ 12% vs last year')).toHaveClass('good')
+    const gross = screen.getByRole('region', { name: 'Gross margin' })
+    expect(within(gross).getByText('₹15.10 Cr')).toBeInTheDocument()
+    expect(within(gross).getByText('31.3% of revenue')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Net profit' })).getByText('₹6.24 Cr')).toBeInTheDocument()
+    const percent = screen.getByRole('region', { name: 'Net profit %' })
+    expect(within(percent).getByText('12.9%')).toBeInTheDocument()
+    expect(within(percent).getByText('▼ 1.1 pts vs last year')).toHaveClass('bad')
+    const customers = screen.getByRole('region', { name: 'Customers' })
+    expect(within(customers).getByText('1,240')).toBeInTheDocument()
+    expect(within(customers).getByText('▲ 12.7% vs last year')).toHaveClass('good')
+    expect(screen.getByText(/Months ending on the 30th .* run to the 2nd of the next month/)).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Profit & Loss' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Balance Sheet' })).toBeNull()
+    expect(screen.getByRole('region', { name: 'Sales and purchases by month' })).toHaveTextContent(/Gross profit.*Net profit/) // the legend
     expect(within(screen.getByRole('region', { name: 'Stock value' })).getByText('—')).toBeInTheDocument()
     expect(screen.getByText(/without inter-company eliminations/)).toBeInTheDocument()
     expect(screen.getByText('71%')).toBeInTheDocument()
     expect(screen.getByTestId('chart')).toBeInTheDocument()
   })
 
-  it('marks each company loaded or not loaded, as the last check found it', async () => {
+  it('shows the companies as chips, all of them combined unless some are chosen', async () => {
     renderApp('#/overview/dashboard')
-    fireEvent.click(await screen.findByRole('button', { name: 'Company: All combined ▾' }))
-    const alpha = await screen.findByRole('button', { name: /Alpha/ })
-    expect(within(alpha).getByText('loaded')).toBeInTheDocument()
-    expect(within(screen.getByRole('button', { name: /Beta/ })).getByText('not loaded')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'All combined' })).toHaveAttribute('aria-pressed', 'true')
-  })
-
-  it('asks for the months up to now by default, and any company combination chosen', async () => {
-    renderApp('#/overview/dashboard')
-    await screen.findByRole('region', { name: 'Profit & Loss' })
-    const asked = lastHomeRequest()
-    expect(asked).toContain('company=3&company=4')
-    expect(asked).toContain('month=2026-04')
-    expect(asked).toContain('month=2026-10')
-    expect(asked).not.toContain('month=2026-11')
-    fireEvent.click(screen.getByRole('button', { name: 'Company: All combined ▾' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Beta/ }))
+    const chips = await screen.findByRole('group', { name: 'Companies' })
+    expect(within(chips).getByRole('button', { name: 'All companies' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(chips).getByRole('button', { name: 'Alpha' }).querySelector('.dot-loaded')).not.toBeNull()
+    expect(within(chips).getByRole('button', { name: 'Beta' }).querySelector('.dot-not-loaded')).not.toBeNull()
+    await waitFor(() => expect(lastHomeRequest()).toContain('company=3&company=4'))
+    fireEvent.click(within(chips).getByRole('button', { name: 'Beta' }))
     expect(window.location.hash).toContain('company=4')
   })
 
-  it('takes chosen months, or a date range typed as DD-MMM-YYYY', async () => {
+  it('takes chosen months, or a date range typed as DD-MMM-YYYY (Custom)', async () => {
     renderApp('#/overview/dashboard?month=2026-04&month=2026-06')
-    await screen.findByRole('region', { name: 'Profit & Loss' })
-    expect(lastHomeRequest()).toMatch(/month=2026-04&month=2026-06.*compare=true/)
-    fireEvent.click(screen.getByRole('button', { name: /FY 2026-27 · Apr–Jun \(some months\) · vs last year/ }))
+    await screen.findByRole('region', { name: 'Revenue' })
+    expect(screen.getByRole('button', { name: 'Custom ▾' })).toHaveAttribute('aria-pressed', 'true')
+    expect(lastHomeRequest()).toMatch(/month=2026-04&month=2026-06&compare=previous$/)
+    fireEvent.click(screen.getByRole('button', { name: 'Custom ▾' }))
     const from = await screen.findByLabelText('From')
     fireEvent.change(from, { target: { value: '15-Apr-2026' } })
     fireEvent.blur(from)
     expect(window.location.hash).toContain('from=2026-04-15')
+    expect(window.location.hash).toContain('p=custom')
     expect(window.location.hash).not.toContain('month=')
   })
 
@@ -219,7 +235,10 @@ describe('the dashboard', () => {
           cost_of_sales: figure(null),
           gross_profit: figure(null),
           net_profit: figure(null),
+          gross_margin_pct: { value: null },
+          net_profit_pct: { value: null },
         },
+        monthly: [{ ...home.monthly[0], gross_profit: null, net_profit: null }],
       },
     })
     renderApp('#/overview/dashboard?from=2026-04-01&to=2026-09-15')
@@ -227,6 +246,8 @@ describe('the dashboard', () => {
       await screen.findByText(/Profit isn't available: no statement is stored for 15-Sep-2026/),
     ).toBeInTheDocument()
     expect(lastHomeRequest()).toContain('date_from=2026-04-01&date_to=2026-09-15')
+    expect(within(screen.getByRole('region', { name: 'Net profit' })).getByText('—')).toBeInTheDocument()
+    expect(screen.getByText(/No profit marked: each month's profit needs its stored statements/)).toBeInTheDocument()
   })
 
   it('switches between light and dark', async () => {
@@ -249,7 +270,7 @@ describe('the dashboard', () => {
 
   it('has a page for unknown addresses', async () => {
     renderApp('#/nowhere')
-    expect(await screen.findByText('Choose a page in the side bar.')).toBeInTheDocument()
+    expect(await screen.findByText('Choose a module in the top bar.')).toBeInTheDocument()
   })
 })
 
@@ -259,29 +280,30 @@ const statement = {
   view: 'company',
   period_start: '2026-04-01',
   period_end: '2026-09-30',
+  compared_with: LAST_YEAR,
   columns: [
     { key: 'company:3', label: 'Alpha', kind: 'company' },
     { key: 'company:4', label: 'Beta', kind: 'company' },
     { key: 'total', label: 'Total', kind: 'total' },
-    { key: 'last_year', label: 'Last year', kind: 'last_year' },
+    { key: 'before', label: 'Last year', kind: 'before' },
   ],
   lines: [
     {
       key: 'sales accounts', label: 'Sales Accounts', level: 'main', section: 'gross', higher_is_better: true,
-      values: { 'company:3': '341260000', 'company:4': '41030000', total: '382290000', last_year: '340100000' },
-      pct_of_sales: { 'company:3': '100.0', 'company:4': '100.0', total: '100.0', last_year: '100.0' },
+      values: { 'company:3': '341260000', 'company:4': '41030000', total: '382290000', before: '340100000' },
+      pct_of_sales: { 'company:3': '100.0', 'company:4': '100.0', total: '100.0', before: '100.0' },
       change_pct: '12.4',
     },
     {
       key: 'net profit', label: 'Net Profit', level: 'detail', section: 'net', higher_is_better: true,
-      values: { 'company:3': '50660000', 'company:4': '-4090000', total: '46570000', last_year: '38020000' },
-      pct_of_sales: { 'company:3': '14.8', 'company:4': '-10.0', total: '12.2', last_year: '11.2' },
+      values: { 'company:3': '50660000', 'company:4': '-4090000', total: '46570000', before: '38020000' },
+      pct_of_sales: { 'company:3': '14.8', 'company:4': '-10.0', total: '12.2', before: '11.2' },
       change_pct: '22.5',
     },
   ],
   reason: null,
   shifted: false,
-  last_year_reason: null,
+  before_reason: null,
   matching: { matches: true, dates: ['2026-08-31', '2026-10-02'], differing: 0, compared: 40, unchecked: 0 },
 }
 
@@ -305,34 +327,35 @@ describe('the Profit & Loss page', () => {
     expect(within(table).getByText('3,822.9')).toBeInTheDocument() // ₹ lakh
     expect(within(table).getByText('-40.9').closest('td')).toHaveClass('negative') // a loss in crimson
     expect(within(table).getByText('▲ 22.5%')).toBeInTheDocument()
-    expect(within(screen.getByRole('navigation', { name: 'Pages' })).getByRole('link', { name: 'Profit & Loss' })).toHaveAttribute('aria-current', 'page')
+    // An older link opens the page in its module (P&L & KPIs).
+    expect(within(screen.getByRole('navigation', { name: 'Modules' })).getByRole('link', { name: 'P&L & KPIs' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('says it matches Tally, explains itself, and links to related pages', async () => {
-    renderApp('#/statements/profit-loss')
+    renderApp('#/pnl/profit-loss')
     const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
     expect(await within(panel).findByRole('status')).toHaveTextContent(/✓ Matches Tally for both companies \(checked at 2 statement dates up to 02-Oct-2026\)/)
     expect(within(panel).getByRole('region', { name: 'What is this?' })).toHaveTextContent(/To compare with Tally/)
-    expect(within(panel).getByRole('link', { name: 'Dashboard →' })).toHaveAttribute('href', '#/overview/dashboard')
+    expect(within(panel).getByRole('link', { name: 'Overview →' })).toHaveAttribute('href', '#/overview/dashboard')
   })
 
   it('changes the view and columns through the URL, keeping the selection', async () => {
-    renderApp('#/statements/profit-loss?company=3&company=4')
+    renderApp('#/pnl/profit-loss?company=3&company=4')
     const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
     fireEvent.click(within(panel).getByLabelText('Month by month'))
     expect(window.location.hash).toContain('view=month')
     expect(window.location.hash).toContain('company=3&company=4')
     await waitFor(() => expect(lastRequest()).toContain('view=month'))
-    fireEvent.click(within(panel).getByLabelText('Last year'))
+    fireEvent.click(within(panel).getByLabelText('Compared period'))
     expect(window.location.hash).toMatch(/col=each&col=total&col=change/)
   })
 
   it('saves a view in this browser and opens it again', async () => {
-    renderApp('#/statements/profit-loss?view=quarter')
+    renderApp('#/pnl/profit-loss?view=quarter')
     const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
     fireEvent.change(within(panel).getByLabelText('Name of the view'), { target: { value: 'By quarter' } })
     fireEvent.click(within(panel).getByRole('button', { name: '+ Save current view' }))
-    window.location.hash = '#/statements/profit-loss'
+    window.location.hash = '#/pnl/profit-loss'
     fireEvent.click(await within(panel).findByRole('button', { name: 'By quarter' }))
     expect(window.location.hash).toContain('view=quarter')
   })
@@ -340,7 +363,7 @@ describe('the Profit & Loss page', () => {
   it('exports exactly the table as CSV', async () => {
     const created: Blob[] = []
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: (b: Blob) => (created.push(b), 'blob:x'), revokeObjectURL: () => {} }))
-    renderApp('#/statements/profit-loss')
+    renderApp('#/pnl/profit-loss')
     await screen.findByRole('table')
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
     const text = await created[0].text()
@@ -349,7 +372,7 @@ describe('the Profit & Loss page', () => {
   })
 
   it('closes and reopens the options panel', async () => {
-    renderApp('#/statements/profit-loss')
+    renderApp('#/pnl/profit-loss')
     const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
     fireEvent.click(within(panel).getByRole('button', { name: 'Close the options' }))
     expect(window.location.hash).toContain('panel=0')
@@ -357,11 +380,13 @@ describe('the Profit & Loss page', () => {
     expect(window.location.hash).not.toContain('panel=0')
   })
 
-  it('opens from the Dashboard card', async () => {
+  it('opens from the Dashboard\'s key figures', async () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/home': home })
     renderApp('#/overview/dashboard?company=3')
-    const pl = await screen.findByRole('region', { name: 'Profit & Loss' })
-    expect(within(pl).getByRole('link', { name: 'Open →' })).toHaveAttribute('href', '#/statements/profit-loss?company=3')
+    const net = await screen.findByRole('region', { name: 'Net profit' })
+    expect(within(net).getByRole('link', { name: 'Net profit' })).toHaveAttribute('href', '#/pnl/profit-loss?company=3')
+    expect(within(screen.getByRole('region', { name: 'Revenue' })).getByRole('link', { name: 'Revenue' })).toHaveAttribute('href', '#/sales/dashboard?company=3')
+    expect(within(screen.getByRole('region', { name: 'Customers' })).getByRole('link', { name: 'Customers' })).toHaveAttribute('href', '#/sales/customers?company=3')
   })
 })
 
@@ -369,7 +394,7 @@ const sales: SalesDashboard = {
   companies: [3, 4],
   combined: true,
   period: { start: '2026-04-01', end: '2026-09-30', months: [] },
-  compared: true,
+  compared_with: LAST_YEAR,
   key_figures: {
     net_sales: figure('482000000.0000', '430357142.8571', '12.0'),
     invoices: figure('120', '100', '20.0'),
@@ -408,7 +433,7 @@ describe('the Sales dashboard', () => {
     expect(net).toHaveTextContent('▲ 12% vs last year')
     expect(screen.getByRole('region', { name: 'Invoices' })).toHaveTextContent('120')
     expect(within(screen.getByRole('region', { name: 'Sales returns' })).getByText(/▲ 25%/)).toHaveClass('change', 'neutral')
-    expect(document.querySelector('.top-crumbs')).toHaveTextContent('Sales/Sales dashboard')
+    expect(document.querySelector('.header-crumbs')).toHaveTextContent('Sales/Sales dashboard')
   })
 
   it('applies the customer and channel facets, and no others', async () => {
@@ -416,7 +441,7 @@ describe('the Sales dashboard', () => {
     await screen.findByRole('region', { name: 'Net sales' })
     expect(lastRequest()).toContain('customer=Customer+One')
     expect(lastRequest()).toContain('channel=Sales')
-    expect(screen.getByRole('button', { name: 'Voucher type (not used on this page)' })).toBeDisabled()
+    expect(screen.queryByRole('combobox', { name: 'Voucher type' })).toBeNull() // not a facet of sales
   })
 
   it('lists the months, customers and invoices, each linking deeper where a page exists', async () => {
@@ -502,7 +527,7 @@ describe('the Sales and Purchase registers', () => {
     expect(total).toHaveTextContent('₹1,77,000.00')
     expect(total).toHaveTextContent('₹11,800.00')
     expect(within(table).getByText('First sale')).toBeInTheDocument()
-    expect(document.querySelector('.top-crumbs')).toHaveTextContent('Sales/Sales register')
+    expect(document.querySelector('.header-crumbs')).toHaveTextContent('Sales/Sales register')
   })
 
   it('asks for the customer and channel facets by name', async () => {
@@ -526,7 +551,7 @@ describe('the Sales and Purchase registers', () => {
     expect(await screen.findByText(/Only the first 0 vouchers are shown/)).toBeInTheDocument()
     const panel = screen.getByRole('complementary', { name: 'Purchase register options' })
     expect(within(panel).getByText(/Debit Note Register/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Customer (not used on this page)' })).toBeDisabled()
+    expect(screen.queryByRole('combobox', { name: 'Customer' })).toBeNull() // purchases take voucher types only
   })
 })
 
@@ -599,7 +624,7 @@ describe('monthly sales and purchases, and sales by channel', () => {
     renderApp('#/purchases/monthly')
     const table = await screen.findByRole('table', { name: 'Monthly purchases' })
     expect(within(table).getByRole('link', { name: 'May-2026' }).getAttribute('href')).toMatch(/^#\/purchases\/register\?.*month=2026-05/)
-    expect(document.querySelector('.top-crumbs')).toHaveTextContent('Purchases/Monthly purchases')
+    expect(document.querySelector('.header-crumbs')).toHaveTextContent('Purchases/Monthly purchases')
   })
 
   it('lists the channels with their months, each opening the register filtered to it', async () => {
@@ -636,11 +661,12 @@ const partyFound: PartyOut = {
   credit_days: 30,
   main_channel: 'Online Sales',
   period: { start: '2026-04-01', end: '2026-09-30', months: [] },
+  compared_with: null,
   balance: '1161000',
   overdue: '313000',
   bills_cover: '1000000',
-  net: { value: '18400000', last_year: null, change_pct: null },
-  invoices: { value: '214', last_year: null, change_pct: null },
+  net: { value: '18400000', before: null, change_pct: null },
+  invoices: { value: '214', before: null, change_pct: null },
   settled: '900000',
   days_to_pay: '38',
   invoices_list: [invoice(1, 'overdue', 64), invoice(3, 'paid', null)],
@@ -674,19 +700,19 @@ describe('the customers and their pages', () => {
     const table = await screen.findByRole('table', { name: 'Customers' })
     expect(within(table).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toMatch(/^#\/sales\/customers\/11/)
     expect(within(table).getAllByText('₹11,61,000.00')).toHaveLength(2) // the row and the total
-    expect(document.querySelector('.top-crumbs')).toHaveTextContent('Sales/Customers')
+    expect(document.querySelector('.header-crumbs')).toHaveTextContent('Sales/Customers')
   })
 
   it('shows a customer with key figures, bills and their status, and breadcrumbs back', async () => {
     renderApp('#/sales/customers/11')
-    expect(await screen.findByRole('heading', { name: 'Customer One' })).toBeInTheDocument()
+    expect(await within(screen.getByRole('region', { name: 'Page' })).findByRole('heading', { level: 1, name: 'Customer One' })).toBeInTheDocument()
     expect(screen.getByText('Customer · Sundry Debtors · Online customers')).toBeInTheDocument()
     expect(screen.getByText(/Main channel: Online Sales · Companies: Alpha · Credit period 30 days/)).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Overdue' })).toHaveTextContent('₹3.1 L')
     expect(screen.getByRole('region', { name: 'Average days to pay' })).toHaveTextContent('38 days')
     expect(screen.getByText('Overdue 64 days')).toBeInTheDocument()
     expect(screen.getByText('Paid')).toBeInTheDocument()
-    const crumbs = document.querySelector('.top-crumbs') as HTMLElement
+    const crumbs = document.querySelector('.header-crumbs') as HTMLElement
     expect(crumbs).toHaveTextContent('Sales/Customers/Customer One')
     expect(within(crumbs).getByRole('link', { name: 'Customers' }).getAttribute('href')).toMatch(/^#\/sales\/customers(\?|$)/)
   })

@@ -22,7 +22,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from api.access import CurrentAccess
-from api.v1.common import ReportSession
+from api.v1.common import ReportSession, formula
 from api.v1.dataset_query import (
     CSV_ROW_LIMIT,
     DatasetRequest,
@@ -68,7 +68,7 @@ class Key(BaseModel):
 
 class Row(BaseModel):
     keys: dict[str, Key]
-    values: dict[str, Decimal | int]
+    values: dict[str, Decimal | int] = formula("F-TBL-001")
     level: int | None = None  # subtotals: how many outer groups they total
 
 
@@ -79,7 +79,7 @@ class DatasetResult(BaseModel):
     measures: list[str]
     rows: list[Row]
     subtotals: list[Row]
-    total: dict[str, Decimal | int]
+    total: dict[str, Decimal | int] = formula("F-TBL-001")
     page: int
     page_size: int
     total_rows: int

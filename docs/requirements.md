@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.25 (Draft) |
+| Version | 0.26 (Draft) |
 | Date | 2026-10-19 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
@@ -182,6 +182,9 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | RPT-011 | Over time, "all reports" requested by the client will be delivered; the phase 1 report set is listed in RPT-001 to RPT-004 and RPT-006 to RPT-008, pending confirmation. | — |
 | RPT-012 | Trial Balance, Profit & Loss and Balance Sheet laid out as the source lays them out (one line per primary group; Cost of Sales with opening stock, purchases and closing stock; Profit & Loss A/c as opening balance plus current period, on the liabilities side for a profit and the assets side for a loss, with the ledgers directly under Primary; Unadjusted Forex Gain/Loss) match the source's own reports **line by line and in total** at every date validated (LB-VAL-024), and are stored for every month end and year end (`./dev.ps1 statements`). Stock in them is the source's own figure, whatever its integration setting. | P1 |
 | RPT-013 | Monthly sales for accountants: gross sales, sales returns, other adjustments (any other voucher type posting to sales ledgers) and net sales per entity and month, net sales being every effective entry on the ledgers under the source's own Sales Accounts group (renamed or not) and its sub-groups, by voucher date; also by voucher type with the same net. Proven against the source's own Sales Accounts figure for every period between the stored statement dates (counts only), with a warning where the group isn't found or sales ledgers are mapped outside it. | P1 |
+| RPT-014 | The dashboard follows the client's reference pattern (2026-11-02; screenshots kept outside git, layout and information design only, with our own name, theme and data): a dark top bar with the product name, module tabs (Overview, Sales, Purchases, P&L & KPIs, Balance Sheet, Cash Flow, Parties, Data) and period toggles; a page header with the title and period, segment chips (all companies or each company; channels on the Sales pages) and "Updated N min ago" from the last sync; the same components on every module (KPI cards with sparklines, monthly charts, donuts for mixes, horizontal bars for cost structure, statement tables with current, previous and change % columns, ratio tiles, detail tables with status pills, a waterfall for cash). Everything stays clickable all the way down, with breadcrumbs. Goal trackers wait for targets (budgets, M7b). | P1 |
+| RPT-015 | A formula sheet (`docs/formulas.md`, with Word and PDF copies) lists every figure the dashboard shows with an ID (e.g. F-PL-003): the formula in plain words and as an expression, the data it comes from (view and columns), the debit/credit sign rule, the date rule in Tally's Educational mode and how to check it in Tally. The code and the tests name the IDs; a test fails when a figure has no formula entry. | P1 |
+| RPT-016 | Period toggles MTD, QTD, YTD and FY (plus months or dates of the user's choice); every figure can be compared with the previous period (MTD: the same days of the month before; QTD: of the quarter before; YTD and FY: a year earlier; chosen months or dates: as many just before) or with last year. Figures from stored statements run to the last stored date within the period, and say so. | P1 |
 
 ### 4.9 AI layer
 
@@ -398,6 +401,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-22 | 0.23 | DAT-013 (source figures), VAL-015 (stock values checked), RPT-012 (statements matching the source line by line); ADR-040. |
 | 2026-10-29 | 0.24 | RPT-013 (monthly sales, proven against the source). |
 | 2026-10-30 | 0.25 | SYN-007 (entities on hold). |
+| 2026-11-02 | 0.26 | RPT-014 (the client's reference pattern), RPT-015 (formula sheet with IDs), RPT-016 (period toggles and the previous period); ADR-050. |
 | 2026-10-19 | 0.22 | SEC-009 widened: automated checks on every pull request, high-severity findings block merging (ADR-039). |
 | 2026-10-16 | 0.21 | VAL-013: the book value is the opening plus the source's own vouchers; DAT-012: the opening difference warning follows the source's own trial balance line. |
 | 2026-10-16 | 0.20 | Section 4.13 Foreign currency (FX-001 to FX-013): foreign-currency data kept alongside the base-currency books, revaluation snapshots, realised and unrealised gains, exposure, `forex.view` (ADR-037). |

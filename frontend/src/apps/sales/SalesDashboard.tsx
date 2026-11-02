@@ -1,5 +1,5 @@
 // The Sales dashboard (docs/design/dashboard.md Section 0.2, screen 7): key figures with the
-// change against last year (net sales, invoices, average invoice, sales returns), net sales by
+// change against the comparison period (net sales, invoices, average invoice, sales returns), net sales by
 // month (a month opens its register once that page is built; a table below gives every
 // month's gross, returns, other adjustments and net), the top customers and the largest
 // invoices, each table in the table explorer; the options side panel with "What is this?".
@@ -10,6 +10,7 @@ import type { EChartsOption } from 'echarts'
 import type { Company, InvoiceOut, MonthSales, PartySales, SalesDashboard as Dashboard } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
 import { KeyCard } from '../../components/KeyCard.tsx'
+import { againstOf } from '../../selection.ts'
 import { formatDate, formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
@@ -153,10 +154,10 @@ export function SalesDashboard(props: Props) {
     content = (
       <>
         <div className="sales-cards">
-          <KeyCard label="Net sales" figure={k.net_sales} tone="up-good" compared={dashboard.compared} />
-          <KeyCard label="Invoices" figure={k.invoices} unit="count" tone="up-good" compared={dashboard.compared} />
-          <KeyCard label="Average invoice" figure={k.average_invoice} tone="up-good" compared={dashboard.compared} />
-          <KeyCard label="Sales returns" figure={k.sales_returns} tone="up-neutral" compared={dashboard.compared} />
+          <KeyCard label="Net sales" figure={k.net_sales} tone="up-good" against={againstOf(dashboard.compared_with)} />
+          <KeyCard label="Invoices" figure={k.invoices} unit="count" tone="up-good" against={againstOf(dashboard.compared_with)} />
+          <KeyCard label="Average invoice" figure={k.average_invoice} tone="up-good" against={againstOf(dashboard.compared_with)} />
+          <KeyCard label="Sales returns" figure={k.sales_returns} tone="up-neutral" against={againstOf(dashboard.compared_with)} />
         </div>
         <section className="card" aria-label="Net sales by month">
           <div className="card-head">

@@ -463,6 +463,7 @@ docker run --rm -v "C:/ledgerbridge/docs:/data" -w /data/rules pandoc/latex:3.5 
 - `-v` mounts the whole `docs` folder as `/data`, so a document and the diagrams it links (`../diagrams/*.png`) are both visible; `-w` (working directory) is the document's own folder, so its relative image links resolve.
 - Everything after the image name is passed to pandoc: the input file, the output (`.docx` or `.pdf`, by its extension), a table of contents, and for PDFs the LaTeX engine (`xelatex`, which handles Unicode).
 - The first run downloads the image (about 1 GB); later runs reuse it. Like mermaid-cli it is not part of the LedgerBridge stack and starts nothing else.
+- The documents exported are the rulebook, the schema reference, the project history and the formula sheet (`formulas.md`). For PDFs, `--lua-filter=/data/export/pdf-symbols.lua` (a pandoc filter in the mounted folder) writes out the few symbols the image's LaTeX fonts have no glyph for, such as the rupee sign ("Rs") and "<=", which a PDF would otherwise silently drop. See it: export, then search the PDF for "Rs"; pandoc's `--verbose` output lists any "Missing character".
 
 See it: `docker image ls pandoc/latex`.
 
@@ -497,6 +498,7 @@ See it: the PR's checks, "Details" on a job, then the step "Initialize container
 
 | Date | Change |
 | --- | --- |
+| 2026-11-02 | Section 9: `docs-export` also exports the formula sheet; PDFs pass through `docs/export/pdf-symbols.lua` so symbols without a glyph in the image's fonts (the rupee sign) aren't dropped. |
 | 2026-10-30 | Section 3: `./dev.ps1 dashboard` checks with `docker compose port` that the API is published on 127.0.0.1 only. |
 | 2026-10-30 | Dashboard D1: section 6.5, `API_PUBLISHED_ADDRESS` (the API warns if it is ever published beyond this computer); section 7, `--no-access-log` (no query strings in logs). |
 | 2026-10-24 | Section 3: the commit stamp (`GIT_COMMIT` build argument, `LEDGERBRIDGE_COMMIT` in the image, the check before commands). |

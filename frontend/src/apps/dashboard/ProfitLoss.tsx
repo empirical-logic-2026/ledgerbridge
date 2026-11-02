@@ -201,7 +201,7 @@ export function ProfitLoss(props: Props) {
                 31st (Educational mode).
               </p>
             )}
-            {report.last_year_reason && options.columns.includes('last') && <p className="report-note">No comparison with last year: {report.last_year_reason}.</p>}
+            {report.before_reason && options.columns.includes('last') && <p className="report-note">No comparison with the {report.compared_with?.label.toLowerCase() ?? 'period before'}: {report.before_reason}.</p>}
             <Table report={report} options={options} />
           </>
         )}

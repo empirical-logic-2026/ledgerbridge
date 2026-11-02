@@ -33,9 +33,9 @@ SALES = "sales_accounts"
 
 @dataclass(frozen=True)
 class Column:
-    key: str  # "company:3", "month:2026-04", "quarter:2026-Q1", "total", "last_year"
+    key: str  # "company:3", "month:2026-04", "quarter:2026-Q1", "total", "before"
     label: str
-    kind: str  # company, month, quarter, total, last_year
+    kind: str  # company, month, quarter, total, before (the comparison period)
 
 
 @dataclass
@@ -69,13 +69,18 @@ class Report:
     lines: list[Line]
     reason: str | None  # why there are no figures
     shifted: bool  # a month ran to a later stored date (Educational mode)
-    last_year_reason: str | None
+    before_reason: str | None  # why the comparison period has no figures
     matching: Matching
     net_sales: dict[str, Decimal]  # column key -> net sales (for % of sales)
 
 
 def profit_loss(
-    session: Session, companies: list[int], period: Period, view: str, compare: bool
+    session: Session,
+    companies: list[int],
+    period: Period,
+    view: str,
+    before: Period | None,
+    before_label: str = "Last year",
 ) -> Report:
     stored = stored_dates(session, companies)
     books_from = books_start(session, companies)
@@ -83,14 +88,14 @@ def profit_loss(
     columns, column_windows = _columns(session, companies, period, view, stored, books_from)
     columns.append(Column("total", "Total", "total"))
     column_windows["total"] = (companies, total)
-    last_year_reason = None
-    if compare:
-        last = windows(period.last_year(), stored, books_from)
-        last_year_reason = last.reason
-        columns.append(Column("last_year", "Last year", "last_year"))
-        column_windows["last_year"] = (companies, last)
+    before_reason = None
+    if before is not None:
+        compared = windows(before, stored, books_from)
+        before_reason = compared.reason
+        columns.append(Column("before", before_label, "before"))
+        column_windows["before"] = (companies, compared)
     if not total.available:
-        return Report(columns, [], total.reason, False, last_year_reason, Matching([], 0, 0, 0), {})
+        return Report(columns, [], total.reason, False, before_reason, Matching([], 0, 0, 0), {})
 
     roles = _roles(session, companies)
     lines: dict[str, Line] = {}
@@ -118,7 +123,7 @@ def profit_loss(
         {d for _, found in column_windows.values() for pair in found.pairs for d in pair if d}
     )
     return Report(
-        columns, ordered, None, total.shifted, last_year_reason,
+        columns, ordered, None, total.shifted, before_reason,
         matching(session, companies, used), net_sales,
     )  # fmt: skip
 

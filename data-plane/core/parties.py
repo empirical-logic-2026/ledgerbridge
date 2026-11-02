@@ -109,7 +109,7 @@ class PartyPage:
     party: PartyRef
     balance: Decimal  # due at the end, positive when owed in the usual direction
     totals: Totals
-    last_year: Totals | None
+    before: Totals | None  # the comparison period's
     settled: Decimal  # receipts (payments) in the period
     days_to_pay: Decimal | None
     bills: list[Bill]
@@ -257,7 +257,7 @@ def _group_path(session: Session, ledger_id: int) -> list[str]:
 
 def party_page(
     session: Session, companies: list[int], party: PartyRef, period: Period, kind: Kind,
-    compare: bool,
+    before: Period | None,
 ) -> PartyPage:  # fmt: skip
     _, side, settles, sign = KINDS[kind]
     facets = Facets(parties=(party.name,))
@@ -273,9 +273,7 @@ def party_page(
         party=party,
         balance=sign * closing,
         totals=period_totals(session, chosen, period, facets, side),
-        last_year=period_totals(session, chosen, period.last_year(), facets, side)
-        if compare
-        else None,
+        before=period_totals(session, chosen, before, facets, side) if before else None,
         settled=sum((s.amount for s in settlements), ZERO),
         days_to_pay=_days_to_pay(session, party, period),
         bills=bills,

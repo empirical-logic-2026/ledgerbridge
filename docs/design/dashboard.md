@@ -2,10 +2,10 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.11 |
+| Version | 0.12 |
 | Date | 2026-11-02 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
-| Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1) |
+| Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1); the client's reference screenshots of 2026-11-02 (Section 0.4: layout and information design only; kept on the developer's computer in `docs/design/client-reference/`, not in git, as they show other products and a desktop) |
 
 The mockup is the approved design for the dashboard home page. M7 must match its **layout, wording and visual style**. The figures, company names, party names and voucher numbers in it are illustrative sample data; the built page shows real values from the reporting API (M6). The footer text "Illustrative mockup with sample figures" belongs to the mockup only and is not part of the product.
 
@@ -47,7 +47,7 @@ Six screens, approved by the developer on 2026-10-31. Build to them: their **lay
 - **Period:** the financial year, month chips (one or several, adjacent or not), or a from/to date range ("or dates"), and **Compare: last year** (the same period a year earlier) or no comparison.
 - **Status pill:** how many selected companies were loaded in Tally, the last sync, and whether every latest validation passed.
 
-Cards, each following the selection:
+Cards, each following the selection (from 2026-11-02 the Overview module, Section 0.4, replaces these cards with its key figures; every formula: [formulas.md](../formulas.md)):
 - **Profit & Loss:** net sales, cost of sales, gross profit, net profit, each with the change against last year. From the stored statements (`v_profit_loss`, validated against Tally's): a period's figure is the statement at its end less the one before its start. Whole months use the stored month ends; where the source's statements exist only for some days of the month (Tally's Educational mode: the 1st, 2nd and 31st), a 30-day month runs to the 2nd of the next month and the card says so. Other from/to ranges show "—" with the reason. "Open" leads to the Profit & Loss report (D1 c1).
 - **Balance Sheet:** total assets, current assets, current liabilities, "capital and reserves (incl. profit to date)": the capital account and the Profit & Loss A/c, at the period's end, from the stored statement for that date.
 - **Cash & bank, Receivables, Payables:** balances at the period's end (ledgers under Cash-in-Hand and Bank Accounts, Sundry Debtors, Sundry Creditors, by the source's predefined groups).
@@ -74,6 +74,8 @@ Charts: **sales and purchases by month** (₹ lakh, ECharts), **sales by channel
 Every page gets the side panel, the table explorer, "matches Tally" where it applies and a short "What is this?" help: what the figures mean, where they come from, how to compare them with Tally.
 
 ## 0.2 Navigation (screens 7 and 8, decision 2026-10-31)
+
+**Superseded on 2026-11-02 by Section 0.4** (the top bar with module tabs replaces the side bar and the top filter bar; ADR-050). Kept as the record of what was built in D2 (c1) to (c4); the pages below keep their definitions.
 
 A **collapsible side bar** on charcoal replaces the top menu and the apps home (screen 1 and ADR-048's apps home are superseded; the logo and `#/` open the Dashboard). Its groups and items, in this order; an item appears once its page is built, a group once it has an item:
 
@@ -138,6 +140,34 @@ Every table: a filter (any part of a text or date cell), **Columns**, **Group by
 - **A trend chart** (monthly), each point clickable.
 - **Tabs** with the related lists (e.g. invoices and credit notes, receipts, ledger statement, outstanding bills), each using the table explorer (columns, group by, filters, CSV of exactly the list).
 - **"Matches Tally"** where it applies (statements, ledger balances, voucher counts), with the side panel's "What is this?" help.
+
+## 0.4 The client's reference pattern (decision 2026-11-02, ADR-050)
+
+The client asked for the dashboard to follow the design pattern of their reference screenshots (`docs/design/client-reference/`, kept out of git: sample dashboards of other products with illustrative figures). They are used for **layout and information design only**: our own name, our charcoal, forest green and crimson theme, and our data. Requirements: RPT-014 (layout and modules), RPT-015 (formula sheet), RPT-016 (period toggles and the previous period).
+
+**The frame** (replaces Section 0.2):
+
+- **Dark top bar** (charcoal in both modes): the company logo on a small white plate and the product name "LedgerBridge" (opens the Overview); the **module tabs** Overview, Sales, Purchases, P&L & KPIs, Balance Sheet, Cash Flow, Parties, Data (a module shows once it has a built page); on the right the **period toggles** MTD · QTD · YTD · FY · Custom, the financial year, **what to compare with** (previous period, last year, no comparison) and light/dark mode.
+- **Page header**: breadcrumbs, the page's title with its period and comparison ("01-Apr-2026 to 02-Nov-2026 · vs previous period"), the **segment chips** ("All companies" or any combination, each with its loaded / not loaded dot; on the Sales pages also the channels, as chips when there are up to eight, else a picker; the customer and voucher type facets as pickers where the page applies them), **"Updated N min ago"** from the last sync (green; crimson when a company wasn't loaded or a check failed, with the status on hover) and Copy link; under it the module's pages as tabs.
+- Everything stays clickable all the way down, with the breadcrumbs back; older links ("#/statements/profit-loss") open the page in its module.
+
+**Periods** (formula F-CMP-002): MTD, QTD and YTD run from the start of today's month, quarter (of the financial year) or financial year to today; FY is the twelve months of the year chosen; Custom keeps the month chips and the from/to dates. The default is YTD compared with the previous period. **The previous period** of MTD is the same days of the month before, of QTD the same days of the quarter before; YTD and FY are compared with the same dates a year earlier; Custom months with as many months just before, Custom dates with as many days just before. Profit (from the stored month-end statements) runs to the **last stored date within the period** and the page says "to 31-Oct-2026"; figures from the entries run to today.
+
+**Components**, used the same way on every module: **KPI cards** (coloured top border, small-capitals label, big value, change vs the comparison, sparkline); **monthly bar or line charts**; a **donut** for mixes; **horizontal bars** for cost structure (as % of net sales); **statement tables** with current, previous and change % columns and subtotals; **2×2 ratio tiles**; **detail tables** with status pills; a **waterfall** for cash. **Goal trackers** need targets: until budgets (M7b) a placeholder says so.
+
+**Modules** (one PR each, in this order; what each shows comes from our data):
+
+| Module | Shows | PR |
+| --- | --- | --- |
+| Frame | top bar, page header, period toggles and comparison, formula sheet (`docs/formulas.md`) | 1 |
+| Overview | key cards: net sales · gross profit (gross margin %) · net profit (net profit %) · cash & bank · customers; monthly sales and purchases with gross and net profit marked; sales by channel (donut); P&L summary vs last year; top customers | 2 |
+| Sales | the Sales dashboard, register, monthly and channels in the pattern, channel chips | 3 |
+| Purchases | the same for purchases | 4 |
+| Parties | customers and vendors; receivables and payables with ageing (not due, 1–30, 31–60, 61–90, over 90 days past due; opening bills not yet stored) | 5 |
+| P&L & KPIs | the full Profit & Loss with change %, margin tiles, expense structure as % of net sales, monthly trend, goal tracker placeholder | 6 |
+| Balance Sheet | the Balance Sheet with change %; current ratio, quick ratio, debt to equity, receivable, payable and inventory days, working-capital days | 7 |
+| Cash Flow | a simple cash movement: in and out of cash and bank by category, as a waterfall (the full operating / investing / financing statement is planned separately: it needs every ledger classified) | 8 |
+| Data | data health and companies | 9 |
 
 ## 1. Principles
 
@@ -292,11 +322,13 @@ Three colours carry meaning (decision 2026-10-31; they replace the teal, navy an
 
 | Colour | Used for | Light mode | Dark mode |
 | --- | --- | --- | --- |
-| **Charcoal black** | Top bar, side panels, dark surfaces | `#1C1F23` | `#1C1F23` (page `#141619`, cards `#202327`) |
+| **Charcoal black** | The top bar, the options panel, dark surfaces, the gross profit line on charts | `#1C1F23` | `#1C1F23` (page `#141619`, cards `#202327`; the gross profit line `#E6E8EA`) |
 | **Forest green** | Primary buttons, the active menu item, links, selections (chips), positive figures and good changes, the main chart series | `#1E6B3A` (on white 6.5:1); selected chips `#DCEFE2` | text `#6FCF97` (8.3:1 on cards); buttons `#1E6B3A` with white text |
 | **Crimson red** | Negative figures, losses, bad changes (sales or profit down), alerts and warnings | `#B0102D` (7.1:1) | `#FF7A8A` (6.3:1) |
 
 - **Red is used sparingly**, so it keeps its meaning: a cost going up is shown neutral (grey), not red; there is no amber.
+- **Chart lines** need 3:1 against the card (WCAG 1.4.11), measured by `theme.test.ts`: gross profit solid charcoal, net profit dashed lighter green (`#3F8F5F`; dark `#6FCF97`).
+- **The company logo** is drawn on white, so it sits on a small white plate in the charcoal top bar.
 - Neutral greys for text (`#16181B`, secondary `#5F6368`; dark `#E6E8EA`, `#9AA1A9`), borders and the second chart series (purchases).
 - Cards are white (dark: `#202327`) with a light border and 8 px rounded corners on a light grey page (`#F4F5F6`).
 
@@ -406,6 +438,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-02 | 0.12 | Section 0.4: the client's reference pattern (ADR-050): the dark top bar with the logo, module tabs and period toggles (MTD, QTD, YTD, FY, Custom) and the comparison with the previous period; the page header with segment chips and "Updated N min ago"; the components and the modules, one PR each; Section 0.2 superseded; the formula sheet; chart line colours. |
 | 2026-11-02 | 0.11 | Customers and vendors: the lists and the party's page (screen 8); opening bills not yet stored. |
 | 2026-11-02 | 0.10 | Monthly sales and purchases with the closing balance; sales by channel; the side bar's new items. |
 | 2026-11-02 | 0.9 | The Sales and Purchase registers (Day Book style, monthly subtotals). |

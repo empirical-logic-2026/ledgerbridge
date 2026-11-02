@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
-import type { PeriodChoice } from '../selection.ts'
+import { comparisonQuery, type CompareKind, type PeriodChoice } from '../selection.ts'
 import type { ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
 
 export function useCompanies() {
@@ -20,7 +20,7 @@ export function usePeriods(companies: number[] | undefined) {
   })
 }
 
-export function useHome(companies: number[] | undefined, period: PeriodChoice | undefined, compare: boolean) {
+export function useHome(companies: number[] | undefined, period: PeriodChoice | undefined, compare: CompareKind) {
   return useQuery({
     queryKey: ['home', companies, period, compare],
     queryFn: () =>
@@ -29,13 +29,13 @@ export function useHome(companies: number[] | undefined, period: PeriodChoice | 
         month: period?.months.length ? period.months : undefined,
         date_from: period?.months.length ? undefined : period?.from,
         date_to: period?.months.length ? undefined : period?.to,
-        compare: compare ? 'true' : undefined,
+        ...comparisonQuery(compare, period),
       }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }
 
-export function useProfitLoss(companies: number[] | undefined, period: PeriodChoice | undefined, view: string, compare: boolean) {
+export function useProfitLoss(companies: number[] | undefined, period: PeriodChoice | undefined, view: string, compare: CompareKind) {
   return useQuery({
     queryKey: ['profit-loss', companies, period, view, compare],
     queryFn: () =>
@@ -45,7 +45,7 @@ export function useProfitLoss(companies: number[] | undefined, period: PeriodCho
         date_from: period?.months.length ? undefined : period?.from,
         date_to: period?.months.length ? undefined : period?.to,
         view,
-        compare: compare ? 'true' : undefined,
+        ...comparisonQuery(compare, period),
       }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })
@@ -54,7 +54,7 @@ export function useProfitLoss(companies: number[] | undefined, period: PeriodCho
 export function useSalesDashboard(
   companies: number[] | undefined,
   period: PeriodChoice | undefined,
-  compare: boolean,
+  compare: CompareKind,
   facets: { customer: string[]; channel: string[] },
 ) {
   return useQuery({
@@ -65,7 +65,7 @@ export function useSalesDashboard(
         month: period?.months.length ? period.months : undefined,
         date_from: period?.months.length ? undefined : period?.from,
         date_to: period?.months.length ? undefined : period?.to,
-        compare: compare ? 'true' : undefined,
+        ...comparisonQuery(compare, period),
         customer: facets.customer.length ? facets.customer : undefined,
         channel: facets.channel.length ? facets.channel : undefined,
       }),
@@ -147,11 +147,11 @@ export function useParties(kind: 'customers' | 'vendors', companies: number[] | 
   })
 }
 
-export function useParty(kind: 'customers' | 'vendors', id: string | undefined, companies: number[] | undefined, period: PeriodChoice | undefined, compare: boolean) {
+export function useParty(kind: 'customers' | 'vendors', id: string | undefined, companies: number[] | undefined, period: PeriodChoice | undefined, compare: CompareKind) {
   return useQuery({
     queryKey: ['party', kind, id, companies, period, compare],
     queryFn: () =>
-      getJson<PartyOut>(`/api/v1/parties/${kind}/${id}`, { company: companies, ...periodQuery(period), compare: compare ? 'true' : undefined }),
+      getJson<PartyOut>(`/api/v1/parties/${kind}/${id}`, { company: companies, ...periodQuery(period), ...comparisonQuery(compare, period) }),
     enabled: id !== undefined && companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }

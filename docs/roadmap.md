@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.12 |
+| Version | 0.13 |
 | Date | 2026-10-19 |
 | Current milestone | **M4** |
 
@@ -89,6 +89,8 @@ Starts when validation of every pilot company passes with zero failures. It cons
 ## M7 — Dashboard
 
 Built in steps, each reviewed before the next (2026-10-30): **D1** the API (`/api/v1`, read-only, one access dependency, allow-listed datasets), the app shell, Overview, Statements with drill-down and the table explorer, before login and on localhost only (ADR-048, ADR-049), on the existing statement views ahead of the rest of M6; **D2** Sales and purchases registers, monthly sales, Day Book, Ledger statement, Cash and bank, Receivables and payables with ageing, Data health. Login (M5) comes before any network exposure.
+
+**Redesign to the client's reference pattern (2026-11-02, RPT-014 to RPT-016, ADR-050):** one PR per module, in this order: (1) the frame (top bar with module tabs, period toggles MTD/QTD/YTD/FY and the previous period, page header, the formula sheet `docs/formulas.md`); (2) Overview; (3) Sales; (4) Purchases; (5) Parties with receivables and payables ageing; (6) P&L & KPIs; (7) Balance Sheet with ratios; (8) Cash Flow as a simple cash movement; (9) Data. Planned separately, after the pilot's ledgers are classified: the full cash flow statement (operating, investing, financing). Goal trackers come with budgets (M7b).
 
 **Done when:** the React app supports login, entity and consolidated selection, period filters, MIS overview with health indicators, all statements from M6, ageing, drill-down to voucher detail, a data-quality page, and the Forex page per docs/design/dashboard.md Section 8 (FX-008 to FX-012); and the home page matches the approved design in docs/design/dashboard.md and dashboard-mockup.png in layout, wording and visual style (top bar with company and period switchers and sync status, LIVE ticker, plain-language sidebar, greeting, five KPI cards, sales vs expenses chart, "Needs your attention" panel, "Ask a question" panel), with real data from the M6 API in place of the sample figures.
 
@@ -191,3 +193,4 @@ Control plane with login and licences; CSV/TXT connector; connector agent; clien
 | 2026-10-19 | 0.11 | M4b: country codes for parties outside India (simplicity review finding). |
 | 2026-10-19 | 0.10 | M9: production hardening, including third-party images without high-severity findings, pinned by digest. |
 | 2026-10-30 | 0.12 | M7 built in steps D1 and D2; D1 before login, on localhost only (ADR-048, ADR-049). |
+| 2026-11-02 | 0.13 | M7: the redesign to the client's reference pattern, one PR per module (RPT-014 to RPT-016, ADR-050); the full cash flow statement planned separately. |

@@ -1,5 +1,5 @@
 // Our colours, defined once (docs/design/dashboard.md Section 5): charcoal black for the top
-// bar, side panels and dark surfaces; forest green for primary actions, links, selections and
+// bar, panels, dark surfaces and the gross profit line; forest green for primary actions, links, selections and
 // positive figures; crimson for negative figures, losses, alerts and warnings, used sparingly
 // so that red keeps its meaning. Every text colour meets WCAG AA (4.5:1) on the surface it is
 // used on (measured: src/theme.test.ts). Root writes the tokens as CSS variables (--lb-*)
@@ -25,6 +25,9 @@ export interface Tokens {
   negative: string // crimson text: negative figures, losses, alerts
   negativeSoft: string
   neutralBar: string // the second series in charts (purchases)
+  grossProfit: string // the gross profit line on charts (charcoal, solid)
+  netProfit: string // the net profit line on charts (a lighter green, dashed)
+  accents: string[] // the key cards' top borders, in order: green, charcoal, lighter green, grey
 }
 
 const CHARCOAL = '#1C1F23'
@@ -47,6 +50,9 @@ export const tokens: Record<Mode, Tokens> = {
     negative: '#B0102D',
     negativeSoft: '#FBE7EA',
     neutralBar: '#9AA1A9',
+    grossProfit: CHARCOAL,
+    netProfit: '#3F8F5F',
+    accents: [FOREST, CHARCOAL, '#3F8F5F', '#9AA1A9'],
   },
   dark: {
     charcoal: CHARCOAL,
@@ -64,13 +70,18 @@ export const tokens: Record<Mode, Tokens> = {
     negative: '#FF7A8A',
     negativeSoft: '#3A1D22',
     neutralBar: '#6B727A',
+    grossProfit: '#E6E8EA',
+    netProfit: '#6FCF97',
+    accents: ['#6FCF97', '#C4C9CF', '#3F8F5F', '#6B727A'],
   },
 }
 
 /** The tokens as CSS variables: `--lb-primary-soft` and so on. */
 export function cssVariables(mode: Mode): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(tokens[mode]).map(([key, value]) => [`--lb-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`, value]),
+    Object.entries(tokens[mode])
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+      .map(([key, value]) => [`--lb-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`, value]),
   )
 }
 

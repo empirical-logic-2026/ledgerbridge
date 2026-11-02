@@ -40,14 +40,14 @@ function withDecimals(value: bigint, places: number): string {
   return places ? `${indianGrouping(whole)}.${text.slice(-places)}` : indianGrouping(whole)
 }
 
-/** The exact amount: "₹16,20,000.00", "-₹500.50". */
+/** The exact amount: "₹16,20,000.00", "-₹500.50" (F-FMT-002). */
 export function formatExact(amount: string): string {
   const paise = divideRounded(toScaled(amount), 100n) // 2 decimals
   const sign = paise < 0n ? '-' : ''
   return `${sign}₹${withDecimals(paise < 0n ? -paise : paise, 2)}`
 }
 
-/** Short: "₹4.82 Cr" (2 decimals), "₹62.4 L" (1 decimal), below a lakh "₹45,300". */
+/** Short: "₹4.82 Cr" (2 decimals), "₹62.4 L" (1 decimal), below a lakh "₹45,300" (F-FMT-001). */
 export function formatCompact(amount: string): string {
   const scaled = toScaled(amount)
   const rupees = divideRounded(scaled, 10n ** BigInt(SCALE))
@@ -65,7 +65,7 @@ export function formatCompact(amount: string): string {
   return `${rupees < 0n ? '-' : ''}₹${indianGrouping(size.toString())}`
 }
 
-/** For charts only: the amount in lakhs as a number (drawing, never sums or display). */
+/** For charts only: the amount in lakhs as a number (drawing, never sums or display; F-FMT-003). */
 export function toLakhs(amount: string): number {
   return Number(divideRounded(toScaled(amount), LAKH * 100n)) / 100
 }

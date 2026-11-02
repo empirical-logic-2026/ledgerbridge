@@ -16,7 +16,11 @@ added together: combined, without inter-company eliminations.
 - **Cash and bank, receivables, payables:** each ledger's opening plus its effective entries
   up to the period's end (Cash-in-Hand and Bank Accounts, Sundry Debtors, Sundry Creditors).
 - **Charts:** sales and purchases per month, sales per voucher type (channel) and per
-  company, from the effective entries of the period itself (exact for any period).
+  company, from the effective entries of the period itself (exact for any period); each
+  month's gross and net profit from the stored statements, as the card's (none for a month
+  the period covers only in part, or without its statements).
+
+Every formula: docs/formulas.md.
 """
 
 from collections import defaultdict
@@ -29,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from core.models import accounting as A  # noqa: N812
 from core.models.reporting import StatementLine
-from core.report_periods import Period, Windows, books_start, stored_dates, windows
+from core.report_periods import Period, Windows, books_start, last_day, stored_dates, windows
 from core.reporting_views import GROUP_ANCESTORS
 from core.statements import GROSS_PROFIT, NET_PROFIT, PROFIT_LOSS_ACCOUNT, match_key
 
@@ -52,44 +56,47 @@ class StatementFigures:
     as_of: date | None = None  # the (last) statement date used
     shifted: bool = False  # a month ran to a later stored date (Educational mode)
     reason: str | None = None
+    cut: bool = False  # a date range's figures end at `as_of`, before the range's end
 
 
 @dataclass
 class Home:
     period: Period
     profit_loss: StatementFigures
-    profit_loss_last_year: StatementFigures | None
+    profit_loss_before: StatementFigures | None  # the comparison period's
     balance_sheet: StatementFigures
     stock_value: Decimal | None
     cash_and_bank: Decimal
     receivables: Decimal
     payables: Decimal
     monthly: list[tuple[date, Decimal, Decimal]]  # month, sales, purchases
+    monthly_profit: dict[date, StatementFigures]  # month -> its gross and net profit
     channels: list[tuple[str, Decimal]]  # voucher type, net sales (largest first)
     by_company: list[tuple[int, Decimal]]  # entity id, net sales
 
 
-def home(session: Session, companies: list[int], period: Period, compare: bool) -> Home:
+def home(session: Session, companies: list[int], period: Period, before: Period | None) -> Home:
+    """The figures for the period; the Profit & Loss also for `before` (the comparison)."""
     stored = stored_dates(session, companies)
     books_from = books_start(session, companies)
     found = windows(period, stored, books_from)
-    profit_loss = profit_loss_figures(session, companies, found)
-    last_year = None
-    if compare:
-        last_year = profit_loss_figures(
-            session, companies, windows(period.last_year(), stored, books_from)
-        )
+    at: dict[date, dict[str, Decimal]] = {}  # each statement date's figures, read once
+    profit_loss = profit_loss_figures(session, companies, found, at)
+    compared = None
+    if before is not None:
+        compared = profit_loss_figures(session, companies, windows(before, stored, books_from), at)
     sheet = balance_sheet_figures(session, companies, found.end, found.reason)
     return Home(
         period=period,
         profit_loss=profit_loss,
-        profit_loss_last_year=last_year,
+        profit_loss_before=compared,
         balance_sheet=sheet,
         stock_value=_stock_value(session, companies, found.end) if found.available else None,
         cash_and_bank=balance(session, companies, CASH_AND_BANK, period.end),
         receivables=balance(session, companies, (RECEIVABLES,), period.end),
         payables=-balance(session, companies, (PAYABLES,), period.end),
         monthly=_monthly(session, companies, period),
+        monthly_profit=monthly_profit(session, companies, period, stored, books_from, at),
         channels=_channels(session, companies, period),
         by_company=_by_company(session, companies, period),
     )
@@ -98,16 +105,50 @@ def home(session: Session, companies: list[int], period: Period, compare: bool) 
 # --- from the stored statements ----------------------------------------------------------
 
 
-def profit_loss_figures(session: Session, companies: list[int], found: Windows) -> StatementFigures:
+def profit_loss_figures(
+    session: Session,
+    companies: list[int],
+    found: Windows,
+    at: dict[date, dict[str, Decimal]] | None = None,
+) -> StatementFigures:
+    """The figures over the windows: each window's end less the date before it. `at` keeps
+    each date's figures, so that a date shared by several windows is read once."""
     if not found.available:
         return StatementFigures(reason=found.reason)
+    cache = {} if at is None else at
+
+    def figures_at(on: date) -> dict[str, Decimal]:
+        if on not in cache:
+            cache[on] = _profit_loss_at(session, companies, on)
+        return cache[on]
+
     totals: dict[str, Decimal] = defaultdict(lambda: ZERO)
     for before, end in found.pairs:
-        now = _profit_loss_at(session, companies, end)
-        earlier = _profit_loss_at(session, companies, before) if before else {}
+        now = figures_at(end)
+        earlier = figures_at(before) if before else {}
         for key in PL_FIGURES:
             totals[key] += now.get(key, ZERO) - earlier.get(key, ZERO)
-    return StatementFigures(dict(totals), found.end, found.shifted)
+    return StatementFigures(dict(totals), found.end, found.shifted, cut=found.cut)
+
+
+def monthly_profit(
+    session: Session,
+    companies: list[int],
+    period: Period,
+    stored: set[date],
+    books_from: date | None,
+    at: dict[date, dict[str, Decimal]] | None = None,
+) -> dict[date, StatementFigures]:
+    """Each month's figures, as the card finds them for that month alone. A month the
+    period covers only in part (a date range) has none: the statements are at month ends."""
+    found: dict[date, StatementFigures] = {}
+    for month in period.month_starts():
+        if not period.months and (month < period.start or last_day(month) > period.end):
+            found[month] = StatementFigures(reason="the period covers only part of the month")
+            continue
+        month_windows = windows(Period.of_months([month]), stored, books_from)
+        found[month] = profit_loss_figures(session, companies, month_windows, at)
+    return found
 
 
 def _profit_loss_at(session: Session, companies: list[int], on: date) -> dict[str, Decimal]:
@@ -234,7 +275,7 @@ def in_period(query, period: Period):  # noqa: ANN001, ANN201
 
 
 def balance(session: Session, companies: list[int], roles: tuple[str, ...], on: date) -> Decimal:
-    """The ledgers' openings plus their entries up to the date (debit positive)."""
+    """The ledgers' openings plus their entries up to the date (debit positive; F-BAL-001)."""
     openings = select(func.coalesce(func.sum(A.Ledger.opening_balance), 0)).where(
         A.Ledger.id.in_(ledgers_under(companies, roles)), A.Ledger.is_deleted.is_(False)
     )

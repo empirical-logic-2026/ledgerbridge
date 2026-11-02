@@ -75,7 +75,7 @@ export interface ChannelsOut {
 export interface ColumnOut {
   key: string
   label: string
-  kind: "company" | "month" | "quarter" | "total" | "last_year"
+  kind: "company" | "month" | "quarter" | "total" | "before"
 }
 
 export interface Company {
@@ -91,6 +91,20 @@ export interface CompanyShare {
   company: number
   net_sales: string
   share_pct: string | null
+}
+
+export interface ComparedWith {
+  kind: "previous" | "last_year"
+  label: string
+  start: string
+  end: string
+  months: string[]
+}
+
+export interface Count {
+  value: number
+  before?: number | null
+  change_pct?: string | null
 }
 
 export interface DataHealth {
@@ -164,7 +178,7 @@ export interface FacetValue {
 
 export interface Figure {
   value: string | null
-  last_year?: string | null
+  before?: string | null
   change_pct?: string | null
 }
 
@@ -195,9 +209,11 @@ export interface Home {
   companies: number[]
   combined: boolean
   period: PeriodOut
+  compared_with: ComparedWith | null
   profit_loss: ProfitLoss
   balance_sheet: BalanceSheet
   balances: Balances
+  customers: Count
   monthly: MonthFigures[]
   channels: Channel[]
   by_company: CompanyShare[]
@@ -221,7 +237,7 @@ export interface Key {
 
 export interface KeyFigure {
   value: string | null
-  last_year?: string | null
+  before?: string | null
   change_pct?: string | null
 }
 
@@ -255,6 +271,8 @@ export interface MonthFigures {
   month: string
   sales: string
   purchases: string
+  gross_profit: string | null
+  net_profit: string | null
 }
 
 export interface MonthOut {
@@ -299,7 +317,7 @@ export interface PartiesOut {
 
 export interface PartyFigure {
   value: string | null
-  last_year?: string | null
+  before?: string | null
   change_pct?: string | null
 }
 
@@ -338,6 +356,7 @@ export interface PartyOut {
   credit_days: number | null
   main_channel: string | null
   period: PeriodOut
+  compared_with: ComparedWith | null
   balance: string
   overdue: string
   bills_cover: string
@@ -389,11 +408,20 @@ export interface ProfitLoss {
   reason: string | null
   as_of: string | null
   shifted: boolean
-  last_year_reason: string | null
+  cut: boolean
+  before_reason: string | null
   net_sales: Figure
   cost_of_sales: Figure
   gross_profit: Figure
   net_profit: Figure
+  gross_margin_pct: Ratio
+  net_profit_pct: Ratio
+}
+
+export interface Ratio {
+  value: string | null
+  before?: string | null
+  change_pts?: string | null
 }
 
 export interface Readiness {
@@ -439,7 +467,7 @@ export interface SalesDashboard {
   companies: number[]
   combined: boolean
   period: PeriodOut
-  compared: boolean
+  compared_with: ComparedWith | null
   key_figures: KeyFigures
   monthly: MonthSales[]
   top_customers: PartySales[]
@@ -464,11 +492,12 @@ export interface StatementReport {
   view: "company" | "month" | "quarter"
   period_start: string
   period_end: string
+  compared_with: ComparedWith | null
   columns: ColumnOut[]
   lines: LineOut[]
   reason: string | null
   shifted: boolean
-  last_year_reason: string | null
+  before_reason: string | null
   matching: MatchingOut
 }
 

@@ -4,7 +4,8 @@ lists and one party's page (D2; docs/design/dashboard.md Section 0.3, screen 8).
 For any combination of the companies the caller may see (`company`, repeatable; default all,
 combined) and a period (`month`, repeatable, or `date_from` and `date_to`). A party is known by
 its name across those companies; a party outside them is 404, like a company outside access.
-`compare=true` adds last year's sales (purchases) to the page. How the figures are found:
+`compare` adds the previous period's or last year's sales (purchases) to the page
+(api/v1/common.py). How the figures are found:
 core/parties.py.
 """
 
@@ -16,10 +17,20 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from api.access import CurrentAccess
-from api.v1.common import ReportSession, parse_period
+from api.v1.common import (
+    Comparable,
+    ComparedWith,
+    CompareParam,
+    ReportSession,
+    SpanParam,
+    compared_with,
+    formula,
+    parse_period,
+)
 from api.v1.home import PeriodOut, change_pct
 from api.v1.registers import RegisterRowOut, row_out
 from core.parties import KINDS, Bill, PartyPage, find_party, party_list, party_page
+from core.report_periods import Period
 
 router = APIRouter(prefix="/parties", tags=["parties"])
 PartyKind = Literal["customers", "vendors"]
@@ -29,9 +40,11 @@ class PartyRowOut(BaseModel):
     party_id: int
     name: str
     companies: list[int]
-    balance: Decimal  # due at the period's end; positive when owed in the usual direction
-    net: Decimal  # net sales (purchases) in the period
-    invoices: int
+    balance: Decimal = formula(
+        "F-PTY-001"
+    )  # due at the period's end; positive when owed in the usual direction
+    net: Decimal = formula("F-SAL-004")  # net sales (purchases) in the period
+    invoices: int = formula("F-SAL-005")
     last_invoice: date | None
 
 
@@ -43,10 +56,10 @@ class PartiesOut(BaseModel):
     parties: list[PartyRowOut]
 
 
-class PartyFigure(BaseModel):
+class PartyFigure(Comparable):
     value: Decimal | None
-    last_year: Decimal | None = None
-    change_pct: Decimal | None = None
+    before: Decimal | None = None  # the comparison period's
+    change_pct: Decimal | None = formula("F-CMP-001", default=None)
 
 
 class BillOut(BaseModel):
@@ -54,8 +67,8 @@ class BillOut(BaseModel):
     name: str
     date: date
     due: date
-    amount: Decimal  # outstanding; negative: an advance or overpaid
-    overdue_days: int  # 0 when not yet due
+    amount: Decimal = formula("F-PTY-004")  # outstanding; negative: an advance or overpaid
+    overdue_days: int = formula("F-PTY-005")  # 0 when not yet due
 
 
 class EntryOut(BaseModel):
@@ -65,9 +78,9 @@ class EntryOut(BaseModel):
     voucher_type: str
     number: str
     particulars: str  # the other side's first ledger
-    debit: Decimal | None
-    credit: Decimal | None
-    balance: Decimal  # running, debit positive
+    debit: Decimal | None = formula("F-PTY-008")
+    credit: Decimal | None = formula("F-PTY-008")
+    balance: Decimal = formula("F-PTY-009")  # running, debit positive
     narration: str | None
 
 
@@ -77,20 +90,20 @@ class SettlementOut(BaseModel):
     date: date
     voucher_type: str
     number: str
-    amount: Decimal
+    amount: Decimal = formula("F-PTY-006")
     narration: str | None
 
 
 class PartyInvoiceOut(RegisterRowOut):
     status: Literal["paid", "due", "overdue", "no_bill"]
-    days: int | None  # due in (status due) or overdue by (overdue)
+    days: int | None = formula("F-PTY-011")  # due in (status due) or overdue by (overdue)
 
 
 class PartyMonthOut(BaseModel):
     month: date
-    net: Decimal  # net sales (purchases)
-    invoices: int
-    settled: Decimal  # receipts (payments)
+    net: Decimal = formula("F-SAL-004")  # net sales (purchases)
+    invoices: int = formula("F-SAL-005")
+    settled: Decimal = formula("F-PTY-006")  # receipts (payments)
 
 
 class PartyOut(BaseModel):
@@ -102,17 +115,20 @@ class PartyOut(BaseModel):
     credit_days: int | None
     main_channel: str | None
     period: PeriodOut
-    balance: Decimal
-    overdue: Decimal
-    bills_cover: Decimal  # what the stored bills add up to (opening bills aren't stored)
-    net: PartyFigure
-    invoices: PartyFigure
-    settled: Decimal
-    days_to_pay: Decimal | None
+    compared_with: ComparedWith | None
+    balance: Decimal = formula("F-PTY-001")
+    overdue: Decimal = formula("F-PTY-002")
+    bills_cover: Decimal = formula(
+        "F-PTY-003"
+    )  # what the stored bills add up to (opening bills aren't stored)
+    net: PartyFigure = formula("F-SAL-004")
+    invoices: PartyFigure = formula("F-SAL-005")
+    settled: Decimal = formula("F-PTY-006")
+    days_to_pay: Decimal | None = formula("F-PTY-007")
     invoices_list: list[PartyInvoiceOut]
     invoices_truncated: bool
     settlements: list[SettlementOut]
-    statement_opening: Decimal  # debit positive
+    statement_opening: Decimal = formula("F-PTY-010")  # debit positive
     statement: list[EntryOut]
     statement_truncated: bool
     bills: list[BillOut]
@@ -161,20 +177,27 @@ def party(
     month: list[str] | None = Query(default=None),  # noqa: B008
     date_from: date | None = None,
     date_to: date | None = None,
-    compare: bool = False,
+    compare: CompareParam | None = None,
+    span: SpanParam | None = None,
 ) -> PartyOut:
     companies = access.entities(company)
     period = parse_period(month, date_from, date_to)
     found = find_party(session, companies, party_id)
     if found is None:
         raise HTTPException(404, "No such party in the selected companies.")
-    page = party_page(session, companies, found, period, kind, compare)
-    return _party_out(kind, page, period)
+    before, described = compared_with(period, compare, span)
+    page = party_page(session, companies, found, period, kind, before)
+    return _party_out(kind, page, period, described)
 
 
-def _party_out(kind: str, page: PartyPage, period) -> PartyOut:  # noqa: ANN001
+def _party_out(
+    kind: str,
+    page: PartyPage,
+    period: Period,
+    described: ComparedWith | None,
+) -> PartyOut:
     side = KINDS[kind][1]
-    now, before = page.totals, page.last_year
+    now, before = page.totals, page.before
     return PartyOut(
         kind=kind,
         party_id=page.party.id,
@@ -184,17 +207,18 @@ def _party_out(kind: str, page: PartyPage, period) -> PartyOut:  # noqa: ANN001
         credit_days=page.party.credit_days,
         main_channel=page.main_channel,
         period=PeriodOut(start=period.start, end=period.end, months=list(period.months)),
+        compared_with=described,
         balance=page.balance,
         overdue=page.overdue,
         bills_cover=page.bills_cover,
         net=PartyFigure(
             value=now.net,
-            last_year=before.net if before else None,
+            before=before.net if before else None,
             change_pct=change_pct(now.net, before.net if before else None),
         ),
         invoices=PartyFigure(
             value=Decimal(now.invoices),
-            last_year=Decimal(before.invoices) if before else None,
+            before=Decimal(before.invoices) if before else None,
             change_pct=change_pct(
                 Decimal(now.invoices), Decimal(before.invoices) if before else None
             ),
