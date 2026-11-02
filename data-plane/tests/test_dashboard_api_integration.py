@@ -491,3 +491,123 @@ def test_facet_values_for_the_selected_companies(client: TestClient, synced: int
     assert _get(client, "/api/v1/facets/customer", search="%_no such name_%") == []
     assert client.get("/api/v1/facets/ledger").status_code == 422
     assert client.get("/api/v1/facets/customer", params={"search": "x" * 101}).status_code == 422
+
+
+# --- the Sales dashboard (D2) ---------------------------------------------------------------
+
+
+def _sales_view(entity_id: int) -> dict[str, tuple[Decimal, ...]]:
+    """month -> (gross, returns, other, net) from v_monthly_sales, Apr to Sep 2026."""
+    with Session(get_engine("report")) as session:
+        rows = session.execute(
+            text("SELECT month_start, gross_sales, sales_returns, other_adjustments, net_sales "
+                 "FROM ledgerbridge_reporting.v_monthly_sales WHERE entity_id = :e "
+                 "AND month_start BETWEEN '2026-04-01' AND '2026-09-30'"),
+            {"e": entity_id},
+        )  # fmt: skip
+        return {f"{m:%Y-%m-%d}": tuple(Decimal(str(x)) for x in rest) for m, *rest in rows}
+
+
+def _invoices_in_view(entity_id: int) -> int:
+    with Session(get_engine("report")) as session:
+        return int(
+            session.scalar(
+                text(
+                    "SELECT COALESCE(SUM(vouchers), 0) FROM "
+                    "ledgerbridge_reporting.v_monthly_sales_by_voucher_type WHERE entity_id = :e "
+                    "AND base_type = 'sales' AND month_start BETWEEN '2026-04-01' AND '2026-09-30'"
+                ),
+                {"e": entity_id},
+            )  # fmt: skip
+        )
+
+
+def test_the_sales_dashboard_equals_the_monthly_sales_views(
+    client: TestClient, synced: int
+) -> None:
+    found = _get(client, "/api/v1/sales/dashboard", month=MONTHS)
+    view = _sales_view(synced)
+    assert view, "the test company has sales"
+
+    # Month by month: gross, returns, other adjustments and net, as the proven view has them.
+    monthly = {
+        m["month"]: (
+            Decimal(m["gross"]),
+            Decimal(m["returns"]),
+            Decimal(m["other"]),
+            Decimal(m["net"]),
+        )
+        for m in found["monthly"]
+    }
+    assert {m: v for m, v in monthly.items() if any(v)} == view
+
+    # Key figures: the period's totals; invoices are the sales vouchers the view counts.
+    k = found["key_figures"]
+    net = sum(v[3] for v in view.values())
+    gross = sum(v[0] for v in view.values())
+    invoices = _invoices_in_view(synced)
+    assert Decimal(k["net_sales"]["value"]) == net
+    assert Decimal(k["sales_returns"]["value"]) == -sum(v[1] for v in view.values())
+    assert Decimal(k["invoices"]["value"]) == invoices > 0
+    assert Decimal(k["average_invoice"]["value"]) == (gross / invoices).quantize(Decimal("0.01"))
+    assert k["net_sales"]["last_year"] is None and found["compared"] is False
+
+    # Customers: the top ones and the rest add up to net sales.
+    tops = found["top_customers"]
+    assert tops and len(tops) <= 10
+    nets = [Decimal(c["net_sales"]) for c in tops]
+    assert nets == sorted(nets, reverse=True)
+    assert sum(nets) + Decimal(found["other_customers"]) == net
+    assert found["customers"] >= len(tops)
+
+    # Largest invoices: sales vouchers of these companies, largest first.
+    largest = found["largest_invoices"]
+    amounts = [Decimal(i["amount"]) for i in largest]
+    assert largest and amounts == sorted(amounts, reverse=True)
+    assert {i["company"] for i in largest} == {synced}
+    with Session(get_engine("report")) as session:
+        types = session.execute(
+            select(A.Voucher.id, A.VoucherType.base_type)
+            .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
+            .where(A.Voucher.id.in_([i["voucher_id"] for i in largest]))
+        ).all()
+    assert {base for _, base in types} == {"sales"}
+
+
+def test_the_sales_dashboard_facets_and_comparison(client: TestClient, synced: int) -> None:
+    whole = _get(client, "/api/v1/sales/dashboard", month=MONTHS, compare="true")
+    net = Decimal(whole["key_figures"]["net_sales"]["value"])
+    # Last year has no sales: a comparison with zero has no percentage.
+    assert Decimal(whole["key_figures"]["net_sales"]["last_year"]) == 0
+    assert whole["key_figures"]["net_sales"]["change_pct"] is None
+
+    # One customer: their own net sales, as the top customers list has them.
+    top = whole["top_customers"][0]
+    one = _get(client, "/api/v1/sales/dashboard", month=MONTHS, customer=top["name"])
+    assert Decimal(one["key_figures"]["net_sales"]["value"]) == Decimal(top["net_sales"])
+    assert [c["name"] for c in one["top_customers"]] == [top["name"]]
+
+    # The channels split net sales without loss, as the per-voucher-type view does.
+    with Session(get_engine("report")) as session:
+        channels = list(
+            session.scalars(
+                select(A.VoucherType.name).where(
+                    A.VoucherType.entity_id == synced, A.VoucherType.is_deleted.is_(False)
+                )
+            )
+        )
+    by_channel = [
+        Decimal(_get(client, "/api/v1/sales/dashboard", month=MONTHS, channel=c)["key_figures"]
+                ["net_sales"]["value"])
+        for c in sorted(set(channels))
+    ]  # fmt: skip
+    assert sum(by_channel) == net
+    assert (
+        _get(client, "/api/v1/sales/dashboard", month=MONTHS, customer="no such customer")[
+            "top_customers"
+        ]
+        == []
+    )
+    assert (
+        client.get("/api/v1/sales/dashboard", params={"month": MONTHS, "customer": "x" * 256})
+    ).status_code == 422

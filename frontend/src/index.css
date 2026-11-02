@@ -717,3 +717,64 @@ body,
   color: var(--lb-positive);
   text-decoration: underline;
 }
+
+/* --- the Sales pages (screen 7) and the table explorer (Section 0.3) ----------------- */
+
+.sales-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.sales-tables {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+.explorer {
+  margin-top: 12px;
+}
+.explorer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.explorer-filter {
+  width: 180px;
+}
+.explorer-view {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.explorer-sort {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.explorer-table .explorer-group th,
+.explorer-table .explorer-group td,
+.explorer-table .explorer-total th,
+.explorer-table .explorer-total td {
+  font-weight: 600;
+  background: var(--lb-primary-soft);
+}
+@media (max-width: 1100px) {
+  .sales-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sales-tables {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 700px) {
+  .sales-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

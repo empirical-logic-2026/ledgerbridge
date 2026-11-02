@@ -224,7 +224,7 @@ def _entries(companies: list[int], roles: tuple[str, ...], *columns: object):  #
     )
 
 
-def _in_period(query, period: Period):  # noqa: ANN001, ANN202
+def in_period(query, period: Period):  # noqa: ANN001, ANN201
     day = A.VoucherLine.voucher_date
     query = query.where(day >= period.start, day <= period.end)
     if period.months:  # only the chosen months
@@ -248,7 +248,7 @@ def _monthly(
     year, month = func.year(A.VoucherLine.voucher_date), func.month(A.VoucherLine.voucher_date)
     found: dict[date, list[Decimal]] = {m: [ZERO, ZERO] for m in period.month_starts()}
     for index, roles, sign in ((0, (SALES,), -1), (1, (PURCHASES,), 1)):
-        query = _in_period(_entries(companies, roles, year, month), period).group_by(year, month)
+        query = in_period(_entries(companies, roles, year, month), period).group_by(year, month)
         for net, y, m in session.execute(query):
             found[date(int(y), int(m), 1)][index] = sign * Decimal(net or 0)
     return [(m, sales, purchases) for m, (sales, purchases) in sorted(found.items())]
@@ -258,7 +258,7 @@ def _channels(session: Session, companies: list[int], period: Period) -> list[tu
     """Net sales per voucher type name (types of the same name in several companies
     together), largest first."""
     query = (
-        _in_period(_entries(companies, (SALES,), A.VoucherType.name), period)
+        in_period(_entries(companies, (SALES,), A.VoucherType.name), period)
         .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
         .group_by(A.VoucherType.name)
     )
@@ -269,7 +269,7 @@ def _channels(session: Session, companies: list[int], period: Period) -> list[tu
 def _by_company(
     session: Session, companies: list[int], period: Period
 ) -> list[tuple[int, Decimal]]:
-    query = _in_period(_entries(companies, (SALES,), A.VoucherLine.entity_id), period).group_by(
+    query = in_period(_entries(companies, (SALES,), A.VoucherLine.entity_id), period).group_by(
         A.VoucherLine.entity_id
     )
     found = {int(entity): -Decimal(net or 0) for net, entity in session.execute(query)}
