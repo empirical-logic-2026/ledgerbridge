@@ -778,3 +778,40 @@ body,
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* --- the customer and vendor pages (screen 8) ---------------------------------------- */
+
+.party-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.party-path,
+.party-facts {
+  display: block;
+  color: var(--lb-muted);
+  font-size: 13px;
+}
+.party-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+.status-tag.status-paid {
+  color: var(--lb-positive);
+  background: var(--lb-primary-soft);
+  border-color: transparent;
+}
+.status-tag.status-overdue {
+  color: var(--lb-negative);
+  background: var(--lb-negative-soft);
+  border-color: transparent;
+}
+.status-tag.status-due {
+  color: var(--lb-text);
+  background: var(--lb-page);
+  border-color: var(--lb-border);
+}

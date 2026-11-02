@@ -48,6 +48,7 @@ function Value<R>({ column, value, row }: { column: ExplorerColumn<R>; value: Ce
   } else if (column.kind === 'count') {
     shown = Number(value).toLocaleString('en-IN')
   }
+  if (row !== undefined && column.render) shown = column.render(row)
   const to = row !== undefined ? column.link?.(row) : undefined
   return to ? <a href={to}>{shown}</a> : <>{shown}</>
 }

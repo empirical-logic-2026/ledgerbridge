@@ -116,14 +116,16 @@ def dashboard(
     facets: Facets = Facets(),  # noqa: B008
     side: Side = SALES_SIDE,
 ) -> Dashboard:
-    totals = _totals(session, companies, period, facets, side)
-    last_year = _totals(session, companies, period.last_year(), facets, side) if compare else None
+    totals = period_totals(session, companies, period, facets, side)
+    last_year = (
+        period_totals(session, companies, period.last_year(), facets, side) if compare else None
+    )
     tops, others, count = _parties(session, companies, period, facets, side)
     return Dashboard(
         period=period,
         totals=totals,
         last_year=last_year,
-        monthly=_monthly(session, companies, period, facets, side),
+        monthly=monthly_totals(session, companies, period, facets, side),
         top_parties=tops,
         other_parties=others,
         parties=count,
@@ -156,7 +158,7 @@ def lines(companies: list[int], period: Period, facets: Facets, side: Side, *col
     return in_period(query, period)
 
 
-def _split(side: Side) -> list[Any]:
+def split_columns(side: Side) -> list[Any]:
     """Gross, returns, other (canonical sign) and the invoices, as SQL columns."""
     amount, base = A.VoucherLine.amount, A.VoucherType.base_type
     return [
@@ -167,28 +169,30 @@ def _split(side: Side) -> list[Any]:
     ]
 
 
-def _to_totals(side: Side, gross: Any, returns: Any, other: Any, invoices: Any) -> Totals:
+def to_totals(side: Side, gross: Any, returns: Any, other: Any, invoices: Any) -> Totals:
     def signed(value: Any) -> Decimal:
         return side.sign * Decimal(value or 0)
 
     return Totals(signed(gross), signed(returns), signed(other), int(invoices or 0))
 
 
-def _totals(
+def period_totals(
     session: Session, companies: list[int], period: Period, facets: Facets, side: Side
 ) -> Totals:
-    row = session.execute(lines(companies, period, facets, side, *_split(side))).one()
-    return _to_totals(side, *row)
+    row = session.execute(lines(companies, period, facets, side, *split_columns(side))).one()
+    return to_totals(side, *row)
 
 
-def _monthly(
+def monthly_totals(
     session: Session, companies: list[int], period: Period, facets: Facets, side: Side
 ) -> list[tuple[date, Totals]]:
     year, month = func.year(A.VoucherLine.voucher_date), func.month(A.VoucherLine.voucher_date)
-    query = lines(companies, period, facets, side, *_split(side), year, month).group_by(year, month)
+    query = lines(companies, period, facets, side, *split_columns(side), year, month).group_by(
+        year, month
+    )
     found = {m: Totals() for m in period.month_starts()}
     for gross, returns, other, invoices, y, m in session.execute(query):
-        found[date(int(y), int(m), 1)] = _to_totals(side, gross, returns, other, invoices)
+        found[date(int(y), int(m), 1)] = to_totals(side, gross, returns, other, invoices)
     return sorted(found.items())
 
 
@@ -199,14 +203,14 @@ def _parties(
     query = (
         lines(
             companies, period, facets, side,
-            A.Voucher.entity_id, A.Voucher.party_id, A.Party.name, *_split(side),
+            A.Voucher.entity_id, A.Voucher.party_id, A.Party.name, *split_columns(side),
         )
         .outerjoin(A.Party, A.Party.id == A.Voucher.party_id)
         .group_by(A.Voucher.entity_id, A.Voucher.party_id, A.Party.name)
     )  # fmt: skip
     found = []
     for entity, party, name, *split in session.execute(query):
-        totals = _to_totals(side, *split)
+        totals = to_totals(side, *split)
         found.append(PartyFigures(int(entity), party, name, totals.net, totals.invoices))
     named = sorted((p for p in found if p.party_id is not None), key=lambda p: p.net, reverse=True)
     top = named[:TOP]
@@ -268,12 +272,12 @@ def monthly_with_closing(
         start_month = int(starts.get(company) or 4)
         whole = Period(fy_start(period.start, start_month), period.end)
         running = ZERO
-        for month, totals in _monthly(session, [company], whole, facets, side):
+        for month, totals in monthly_totals(session, [company], whole, facets, side):
             if month.month == start_month:
                 running = ZERO
             running += totals.net
             closing[month] += running
-    return [(m, t, closing[m]) for m, t in _monthly(session, companies, period, facets, side)]
+    return [(m, t, closing[m]) for m, t in monthly_totals(session, companies, period, facets, side)]
 
 
 @dataclass
@@ -293,12 +297,12 @@ def by_channel(
     """Each voucher type's figures and net per month, the largest net first."""
     year, month = func.year(A.VoucherLine.voucher_date), func.month(A.VoucherLine.voucher_date)
     query = lines(
-        companies, period, facets, side, A.VoucherType.name, year, month, *_split(side)
+        companies, period, facets, side, A.VoucherType.name, year, month, *split_columns(side)
     ).group_by(A.VoucherType.name, year, month)
     found: dict[str, ChannelFigures] = {}
     for name, y, m, *split in session.execute(query):
         figures = found.setdefault(name, ChannelFigures(name, {}, Totals()))
-        totals = _to_totals(side, *split)
+        totals = to_totals(side, *split)
         figures.months[date(int(y), int(m), 1)] = totals.net
         figures.totals.gross += totals.gross
         figures.totals.returns += totals.returns

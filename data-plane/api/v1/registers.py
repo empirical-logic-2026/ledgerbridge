@@ -19,8 +19,8 @@ from api.access import CurrentAccess
 from api.v1.common import ReportSession, parse_period
 from api.v1.home import PeriodOut
 from api.v1.sales import facet_names
-from core.registers import register
-from core.sales import PURCHASES_SIDE, SALES_SIDE, Facets
+from core.registers import RegisterRow, register
+from core.sales import PURCHASES_SIDE, SALES_SIDE, Facets, Side
 
 router = APIRouter(prefix="/registers", tags=["registers"])
 SIDES = {"sales": SALES_SIDE, "purchases": PURCHASES_SIDE}
@@ -74,24 +74,26 @@ def voucher_register(
         companies=companies,
         combined=len(companies) > 1,
         period=PeriodOut(start=period.start, end=period.end, months=list(period.months)),
-        rows=[
-            RegisterRowOut(
-                voucher_id=r.voucher_id,
-                company=r.company,
-                date=r.on,
-                voucher_type=r.voucher_type,
-                is_return=r.base_type == chosen.note,
-                number=r.number,
-                ledger_id=r.ledger_id,
-                particulars=r.particulars,
-                party_id=r.party_id,
-                party=r.party,
-                debit=r.amount if r.amount > 0 else None,
-                credit=-r.amount if r.amount < 0 else None,
-                side_value=r.side_value,
-                narration=r.narration,
-            )
-            for r in found.rows
-        ],
+        rows=[row_out(r, chosen) for r in found.rows],
         truncated=found.truncated,
+    )
+
+
+def row_out(r: RegisterRow, side: Side) -> RegisterRowOut:
+    """A register row with its amount as Debit or Credit."""
+    return RegisterRowOut(
+        voucher_id=r.voucher_id,
+        company=r.company,
+        date=r.on,
+        voucher_type=r.voucher_type,
+        is_return=r.base_type == side.note,
+        number=r.number,
+        ledger_id=r.ledger_id,
+        particulars=r.particulars,
+        party_id=r.party_id,
+        party=r.party,
+        debit=r.amount if r.amount > 0 else None,
+        credit=-r.amount if r.amount < 0 else None,
+        side_value=r.side_value,
+        narration=r.narration,
     )

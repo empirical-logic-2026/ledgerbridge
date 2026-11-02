@@ -35,6 +35,15 @@ export interface Balances {
   stock_value_as_of: string | null
 }
 
+export interface BillOut {
+  company: number
+  name: string
+  date: string
+  due: string
+  amount: string
+  overdue_days: number
+}
+
 export interface Channel {
   name: string
   net_sales: string
@@ -133,6 +142,19 @@ export interface EntityValidationStatus {
   open_errors: number
   open_warnings: number
   open_alerts: number
+}
+
+export interface EntryOut {
+  voucher_id: number
+  company: number
+  date: string
+  voucher_type: string
+  number: string
+  particulars: string
+  debit: string | null
+  credit: string | null
+  balance: string
+  narration: string | null
 }
 
 export interface FacetValue {
@@ -267,6 +289,82 @@ export interface Option {
   label: string
 }
 
+export interface PartiesOut {
+  kind: string
+  companies: number[]
+  combined: boolean
+  period: PeriodOut
+  parties: PartyRowOut[]
+}
+
+export interface PartyFigure {
+  value: string | null
+  last_year?: string | null
+  change_pct?: string | null
+}
+
+export interface PartyInvoiceOut {
+  voucher_id: number
+  company: number
+  date: string
+  voucher_type: string
+  is_return: boolean
+  number: string
+  ledger_id: number
+  particulars: string
+  party_id: number | null
+  party: string | null
+  debit: string | null
+  credit: string | null
+  side_value: string
+  narration: string | null
+  status: "paid" | "due" | "overdue" | "no_bill"
+  days: number | null
+}
+
+export interface PartyMonthOut {
+  month: string
+  net: string
+  invoices: number
+  settled: string
+}
+
+export interface PartyOut {
+  kind: string
+  party_id: number
+  name: string
+  companies: number[]
+  group_path: string[]
+  credit_days: number | null
+  main_channel: string | null
+  period: PeriodOut
+  balance: string
+  overdue: string
+  bills_cover: string
+  net: PartyFigure
+  invoices: PartyFigure
+  settled: string
+  days_to_pay: string | null
+  invoices_list: PartyInvoiceOut[]
+  invoices_truncated: boolean
+  settlements: SettlementOut[]
+  statement_opening: string
+  statement: EntryOut[]
+  statement_truncated: boolean
+  bills: BillOut[]
+  monthly: PartyMonthOut[]
+}
+
+export interface PartyRowOut {
+  party_id: number
+  name: string
+  companies: number[]
+  balance: string
+  net: string
+  invoices: number
+  last_invoice: string | null
+}
+
 export interface PartySales {
   company: number
   party_id: number
@@ -348,6 +446,16 @@ export interface SalesDashboard {
   other_customers: string
   customers: number
   largest_invoices: InvoiceOut[]
+}
+
+export interface SettlementOut {
+  voucher_id: number
+  company: number
+  date: string
+  voucher_type: string
+  number: string
+  amount: string
+  narration: string | null
 }
 
 export interface StatementReport {

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.10 |
+| Version | 0.11 |
 | Date | 2026-11-02 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1) |
@@ -114,6 +114,15 @@ Day Book style, one row per voucher: **Date, Particulars, Vch Type, Vch No., Deb
 
 - **Monthly sales** and **Monthly purchases:** each month's gross, returns, other adjustments, net and invoices, and the **closing balance**: the net from the start of the financial year to the month's end, as Tally's monthly summary of the Sales (Purchase) Accounts group shows it (each company its own financial year). A chart of net by month with the closing balance; a month opens its register. The closing balance has no total.
 - **Channels:** each sales voucher type with its net sales, share, returns, invoices and a column per month (shown up to six months, the rest under Columns); a channel opens the Sales register filtered to it, a month that month's register. All channels together are the Sales dashboard's net sales.
+
+### Customers and vendors (D2 c4, screen 8)
+
+A party is known by its **name** across the selected companies (as the facets are): the same customer in two companies is one row and one page, their figures added together.
+
+- **Lists** (Customers under Sales, Vendors under Purchases): each party with its net sales (purchases) and invoices in the period, the last invoice and the balance due at the period's end; the name opens the party's page.
+- **The party's page** (`#/sales/customers/<id>`, `#/purchases/vendors/<id>`), the detail-page pattern: where it sits (its ledger's groups), its name and key facts (main channel, companies, credit period); key figures: **balance due** (payable), **overdue**, **net sales** (purchases) against last year, **average days to pay**; tabs: **invoices and credit (debit) notes** with each one's status (paid, due in N days, overdue N days), **receipts** (payments), the **ledger statement** with the opening and running balance (Dr/Cr), the **outstanding bills**, and the **monthly trend**.
+- **Bills** come from the bill allocations of the vouchers in the books (on account excluded), due on their due date or else their date plus the party's credit period. **Opening bills** (from before the books' beginning) aren't stored yet: where the bills add up to less than the balance, the page says how much they cover. Storing opening bills is a later change (connector and schema).
+- Every customer and vendor name on the Sales and Purchases pages now opens this page.
 
 ### The table explorer
 
@@ -397,6 +406,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-02 | 0.11 | Customers and vendors: the lists and the party's page (screen 8); opening bills not yet stored. |
 | 2026-11-02 | 0.10 | Monthly sales and purchases with the closing balance; sales by channel; the side bar's new items. |
 | 2026-11-02 | 0.9 | The Sales and Purchase registers (Day Book style, monthly subtotals). |
 | 2026-11-02 | 0.8 | Build order: the Sales and Purchases pages brought forward, one PR per area; the Sales dashboard's definitions; the table explorer on every table. |

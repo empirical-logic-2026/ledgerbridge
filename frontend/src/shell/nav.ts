@@ -22,6 +22,8 @@ export interface NavGroup {
 
 const STATEMENT = 'A whole statement covers every customer, channel and voucher type: filter on the Sales and Books pages.'
 
+const PARTIES = 'Each party is shown whole: filter the list with its own filter, or open the party.'
+
 const page = (key: string, label: string, built = false, facets: Facet[] = [], whyNoFacets?: string): NavPage => ({
   key,
   label,
@@ -39,7 +41,7 @@ export const NAV: NavGroup[] = [
       page('dashboard', 'Sales dashboard', true, ['customer', 'channel'], 'Sales are filtered by customer and channel (voucher type).'),
       page('register', 'Sales register', true, ['customer', 'channel'], 'The register is filtered by customer and channel (voucher type).'),
       page('monthly', 'Monthly sales', true, ['customer', 'channel'], 'Monthly sales are filtered by customer and channel (voucher type).'),
-      page('customers', 'Customers'),
+      page('customers', 'Customers', true, [], PARTIES),
       page('channels', 'Channels', true, ['customer', 'channel'], 'Channels are filtered by customer and channel (voucher type).'),
     ],
   },
@@ -49,7 +51,7 @@ export const NAV: NavGroup[] = [
     pages: [
       page('register', 'Purchase register', true, ['voucher_type'], 'The register is filtered by voucher type.'),
       page('monthly', 'Monthly purchases', true, ['voucher_type'], 'Monthly purchases are filtered by voucher type.'),
-      page('vendors', 'Vendors'),
+      page('vendors', 'Vendors', true, [], PARTIES),
     ],
   },
   {

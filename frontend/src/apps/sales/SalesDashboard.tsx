@@ -5,11 +5,12 @@
 // invoices, each table in the table explorer; the options side panel with "What is this?".
 // Figures: core/sales.py (GET /api/v1/sales/dashboard).
 
-import { Alert, Button, Skeleton, Tooltip, Typography } from 'antd'
+import { Alert, Button, Skeleton, Typography } from 'antd'
 import type { EChartsOption } from 'echarts'
-import type { Company, InvoiceOut, KeyFigure, MonthSales, PartySales, SalesDashboard as Dashboard } from '../../api/types.ts'
+import type { Company, InvoiceOut, MonthSales, PartySales, SalesDashboard as Dashboard } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
-import { formatChange, formatCompact, formatDate, formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
+import { KeyCard } from '../../components/KeyCard.tsx'
+import { formatDate, formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
 import { OptionsPanel, type Related } from '../../reporting/OptionsPanel.tsx'
@@ -30,35 +31,6 @@ interface Props {
   currentQuery: string
   onApplyView: (query: string) => void
   related: Related[]
-}
-
-type Tone = 'up-good' | 'up-neutral'
-
-function KeyCard({ label, figure, count, tone, compared }: { label: string; figure: KeyFigure; count?: boolean; tone: Tone; compared: boolean }) {
-  const value = figure.value
-  const shown = value === null ? '—' : count ? Number(value).toLocaleString('en-IN') : formatCompact(value)
-  const change = figure.change_pct
-  let changeNode: React.ReactNode = null
-  if (change) {
-    const up = toScaled(change) >= 0n
-    // Green when good for the business; crimson when sales fall; returns going up neutral,
-    // so that red keeps its meaning.
-    const css = tone === 'up-good' ? (up ? 'change good' : 'change bad') : up ? 'change neutral' : 'change good'
-    changeNode = (
-      <Tooltip title={figure.last_year ? `Last year ${count ? Number(figure.last_year).toLocaleString('en-IN') : formatExact(figure.last_year)}` : undefined}>
-        <span className={css}>{formatChange(change)} vs last year</span>
-      </Tooltip>
-    )
-  } else if (compared) {
-    changeNode = <span className="card-small-note">No sales last year to compare with</span>
-  }
-  return (
-    <section className="card card-small" aria-label={label}>
-      <span className="card-small-label">{label}</span>
-      <span className="card-small-value">{value === null || count ? shown : <Tooltip title={formatExact(value)}>{shown}</Tooltip>}</span>
-      {changeNode}
-    </section>
-  )
 }
 
 function monthChart(months: MonthSales[], colours: Tokens): EChartsOption {
@@ -182,7 +154,7 @@ export function SalesDashboard(props: Props) {
       <>
         <div className="sales-cards">
           <KeyCard label="Net sales" figure={k.net_sales} tone="up-good" compared={dashboard.compared} />
-          <KeyCard label="Invoices" figure={k.invoices} count tone="up-good" compared={dashboard.compared} />
+          <KeyCard label="Invoices" figure={k.invoices} unit="count" tone="up-good" compared={dashboard.compared} />
           <KeyCard label="Average invoice" figure={k.average_invoice} tone="up-good" compared={dashboard.compared} />
           <KeyCard label="Sales returns" figure={k.sales_returns} tone="up-neutral" compared={dashboard.compared} />
         </div>
