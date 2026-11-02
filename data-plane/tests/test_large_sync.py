@@ -19,7 +19,16 @@ from workers.extract import get_or_create_connection
 from workers.fetch import ChunkFetcher, split_period
 from workers.sync import load_markers, run_sync
 
-MONTHS = 7  # April .. October 2026 (the books run to today's month)
+MONTHS = 7  # April .. October 2026 (the books run to today's month; today is fixed below)
+TODAY = date(2026, 10, 15)
+
+
+class _FixedDate(date):
+    """`date` whose today() is TODAY, so the months fetched don't grow with the calendar."""
+
+    @classmethod
+    def today(cls) -> date:
+        return TODAY
 
 
 @pytest.fixture
@@ -28,6 +37,7 @@ def sim(db: Session, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
     monkeypatch.setattr(
         "connectors.registry.default_config", lambda code: {"url": "http://tally.test:9000"}
     )
+    monkeypatch.setattr("connectors.tally.connector.date", _FixedDate)
     connection = get_or_create_connection(db, "tally-sim", "tally")
     # Its own timeout, so the tests don't depend on TALLY_TIMEOUT_SEC in .env.test.
     connection.config = {**connection.config, "timeout_sec": 120}
