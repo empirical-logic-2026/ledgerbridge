@@ -65,6 +65,12 @@ export interface ChannelOut {
   share_pct: string | null
 }
 
+export interface ChannelShare {
+  name: string
+  net_sales: string
+  share_pct: string | null
+}
+
 export interface ChannelsOut {
   companies: number[]
   combined: boolean
@@ -394,6 +400,9 @@ export interface PartySales {
   name: string
   net_sales: string
   invoices: number
+  balance: string
+  overdue: string
+  status: "overdue" | "current"
 }
 
 export interface PeriodOut {
@@ -478,6 +487,7 @@ export interface SalesDashboard {
   other_customers: string
   customers: number
   largest_invoices: InvoiceOut[]
+  channels: ChannelShare[]
 }
 
 export interface SettlementOut {

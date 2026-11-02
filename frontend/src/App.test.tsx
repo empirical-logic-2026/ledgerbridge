@@ -430,14 +430,18 @@ const sales: SalesDashboard = {
     { month: '2026-05-01', gross: '242000000', returns: '-5000000', other: '0', net: '237000000', invoices: 60 },
   ],
   top_customers: [
-    { company: 3, party_id: 11, name: 'Customer One', net_sales: '300000000', invoices: 70 },
-    { company: 4, party_id: 12, name: 'Customer Two', net_sales: '100000000', invoices: 40 },
+    { company: 3, party_id: 11, name: 'Customer One', net_sales: '300000000', invoices: 70, balance: '1161000', overdue: '313000', status: 'overdue' },
+    { company: 4, party_id: 12, name: 'Customer Two', net_sales: '100000000', invoices: 40, balance: '0', overdue: '0', status: 'current' },
   ],
   other_customers: '82000000',
   customers: 9,
   largest_invoices: [
     { voucher_id: 501, company: 3, date: '2026-05-04', number: 'S-17', voucher_type: 'Sales', party_id: 11, party: 'Customer One', amount: '50000000' },
     { voucher_id: 502, company: 4, date: '2026-04-09', number: 'S-3', voucher_type: 'Online Sales', party_id: 12, party: 'Customer Two', amount: '20000000' },
+  ],
+  channels: [
+    { name: 'Sales', net_sales: '382000000', share_pct: '79.3' },
+    { name: 'Online Sales', net_sales: '100000000', share_pct: '20.7' },
   ],
 }
 
@@ -458,6 +462,15 @@ describe('the Sales dashboard', () => {
     expect(screen.getByRole('region', { name: 'Invoices' })).toHaveTextContent('120')
     expect(within(screen.getByRole('region', { name: 'Sales returns' })).getByText(/▲ 25%/)).toHaveClass('change', 'neutral')
     expect(document.querySelector('.header-crumbs')).toHaveTextContent('Sales/Sales dashboard')
+    expect(net).toHaveClass('kpi-card')
+    // The mix by channel, each opening its register.
+    const mix = screen.getByRole('group', { name: 'Net sales by channel' })
+    expect(within(mix).getByRole('link', { name: 'Online Sales' })).toHaveAttribute('href', expect.stringMatching(/^#\/sales\/register\?.*channel=Online\+Sales/))
+    expect(within(mix).getByText('20.7%')).toBeInTheDocument()
+    // The top customers with their status.
+    const top = screen.getByRole('table', { name: 'Top customers' })
+    expect(within(top).getByText('Overdue')).toHaveClass('status-bad')
+    expect(within(top).getByText('Current')).toHaveClass('status-good')
   })
 
   it('applies the customer and channel facets, and no others', async () => {

@@ -11,6 +11,7 @@ figures and how they are found: core/sales.py.
 
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -26,8 +27,9 @@ from api.v1.common import (
     formula,
     parse_period,
 )
-from api.v1.home import PeriodOut, change_pct
-from core.sales import Facets, Totals, by_channel, dashboard
+from api.v1.home import PeriodOut, change_pct, percent_of
+from core.parties import KINDS, due_and_overdue, find_party
+from core.sales import ChannelFigures, Facets, PartyFigures, Totals, by_channel, dashboard
 
 router = APIRouter(prefix="/sales", tags=["sales"])
 
@@ -65,6 +67,17 @@ class PartySales(BaseModel):
     name: str
     net_sales: Decimal = formula("F-SAL-012")
     invoices: int = formula("F-SAL-005")
+    balance: Decimal = formula("F-PTY-001")  # due at the period's end
+    overdue: Decimal = formula("F-PTY-002")
+    status: Literal["overdue", "current"]
+
+
+class ChannelShare(BaseModel):
+    """A channel's part of the mix (the donut)."""
+
+    name: str
+    net_sales: Decimal = formula("F-SAL-009")
+    share_pct: Decimal | None = formula("F-SAL-010")
 
 
 class InvoiceOut(BaseModel):
@@ -89,6 +102,7 @@ class SalesDashboard(BaseModel):
     other_customers: Decimal = formula("F-SAL-013")  # the rest, and sales without a party
     customers: int = formula("F-SAL-011")  # how many customers had sales
     largest_invoices: list[InvoiceOut]
+    channels: list[ChannelShare]  # the mix by channel, the largest first
 
 
 def facet_names(values: list[str] | None, name: str) -> tuple[str, ...]:
@@ -137,16 +151,11 @@ def sales_dashboard(
             for m, t in found.monthly
         ],  # fmt: skip
         top_customers=[
-            PartySales(
-                company=p.company,
-                party_id=p.party_id,
-                name=p.name or "",
-                net_sales=p.net,
-                invoices=p.invoices,
-            )
+            _top_customer(session, companies, p, period.end)
             for p in found.top_parties
             if p.party_id is not None
-        ],  # fmt: skip
+        ],
+        channels=_channel_shares(by_channel(session, companies, period, facets)),
         other_customers=found.other_parties,
         customers=found.parties,
         largest_invoices=[
@@ -246,3 +255,31 @@ def sales_by_channel(
             for c in found
         ],
     )
+
+
+def _top_customer(
+    session: ReportSession, companies: list[int], p: PartyFigures, on: date
+) -> PartySales:
+    """A top customer with its balance due and what is overdue at the period's end."""
+    party = find_party(session, companies, p.party_id) if p.party_id is not None else None
+    due, overdue = (
+        due_and_overdue(session, party, on, KINDS["customers"][3]) if party else (Decimal(0),) * 2
+    )
+    return PartySales(
+        company=p.company,
+        party_id=p.party_id or 0,
+        name=p.name or "",
+        net_sales=p.net,
+        invoices=p.invoices,
+        balance=due,
+        overdue=overdue,
+        status="overdue" if overdue > 0 else "current",
+    )
+
+
+def _channel_shares(found: list[ChannelFigures]) -> list[ChannelShare]:
+    total = sum((c.totals.net for c in found), Decimal(0))
+    return [
+        ChannelShare(name=c.name, net_sales=c.totals.net, share_pct=percent_of(c.totals.net, total))
+        for c in found
+    ]

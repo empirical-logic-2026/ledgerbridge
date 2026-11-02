@@ -677,6 +677,24 @@ def test_the_sales_dashboard_equals_the_monthly_sales_views(
     assert {base for _, base in types} == {"sales"}
 
 
+def test_the_sales_dashboard_mix_and_customer_status(client: TestClient, synced: int) -> None:
+    found = _get(client, "/api/v1/sales/dashboard", month=MONTHS)
+    # The channel mix (F-SAL-009, F-SAL-010): adds up to net sales, as the channels page.
+    mix = found["channels"]
+    assert sum(Decimal(c["net_sales"]) for c in mix) == Decimal(
+        found["key_figures"]["net_sales"]["value"]
+    )
+    page = {c["name"]: c for c in _get(client, "/api/v1/sales/channels", month=MONTHS)["channels"]}
+    for c in mix:
+        assert Decimal(c["net_sales"]) == Decimal(page[c["name"]]["net"])
+    # A top customer's balance and overdue (F-PTY-001, F-PTY-002), as their page has them.
+    first = found["top_customers"][0]
+    party = _get(client, f"/api/v1/parties/customers/{first['party_id']}", month=MONTHS)
+    assert _d(first["balance"]) == _d(party["balance"])
+    assert _d(first["overdue"]) == _d(party["overdue"])
+    assert first["status"] == ("overdue" if Decimal(first["overdue"]) > 0 else "current")
+
+
 def test_the_sales_dashboard_facets_and_comparison(client: TestClient, synced: int) -> None:
     whole = _get(client, "/api/v1/sales/dashboard", month=MONTHS, compare="true")
     net = Decimal(whole["key_figures"]["net_sales"]["value"])
