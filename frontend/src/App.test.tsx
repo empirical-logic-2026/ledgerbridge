@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp } from 'antd'
 import App from './App.tsx'
-import type { ChannelsOut, Company, Home, MonthlyOut, Periods, RegisterOut, SalesDashboard } from './api/types.ts'
+import type { ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard } from './api/types.ts'
 
 // ECharts needs a real canvas; the wrapper is exercised in the browser, not jsdom.
 vi.mock('./components/EChart.tsx', () => ({ EChart: () => <div data-testid="chart" /> }))
@@ -426,8 +426,8 @@ describe('the Sales dashboard', () => {
     expect(within(months).getByRole('link', { name: 'Apr-2026' }).getAttribute('href')).toMatch(/^#\/sales\/register\?.*month=2026-04/)
     expect(within(months).getByText('Total')).toBeInTheDocument()
     const customers = screen.getByRole('table', { name: 'Top customers' })
-    // The customer page isn't built yet: a customer filters this page.
-    expect(within(customers).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toContain('customer=Customer+One')
+    // A customer opens their page.
+    expect(within(customers).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toMatch(/^#\/sales\/customers\/11\?/)
     expect(within(customers).getByText('Beta')).toBeInTheDocument() // combined: the company shown
     const invoices = screen.getByRole('table', { name: 'Largest invoices' })
     expect(within(invoices).queryByRole('link', { name: 'S-17' })).toBeNull() // no voucher page yet
@@ -513,11 +513,11 @@ describe('the Sales and Purchase registers', () => {
     expect(asked).toContain('voucher_type=Sales')
   })
 
-  it('links a customer to the register filtered to them while their page is not built', async () => {
+  it('links a customer to their page', async () => {
     renderApp('#/sales/register')
     const table = await screen.findByRole('table', { name: 'Sales register' })
     const link = within(table).getAllByRole('link', { name: 'Customer One' })[0]
-    expect(link.getAttribute('href')).toMatch(/^#\/sales\/register\?.*customer=Customer\+One/)
+    expect(link.getAttribute('href')).toMatch(/^#\/sales\/customers\/11/)
     expect(within(table).queryByRole('link', { name: 'V-1' })).toBeNull() // no voucher page yet
   })
 
@@ -609,5 +609,100 @@ describe('monthly sales and purchases, and sales by channel', () => {
     expect(within(table).getByText('66.7%')).toBeInTheDocument()
     const april = within(table).getAllByRole('link', { name: '₹90,000.00' })[0]
     expect(april.getAttribute('href')).toMatch(/channel=Online\+Sales.*month=2026-04|month=2026-04.*channel=Online\+Sales/)
+  })
+})
+
+const partiesFound: PartiesOut = {
+  kind: 'customers',
+  companies: [3],
+  combined: false,
+  period: { start: '2026-04-01', end: '2026-09-30', months: [] },
+  parties: [
+    { party_id: 11, name: 'Customer One', companies: [3], balance: '1161000', net: '18400000', invoices: 214, last_invoice: '2026-09-28' },
+    { party_id: 12, name: 'Customer Two', companies: [3], balance: '0', net: '500000', invoices: 3, last_invoice: null },
+  ],
+}
+const invoice = (id: number, status: 'paid' | 'due' | 'overdue' | 'no_bill', days: number | null) => ({
+  ...row(id, '2026-08-27', 'Sales', '312750', null, '265000'),
+  status,
+  days,
+})
+const partyFound: PartyOut = {
+  kind: 'customers',
+  party_id: 11,
+  name: 'Customer One',
+  companies: [3],
+  group_path: ['Sundry Debtors', 'Online customers'],
+  credit_days: 30,
+  main_channel: 'Online Sales',
+  period: { start: '2026-04-01', end: '2026-09-30', months: [] },
+  balance: '1161000',
+  overdue: '313000',
+  bills_cover: '1000000',
+  net: { value: '18400000', last_year: null, change_pct: null },
+  invoices: { value: '214', last_year: null, change_pct: null },
+  settled: '900000',
+  days_to_pay: '38',
+  invoices_list: [invoice(1, 'overdue', 64), invoice(3, 'paid', null)],
+  invoices_truncated: false,
+  settlements: [{ voucher_id: 9, company: 3, date: '2026-09-02', voucher_type: 'Receipt', number: 'R-4', amount: '900000', narration: null }],
+  statement_opening: '200000',
+  statement: [
+    { voucher_id: 1, company: 3, date: '2026-08-27', voucher_type: 'Sales', number: 'V-1', particulars: 'Sales', debit: '1861000', credit: null, balance: '2061000', narration: null },
+    { voucher_id: 9, company: 3, date: '2026-09-02', voucher_type: 'Receipt', number: 'R-4', particulars: 'Bank', debit: null, credit: '900000', balance: '1161000', narration: null },
+  ],
+  statement_truncated: false,
+  bills: [{ company: 3, name: 'V-1', date: '2026-07-27', due: '2026-08-26', amount: '313000', overdue_days: 35 }],
+  monthly: [{ month: '2026-08-01', net: '18400000', invoices: 214, settled: '900000' }],
+}
+
+describe('the customers and their pages', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    stubApi({
+      '/api/v1/companies': [companies[0]],
+      '/api/v1/periods': periods,
+      '/api/v1/parties/customers': partiesFound,
+      '/api/v1/parties/customers/11': partyFound,
+      '/api/v1/parties/vendors': { ...partiesFound, kind: 'vendors', parties: [] },
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('lists the customers, each opening their page', async () => {
+    renderApp('#/sales/customers')
+    const table = await screen.findByRole('table', { name: 'Customers' })
+    expect(within(table).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toMatch(/^#\/sales\/customers\/11/)
+    expect(within(table).getAllByText('₹11,61,000.00')).toHaveLength(2) // the row and the total
+    expect(document.querySelector('.top-crumbs')).toHaveTextContent('Sales/Customers')
+  })
+
+  it('shows a customer with key figures, bills and their status, and breadcrumbs back', async () => {
+    renderApp('#/sales/customers/11')
+    expect(await screen.findByRole('heading', { name: 'Customer One' })).toBeInTheDocument()
+    expect(screen.getByText('Customer · Sundry Debtors · Online customers')).toBeInTheDocument()
+    expect(screen.getByText(/Main channel: Online Sales · Companies: Alpha · Credit period 30 days/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Overdue' })).toHaveTextContent('₹3.1 L')
+    expect(screen.getByRole('region', { name: 'Average days to pay' })).toHaveTextContent('38 days')
+    expect(screen.getByText('Overdue 64 days')).toBeInTheDocument()
+    expect(screen.getByText('Paid')).toBeInTheDocument()
+    const crumbs = document.querySelector('.top-crumbs') as HTMLElement
+    expect(crumbs).toHaveTextContent('Sales/Customers/Customer One')
+    expect(within(crumbs).getByRole('link', { name: 'Customers' }).getAttribute('href')).toMatch(/^#\/sales\/customers(\?|$)/)
+  })
+
+  it('opens the ledger statement with the running balance, and says when bills cover less', async () => {
+    renderApp('#/sales/customers/11?tab=statement')
+    const table = await screen.findByRole('table', { name: 'Ledger statement' })
+    expect(within(table).getByText('₹11,61,000.00 Dr')).toBeInTheDocument()
+    expect(screen.getByText(/Opening balance on 01-Apr-2026: ₹2,00,000.00 Dr/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Outstanding bills' }))
+    expect(await screen.findByText(/The bills add up to ₹10,00,000.00 of the ₹11,61,000.00 balance due/)).toBeInTheDocument()
+    expect(window.location.hash).toContain('tab=bills')
+  })
+
+  it('says so for a party that is not there', async () => {
+    renderApp('#/sales/customers/77')
+    expect(await screen.findByText("The customer couldn't be loaded.")).toBeInTheDocument()
   })
 })

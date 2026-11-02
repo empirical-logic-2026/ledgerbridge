@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import type { PeriodChoice } from '../selection.ts'
-import type { ChannelsOut, Company, Home, MonthlyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
+import type { ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -128,5 +128,30 @@ export function useChannels(companies: number[] | undefined, period: PeriodChoic
         channel: facets.channel.length ? facets.channel : undefined,
       }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+function periodQuery(period: PeriodChoice | undefined) {
+  return {
+    month: period?.months.length ? period.months : undefined,
+    date_from: period?.months.length ? undefined : period?.from,
+    date_to: period?.months.length ? undefined : period?.to,
+  }
+}
+
+export function useParties(kind: 'customers' | 'vendors', companies: number[] | undefined, period: PeriodChoice | undefined) {
+  return useQuery({
+    queryKey: ['parties', kind, companies, period],
+    queryFn: () => getJson<PartiesOut>(`/api/v1/parties/${kind}`, { company: companies, ...periodQuery(period) }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+export function useParty(kind: 'customers' | 'vendors', id: string | undefined, companies: number[] | undefined, period: PeriodChoice | undefined, compare: boolean) {
+  return useQuery({
+    queryKey: ['party', kind, id, companies, period, compare],
+    queryFn: () =>
+      getJson<PartyOut>(`/api/v1/parties/${kind}/${id}`, { company: companies, ...periodQuery(period), compare: compare ? 'true' : undefined }),
+    enabled: id !== undefined && companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }

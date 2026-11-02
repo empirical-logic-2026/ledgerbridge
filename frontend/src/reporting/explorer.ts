@@ -3,6 +3,7 @@
 // subtotals, the total, and the CSV of exactly what is shown. Pure functions on rows the page
 // already has: tested in explorer.test.ts. Amounts are decimal strings added up as BigInt.
 
+import type { ReactNode } from 'react'
 import { formatDate, toScaled } from '../format.ts'
 import { csvCell, exactRupees } from './reportTable.ts'
 
@@ -17,6 +18,7 @@ export interface ExplorerColumn<R> {
   link?: (row: R) => string | undefined // where the cell opens
   groupable?: boolean
   hidden?: boolean // not shown until chosen in Columns
+  render?: (row: R) => ReactNode // shown instead of the value (e.g. a status tag); the value still sorts, filters and exports
   summed?: boolean // false: no subtotal or total (e.g. a closing balance); amounts and counts are summed
 }
 

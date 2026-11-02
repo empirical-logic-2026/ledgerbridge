@@ -5,9 +5,12 @@
 
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useChannels, useCompanies, useHome, useMonthly, usePeriods, useProfitLoss, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
+import { Parties } from './apps/parties/Parties.tsx'
+import { PartyPage, type PartyTab } from './apps/parties/PartyPage.tsx'
+import { PARTY_WORDS, type PartyKind } from './apps/parties/words.ts'
 import { Monthly } from './apps/registers/Monthly.tsx'
 import { Register } from './apps/registers/Register.tsx'
 import { Channels } from './apps/sales/Channels.tsx'
@@ -64,6 +67,10 @@ export default function App({ mode, onMode, today }: Props) {
     customer: selection.facets.customer,
     channel: selection.facets.channel,
   })
+  const partyKind: PartyKind | undefined = at === 'sales/customers' ? 'customers' : at === 'purchases/vendors' ? 'vendors' : undefined
+  const partyId = partyKind && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
+  const partyList = useParties(partyKind ?? 'customers', partyKind && !partyId ? ids : undefined, period)
+  const party = useParty(partyKind ?? 'customers', partyId, partyKind ? ids : undefined, period, selection.compare)
   const query = selectionQuery(selection)
   const panelOpen = route.query.get('panel') !== '0'
   const onPanel = (open: boolean) => updateQuery(route, { panel: open ? undefined : '0' })
@@ -209,6 +216,64 @@ export default function App({ mode, onMode, today }: Props) {
           { label: 'Monthly sales', path: ['sales', 'monthly'] },
           { label: 'Sales register', path: ['sales', 'register'] },
         ]}
+      />
+    )
+  } else if (partyKind && route.path.length > 2 && !partyId) {
+    content = <Result status="404" title="There is no such page" subTitle="Choose a page in the side bar." />
+  } else if (partyKind && partyId) {
+    const words = PARTY_WORDS[partyKind]
+    const [group, list] = words.group
+    crumbs = [
+      { label: group === 'sales' ? 'Sales' : 'Purchases', path: group === 'sales' ? ['sales', 'dashboard'] : ['purchases', 'register'] },
+      { label: words.title, path: [group, list] },
+      { label: party.data?.name ?? words.one },
+    ]
+    const tabs: PartyTab[] = ['invoices', 'settlements', 'statement', 'bills', 'monthly']
+    const tab = tabs.find((t) => t === route.query.get('tab')) ?? 'invoices'
+    content = (
+      <PartyPage
+        key={partyId}
+        kind={partyKind}
+        companies={selected}
+        party={party.data}
+        loading={companies.isPending || periods.isPending || party.isPending}
+        error={periods.error ?? party.error}
+        dark={mode === 'dark'}
+        compared={selection.compare}
+        tab={tab}
+        onTab={(next) => updateQuery(route, { tab: next === 'invoices' ? undefined : next })}
+        query={query}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
+        currentQuery={route.query.toString()}
+        onApplyView={onApplyView}
+        related={[
+          { label: words.title, path: [group, list] },
+          { label: group === 'sales' ? 'Sales register' : 'Purchase register', path: words.register },
+        ]}
+      />
+    )
+  } else if (partyKind) {
+    const words = PARTY_WORDS[partyKind]
+    const [group] = words.group
+    crumbs = [
+      { label: group === 'sales' ? 'Sales' : 'Purchases', path: group === 'sales' ? ['sales', 'dashboard'] : ['purchases', 'register'] },
+      { label: words.title },
+    ]
+    content = (
+      <Parties
+        key={partyKind}
+        kind={partyKind}
+        companies={selected}
+        parties={partyList.data}
+        loading={companies.isPending || periods.isPending || partyList.isPending}
+        error={periods.error ?? partyList.error}
+        query={query}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
+        currentQuery={route.query.toString()}
+        onApplyView={onApplyView}
+        related={[{ label: group === 'sales' ? 'Sales register' : 'Purchase register', path: words.register }]}
       />
     )
   } else {

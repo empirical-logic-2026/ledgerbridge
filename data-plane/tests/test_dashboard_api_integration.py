@@ -754,3 +754,120 @@ def test_sales_by_channel_equal_the_view_by_voucher_type(client: TestClient, syn
     assert all(len(c["months"]) == len(MONTHS) for c in found["channels"])
     shares = sum(Decimal(c["share_pct"]) for c in found["channels"])
     assert abs(shares - 100) <= Decimal("0.1") * len(found["channels"])
+
+
+# --- customers and vendors (D2) -------------------------------------------------------------
+
+
+def _party_balances(entity_id: int, names: set[str]) -> dict[str, Decimal]:
+    """Each party name's ledger balance at 30-Sep from the validator (checked against the
+    source's)."""
+    from core.validation import Validator
+
+    end = date(2026, 9, 30)
+    with Session(get_engine()) as session:
+        balances = {
+            b.id: b.balance for b in Validator(session, entity_id, end).ledger_balances(end)
+        }
+        rows = session.execute(
+            select(A.Ledger.id, A.Party.name)
+            .join(A.Party, A.Party.id == A.Ledger.party_id)
+            .where(A.Ledger.entity_id == entity_id, A.Ledger.is_deleted.is_(False))
+        ).all()
+    found: dict[str, Decimal] = {}
+    for ledger, name in rows:
+        if name in names:
+            found[name] = found.get(name, Decimal(0)) + balances.get(ledger, Decimal(0))
+    return found
+
+
+def test_the_customers_and_vendors_lists(client: TestClient, synced: int) -> None:
+    customers = _get(client, "/api/v1/parties/customers", month=MONTHS)["parties"]
+    vendors = _get(client, "/api/v1/parties/vendors", month=MONTHS)["parties"]
+    assert customers and vendors
+
+    # Balances: the validator's ledger balances (customers owe: debit; vendors are owed).
+    names = {c["name"] for c in customers}
+    validated = _party_balances(synced, names)
+    assert {c["name"]: Decimal(c["balance"]) for c in customers} == {
+        n: validated.get(n, Decimal(0)) for n in names
+    }
+    vendor_names = {v["name"] for v in vendors}
+    validated = _party_balances(synced, vendor_names)
+    assert {v["name"]: Decimal(v["balance"]) for v in vendors} == {
+        n: -validated.get(n, Decimal(0)) for n in vendor_names
+    }
+
+    # Sales: each customer's as the Sales dashboard filtered to them has it.
+    busiest = sorted(customers, key=lambda c: Decimal(c["net"]), reverse=True)[:3]
+    for c in busiest:
+        one = _get(client, "/api/v1/sales/dashboard", month=MONTHS, customer=c["name"])
+        assert Decimal(c["net"]) == Decimal(one["key_figures"]["net_sales"]["value"])
+        assert Decimal(c["invoices"]) == Decimal(one["key_figures"]["invoices"]["value"])
+
+
+def test_a_customer_page_adds_up(client: TestClient, synced: int) -> None:
+    customers = _get(client, "/api/v1/parties/customers", month=MONTHS)["parties"]
+    top = max(customers, key=lambda c: Decimal(c["net"]))
+    page = _get(client, f"/api/v1/parties/customers/{top['party_id']}", month=MONTHS)
+    assert page["name"] == top["name"] and page["companies"] == [synced]
+    assert page["group_path"] and Decimal(page["balance"]) == Decimal(top["balance"])
+
+    # The ledger statement runs from the opening to the balance due.
+    entries = page["statement"]
+    assert entries and page["statement_truncated"] is False
+    running = Decimal(page["statement_opening"])
+    for e in entries:
+        running += Decimal(e["debit"] or 0) - Decimal(e["credit"] or 0)
+        assert Decimal(e["balance"]) == running
+    assert running == Decimal(page["balance"])
+
+    # Sales and invoices: the Sales dashboard and the Sales register filtered to the customer.
+    assert Decimal(page["net"]["value"]) == Decimal(top["net"])
+    register = _get(client, "/api/v1/registers/sales", month=MONTHS, party=top["name"])["rows"]
+    assert [i["voucher_id"] for i in page["invoices_list"]] == [r["voucher_id"] for r in register]
+    assert {i["status"] for i in page["invoices_list"]} <= {"paid", "due", "overdue", "no_bill"}
+    assert sum(Decimal(m["net"]) for m in page["monthly"]) == Decimal(page["net"]["value"])
+
+    # Receipts are receipt vouchers; the monthly trend has them all.
+    received = sum(Decimal(s["amount"]) for s in page["settlements"])
+    assert received == Decimal(page["settled"])
+    assert sum(Decimal(m["settled"]) for m in page["monthly"]) == received
+
+    # Bills: every bill allocation (not on account) on the customer's ledgers up to 30-Sep.
+    with Session(get_engine("report")) as session:
+        stored = session.scalar(
+            select(func.coalesce(func.sum(A.BillAllocation.amount), 0))
+            .join(A.VoucherLine, A.VoucherLine.id == A.BillAllocation.voucher_line_id)
+            .join(A.Ledger, A.Ledger.id == A.VoucherLine.ledger_id)
+            .join(A.Party, A.Party.id == A.Ledger.party_id)
+            .join(A.Voucher, A.Voucher.id == A.VoucherLine.voucher_id)
+            .where(
+                A.Party.name == top["name"],
+                A.Ledger.entity_id == synced,
+                A.VoucherLine.is_effective.is_(True),
+                A.Voucher.is_deleted.is_(False),
+                A.BillAllocation.bill_type != "on_account",
+                A.VoucherLine.voucher_date <= date(2026, 9, 30),
+            )
+        )
+    assert Decimal(page["bills_cover"]) == Decimal(str(stored))
+    assert sum(Decimal(b["amount"]) for b in page["bills"]) == Decimal(page["bills_cover"])
+    overdue = sum(
+        Decimal(b["amount"])
+        for b in page["bills"]
+        if b["overdue_days"] > 0 and Decimal(b["amount"]) > 0
+    )
+    assert Decimal(page["overdue"]) == overdue
+
+
+def test_a_vendor_page_and_unknown_parties(client: TestClient, synced: int) -> None:
+    vendors = _get(client, "/api/v1/parties/vendors", month=MONTHS)["parties"]
+    top = max(vendors, key=lambda v: Decimal(v["net"]))
+    page = _get(client, f"/api/v1/parties/vendors/{top['party_id']}", month=MONTHS)
+    assert Decimal(page["balance"]) == Decimal(top["balance"])
+    assert Decimal(page["net"]["value"]) == Decimal(top["net"])
+    assert -(Decimal(page["statement"][-1]["balance"])) == Decimal(page["balance"])
+    missing = client.get("/api/v1/parties/customers/999999999", params={"month": MONTHS})
+    assert missing.status_code == 404
+    assert client.get("/api/v1/parties/banks", params={"month": MONTHS}).status_code == 422
