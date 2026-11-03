@@ -12,6 +12,7 @@ profit, both as a percentage of revenue, and the customer count (core/sales.py).
 
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -28,6 +29,7 @@ from api.v1.common import (
     parse_period,
 )
 from core.home import BS_FIGURES, PL_FIGURES, StatementFigures, home
+from core.overview import TopCustomer, TrendMonth, top_customers, trend
 from core.sales import party_count
 
 router = APIRouter(tags=["home"])
@@ -113,6 +115,40 @@ class CompanyShare(BaseModel):
     share_pct: Decimal | None = formula("F-SAL-015")  # of the selection's net sales, one decimal
 
 
+class TrendOut(BaseModel):
+    """One month of the key cards' twelve-month trend (the sparklines; F-OVR-001)."""
+
+    month: date
+    net_sales: Decimal = formula("F-SAL-004")
+    gross_profit: Decimal | None = formula("F-PL-003")  # None without the month's statements
+    net_profit: Decimal | None = formula("F-PL-004")
+    cash_and_bank: Decimal = formula("F-BAL-002")
+    customers: int = formula("F-SAL-011")
+
+
+class SummaryLine(BaseModel):
+    """A line of the Overview's Profit & Loss summary, this period against last year."""
+
+    key: str  # net_sales, cost_of_sales, gross_profit, gross_margin_pct, net_profit, ...
+    label: str
+    unit: Literal["amount", "percent"]
+    higher_is_better: bool
+    value: Decimal | None = formula("F-OVR-003")
+    last_year: Decimal | None = formula("F-OVR-003")
+    change_pct: Decimal | None = formula("F-CMP-001")  # amounts
+    change_pts: Decimal | None = formula("F-CMP-003")  # percentages
+
+
+class TopCustomerOut(BaseModel):
+    party_id: int
+    name: str
+    net_sales: Decimal = formula("F-SAL-012")
+    share_pct: Decimal | None = formula("F-OVR-004")  # of the period's net sales
+    balance: Decimal = formula("F-PTY-001")
+    overdue: Decimal = formula("F-PTY-002")
+    status: Literal["overdue", "current"]
+
+
 class PeriodOut(BaseModel):
     start: date
     end: date
@@ -131,6 +167,10 @@ class Home(BaseModel):
     monthly: list[MonthFigures]
     channels: list[Channel]
     by_company: list[CompanyShare]
+    trend: list[TrendOut]  # the twelve months up to the period's end (F-OVR-001)
+    summary: list[SummaryLine]  # the Profit & Loss against last year
+    summary_reason: str | None  # why last year has no figures
+    top_customers: list[TopCustomerOut]  # F-OVR-002
 
 
 @router.get("/home")
@@ -173,6 +213,10 @@ def dashboard_home(
         monthly=[_month(m, s, p, found.monthly_profit.get(m)) for m, s, p in found.monthly],
         channels=_channels(found.channels),
         by_company=_shares(found.by_company),
+        trend=[_trend(t) for t in trend(session, companies, period.end)],
+        summary=_summary(found.profit_loss, found.profit_loss_last_year),
+        summary_reason=found.profit_loss_last_year.reason,
+        top_customers=_top(top_customers(session, companies, period), found.monthly),
     )
 
 
@@ -259,4 +303,73 @@ def _shares(found: list[tuple[int, Decimal]]) -> list[CompanyShare]:
             else None,
         )
         for entity, net in sorted(found, key=lambda x: x[1], reverse=True)
+    ]
+
+
+SUMMARY = [
+    # key, label, unit, higher is better
+    ("net_sales", "Net sales", "amount", True),
+    ("cost_of_sales", "Cost of sales", "amount", False),
+    ("gross_profit", "Gross profit", "amount", True),
+    ("gross_margin_pct", "Gross margin %", "percent", True),
+    ("net_profit", "Net profit", "amount", True),
+    ("net_profit_pct", "Net profit %", "percent", True),
+]
+PERCENTS = {"gross_margin_pct": "gross_profit", "net_profit_pct": "net_profit"}
+
+
+def _summary(now: StatementFigures, last: StatementFigures) -> list[SummaryLine]:
+    """The Profit & Loss summary against last year (F-OVR-003): the period's and last year's
+    figures, the change in percent, or in points for a percentage."""
+
+    def figures(found: StatementFigures) -> dict[str, Decimal | None]:
+        values: dict[str, Decimal | None] = {
+            key: found.values.get(key) if found.reason is None else None for key in PL_FIGURES
+        }
+        for key, part in PERCENTS.items():
+            values[key] = percent_of(values[part], values["net_sales"])
+        return values
+
+    current, before = figures(now), figures(last)
+    found = []
+    for key, label, unit, higher in SUMMARY:
+        value, last_value = current[key], before[key]
+        points = value - last_value if value is not None and last_value is not None else None
+        found.append(
+            SummaryLine(
+                key=key, label=label, unit=unit, higher_is_better=higher,
+                value=value, last_year=last_value,
+                change_pct=change_pct(value, last_value) if unit == "amount" else None,
+                change_pts=points if unit == "percent" else None,
+            )
+        )  # fmt: skip
+    return found
+
+
+def _trend(t: TrendMonth) -> TrendOut:
+    return TrendOut(
+        month=t.month,
+        net_sales=t.net_sales,
+        gross_profit=t.gross_profit,
+        net_profit=t.net_profit,
+        cash_and_bank=t.cash_and_bank,
+        customers=t.customers,
+    )
+
+
+def _top(
+    found: list[TopCustomer], monthly: list[tuple[date, Decimal, Decimal]]
+) -> list[TopCustomerOut]:
+    total = sum((sales for _, sales, _ in monthly), Decimal(0))
+    return [
+        TopCustomerOut(
+            party_id=c.party_id,
+            name=c.name,
+            net_sales=c.net_sales,
+            share_pct=percent_of(c.net_sales, total),
+            balance=c.balance,
+            overdue=c.overdue,
+            status="overdue" if c.overdue > 0 else "current",
+        )
+        for c in found
     ]

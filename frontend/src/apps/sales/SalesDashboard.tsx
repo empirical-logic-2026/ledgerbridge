@@ -18,7 +18,7 @@ import { OptionsPanel, type Related } from '../../reporting/OptionsPanel.tsx'
 import type { Query } from '../../router.ts'
 import { builtHref } from '../../shell/nav.ts'
 import { tokens, type Tokens } from '../../theme.ts'
-import { COMBINED_NOTE } from '../dashboard/DashboardHome.tsx'
+import { COMBINED_NOTE } from '../dashboard/words.ts'
 
 interface Props {
   companies: Company[] // the selected ones

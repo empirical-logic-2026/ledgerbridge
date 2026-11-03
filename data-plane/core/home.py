@@ -64,6 +64,7 @@ class Home:
     period: Period
     profit_loss: StatementFigures
     profit_loss_before: StatementFigures | None  # the comparison period's
+    profit_loss_last_year: StatementFigures  # for the Overview's summary, always last year
     balance_sheet: StatementFigures
     stock_value: Decimal | None
     cash_and_bank: Decimal
@@ -85,11 +86,15 @@ def home(session: Session, companies: list[int], period: Period, before: Period 
     compared = None
     if before is not None:
         compared = profit_loss_figures(session, companies, windows(before, stored, books_from), at)
+    last_year = profit_loss_figures(
+        session, companies, windows(period.last_year(), stored, books_from), at
+    )
     sheet = balance_sheet_figures(session, companies, found.end, found.reason)
     return Home(
         period=period,
         profit_loss=profit_loss,
         profit_loss_before=compared,
+        profit_loss_last_year=last_year,
         balance_sheet=sheet,
         stock_value=_stock_value(session, companies, found.end) if found.available else None,
         cash_and_bank=balance(session, companies, CASH_AND_BANK, period.end),

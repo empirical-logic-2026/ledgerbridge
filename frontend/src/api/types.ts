@@ -217,6 +217,10 @@ export interface Home {
   monthly: MonthFigures[]
   channels: Channel[]
   by_company: CompanyShare[]
+  trend: TrendOut[]
+  summary: SummaryLine[]
+  summary_reason: string | null
+  top_customers: TopCustomerOut[]
 }
 
 export interface InvoiceOut {
@@ -499,6 +503,36 @@ export interface StatementReport {
   shifted: boolean
   before_reason: string | null
   matching: MatchingOut
+}
+
+export interface SummaryLine {
+  key: string
+  label: string
+  unit: "amount" | "percent"
+  higher_is_better: boolean
+  value: string | null
+  last_year: string | null
+  change_pct: string | null
+  change_pts: string | null
+}
+
+export interface TopCustomerOut {
+  party_id: number
+  name: string
+  net_sales: string
+  share_pct: string | null
+  balance: string
+  overdue: string
+  status: "overdue" | "current"
+}
+
+export interface TrendOut {
+  month: string
+  net_sales: string
+  gross_profit: string | null
+  net_profit: string | null
+  cash_and_bank: string
+  customers: number
 }
 
 export interface ValidationError {

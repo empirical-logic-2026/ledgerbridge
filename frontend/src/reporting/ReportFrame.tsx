@@ -6,7 +6,7 @@
 import { Button, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import type { Company, PeriodOut } from '../api/types.ts'
-import { COMBINED_NOTE } from '../apps/dashboard/DashboardHome.tsx'
+import { COMBINED_NOTE } from '../apps/dashboard/words.ts'
 import { formatDate } from '../format.ts'
 import type { Query } from '../router.ts'
 import { OptionsPanel, type Related } from './OptionsPanel.tsx'

@@ -289,6 +289,15 @@ def party_page(
     )
 
 
+def due_and_overdue(
+    session: Session, party: PartyRef, on: date, sign: int
+) -> tuple[Decimal, Decimal]:
+    """The party's balance due (F-PTY-001) and its overdue bills (F-PTY-002) at the day."""
+    bills, _ = _bills(session, party, on, sign)
+    overdue = sum((b.amount for b in bills if b.amount > 0 and b.due < on), ZERO)
+    return sign * _balance(session, party.ledger_ids, on), overdue
+
+
 def _balance(session: Session, ledger_ids: list[int], on: date) -> Decimal:
     if not ledger_ids:
         return ZERO
