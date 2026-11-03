@@ -429,6 +429,27 @@ def _d(value: str | None) -> Decimal | None:
     return None if value is None else Decimal(value)
 
 
+@pytest.mark.parametrize("kind", ["customers", "vendors"])
+def test_ageing_adds_up_and_equals_the_party_pages(
+    client: TestClient, synced: int, kind: str
+) -> None:
+    found = _get(client, f"/api/v1/ageing/{kind}", month=MONTHS)
+    rows = found["rows"]
+    assert rows and found["as_of"] == "2026-09-30"
+    for row in rows:  # buckets (F-PTY-012) plus uncovered (F-PTY-013) are the balance
+        buckets = sum(Decimal(v) for v in row["buckets"].values())
+        assert buckets + Decimal(row["uncovered"]) == Decimal(row["balance"])
+        assert Decimal(row["overdue"]) == buckets - Decimal(row["buckets"]["not_due"])
+    for key in ("balance", "overdue", "uncovered"):
+        assert sum(Decimal(r[key]) for r in rows) == Decimal(found["total"][key])
+    # Each party as its own page has it (F-PTY-001 to F-PTY-003).
+    for row in rows[:5]:
+        page = _get(client, f"/api/v1/parties/{kind}/{row['party_id']}", month=MONTHS)
+        assert _d(row["balance"]) == _d(page["balance"])
+        assert _d(row["overdue"]) == _d(page["overdue"])
+        assert Decimal(row["balance"]) - Decimal(row["uncovered"]) == Decimal(page["bills_cover"])
+
+
 def april_customers(client: TestClient) -> int:
     return _get(client, "/api/v1/home", month="2026-04")["customers"]["value"]
 

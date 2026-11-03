@@ -434,6 +434,15 @@ cover less than the balance. Every page says so.
 - **Expression:** due: `due − period end`; overdue: `period end − due`.
 - **Check in Tally:** Outstandings, the due date of the bill.
 
+#### F-PTY-012 Ageing bucket
+
+- **In words:** a party's outstanding bills (F-PTY-004) at the day, by the days from each bill's due date to that day: not due, 1-30, 31-60, 61-90 and over 90 days past due.
+- **Check in Tally:** Display More Reports › Statements of Accounts › Outstandings › Ageing Analysis (Receivables or Payables), at the same date, by due date.
+
+#### F-PTY-013 Uncovered by bills
+
+- **In words:** the balance due (F-PTY-001) less the outstanding bills (F-PTY-003). It is the part from before the books' beginning (opening bills aren't stored yet), plus anything posted without a bill.
+
 ## 7. Registers (`F-REG`)
 
 Source for every `F-REG` entry: `vouchers` and their first effective `voucher_lines`

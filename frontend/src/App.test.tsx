@@ -148,7 +148,7 @@ describe('the dashboard', () => {
     expect(within(modules).getByRole('link', { name: 'Sales' })).toHaveAttribute('href', '#/sales/dashboard')
     expect(within(modules).getByRole('link', { name: 'P&L & KPIs' })).toHaveAttribute('href', '#/pnl/profit-loss')
     expect(within(modules).queryByText('Balance Sheet')).toBeNull() // not built yet: not offered
-    expect(within(modules).queryByText('Parties')).toBeNull()
+    expect(within(modules).getByRole('link', { name: 'Parties' })).toHaveAttribute('href', '#/parties/receivables')
     expect(within(top).getByRole('button', { name: 'YTD' })).toHaveAttribute('aria-pressed', 'true') // the default
     expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
     expect(screen.getByText('01-Apr-2026 to 30-Oct-2026 · vs previous period')).toBeInTheDocument()
@@ -444,6 +444,43 @@ const sales: SalesDashboard = {
     { name: 'Online Sales', net_sales: '100000000', share_pct: '20.7' },
   ],
 }
+
+const ageingRow = (id: number, name: string, balance: string, notDue: string, over90: string, uncovered: string) => ({
+  party_id: id,
+  name,
+  balance,
+  buckets: { not_due: notDue, days_1_30: '0', days_31_60: '0', days_61_90: '0', over_90: over90 },
+  overdue: over90,
+  uncovered,
+  status: over90 === '0' ? ('current' as const) : ('overdue' as const),
+})
+const ageingFound = {
+  kind: 'customers',
+  companies: [3, 4],
+  combined: true,
+  as_of: '2026-09-30',
+  rows: [ageingRow(11, 'Customer One', '1161000', '600000', '400000', '161000'), ageingRow(12, 'Customer Two', '200000', '200000', '0', '0')],
+  total: { ...ageingRow(0, 'Total', '1361000', '800000', '400000', '161000') },
+}
+
+describe('Receivables with ageing', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows the buckets as bars and every customer with their status, as at the period end', async () => {
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/ageing/customers': ageingFound })
+    renderApp('#/parties/receivables')
+    const due = await screen.findByRole('region', { name: 'Balance due' })
+    expect(due).toHaveTextContent('₹13.6 L')
+    expect(screen.getByRole('region', { name: 'Over 90 days' })).toHaveTextContent('₹4.0 L')
+    const bars = screen.getByRole('list', { name: 'Outstanding bills by bucket' })
+    expect(within(bars).getByText('Not due').closest('.hbar')).toHaveTextContent('66.7%')
+    expect(within(bars).getByText('Over 90 days').closest('.hbar')).toHaveTextContent('33.3%')
+    const table = screen.getByRole('table', { name: 'Customers by ageing' })
+    expect(within(table).getByRole('link', { name: 'Customer One' })).toHaveAttribute('href', expect.stringMatching(/^#\/sales\/customers\/11/))
+    expect(within(table).getByText('Overdue')).toHaveClass('status-bad')
+    expect(within(screen.getByRole('navigation', { name: 'Parties pages' })).getByRole('link', { name: 'Payables' })).toHaveAttribute('href', expect.stringMatching(/^#\/parties\/payables/))
+  })
+})
 
 describe('the Purchases dashboard', () => {
   afterEach(() => vi.unstubAllGlobals())

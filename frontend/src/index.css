@@ -1001,3 +1001,40 @@ body,
     grid-template-columns: 1fr;
   }
 }
+
+/* horizontal bars: label, bar, share, amount */
+.hbars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hbar {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.2fr) minmax(80px, 3fr) 56px 90px;
+  align-items: center;
+  gap: 10px;
+}
+
+.hbar-track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--lb-page);
+  overflow: hidden;
+}
+
+.hbar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+}
+
+.hbar-share,
+.hbar-amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.hbar-share {
+  color: var(--lb-muted);
+}

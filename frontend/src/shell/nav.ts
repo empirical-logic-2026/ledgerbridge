@@ -60,7 +60,7 @@ export const NAV: NavGroup[] = [
   { key: 'pnl', label: 'P&L & KPIs', pages: [page('profit-loss', 'Profit & Loss', true, [], STATEMENT)] },
   { key: 'balance-sheet', label: 'Balance Sheet', pages: [page('statement', 'Balance Sheet')] },
   { key: 'cash-flow', label: 'Cash Flow', pages: [page('movement', 'Cash movement')] },
-  { key: 'parties', label: 'Parties', pages: [page('receivables', 'Receivables'), page('payables', 'Payables')] },
+  { key: 'parties', label: 'Parties', pages: [page('receivables', 'Receivables', true, [], PARTIES), page('payables', 'Payables', true, [], PARTIES)] },
   { key: 'data', label: 'Data', pages: [page('health', 'Data health'), page('companies', 'Companies')] },
 ]
 
