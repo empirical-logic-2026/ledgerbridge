@@ -3,7 +3,7 @@
 // dates, comparison, facets) and the page's own options, all in the URL; the top bar and the
 // page header around the page (ADR-050).
 
-import { Alert, Result } from 'antd'
+import { Alert, Result, Skeleton } from 'antd'
 import type { ReactNode } from 'react'
 import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
@@ -12,6 +12,7 @@ import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
 import { Ageing } from './apps/parties/Ageing.tsx'
 import { BalanceSheet } from './apps/statements/BalanceSheet.tsx'
 import { CashFlow } from './apps/cash/CashFlow.tsx'
+import { CompaniesPage, DataHealth } from './apps/data/DataPages.tsx'
 import { Parties } from './apps/parties/Parties.tsx'
 import { PartyPage, type PartyTab } from './apps/parties/PartyPage.tsx'
 import { PARTY_WORDS, type PartyKind } from './apps/parties/words.ts'
@@ -184,6 +185,12 @@ export default function App({ mode, onMode, today }: Props) {
         ]}
       />
     )
+  } else if (at === 'data/health') {
+    crumbs = [{ label: 'Data', path: ['data', 'health'] }, { label: 'Data health' }]
+    content = companies.isPending ? <Skeleton active paragraph={{ rows: 6 }} /> : <DataHealth companies={all} dark={mode === 'dark'} />
+  } else if (at === 'data/companies') {
+    crumbs = [{ label: 'Data', path: ['data', 'health'] }, { label: 'Companies' }]
+    content = companies.isPending ? <Skeleton active paragraph={{ rows: 6 }} /> : <CompaniesPage companies={all} />
   } else if (at === 'cash-flow/movement') {
     crumbs = [{ label: 'Cash Flow' }]
     content = (
