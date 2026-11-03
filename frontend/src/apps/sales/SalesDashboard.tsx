@@ -1,17 +1,20 @@
-// The Sales dashboard (docs/design/dashboard.md Section 0.2, screen 7): key figures with the
-// change against the comparison period (net sales, invoices, average invoice, sales returns), net sales by
-// month (a month opens its register once that page is built; a table below gives every
-// month's gross, returns, other adjustments and net), the top customers and the largest
-// invoices, each table in the table explorer; the options side panel with "What is this?".
-// Figures: core/sales.py (GET /api/v1/sales/dashboard).
+// The Sales dashboard (docs/design/dashboard.md Sections 0.2 and 0.4, screen 7), in the
+// reference pattern: key cards with the change against the comparison period and the period's
+// months as a sparkline (net sales, invoices, average invoice, sales returns), net sales by
+// month (a month opens its register; a table below gives every month's gross, returns, other
+// adjustments and net), the mix by channel as a donut (a channel opens its register), the top
+// customers with their status and the largest invoices, each table in the table explorer; the
+// options side panel with "What is this?". Figures: core/sales.py (GET /api/v1/sales/dashboard).
 
 import { Alert, Button, Skeleton, Typography } from 'antd'
 import type { EChartsOption } from 'echarts'
 import type { Company, InvoiceOut, MonthSales, PartySales, SalesDashboard as Dashboard } from '../../api/types.ts'
+import { Donut } from '../../components/Donut.tsx'
 import { EChart } from '../../components/EChart.tsx'
+import { StatusPill } from '../../components/StatusPill.tsx'
 import { KeyCard } from '../../components/KeyCard.tsx'
 import { againstOf } from '../../selection.ts'
-import { formatDate, formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
+import { formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
 import { OptionsPanel, type Related } from '../../reporting/OptionsPanel.tsx'
@@ -97,7 +100,21 @@ function customerColumns(names: Map<number, string>, combined: boolean, query: Q
     { key: 'net', label: 'Net sales', kind: 'amount', value: (p) => p.net_sales },
     { key: 'share', label: 'Share', kind: 'text', value: (p) => share(p.net_sales) },
     { key: 'invoices', label: 'Invoices', kind: 'count', value: (p) => p.invoices },
+    { key: 'balance', label: 'Balance due', kind: 'amount', value: (p) => p.balance, summed: false },
+    {
+      key: 'status',
+      label: 'Status',
+      kind: 'text',
+      groupable: true,
+      value: (p) => (p.status === 'overdue' ? 'Overdue' : 'Current'),
+      render: (p) => (p.status === 'overdue' ? <StatusPill text="Overdue" tone="bad" /> : <StatusPill text="Current" tone="good" />),
+    },
   ]
+}
+
+/** A month's average invoice, for the sparkline only (gross ÷ invoices). */
+function average(m: MonthSales): number | null {
+  return m.invoices ? toLakhs(m.gross) / m.invoices : null
 }
 
 function invoiceColumns(names: Map<number, string>, combined: boolean, query: Query): ExplorerColumn<InvoiceOut>[] {
@@ -139,7 +156,6 @@ export function SalesDashboard(props: Props) {
   const { dashboard, companies, query } = props
   const sourceName = companies[0]?.health.source_name ?? 'the source'
   const names = new Map(companies.map((c) => [c.id, c.name]))
-  const title = companies.map((c) => c.name).join(' + ')
   const colours = tokens[props.dark ? 'dark' : 'light']
 
   let content: React.ReactNode
@@ -151,13 +167,20 @@ export function SalesDashboard(props: Props) {
     const k = dashboard.key_figures
     const combined = dashboard.combined
     const net = k.net_sales.value ?? '0'
+    const against = againstOf(dashboard.compared_with)
+    const [green, charcoal, lighter, grey] = colours.accents
+    const register = (channel: string) => builtHref(['sales', 'register'], { ...query, channel: [channel] })
     content = (
       <>
         <div className="sales-cards">
-          <KeyCard label="Net sales" figure={k.net_sales} tone="up-good" against={againstOf(dashboard.compared_with)} />
-          <KeyCard label="Invoices" figure={k.invoices} unit="count" tone="up-good" against={againstOf(dashboard.compared_with)} />
-          <KeyCard label="Average invoice" figure={k.average_invoice} tone="up-good" against={againstOf(dashboard.compared_with)} />
-          <KeyCard label="Sales returns" figure={k.sales_returns} tone="up-neutral" against={againstOf(dashboard.compared_with)} />
+          <KeyCard label="Net sales" figure={k.net_sales} tone="up-good" against={against} accent={green}
+            spark={dashboard.monthly.map((m) => toLakhs(m.net))} />
+          <KeyCard label="Invoices" figure={k.invoices} unit="count" tone="up-good" against={against} accent={charcoal}
+            spark={dashboard.monthly.map((m) => m.invoices)} />
+          <KeyCard label="Average invoice" figure={k.average_invoice} tone="up-good" against={against} accent={lighter}
+            spark={dashboard.monthly.map(average)} />
+          <KeyCard label="Sales returns" figure={k.sales_returns} tone="up-neutral" against={against} accent={grey}
+            spark={dashboard.monthly.map((m) => -toLakhs(m.returns))} />
         </div>
         <section className="card" aria-label="Net sales by month">
           <div className="card-head">
@@ -176,6 +199,13 @@ export function SalesDashboard(props: Props) {
           />
           <ExplorerTable id="sales-by-month" label="Sales by month" columns={monthColumns(query)} rows={dashboard.monthly} rowKey={(m) => m.month} totalLabel="Total" />
         </section>
+        {dashboard.channels.length > 0 && (
+          <section className="card" aria-label="Sales by channel">
+            <h2 className="card-title">Sales by channel</h2>
+            <Donut label="Net sales by channel" dark={props.dark} colours={[colours.primary, colours.netProfit, colours.grossProfit, colours.neutralBar, colours.primaryLine]}
+              parts={dashboard.channels.map((c) => ({ name: c.name, amount: c.net_sales, to: register(c.name) }))} />
+          </section>
+        )}
         <div className="sales-tables">
           <section className="card" aria-label="Top customers">
             <h2 className="card-title">Top customers</h2>
@@ -213,15 +243,7 @@ export function SalesDashboard(props: Props) {
       <div className="report-main">
         <div className="report-head">
           <div>
-            <Typography.Title level={2} className="report-title">
-              Sales · {title}
-            </Typography.Title>
-            {dashboard && (
-              <Typography.Text type="secondary">
-                {formatDate(dashboard.period.start)} to {formatDate(dashboard.period.end)}
-                {dashboard.combined ? ` · ${COMBINED_NOTE}` : ''}
-              </Typography.Text>
-            )}
+            {dashboard?.combined && <Typography.Text type="secondary">Several companies: {COMBINED_NOTE}</Typography.Text>}
           </div>
           <div className="report-toolbar">{!props.panelOpen && <Button onClick={() => props.onPanel(true)}>Options</Button>}</div>
         </div>
