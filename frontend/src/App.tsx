@@ -5,9 +5,10 @@
 
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useAgeing, useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
+import { Ageing } from './apps/parties/Ageing.tsx'
 import { Parties } from './apps/parties/Parties.tsx'
 import { PartyPage, type PartyTab } from './apps/parties/PartyPage.tsx'
 import { PARTY_WORDS, type PartyKind } from './apps/parties/words.ts'
@@ -48,6 +49,8 @@ export default function App({ mode, onMode, today }: Props) {
     channel: selection.facets.channel,
   })
   const purchases = usePurchasesDashboard(at === 'purchases/dashboard' ? ids : undefined, period, selection.compare, selection.facets.voucher_type)
+  const ageingKind = at === 'parties/receivables' ? 'customers' : at === 'parties/payables' ? 'vendors' : undefined
+  const ageing = useAgeing(ageingKind ?? 'customers', ageingKind ? ids : undefined, period)
   const salesRegister = useRegister('sales', at === 'sales/register' ? ids : undefined, period, {
     party: selection.facets.customer,
     voucherType: selection.facets.channel,
@@ -152,6 +155,30 @@ export default function App({ mode, onMode, today }: Props) {
           { label: 'Monthly purchases', path: ['purchases', 'monthly'] },
           { label: 'Sales dashboard', path: ['sales', 'dashboard'] },
         ]}
+      />
+    )
+  } else if (ageingKind) {
+    const title = ageingKind === 'customers' ? 'Receivables' : 'Payables'
+    crumbs = [{ label: 'Parties', path: ['parties', 'receivables'] }, { label: title }]
+    content = (
+      <Ageing
+        key={ageingKind}
+        kind={ageingKind}
+        companies={selected}
+        ageing={ageing.data}
+        loading={companies.isPending || periods.isPending || ageing.isPending}
+        error={periods.error ?? ageing.error}
+        dark={mode === 'dark'}
+        query={query}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
+        currentQuery={route.query.toString()}
+        onApplyView={onApplyView}
+        related={
+          ageingKind === 'customers'
+            ? [{ label: 'Customers', path: ['sales', 'customers'] }, { label: 'Payables', path: ['parties', 'payables'] }]
+            : [{ label: 'Vendors', path: ['purchases', 'vendors'] }, { label: 'Receivables', path: ['parties', 'receivables'] }]
+        }
       />
     )
   } else if (at === 'sales/register' || at === 'purchases/register') {

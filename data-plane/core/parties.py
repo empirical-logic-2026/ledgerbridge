@@ -164,7 +164,7 @@ def party_list(
         if entity not in row.companies:
             row.companies.append(entity)
     ids = [pid for pid, _, _ in parties]
-    for name, total in _balances_by_name(session, ids, period.end):
+    for name, total in balances_by_name(session, ids, period.end):
         if name in by_name:
             by_name[name].balance += sign * total
     query = lines(
@@ -179,9 +179,7 @@ def party_list(
     return sorted(by_name.values(), key=lambda r: r.name.lower())
 
 
-def _balances_by_name(
-    session: Session, party_ids: list[int], on: date
-) -> list[tuple[str, Decimal]]:
+def balances_by_name(session: Session, party_ids: list[int], on: date) -> list[tuple[str, Decimal]]:
     """Each party name's ledgers: openings plus effective entries up to the day."""
     if not party_ids:
         return []

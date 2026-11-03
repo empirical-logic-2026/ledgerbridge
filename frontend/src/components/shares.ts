@@ -9,10 +9,10 @@ export interface DonutPart {
   to?: string // the page behind the part
 }
 
-/** Each part's share of the positive total in percent, one decimal (0 without a total);
+/** Each part's share of the positive total in percent, rounded to one decimal (0 without a total);
  *  a negative part (e.g. returns larger than sales) counts as nothing. */
 export function shares(parts: DonutPart[]): number[] {
   const positive = (amount: string) => (toScaled(amount) > 0n ? toScaled(amount) : 0n)
   const total = parts.reduce((sum, p) => sum + positive(p.amount), 0n)
-  return parts.map((p) => (total > 0n ? Number((positive(p.amount) * 1000n) / total) / 10 : 0))
+  return parts.map((p) => (total > 0n ? Number((positive(p.amount) * 1000n + total / 2n) / total) / 10 : 0))
 }

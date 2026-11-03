@@ -4,7 +4,18 @@ databases as report_ro, every one through the access dependency (api/access.py).
 from fastapi import APIRouter, Depends
 
 from api.access import current_access
-from api.v1 import companies, datasets, facets, home, monthly, parties, registers, reports, sales
+from api.v1 import (
+    ageing,
+    companies,
+    datasets,
+    facets,
+    home,
+    monthly,
+    parties,
+    registers,
+    reports,
+    sales,
+)
 
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(current_access)])
 router.include_router(companies.router)
@@ -17,3 +28,4 @@ router.include_router(sales.purchases_router)
 router.include_router(registers.router)
 router.include_router(monthly.router)
 router.include_router(parties.router)
+router.include_router(ageing.router)

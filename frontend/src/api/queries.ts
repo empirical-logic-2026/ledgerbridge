@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import { comparisonQuery, type CompareKind, type PeriodChoice } from '../selection.ts'
-import type { ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
+import type { AgeingOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -47,6 +47,15 @@ export function useProfitLoss(companies: number[] | undefined, period: PeriodCho
         view,
         ...comparisonQuery(compare, period),
       }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+/** Receivables (customers) or payables (vendors) with ageing, as at the period's end. */
+export function useAgeing(kind: 'customers' | 'vendors', companies: number[] | undefined, period: PeriodChoice | undefined) {
+  return useQuery({
+    queryKey: ['ageing', kind, companies, period],
+    queryFn: () => getJson<AgeingOut>(`/api/v1/ageing/${kind}`, { company: companies, ...periodQuery(period) }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }
