@@ -456,6 +456,9 @@ export interface ProfitLoss {
   net_profit: Figure
   gross_margin_pct: Ratio
   net_profit_pct: Ratio
+  other_costs: Figure
+  cost_of_sales_pct: Ratio
+  other_costs_pct: Ratio
 }
 
 export interface Ratio {

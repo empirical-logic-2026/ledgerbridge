@@ -1038,3 +1038,46 @@ body,
 .hbar-share {
   color: var(--lb-muted);
 }
+
+/* the P&L & KPIs module: margins, expense structure, trend, goals */
+.pnl-kpis {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.ratio-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ratio-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--lb-border);
+  border-radius: 8px;
+}
+
+.ratio-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lb-muted);
+}
+
+.ratio-value {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1100px) {
+  .pnl-kpis {
+    grid-template-columns: 1fr;
+  }
+}

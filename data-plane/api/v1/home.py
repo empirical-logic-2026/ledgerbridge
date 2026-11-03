@@ -73,6 +73,9 @@ class ProfitLoss(BaseModel):
     net_profit: Figure = formula("F-PL-004")
     gross_margin_pct: Ratio = formula("F-PL-005")  # gross profit / net sales
     net_profit_pct: Ratio = formula("F-PL-006")  # net profit / net sales
+    other_costs: Figure = formula("F-PL-009")  # gross profit - net profit
+    cost_of_sales_pct: Ratio = formula("F-PL-010")  # cost of sales / net sales
+    other_costs_pct: Ratio = formula("F-PL-010")  # other costs / net sales
 
 
 class BalanceSheet(BaseModel):
@@ -238,6 +241,13 @@ def _decimal(value: int | None) -> Decimal | None:
     return None if value is None else Decimal(value)
 
 
+def _difference(a: Figure, b: Figure) -> Figure:
+    """a - b, this period and the comparison's, with the change."""
+    value = a.value - b.value if a.value is not None and b.value is not None else None
+    last = a.before - b.before if a.before is not None and b.before is not None else None
+    return Figure(value=value, before=last, change_pct=change_pct(value, last))
+
+
 def _profit_loss(now: StatementFigures, before: StatementFigures | None) -> ProfitLoss:
     def figure(key: str) -> Figure:
         value = now.values.get(key) if now.reason is None else None
@@ -251,7 +261,13 @@ def _profit_loss(now: StatementFigures, before: StatementFigures | None) -> Prof
         return Ratio(value=value, before=last, change_pts=change)
 
     figures = {key: figure(key) for key in PL_FIGURES}
-    ratios = {"gross_margin_pct": ratio("gross_profit"), "net_profit_pct": ratio("net_profit")}
+    figures["other_costs"] = _difference(figures["gross_profit"], figures["net_profit"])
+    ratios = {
+        "gross_margin_pct": ratio("gross_profit"),
+        "net_profit_pct": ratio("net_profit"),
+        "cost_of_sales_pct": ratio("cost_of_sales"),
+        "other_costs_pct": ratio("other_costs"),
+    }
     return ProfitLoss(
         available=now.reason is None,
         reason=now.reason,

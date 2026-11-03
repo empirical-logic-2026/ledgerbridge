@@ -282,6 +282,17 @@ Groups are matched by predefined role (`account_groups`), and §1.1 gives the pe
 - **Expression:** `F-PL-007 ÷ F-PL-001 (same column) × 100`, one decimal.
 - **Check in Tally:** Profit & Loss A/c with percentages (Alt+F5 in some releases), or by hand.
 
+#### F-PL-009 Other costs (indirect expenses less indirect incomes)
+
+- **In words:** what lies between gross profit and net profit.
+- **Expression:** `F-PL-003 − F-PL-004`.
+- **Check in Tally:** Profit & Loss A/c, the indirect expenses less the indirect incomes below Gross Profit.
+
+#### F-PL-010 Cost structure (% of net sales)
+
+- **In words:** cost of sales (F-PL-002), or other costs (F-PL-009), as a percentage of net sales; on the P&L page also each expense line (F-PL-008).
+- **Expression:** `cost ÷ F-PL-001 × 100`, one decimal.
+
 ## 4. Balance Sheet (`F-BS`)
 
 Source for every `F-BS` entry: `statement_lines` (`statement = 'balance_sheet'`, `figures = 'ours'`)

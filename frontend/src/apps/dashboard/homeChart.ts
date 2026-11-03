@@ -51,3 +51,10 @@ export function salesAndPurchases(home: Home, colours: Tokens): EChartsOption {
     ],
   }
 }
+
+/** The P&L page's monthly trend: net sales as bars, gross and net profit as marked lines. */
+export function profitTrend(home: Home, colours: Tokens): EChartsOption {
+  const option = salesAndPurchases(home, colours)
+  const series = (option.series as { name: string }[]).filter((s) => s.name !== 'Purchases')
+  return { ...option, series } as EChartsOption
+}
