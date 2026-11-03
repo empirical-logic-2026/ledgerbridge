@@ -151,7 +151,7 @@ describe('the dashboard', () => {
     expect(within(modules).getByRole('link', { name: 'Sales' })).toHaveAttribute('href', '#/sales/dashboard')
     expect(within(modules).getByRole('link', { name: 'P&L & KPIs' })).toHaveAttribute('href', '#/pnl/profit-loss')
     expect(within(modules).getByRole('link', { name: 'Balance Sheet' })).toHaveAttribute('href', '#/balance-sheet/statement')
-    expect(within(modules).queryByText('Data')).toBeNull() // not built yet: not offered
+    expect(within(modules).getByRole('link', { name: 'Data' })).toHaveAttribute('href', '#/data/health')
     expect(within(modules).getByRole('link', { name: 'Parties' })).toHaveAttribute('href', '#/parties/receivables')
     expect(within(top).getByRole('button', { name: 'YTD' })).toHaveAttribute('aria-pressed', 'true') // the default
     expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
@@ -502,6 +502,28 @@ const sheetFound = {
     { key: 'receivable_days', label: 'Receivable days', unit: 'days' as const, formula_id: 'F-RAT-004', value: '45', before: '40', change: '5' },
   ],
 }
+
+describe('the Data module', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("shows each company's sync, checks and whether the source had it, with counts", async () => {
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods })
+    renderApp('#/data/health')
+    const passed = await screen.findByRole('region', { name: 'Checks passed' })
+    expect(passed).toHaveTextContent('2')
+    expect(screen.getByRole('region', { name: 'Loaded in the source' })).toHaveTextContent('1')
+    const table = screen.getByRole('table', { name: 'Data health by company' })
+    expect(within(table).getByText('Beta').closest('tr')?.querySelector('.status-bad')).toHaveTextContent('Not loaded')
+    expect(within(table).getAllByText('Passed')).toHaveLength(2)
+  })
+
+  it('lists the companies', async () => {
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods })
+    renderApp('#/data/companies')
+    const table = await screen.findByRole('table', { name: 'Companies' })
+    expect(within(table).getByText('ALPHA').closest('tr')).toHaveTextContent('April')
+  })
+})
 
 describe('the cash movement', () => {
   afterEach(() => vi.unstubAllGlobals())

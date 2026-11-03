@@ -24,6 +24,8 @@ export interface NavGroup {
 
 const STATEMENT = 'A whole statement covers every customer, channel and voucher type: filter on the Sales pages.'
 
+const DATA = 'Data health covers each company whole.'
+
 const PARTIES = 'Each party is shown whole: filter the list with its own filter, or open the party.'
 
 const page = (key: string, label: string, built = false, facets: Facet[] = [], whyNoFacets?: string): NavPage => ({
@@ -61,7 +63,7 @@ export const NAV: NavGroup[] = [
   { key: 'balance-sheet', label: 'Balance Sheet', pages: [page('statement', 'Balance Sheet', true, [], STATEMENT)] },
   { key: 'cash-flow', label: 'Cash Flow', pages: [page('movement', 'Cash movement', true, [], STATEMENT)] },
   { key: 'parties', label: 'Parties', pages: [page('receivables', 'Receivables', true, [], PARTIES), page('payables', 'Payables', true, [], PARTIES)] },
-  { key: 'data', label: 'Data', pages: [page('health', 'Data health'), page('companies', 'Companies')] },
+  { key: 'data', label: 'Data', pages: [page('health', 'Data health', true, [], DATA), page('companies', 'Companies', true, [], DATA)] },
 ]
 
 export const HOME: [string, string] = ['overview', 'dashboard']
