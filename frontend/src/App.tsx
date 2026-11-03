@@ -5,12 +5,13 @@
 
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useAgeing, useBalanceSheet, useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { PnlKpis } from './apps/dashboard/PnlKpis.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
 import { Ageing } from './apps/parties/Ageing.tsx'
 import { BalanceSheet } from './apps/statements/BalanceSheet.tsx'
+import { CashFlow } from './apps/cash/CashFlow.tsx'
 import { Parties } from './apps/parties/Parties.tsx'
 import { PartyPage, type PartyTab } from './apps/parties/PartyPage.tsx'
 import { PARTY_WORDS, type PartyKind } from './apps/parties/words.ts'
@@ -54,6 +55,7 @@ export default function App({ mode, onMode, today }: Props) {
   const ageingKind = at === 'parties/receivables' ? 'customers' : at === 'parties/payables' ? 'vendors' : undefined
   const ageing = useAgeing(ageingKind ?? 'customers', ageingKind ? ids : undefined, period)
   const sheet = useBalanceSheet(at === 'balance-sheet/statement' ? ids : undefined, period, selection.compare)
+  const flow = useCashFlow(at === 'cash-flow/movement' ? ids : undefined, period)
   const salesRegister = useRegister('sales', at === 'sales/register' ? ids : undefined, period, {
     party: selection.facets.customer,
     voucherType: selection.facets.channel,
@@ -178,6 +180,26 @@ export default function App({ mode, onMode, today }: Props) {
         onApplyView={onApplyView}
         related={[
           { label: 'Profit & Loss', path: ['pnl', 'profit-loss'] },
+          { label: 'Receivables', path: ['parties', 'receivables'] },
+        ]}
+      />
+    )
+  } else if (at === 'cash-flow/movement') {
+    crumbs = [{ label: 'Cash Flow' }]
+    content = (
+      <CashFlow
+        companies={selected}
+        flow={flow.data}
+        loading={companies.isPending || periods.isPending || flow.isPending}
+        error={periods.error ?? flow.error}
+        dark={mode === 'dark'}
+        query={query}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
+        currentQuery={route.query.toString()}
+        onApplyView={onApplyView}
+        related={[
+          { label: 'Balance Sheet', path: ['balance-sheet', 'statement'] },
           { label: 'Receivables', path: ['parties', 'receivables'] },
         ]}
       />

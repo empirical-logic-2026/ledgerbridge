@@ -151,7 +151,7 @@ describe('the dashboard', () => {
     expect(within(modules).getByRole('link', { name: 'Sales' })).toHaveAttribute('href', '#/sales/dashboard')
     expect(within(modules).getByRole('link', { name: 'P&L & KPIs' })).toHaveAttribute('href', '#/pnl/profit-loss')
     expect(within(modules).getByRole('link', { name: 'Balance Sheet' })).toHaveAttribute('href', '#/balance-sheet/statement')
-    expect(within(modules).queryByText('Cash Flow')).toBeNull() // not built yet: not offered
+    expect(within(modules).queryByText('Data')).toBeNull() // not built yet: not offered
     expect(within(modules).getByRole('link', { name: 'Parties' })).toHaveAttribute('href', '#/parties/receivables')
     expect(within(top).getByRole('button', { name: 'YTD' })).toHaveAttribute('aria-pressed', 'true') // the default
     expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
@@ -502,6 +502,32 @@ const sheetFound = {
     { key: 'receivable_days', label: 'Receivable days', unit: 'days' as const, formula_id: 'F-RAT-004', value: '45', before: '40', change: '5' },
   ],
 }
+
+describe('the cash movement', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows the start, money in and out, the end, and the categories', async () => {
+    stubApi({
+      '/api/v1/companies': companies,
+      '/api/v1/periods': periods,
+      '/api/v1/cash-flow': {
+        companies: [3, 4], combined: true, start: '2026-04-01', end: '2026-10-30', opening: '1000000', closing: '1200000',
+        movements: [
+          { key: 'customers', label: 'Customers', inflow: '900000', outflow: '0', net: '900000' },
+          { key: 'suppliers', label: 'Suppliers', inflow: '0', outflow: '700000', net: '-700000' },
+        ],
+        monthly: [{ month: '2026-04-01', inflow: '900000', outflow: '700000' }],
+      },
+    })
+    renderApp('#/cash-flow/movement')
+    expect(await screen.findByRole('region', { name: 'Money in' })).toHaveTextContent('₹9.0 L')
+    expect(screen.getByRole('region', { name: 'Money out' })).toHaveTextContent('₹7.0 L')
+    expect(screen.getByRole('region', { name: 'Cash & bank at the end' })).toHaveTextContent('₹12.0 L')
+    const table = screen.getByRole('table', { name: 'Cash movement by what it was for' })
+    expect(within(table).getByText('Suppliers').closest('tr')).toHaveTextContent('-₹7,00,000.00')
+    expect(screen.getByText(/full cash flow statement \(operating, investing, financing\) is planned separately/)).toBeInTheDocument()
+  })
+})
 
 describe('the Balance Sheet', () => {
   afterEach(() => vi.unstubAllGlobals())

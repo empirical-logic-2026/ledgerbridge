@@ -417,6 +417,19 @@ effective `voucher_lines` up to the date.
 - **Educational mode:** stored only on statement dates (§1.1).
 - **Check in Tally:** Gateway of Tally › Stock Summary, closing value at the date. It is also the Closing Stock in the Profit & Loss A/c.
 
+### 5.1 Cash movement (`F-CF`)
+
+#### F-CF-001 Money in and out by category
+
+- **In words:** every effective entry on the ledgers under Cash-in-Hand and Bank Accounts in the period, by voucher. A voucher's cash amount goes to the category of its other ledgers (the nearest group with a known predefined role: Sundry Debtors → customers, Sundry Creditors → suppliers, sales and incomes → income, purchases and expenses → expenses, Duties & Taxes → taxes, loans and bank OD → loans, capital and reserves → capital, fixed assets and investments → assets; anything else → other), split by their entries when there are several. A voucher with only cash and bank ledgers is a transfer, which nets to nothing.
+- **Expression:** opening (F-BAL-002) + Σ in − Σ out = closing (F-BAL-002), exactly.
+- **Sign:** money in is a debit to cash or bank; out is a credit, shown positive.
+- **Check in Tally:** Display More Reports › Account Books › Cash/Bank Book(s), and the Cash Flow report (Display More Reports › Statements of Accounts) for the month-by-month in and out.
+
+#### F-CF-002 Monthly in and out
+
+- **In words:** the cash and bank debits (in) and credits (out) of each month, by voucher.
+
 ## 6. Parties and bills (`F-PTY`)
 
 A party is known by **name** across the selected companies, and its ledgers are those linked
