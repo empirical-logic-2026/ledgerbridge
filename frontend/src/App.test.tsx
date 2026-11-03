@@ -347,7 +347,7 @@ describe('the Profit & Loss page', () => {
   it('shows the statement company by company with the total, last year and change', async () => {
     renderApp('#/statements/profit-loss')
     expect(await screen.findByRole('heading', { name: 'Profit & Loss · Alpha + Beta' })).toBeInTheDocument()
-    expect(screen.getByText(/without inter-company eliminations/)).toBeInTheDocument()
+    expect(await screen.findByText(/without inter-company eliminations/)).toBeInTheDocument()
     const table = await screen.findByRole('table')
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
       'Particulars', 'Alpha', 'Beta', 'Total', 'Last year', 'Change',
@@ -370,33 +370,24 @@ describe('the Profit & Loss page', () => {
     expect(await screen.findByRole('table')).toBeInTheDocument() // the statement below
   })
 
-  it('says it matches Tally, explains itself, and links to related pages', async () => {
+  it('says it matches Tally under the title, and explains itself on request', async () => {
     renderApp('#/pnl/profit-loss')
-    const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
-    expect(await within(panel).findByRole('status')).toHaveTextContent(/✓ Matches Tally for both companies \(checked at 2 statement dates up to 02-Oct-2026\)/)
-    expect(within(panel).getByRole('region', { name: 'What is this?' })).toHaveTextContent(/To compare with Tally/)
-    expect(within(panel).getByRole('link', { name: 'Overview →' })).toHaveAttribute('href', '#/overview/dashboard')
+    expect(await screen.findByRole('status')).toHaveTextContent(/✓ Matches Tally for both companies \(checked at 2 statement dates up to 02-Oct-2026\)/)
+    fireEvent.click(screen.getByRole('button', { name: 'What is this?' }))
+    expect(await screen.findByText(/To compare with Tally/)).toBeInTheDocument()
   })
 
-  it('changes the view and columns through the URL, keeping the selection', async () => {
+  it('changes the view and columns from the toolbar, through the URL, keeping the selection', async () => {
     renderApp('#/pnl/profit-loss?company=3&company=4')
-    const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
-    fireEvent.click(within(panel).getByLabelText('Month by month'))
+    await screen.findByRole('table')
+    fireEvent.click(screen.getByRole('button', { name: /Group by/ }))
+    fireEvent.click(await screen.findByText('Month by month'))
     expect(window.location.hash).toContain('view=month')
     expect(window.location.hash).toContain('company=3&company=4')
     await waitFor(() => expect(lastRequest()).toContain('view=month'))
-    fireEvent.click(within(panel).getByLabelText('Compared period'))
+    fireEvent.click(screen.getByRole('button', { name: 'Columns ▾' }))
+    fireEvent.click(await screen.findByLabelText('Compared period'))
     expect(window.location.hash).toMatch(/col=each&col=total&col=change/)
-  })
-
-  it('saves a view in this browser and opens it again', async () => {
-    renderApp('#/pnl/profit-loss?view=quarter')
-    const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
-    fireEvent.change(within(panel).getByLabelText('Name of the view'), { target: { value: 'By quarter' } })
-    fireEvent.click(within(panel).getByRole('button', { name: '+ Save current view' }))
-    window.location.hash = '#/pnl/profit-loss'
-    fireEvent.click(await within(panel).findByRole('button', { name: 'By quarter' }))
-    expect(window.location.hash).toContain('view=quarter')
   })
 
   it('exports exactly the table as CSV', async () => {
@@ -410,13 +401,18 @@ describe('the Profit & Loss page', () => {
     expect(text).toContain('Net Profit,50660000.00,-4090000.00,46570000.00,38020000.00,22.5')
   })
 
-  it('closes and reopens the options panel', async () => {
+  it('has no floating options panel', async () => {
     renderApp('#/pnl/profit-loss')
-    const panel = await screen.findByRole('complementary', { name: 'Profit & Loss options' })
-    fireEvent.click(within(panel).getByRole('button', { name: 'Close the options' }))
-    expect(window.location.hash).toContain('panel=0')
-    fireEvent.click(await screen.findByRole('button', { name: 'Options' }))
-    expect(window.location.hash).not.toContain('panel=0')
+    await screen.findByRole('table')
+    expect(screen.queryByRole('complementary')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Options' })).toBeNull()
+  })
+
+  it('explains each column header on hover: what it means and its formula', async () => {
+    renderApp('#/pnl/profit-loss')
+    const table = await screen.findByRole('table')
+    fireEvent.mouseEnter(within(table).getByText('Change'))
+    expect(await screen.findByText(/How much the figure moved .*\(F-CMP-001\)/)).toBeInTheDocument()
   })
 
   it('opens from the Dashboard\'s key figures', async () => {
@@ -666,12 +662,24 @@ describe('the Sales dashboard', () => {
     expect(within(invoices).getByText('S-3')).toBeInTheDocument()
   })
 
-  it('explains itself in the options panel', async () => {
+  it('explains itself on request, and each card on hover', async () => {
     renderApp('#/sales/dashboard')
-    const panel = await screen.findByRole('complementary', { name: 'Sales options' })
-    expect(within(panel).getByText(/Sales Accounts group/)).toBeInTheDocument()
-    expect(within(panel).getByRole('link', { name: 'Profit & Loss →' })).toBeInTheDocument()
+    const net = await screen.findByRole('region', { name: 'Net sales' })
+    fireEvent.mouseEnter(within(net).getByText('Net sales'))
+    expect(await screen.findByText(/Sales after returns and adjustments.*= Gross sales \+ sales returns.*\(F-SAL-004\)/)).toBeInTheDocument()
+    fireEvent.mouseEnter(within(screen.getByRole('region', { name: 'Average invoice' })).getByText('Average invoice'))
+    expect(await screen.findByText(/Gross sales per invoice\. = Gross ÷ Invoices \(F-SAL-006\)/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'What is this?' }))
+    expect(await screen.findByText(/Sales of the companies, period, customers and channels you chose/)).toBeInTheDocument()
   })
+
+  it('explains a status on hover', async () => {
+    renderApp('#/sales/dashboard')
+    const top = await screen.findByRole('table', { name: 'Top customers' })
+    fireEvent.mouseEnter(within(top).getByText('Overdue'))
+    expect(await screen.findByText(/Outstanding bills whose due date has passed.*\(F-PTY-002\)/)).toBeInTheDocument()
+  })
+
 })
 
 const row = (id: number, date: string, type: string, debit: string | null, credit: string | null, value: string) => ({
@@ -748,8 +756,8 @@ describe('the Sales and Purchase registers', () => {
   it('says when a register was cut short, and explains itself', async () => {
     renderApp('#/purchases/register')
     expect(await screen.findByText(/Only the first 0 vouchers are shown/)).toBeInTheDocument()
-    const panel = screen.getByRole('complementary', { name: 'Purchase register options' })
-    expect(within(panel).getByText(/Debit Note Register/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'What is this?' }))
+    expect(await screen.findByText(/Debit Note Register/)).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Customer' })).toBeNull() // purchases take voucher types only
   })
 })
@@ -816,7 +824,8 @@ describe('monthly sales and purchases, and sales by channel', () => {
     const total = within(table).getByText('Total').closest('tr') as HTMLElement
     expect(total).toHaveTextContent('₹1,50,000.00') // net
     expect(total.textContent?.match(/₹1,50,000\.00/g)).toHaveLength(2) // net and gross; no closing total
-    expect(screen.getByRole('complementary', { name: 'Monthly sales options' })).toHaveTextContent(/financial year/)
+    fireEvent.click(screen.getByRole('button', { name: 'What is this?' }))
+    expect(await screen.findByText(/financial year to the month/)).toBeInTheDocument()
   })
 
   it('has monthly purchases opening the purchase register', async () => {

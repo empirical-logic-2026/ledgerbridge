@@ -7,6 +7,7 @@
 
 import { Alert, Skeleton, Tooltip, Typography } from 'antd'
 import type { BalanceSheetReport, Company, RatioOut, SheetLineOut } from '../../api/types.ts'
+import { Explained } from '../../components/Explained.tsx'
 import { RatioTiles, type Tile } from '../../components/RatioTiles.tsx'
 import { formatChange, formatCompact, formatDate, formatExact, toScaled } from '../../format.ts'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
@@ -67,7 +68,7 @@ function Statement({ sheet }: { sheet: BalanceSheetReport }) {
           <th>Particulars</th>
           <th className="num">{sheet.as_of ? formatDate(sheet.as_of) : 'Now'}</th>
           {compared && <th className="num">{sheet.before_as_of ? formatDate(sheet.before_as_of) : sheet.compared_with?.label}</th>}
-          {compared && <th className="num">Change</th>}
+          {compared && <th className="num"><Explained label="Change %">Change</Explained></th>}
         </tr>
       </thead>
       {SECTIONS.map(([section, title]) => {

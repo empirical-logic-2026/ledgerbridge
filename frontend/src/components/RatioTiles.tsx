@@ -4,6 +4,7 @@
 
 import { Tooltip } from 'antd'
 import { formatChange, toScaled } from '../format.ts'
+import { Explained } from './Explained.tsx'
 
 export interface Tile {
   label: string
@@ -35,7 +36,9 @@ export function RatioTiles({ label, tiles, against }: { label: string; tiles: Ti
         const tone = t.change ? (up === t.higherIsBetter ? 'good' : 'bad') : undefined
         return (
           <div key={t.label} className="ratio-tile" role="listitem" aria-label={t.label}>
-            <span className="ratio-label">{t.label}</span>
+            <span className="ratio-label">
+              <Explained label={t.label} />
+            </span>
             <Tooltip title={t.value === null ? t.missing : undefined}>
               <span className="ratio-value">{shown(t)}</span>
             </Tooltip>

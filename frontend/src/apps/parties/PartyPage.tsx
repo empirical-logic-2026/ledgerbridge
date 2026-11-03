@@ -14,7 +14,7 @@ import { againstOf } from '../../selection.ts'
 import { formatDate, formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
-import { OptionsPanel, type Related } from '../../reporting/OptionsPanel.tsx'
+import { WhatIsThis } from '../../reporting/WhatIsThis.tsx'
 import type { Query } from '../../router.ts'
 import { builtHref } from '../../shell/nav.ts'
 import { tokens, type Tokens } from '../../theme.ts'
@@ -32,11 +32,6 @@ interface Props {
   tab: PartyTab
   onTab: (tab: PartyTab) => void
   query: Query
-  panelOpen: boolean
-  onPanel: (open: boolean) => void
-  currentQuery: string
-  onApplyView: (query: string) => void
-  related: Related[]
 }
 
 /** "₹1,20,000.00 Dr" / "Cr": a balance as the source's ledger shows it. */
@@ -215,7 +210,7 @@ export function PartyPage(props: Props) {
           <div className="party-actions">
             <Button onClick={() => props.onTab('statement')}>Ledger statement</Button>
             <Button onClick={() => props.onTab('bills')}>Outstanding bills</Button>
-            {!props.panelOpen && <Button onClick={() => props.onPanel(true)}>Options</Button>}
+            <WhatIsThis><Help kind={kind} sourceName={sourceName} /></WhatIsThis>
           </div>
         </section>
         <div className="sales-cards">
@@ -297,23 +292,8 @@ export function PartyPage(props: Props) {
   }
 
   return (
-    <div className={props.panelOpen ? 'report-page with-panel' : 'report-page'}>
+    <div className="report-page">
       <div className="report-main">{content}</div>
-      {props.panelOpen && (
-        <OptionsPanel
-          title={`${w.one} options`}
-          page={`${kind}-page`}
-          matching={undefined}
-          companiesLabel={companies.length === 1 ? companies[0].name : `all ${companies.length} companies`}
-          sourceName={sourceName}
-          related={props.related}
-          query={query}
-          currentQuery={props.currentQuery}
-          onApplyView={props.onApplyView}
-          help={<Help kind={kind} sourceName={sourceName} />}
-          onClose={() => props.onPanel(false)}
-        />
-      )}
     </div>
   )
 }

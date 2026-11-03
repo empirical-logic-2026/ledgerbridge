@@ -10,6 +10,7 @@
 import { Tooltip } from 'antd'
 import type { EChartsOption } from 'echarts'
 import { EChart } from './EChart.tsx'
+import { Explained } from './Explained.tsx'
 import { formatChange, formatCompact, formatExact, toScaled } from '../format.ts'
 
 export type Tone = 'up-good' | 'up-neutral'
@@ -30,6 +31,7 @@ interface Props {
   alert?: boolean // crimson figure (e.g. overdue)
   missing?: string // why there is no figure
   to?: string // the page behind the figure
+  help?: string // what it means, on hover; default: the label's in help/glossary.ts
   accent?: string // the top border's colour
   spark?: (number | null)[] // the recent months, oldest first (drawing only)
   sparkColour?: string
@@ -61,7 +63,7 @@ function sparkline(values: (number | null)[], colour: string): EChartsOption {
   }
 }
 
-export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', against, note, alert, missing, to, accent, spark, sparkColour }: Props) {
+export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', against, note, alert, missing, to, accent, spark, sparkColour, help }: Props) {
   const value = figure.value
   const change = figure.change_pct
   let changeNode: React.ReactNode = null
@@ -82,10 +84,12 @@ export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', agai
     <section className={accent ? 'card card-small kpi-card' : 'card card-small'} aria-label={label} style={accent ? { borderTopColor: accent } : undefined}>
       {to ? (
         <a href={to} className="card-small-label card-row-link">
-          {label}
+          <Explained label={label} help={help} />
         </a>
       ) : (
-        <span className="card-small-label">{label}</span>
+        <span className="card-small-label">
+          <Explained label={label} help={help} />
+        </span>
       )}
       <span className={alert && value !== null && toScaled(value) > 0n ? 'card-small-value negative' : 'card-small-value'}>
         {value === null ? (

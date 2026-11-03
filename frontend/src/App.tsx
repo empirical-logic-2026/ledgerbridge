@@ -21,7 +21,7 @@ import { Register } from './apps/registers/Register.tsx'
 import { Channels } from './apps/sales/Channels.tsx'
 import { SalesDashboard } from './apps/sales/SalesDashboard.tsx'
 import { readOptions } from './reporting/reportTable.ts'
-import { navigate, updateQuery, useRoute } from './router.ts'
+import { updateQuery, useRoute } from './router.ts'
 import { chosenPeriod, chosenYear, selectedIds, selectionQuery, useSelection } from './selection.ts'
 import { AppShell } from './shell/AppShell.tsx'
 import { findPage } from './shell/nav.ts'
@@ -82,9 +82,6 @@ export default function App({ mode, onMode, today }: Props) {
   const partyList = useParties(partyKind ?? 'customers', partyKind && !partyId ? ids : undefined, period)
   const party = useParty(partyKind ?? 'customers', partyId, partyKind ? ids : undefined, period, selection.compare)
   const query = selectionQuery(selection)
-  const panelOpen = route.query.get('panel') !== '0'
-  const onPanel = (open: boolean) => updateQuery(route, { panel: open ? undefined : '0' })
-  const onApplyView = (saved: string) => navigate(route.path, Object.fromEntries(new URLSearchParams(saved)))
   const all = companies.data ?? []
   const selected = all.filter((c) => ids?.includes(c.id))
 
@@ -112,12 +109,7 @@ export default function App({ mode, onMode, today }: Props) {
           error={periods.error ?? profitLoss.error}
           options={options}
           onOptions={(change) => updateQuery(route, change)}
-          panelOpen={panelOpen}
-          onPanel={onPanel}
-          query={query}
-          currentQuery={route.query.toString()}
-          onApplyView={onApplyView}
-          related={[{ label: 'Overview', path: ['overview', 'dashboard'] }]}
+              query={query}
         />
       </>
     )
@@ -132,15 +124,6 @@ export default function App({ mode, onMode, today }: Props) {
         error={periods.error ?? sales.error}
         dark={mode === 'dark'}
         query={query}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={[
-          { label: 'Sales register', path: ['sales', 'register'] },
-          { label: 'Overview', path: ['overview', 'dashboard'] },
-          { label: 'Profit & Loss', path: ['pnl', 'profit-loss'] },
-        ]}
       />
     )
   } else if (at === 'purchases/dashboard') {
@@ -155,15 +138,6 @@ export default function App({ mode, onMode, today }: Props) {
         error={periods.error ?? purchases.error}
         dark={mode === 'dark'}
         query={query}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={[
-          { label: 'Purchase register', path: ['purchases', 'register'] },
-          { label: 'Monthly purchases', path: ['purchases', 'monthly'] },
-          { label: 'Sales dashboard', path: ['sales', 'dashboard'] },
-        ]}
       />
     )
   } else if (at === 'balance-sheet/statement') {
@@ -175,14 +149,6 @@ export default function App({ mode, onMode, today }: Props) {
         loading={companies.isPending || periods.isPending || sheet.isPending}
         error={periods.error ?? sheet.error}
         query={query}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={[
-          { label: 'Profit & Loss', path: ['pnl', 'profit-loss'] },
-          { label: 'Receivables', path: ['parties', 'receivables'] },
-        ]}
       />
     )
   } else if (at === 'data/health') {
@@ -201,14 +167,6 @@ export default function App({ mode, onMode, today }: Props) {
         error={periods.error ?? flow.error}
         dark={mode === 'dark'}
         query={query}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={[
-          { label: 'Balance Sheet', path: ['balance-sheet', 'statement'] },
-          { label: 'Receivables', path: ['parties', 'receivables'] },
-        ]}
       />
     )
   } else if (ageingKind) {
@@ -224,15 +182,6 @@ export default function App({ mode, onMode, today }: Props) {
         error={periods.error ?? ageing.error}
         dark={mode === 'dark'}
         query={query}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={
-          ageingKind === 'customers'
-            ? [{ label: 'Customers', path: ['sales', 'customers'] }, { label: 'Payables', path: ['parties', 'payables'] }]
-            : [{ label: 'Vendors', path: ['purchases', 'vendors'] }, { label: 'Receivables', path: ['parties', 'receivables'] }]
-        }
       />
     )
   } else if (at === 'sales/register' || at === 'purchases/register') {
@@ -251,21 +200,6 @@ export default function App({ mode, onMode, today }: Props) {
         loading={companies.isPending || periods.isPending || found.isPending}
         error={periods.error ?? found.error}
         query={query}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={
-          side === 'sales'
-            ? [
-                { label: 'Sales dashboard', path: ['sales', 'dashboard'] },
-                { label: 'Purchase register', path: ['purchases', 'register'] },
-              ]
-            : [
-                { label: 'Sales register', path: ['sales', 'register'] },
-                { label: 'Profit & Loss', path: ['pnl', 'profit-loss'] },
-              ]
-        }
       />
     )
   } else if (at === 'sales/monthly' || at === 'purchases/monthly') {
@@ -285,22 +219,6 @@ export default function App({ mode, onMode, today }: Props) {
         error={periods.error ?? found.error}
         dark={mode === 'dark'}
         query={query}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={
-          side === 'sales'
-            ? [
-                { label: 'Sales register', path: ['sales', 'register'] },
-                { label: 'Sales by channel', path: ['sales', 'channels'] },
-                { label: 'Monthly purchases', path: ['purchases', 'monthly'] },
-              ]
-            : [
-                { label: 'Purchase register', path: ['purchases', 'register'] },
-                { label: 'Monthly sales', path: ['sales', 'monthly'] },
-              ]
-        }
       />
     )
   } else if (at === 'sales/channels') {
@@ -313,15 +231,6 @@ export default function App({ mode, onMode, today }: Props) {
         error={periods.error ?? channels.error}
         dark={mode === 'dark'}
         query={query}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={[
-          { label: 'Sales dashboard', path: ['sales', 'dashboard'] },
-          { label: 'Monthly sales', path: ['sales', 'monthly'] },
-          { label: 'Sales register', path: ['sales', 'register'] },
-        ]}
       />
     )
   } else if (partyKind && route.path.length > 2 && !partyId) {
@@ -348,14 +257,6 @@ export default function App({ mode, onMode, today }: Props) {
         tab={tab}
         onTab={(next) => updateQuery(route, { tab: next === 'invoices' ? undefined : next })}
         query={query}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={[
-          { label: words.title, path: [group, list] },
-          { label: group === 'sales' ? 'Sales register' : 'Purchase register', path: words.register },
-        ]}
       />
     )
   } else if (partyKind) {
@@ -374,11 +275,6 @@ export default function App({ mode, onMode, today }: Props) {
         loading={companies.isPending || periods.isPending || partyList.isPending}
         error={periods.error ?? partyList.error}
         query={query}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={[{ label: group === 'sales' ? 'Sales register' : 'Purchase register', path: words.register }]}
       />
     )
   } else {

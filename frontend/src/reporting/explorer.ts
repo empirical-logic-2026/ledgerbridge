@@ -16,6 +16,7 @@ export interface ExplorerColumn<R> {
   kind: Kind
   value: (row: R) => Cell // amount: a decimal string; count: a number; text and date: text
   link?: (row: R) => string | undefined // where the cell opens
+  help?: string // what the column means, on hover; default: its label's in help/glossary.ts
   groupable?: boolean
   hidden?: boolean // not shown until chosen in Columns
   render?: (row: R) => ReactNode // shown instead of the value (e.g. a status tag); the value still sorts, filters and exports
