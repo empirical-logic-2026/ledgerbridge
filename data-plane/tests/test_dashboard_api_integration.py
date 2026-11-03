@@ -450,6 +450,22 @@ def test_ageing_adds_up_and_equals_the_party_pages(
         assert Decimal(row["balance"]) - Decimal(row["uncovered"]) == Decimal(page["bills_cover"])
 
 
+def test_the_cost_structure_adds_up(
+    client: TestClient, synced: int, statements_stored: None
+) -> None:
+    pl = _get(client, "/api/v1/home", month=MONTHS)["profit_loss"]
+    sales, cost = Decimal(pl["net_sales"]["value"]), Decimal(pl["cost_of_sales"]["value"])
+    gross, net = Decimal(pl["gross_profit"]["value"]), Decimal(pl["net_profit"]["value"])
+    assert Decimal(pl["other_costs"]["value"]) == gross - net  # F-PL-009
+    one_decimal = Decimal("0.1")
+    assert Decimal(pl["cost_of_sales_pct"]["value"]) == (cost / sales * 100).quantize(
+        one_decimal, ROUND_HALF_UP
+    )  # F-PL-010
+    assert Decimal(pl["other_costs_pct"]["value"]) == ((gross - net) / sales * 100).quantize(
+        one_decimal, ROUND_HALF_UP
+    )
+
+
 def april_customers(client: TestClient) -> int:
     return _get(client, "/api/v1/home", month="2026-04")["customers"]["value"]
 

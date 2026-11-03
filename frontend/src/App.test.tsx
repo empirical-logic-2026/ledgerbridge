@@ -57,6 +57,9 @@ const home: Home = {
     net_profit: figure('62400000.0000'),
     gross_margin_pct: { value: '31.3', before: '29.4', change_pts: '1.9' },
     net_profit_pct: { value: '12.9', before: '14.0', change_pts: '-1.1' },
+    other_costs: figure('88600000.0000'),
+    cost_of_sales_pct: { value: '68.7', before: '70.6', change_pts: '-1.9' },
+    other_costs_pct: { value: '18.4', before: null, change_pts: null },
   },
   balance_sheet: {
     available: true,
@@ -353,6 +356,17 @@ describe('the Profit & Loss page', () => {
     expect(within(table).getByText('▲ 22.5%')).toBeInTheDocument()
     // An older link opens the page in its module (P&L & KPIs).
     expect(within(screen.getByRole('navigation', { name: 'Modules' })).getByRole('link', { name: 'P&L & KPIs' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('shows the margins, the expense structure and the goal placeholder above the statement', async () => {
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/reports/profit-loss': statement, '/api/v1/home': home })
+    renderApp('#/pnl/profit-loss?compare=1')
+    const tiles = await screen.findByRole('list', { name: 'Margins as % of net sales' })
+    expect(within(tiles).getByRole('listitem', { name: 'Gross margin' })).toHaveTextContent('31.3%')
+    expect(within(tiles).getByRole('listitem', { name: 'Net margin' })).toHaveTextContent('▼ 1.1 pts vs last year')
+    expect(within(tiles).getByText('▼ 1.9 pts vs last year')).toHaveClass('good') // a cost falling is good
+    expect(screen.getByRole('region', { name: 'Goal tracker' })).toHaveTextContent(/budgets \(milestone M7b\)/)
+    expect(await screen.findByRole('table')).toBeInTheDocument() // the statement below
   })
 
   it('says it matches Tally, explains itself, and links to related pages', async () => {

@@ -7,6 +7,7 @@ import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
 import { useAgeing, useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
+import { PnlKpis } from './apps/dashboard/PnlKpis.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
 import { Ageing } from './apps/parties/Ageing.tsx'
 import { Parties } from './apps/parties/Parties.tsx'
@@ -41,7 +42,7 @@ export default function App({ mode, onMode, today }: Props) {
   const period = chosenPeriod(selection, year, today, periods.data?.financial_years ?? [])
   const found = findPage(route.path)
   const at = found ? `${found.group.key}/${found.page.key}` : undefined
-  const home = useHome(at === 'overview/dashboard' ? ids : undefined, period, selection.compare)
+  const home = useHome(at === 'overview/dashboard' || at === 'pnl/profit-loss' ? ids : undefined, period, selection.compare)
   const options = readOptions(route.query)
   const profitLoss = useProfitLoss(at === 'pnl/profit-loss' ? ids : undefined, period, options.view, selection.compare)
   const sales = useSalesDashboard(at === 'sales/dashboard' ? ids : undefined, period, selection.compare, {
@@ -97,20 +98,23 @@ export default function App({ mode, onMode, today }: Props) {
   } else if (at === 'pnl/profit-loss') {
     crumbs = [{ label: 'P&L & KPIs', path: ['pnl', 'profit-loss'] }, { label: 'Profit & Loss' }]
     content = (
-      <ProfitLoss
-        companies={selected}
-        report={profitLoss.data}
-        loading={companies.isPending || periods.isPending || profitLoss.isPending}
-        error={periods.error ?? profitLoss.error}
-        options={options}
-        onOptions={(change) => updateQuery(route, change)}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        query={query}
-        currentQuery={route.query.toString()}
-        onApplyView={onApplyView}
-        related={[{ label: 'Overview', path: ['overview', 'dashboard'] }]}
-      />
+      <>
+        <PnlKpis home={home.data} report={profitLoss.data} dark={mode === 'dark'} />
+        <ProfitLoss
+          companies={selected}
+          report={profitLoss.data}
+          loading={companies.isPending || periods.isPending || profitLoss.isPending}
+          error={periods.error ?? profitLoss.error}
+          options={options}
+          onOptions={(change) => updateQuery(route, change)}
+          panelOpen={panelOpen}
+          onPanel={onPanel}
+          query={query}
+          currentQuery={route.query.toString()}
+          onApplyView={onApplyView}
+          related={[{ label: 'Overview', path: ['overview', 'dashboard'] }]}
+        />
+      </>
     )
   } else if (at === 'sales/dashboard') {
     crumbs = [{ label: 'Sales', path: ['sales', 'dashboard'] }, { label: 'Sales dashboard' }]
