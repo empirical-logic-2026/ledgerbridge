@@ -1081,3 +1081,31 @@ body,
     grid-template-columns: 1fr;
   }
 }
+
+/* the Balance Sheet: the statement beside the ratio tiles */
+.sheet-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.sheet-ratios {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.report-table .line-section th {
+  padding-top: 14px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lb-positive);
+}
+
+@media (max-width: 1100px) {
+  .sheet-layout {
+    grid-template-columns: 1fr;
+  }
+}

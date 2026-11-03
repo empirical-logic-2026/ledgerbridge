@@ -96,7 +96,7 @@ def home(session: Session, companies: list[int], period: Period, before: Period 
         profit_loss_before=compared,
         profit_loss_last_year=last_year,
         balance_sheet=sheet,
-        stock_value=_stock_value(session, companies, found.end) if found.available else None,
+        stock_value=stock_value(session, companies, found.end) if found.available else None,
         cash_and_bank=balance(session, companies, CASH_AND_BANK, period.end),
         receivables=balance(session, companies, (RECEIVABLES,), period.end),
         payables=-balance(session, companies, (PAYABLES,), period.end),
@@ -229,7 +229,7 @@ def _primary_roles(session: Session, companies: list[int]) -> dict[tuple[int, st
     return {(entity, match_key(name)): (role, nature) for entity, name, role, nature in rows}
 
 
-def _stock_value(session: Session, companies: list[int], on: date | None) -> Decimal | None:
+def stock_value(session: Session, companies: list[int], on: date | None) -> Decimal | None:
     """The source's closing stock stored for the date, added up; None unless every company
     has one."""
     rows = session.execute(

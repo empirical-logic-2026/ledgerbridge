@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import { comparisonQuery, type CompareKind, type PeriodChoice } from '../selection.ts'
-import type { AgeingOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
+import type { AgeingOut, BalanceSheetReport, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -47,6 +47,15 @@ export function useProfitLoss(companies: number[] | undefined, period: PeriodCho
         view,
         ...comparisonQuery(compare, period),
       }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+/** The Balance Sheet at the period's end, beside the comparison period's, with the ratios. */
+export function useBalanceSheet(companies: number[] | undefined, period: PeriodChoice | undefined, compare: CompareKind) {
+  return useQuery({
+    queryKey: ['balance-sheet', companies, period, compare],
+    queryFn: () => getJson<BalanceSheetReport>('/api/v1/reports/balance-sheet', { company: companies, ...periodQuery(period), ...comparisonQuery(compare, period) }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }
