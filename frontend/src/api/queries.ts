@@ -51,6 +51,21 @@ export function useProfitLoss(companies: number[] | undefined, period: PeriodCho
   })
 }
 
+/** The purchases dashboard: the same response as the sales one, for the purchase side. */
+export function usePurchasesDashboard(companies: number[] | undefined, period: PeriodChoice | undefined, compare: CompareKind, voucherTypes: string[]) {
+  return useQuery({
+    queryKey: ['purchases-dashboard', companies, period, compare, voucherTypes],
+    queryFn: () =>
+      getJson<SalesDashboard>('/api/v1/purchases/dashboard', {
+        company: companies,
+        ...periodQuery(period),
+        ...comparisonQuery(compare, period),
+        voucher_type: voucherTypes.length ? voucherTypes : undefined,
+      }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
 export function useSalesDashboard(
   companies: number[] | undefined,
   period: PeriodChoice | undefined,

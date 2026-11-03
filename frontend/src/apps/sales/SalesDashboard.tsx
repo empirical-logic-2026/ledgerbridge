@@ -5,6 +5,8 @@
 // adjustments and net), the mix by channel as a donut (a channel opens its register), the top
 // customers with their status and the largest invoices, each table in the table explorer; the
 // options side panel with "What is this?". Figures: core/sales.py (GET /api/v1/sales/dashboard).
+// The same page for purchases (`side`): net purchases, the vendors and the mix by voucher type
+// (GET /api/v1/purchases/dashboard); its words: words.ts.
 
 import { Alert, Button, Skeleton, Typography } from 'antd'
 import type { EChartsOption } from 'echarts'
@@ -22,8 +24,10 @@ import type { Query } from '../../router.ts'
 import { builtHref } from '../../shell/nav.ts'
 import { tokens, type Tokens } from '../../theme.ts'
 import { COMBINED_NOTE } from '../dashboard/words.ts'
+import { SIDE_WORDS, type Side, type SideWords } from './words.ts'
 
 interface Props {
+  side: Side
   companies: Company[] // the selected ones
   dashboard: Dashboard | undefined
   loading: boolean
@@ -37,7 +41,7 @@ interface Props {
   related: Related[]
 }
 
-function monthChart(months: MonthSales[], colours: Tokens): EChartsOption {
+function monthChart(months: MonthSales[], colours: Tokens, w: SideWords): EChartsOption {
   const text = colours.muted
   return {
     backgroundColor: 'transparent',
@@ -47,7 +51,7 @@ function monthChart(months: MonthSales[], colours: Tokens): EChartsOption {
       formatter: (params: unknown) => {
         const [first] = params as { dataIndex: number }[]
         const m = months[first.dataIndex]
-        return `${formatMonth(m.month)}<br/>Net sales ${formatExact(m.net)}<br/>Invoices ${m.invoices}`
+        return `${formatMonth(m.month)}<br/>${w.net} ${formatExact(m.net)}<br/>Invoices ${m.invoices}`
       },
     },
     xAxis: { type: 'category', data: months.map((m) => formatMonth(m.month).slice(0, 3)), axisLabel: { color: text } },
@@ -55,7 +59,7 @@ function monthChart(months: MonthSales[], colours: Tokens): EChartsOption {
     series: [
       {
         type: 'line',
-        name: 'Net sales',
+        name: w.net,
         data: months.map((m) => toLakhs(m.net)),
         itemStyle: { color: colours.primary },
         lineStyle: { color: colours.primary, width: 2 },
@@ -66,38 +70,39 @@ function monthChart(months: MonthSales[], colours: Tokens): EChartsOption {
   }
 }
 
-/** The page a month opens: its sales register once built, else this page for that month. */
-function monthHref(month: string, query: Query): string {
-  const one = { ...query, month: month.slice(0, 7), from: undefined, to: undefined }
-  return builtHref(['sales', 'register'], one) ?? builtHref(['sales', 'dashboard'], one) ?? '#'
+/** The page a month opens: its register once built, else this page for that month (Custom). */
+function monthHref(month: string, query: Query, w: SideWords): string {
+  const one = { ...query, p: 'custom', month: month.slice(0, 7), from: undefined, to: undefined }
+  return builtHref([w.module, 'register'], one) ?? builtHref([w.module, 'dashboard'], one) ?? '#'
 }
 
-/** A customer opens their page once built, else this page filtered to them. */
-function customerHref(p: { party_id: number | null; name: string | null }, query: Query): string | undefined {
+/** A customer (vendor) opens their page once built, else this page (for sales, filtered to them). */
+function partyHref(p: { party_id: number | null; name: string | null }, query: Query, w: SideWords): string | undefined {
   if (p.party_id === null || !p.name) return undefined
-  return builtHref(['sales', 'customers', String(p.party_id)], query) ?? builtHref(['sales', 'dashboard'], { ...query, customer: [p.name] })
+  const filtered = w.module === 'sales' ? { ...query, customer: [p.name] } : query
+  return builtHref([w.module, w.parties, String(p.party_id)], query) ?? builtHref([w.module, 'dashboard'], filtered)
 }
 
-function monthColumns(query: Query): ExplorerColumn<MonthSales>[] {
+function monthColumns(query: Query, w: SideWords): ExplorerColumn<MonthSales>[] {
   return [
-    { key: 'month', label: 'Month', kind: 'text', value: (m) => formatMonth(m.month), link: (m) => monthHref(m.month, query) },
+    { key: 'month', label: 'Month', kind: 'text', value: (m) => formatMonth(m.month), link: (m) => monthHref(m.month, query, w) },
     { key: 'gross', label: 'Gross', kind: 'amount', value: (m) => m.gross },
     { key: 'returns', label: 'Returns', kind: 'amount', value: (m) => m.returns },
     { key: 'other', label: 'Other adjustments', kind: 'amount', value: (m) => m.other },
-    { key: 'net', label: 'Net sales', kind: 'amount', value: (m) => m.net, link: (m) => monthHref(m.month, query) },
+    { key: 'net', label: w.net, kind: 'amount', value: (m) => m.net, link: (m) => monthHref(m.month, query, w) },
     { key: 'invoices', label: 'Invoices', kind: 'count', value: (m) => m.invoices },
   ]
 }
 
-function customerColumns(names: Map<number, string>, combined: boolean, query: Query, total: string): ExplorerColumn<PartySales>[] {
+function customerColumns(names: Map<number, string>, combined: boolean, query: Query, total: string, w: SideWords): ExplorerColumn<PartySales>[] {
   const share = (net: string) => {
     const all = toScaled(total)
     return all > 0n ? `${(Number((toScaled(net) * 1000n) / all) / 10).toFixed(1)}%` : null
   }
   return [
-    { key: 'name', label: 'Customer', kind: 'text', value: (p) => p.name, link: (p) => customerHref({ party_id: p.party_id, name: p.name }, query) },
+    { key: 'name', label: w.party, kind: 'text', value: (p) => p.name, link: (p) => partyHref({ party_id: p.party_id, name: p.name }, query, w) },
     { key: 'company', label: 'Company', kind: 'text', value: (p) => names.get(p.company) ?? `Company ${p.company}`, groupable: true, hidden: !combined },
-    { key: 'net', label: 'Net sales', kind: 'amount', value: (p) => p.net_sales },
+    { key: 'net', label: w.net, kind: 'amount', value: (p) => p.net_sales },
     { key: 'share', label: 'Share', kind: 'text', value: (p) => share(p.net_sales) },
     { key: 'invoices', label: 'Invoices', kind: 'count', value: (p) => p.invoices },
     { key: 'balance', label: 'Balance due', kind: 'amount', value: (p) => p.balance, summed: false },
@@ -117,15 +122,34 @@ function average(m: MonthSales): number | null {
   return m.invoices ? toLakhs(m.gross) / m.invoices : null
 }
 
-function invoiceColumns(names: Map<number, string>, combined: boolean, query: Query): ExplorerColumn<InvoiceOut>[] {
+function invoiceColumns(names: Map<number, string>, combined: boolean, query: Query, w: SideWords): ExplorerColumn<InvoiceOut>[] {
   return [
     { key: 'date', label: 'Date', kind: 'date', value: (i) => i.date },
     { key: 'number', label: 'Vch No.', kind: 'text', value: (i) => i.number, link: (i) => builtHref(['books', 'vouchers', String(i.voucher_id)], query) },
     { key: 'type', label: 'Vch Type', kind: 'text', value: (i) => i.voucher_type, groupable: true },
-    { key: 'party', label: 'Customer', kind: 'text', value: (i) => i.party, link: (i) => customerHref({ party_id: i.party_id, name: i.party }, query), groupable: true },
+    { key: 'party', label: w.party, kind: 'text', value: (i) => i.party, link: (i) => partyHref({ party_id: i.party_id, name: i.party }, query, w), groupable: true },
     { key: 'company', label: 'Company', kind: 'text', value: (i) => names.get(i.company) ?? `Company ${i.company}`, groupable: true, hidden: !combined },
     { key: 'amount', label: 'Amount', kind: 'amount', value: (i) => i.amount },
   ]
+}
+
+function PurchasesHelp({ sourceName }: { sourceName: string }) {
+  return (
+    <>
+      <p>
+        Purchases of the companies, period and voucher types you chose. <strong>Net purchases</strong> are the entries on the ledgers under
+        {' '}{sourceName}'s Purchase Accounts group: invoices (gross), less returns (debit notes), plus or minus other adjustments.
+      </p>
+      <p>
+        <strong>Where the figures come from:</strong> the books, rebuilt after every sync; the same definitions as the sales (formulas F-SAL-001 to
+        F-SAL-007 on the purchase side). Several companies are added together without inter-company eliminations.
+      </p>
+      <p>
+        <strong>To compare with {sourceName}:</strong> net purchases are the Purchase Accounts line of its Profit &amp; Loss for the same period;
+        gross purchases and invoices are its Purchase Register, and returns its Debit Note Register.
+      </p>
+    </>
+  )
 }
 
 function Help({ sourceName }: { sourceName: string }) {
@@ -154,13 +178,14 @@ function Help({ sourceName }: { sourceName: string }) {
 
 export function SalesDashboard(props: Props) {
   const { dashboard, companies, query } = props
+  const w = SIDE_WORDS[props.side]
   const sourceName = companies[0]?.health.source_name ?? 'the source'
   const names = new Map(companies.map((c) => [c.id, c.name]))
   const colours = tokens[props.dark ? 'dark' : 'light']
 
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message="The sales couldn't be loaded." description={props.error.message} />
+    content = <Alert type="error" showIcon message={w.loadError} description={props.error.message} />
   } else if (props.loading || !dashboard) {
     content = <Skeleton active paragraph={{ rows: 10 }} />
   } else {
@@ -169,68 +194,68 @@ export function SalesDashboard(props: Props) {
     const net = k.net_sales.value ?? '0'
     const against = againstOf(dashboard.compared_with)
     const [green, charcoal, lighter, grey] = colours.accents
-    const register = (channel: string) => builtHref(['sales', 'register'], { ...query, channel: [channel] })
+    const register = (part: string) => (part === 'Others' ? undefined : builtHref([w.module, 'register'], { ...query, [w.facet === 'channel' ? 'channel' : 'vtype']: [part] }))
     content = (
       <>
         <div className="sales-cards">
-          <KeyCard label="Net sales" figure={k.net_sales} tone="up-good" against={against} accent={green}
+          <KeyCard label={w.net} figure={k.net_sales} tone="up-good" against={against} accent={green}
             spark={dashboard.monthly.map((m) => toLakhs(m.net))} />
           <KeyCard label="Invoices" figure={k.invoices} unit="count" tone="up-good" against={against} accent={charcoal}
             spark={dashboard.monthly.map((m) => m.invoices)} />
           <KeyCard label="Average invoice" figure={k.average_invoice} tone="up-good" against={against} accent={lighter}
             spark={dashboard.monthly.map(average)} />
-          <KeyCard label="Sales returns" figure={k.sales_returns} tone="up-neutral" against={against} accent={grey}
+          <KeyCard label={w.returns} figure={k.sales_returns} tone="up-neutral" against={against} accent={grey}
             spark={dashboard.monthly.map((m) => -toLakhs(m.returns))} />
         </div>
-        <section className="card" aria-label="Net sales by month">
+        <section className="card" aria-label={w.byMonth}>
           <div className="card-head">
-            <h2 className="card-title">Net sales by month (₹ lakh)</h2>
+            <h2 className="card-title">{w.byMonth} (₹ lakh)</h2>
             <span className="card-small-note">Click a month to open it</span>
           </div>
           <EChart
             key={props.dark ? 'dark' : 'light'}
-            option={monthChart(dashboard.monthly, colours)}
+            option={monthChart(dashboard.monthly, colours, w)}
             dark={props.dark}
             height={260}
             onClick={(i) => {
               const m = dashboard.monthly[i]
-              if (m) window.location.hash = monthHref(m.month, query).slice(1)
+              if (m) window.location.hash = monthHref(m.month, query, w).slice(1)
             }}
           />
-          <ExplorerTable id="sales-by-month" label="Sales by month" columns={monthColumns(query)} rows={dashboard.monthly} rowKey={(m) => m.month} totalLabel="Total" />
+          <ExplorerTable id={`${w.module}-by-month`} label={w.byMonthTable} columns={monthColumns(query, w)} rows={dashboard.monthly} rowKey={(m) => m.month} totalLabel="Total" />
         </section>
         {dashboard.channels.length > 0 && (
-          <section className="card" aria-label="Sales by channel">
-            <h2 className="card-title">Sales by channel</h2>
-            <Donut label="Net sales by channel" dark={props.dark} colours={[colours.primary, colours.netProfit, colours.grossProfit, colours.neutralBar, colours.primaryLine]}
+          <section className="card" aria-label={w.mix}>
+            <h2 className="card-title">{w.mix}</h2>
+            <Donut label={w.mixLabel} dark={props.dark} colours={[colours.primary, colours.netProfit, colours.grossProfit, colours.neutralBar, colours.primaryLine]}
               parts={dashboard.channels.map((c) => ({ name: c.name, amount: c.net_sales, to: register(c.name) }))} />
           </section>
         )}
         <div className="sales-tables">
-          <section className="card" aria-label="Top customers">
-            <h2 className="card-title">Top customers</h2>
+          <section className="card" aria-label={w.top}>
+            <h2 className="card-title">{w.top}</h2>
             <ExplorerTable
-              id="sales-top-customers"
-              label="Top customers"
-              columns={customerColumns(names, combined, query, net)}
+              id={`${w.module}-top-parties`}
+              label={w.top}
+              columns={customerColumns(names, combined, query, net, w)}
               rows={dashboard.top_customers}
               rowKey={(p) => `${p.company}-${p.party_id}`}
               sortKey="net"
               descending
-              note={`${dashboard.customers.toLocaleString('en-IN')} customers had sales; the others and sales without a party: ${formatExact(dashboard.other_customers)}.`}
+              note={`${dashboard.customers.toLocaleString('en-IN')} ${w.parties} had entries; the others and those without a party: ${formatExact(dashboard.other_customers)}.`}
             />
           </section>
           <section className="card" aria-label="Largest invoices">
             <h2 className="card-title">Largest invoices</h2>
             <ExplorerTable
-              id="sales-largest-invoices"
+              id={`${w.module}-largest-invoices`}
               label="Largest invoices"
-              columns={invoiceColumns(names, combined, query)}
+              columns={invoiceColumns(names, combined, query, w)}
               rows={dashboard.largest_invoices}
               rowKey={(i) => String(i.voucher_id)}
               sortKey="amount"
               descending
-              note="An invoice's amount is its entries on the sales ledgers (before taxes)."
+              note={`An invoice's amount is its entries on the ${w.ledgers} (before taxes).`}
             />
           </section>
         </div>
@@ -251,8 +276,8 @@ export function SalesDashboard(props: Props) {
       </div>
       {props.panelOpen && (
         <OptionsPanel
-          title="Sales options"
-          page="sales-dashboard"
+          title={w.options}
+          page={w.page}
           matching={undefined}
           companiesLabel={companies.length === 1 ? companies[0].name : `all ${companies.length} companies`}
           sourceName={sourceName}
@@ -260,7 +285,7 @@ export function SalesDashboard(props: Props) {
           query={query}
           currentQuery={props.currentQuery}
           onApplyView={props.onApplyView}
-          help={<Help sourceName={sourceName} />}
+          help={props.side === 'sales' ? <Help sourceName={sourceName} /> : <PurchasesHelp sourceName={sourceName} />}
           onClose={() => props.onPanel(false)}
         />
       )}

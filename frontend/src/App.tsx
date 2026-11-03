@@ -5,7 +5,7 @@
 
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
 import { Parties } from './apps/parties/Parties.tsx'
@@ -47,6 +47,7 @@ export default function App({ mode, onMode, today }: Props) {
     customer: selection.facets.customer,
     channel: selection.facets.channel,
   })
+  const purchases = usePurchasesDashboard(at === 'purchases/dashboard' ? ids : undefined, period, selection.compare, selection.facets.voucher_type)
   const salesRegister = useRegister('sales', at === 'sales/register' ? ids : undefined, period, {
     party: selection.facets.customer,
     voucherType: selection.facets.channel,
@@ -112,6 +113,7 @@ export default function App({ mode, onMode, today }: Props) {
     crumbs = [{ label: 'Sales', path: ['sales', 'dashboard'] }, { label: 'Sales dashboard' }]
     content = (
       <SalesDashboard
+        side="sales"
         companies={selected}
         dashboard={sales.data}
         loading={companies.isPending || periods.isPending || sales.isPending}
@@ -129,13 +131,36 @@ export default function App({ mode, onMode, today }: Props) {
         ]}
       />
     )
+  } else if (at === 'purchases/dashboard') {
+    crumbs = [{ label: 'Purchases', path: ['purchases', 'dashboard'] }, { label: 'Purchases dashboard' }]
+    content = (
+      <SalesDashboard
+        key="purchases"
+        side="purchases"
+        companies={selected}
+        dashboard={purchases.data}
+        loading={companies.isPending || periods.isPending || purchases.isPending}
+        error={periods.error ?? purchases.error}
+        dark={mode === 'dark'}
+        query={query}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
+        currentQuery={route.query.toString()}
+        onApplyView={onApplyView}
+        related={[
+          { label: 'Purchase register', path: ['purchases', 'register'] },
+          { label: 'Monthly purchases', path: ['purchases', 'monthly'] },
+          { label: 'Sales dashboard', path: ['sales', 'dashboard'] },
+        ]}
+      />
+    )
   } else if (at === 'sales/register' || at === 'purchases/register') {
     const side = at === 'sales/register' ? 'sales' : 'purchases'
     const found = side === 'sales' ? salesRegister : purchaseRegister
     crumbs =
       side === 'sales'
         ? [{ label: 'Sales', path: ['sales', 'dashboard'] }, { label: 'Sales register' }]
-        : [{ label: 'Purchases', path: ['purchases', 'register'] }, { label: 'Purchase register' }]
+        : [{ label: 'Purchases', path: ['purchases', 'dashboard'] }, { label: 'Purchase register' }]
     content = (
       <Register
         key={side}
@@ -168,7 +193,7 @@ export default function App({ mode, onMode, today }: Props) {
     crumbs =
       side === 'sales'
         ? [{ label: 'Sales', path: ['sales', 'dashboard'] }, { label: 'Monthly sales' }]
-        : [{ label: 'Purchases', path: ['purchases', 'register'] }, { label: 'Monthly purchases' }]
+        : [{ label: 'Purchases', path: ['purchases', 'dashboard'] }, { label: 'Monthly purchases' }]
     content = (
       <Monthly
         key={side}

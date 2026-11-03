@@ -5,7 +5,10 @@ For any combination of the companies the caller may see (`company`, repeatable; 
 combined, without inter-company eliminations), a period (`month`, repeatable, or `date_from`
 and `date_to`) and the top filter bar's facets by name (`customer`, `channel`: voucher types,
 repeatable). `compare` adds the previous period or last year (api/v1/common.py) to the key
-figures. The
+figures. `GET /api/v1/purchases/dashboard` is the same for purchases (core/sales.py
+`PURCHASES_SIDE`): its parties are the vendors and its facet the voucher types
+(`voucher_type`); the response's `top_customers`, `customers` and `other_customers` then hold
+the vendors. The
 figures and how they are found: core/sales.py.
 """
 
@@ -28,10 +31,12 @@ from api.v1.common import (
     parse_period,
 )
 from api.v1.home import PeriodOut, change_pct, percent_of
-from core.parties import KINDS, due_and_overdue, find_party
+from core.parties import KINDS, Kind, due_and_overdue, find_party
+from core.report_periods import Period
 from core.sales import ChannelFigures, Facets, PartyFigures, Totals, by_channel, dashboard
 
 router = APIRouter(prefix="/sales", tags=["sales"])
+purchases_router = APIRouter(prefix="/purchases", tags=["purchases"])
 
 MAX_FACET_VALUES = 50
 MAX_NAME = 255
@@ -132,7 +137,40 @@ def sales_dashboard(
     period = parse_period(month, date_from, date_to)
     facets = Facets(facet_names(customer, "customer"), facet_names(channel, "channel"))
     before, described = compared_with(period, compare, span)
-    found = dashboard(session, companies, period, before, facets)
+    return _dashboard(session, companies, period, before, described, facets, "customers")
+
+
+@purchases_router.get("/dashboard")
+def purchases_dashboard(
+    session: ReportSession,
+    access: CurrentAccess,
+    company: list[int] | None = Query(default=None),  # noqa: B008
+    month: list[str] | None = Query(default=None),  # noqa: B008
+    date_from: date | None = None,
+    date_to: date | None = None,
+    compare: CompareParam | None = None,
+    span: SpanParam | None = None,
+    voucher_type: list[str] | None = Query(default=None),  # noqa: B008
+) -> SalesDashboard:
+    companies = access.entities(company)
+    period = parse_period(month, date_from, date_to)
+    facets = Facets(voucher_types=facet_names(voucher_type, "voucher type"))
+    before, described = compared_with(period, compare, span)
+    return _dashboard(session, companies, period, before, described, facets, "vendors")
+
+
+def _dashboard(
+    session: ReportSession,
+    companies: list[int],
+    period: Period,
+    before: Period | None,
+    described: ComparedWith | None,
+    facets: Facets,
+    kind: Kind,
+) -> SalesDashboard:
+    """The dashboard of a side: sales with the customers, or purchases with the vendors."""
+    side = KINDS[kind][1]
+    found = dashboard(session, companies, period, before, facets, side)
     return SalesDashboard(
         companies=companies,
         combined=len(companies) > 1,
@@ -151,11 +189,11 @@ def sales_dashboard(
             for m, t in found.monthly
         ],  # fmt: skip
         top_customers=[
-            _top_customer(session, companies, p, period.end)
+            _top_customer(session, companies, p, period.end, kind)
             for p in found.top_parties
             if p.party_id is not None
         ],
-        channels=_channel_shares(by_channel(session, companies, period, facets)),
+        channels=_channel_shares(by_channel(session, companies, period, facets, side)),
         other_customers=found.other_parties,
         customers=found.parties,
         largest_invoices=[
@@ -258,12 +296,12 @@ def sales_by_channel(
 
 
 def _top_customer(
-    session: ReportSession, companies: list[int], p: PartyFigures, on: date
+    session: ReportSession, companies: list[int], p: PartyFigures, on: date, kind: Kind
 ) -> PartySales:
-    """A top customer with its balance due and what is overdue at the period's end."""
+    """A top customer (vendor) with its balance due and what is overdue at the period's end."""
     party = find_party(session, companies, p.party_id) if p.party_id is not None else None
     due, overdue = (
-        due_and_overdue(session, party, on, KINDS["customers"][3]) if party else (Decimal(0),) * 2
+        due_and_overdue(session, party, on, KINDS[kind][3]) if party else (Decimal(0),) * 2
     )
     return PartySales(
         company=p.company,
