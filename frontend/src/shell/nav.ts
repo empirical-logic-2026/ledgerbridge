@@ -51,6 +51,7 @@ export const NAV: NavGroup[] = [
     key: 'purchases',
     label: 'Purchases',
     pages: [
+      page('dashboard', 'Purchases dashboard', true, ['voucher_type']),
       page('register', 'Purchase register', true, ['voucher_type']),
       page('monthly', 'Monthly purchases', true, ['voucher_type']),
       page('vendors', 'Vendors', true, [], PARTIES),

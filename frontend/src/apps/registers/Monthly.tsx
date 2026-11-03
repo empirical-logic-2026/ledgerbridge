@@ -40,7 +40,7 @@ const WORDS: Record<Side, { title: string; net: string; group: string; returns: 
 
 /** A month opens its register for that month. */
 function monthHref(side: Side, month: string, query: Query): string | undefined {
-  return builtHref(WORDS[side].register, { ...query, month: month.slice(0, 7), from: undefined, to: undefined })
+  return builtHref(WORDS[side].register, { ...query, p: 'custom', month: month.slice(0, 7), from: undefined, to: undefined })
 }
 
 function columns(side: Side, query: Query): ExplorerColumn<MonthOut>[] {

@@ -695,6 +695,29 @@ def test_the_sales_dashboard_mix_and_customer_status(client: TestClient, synced:
     assert first["status"] == ("overdue" if Decimal(first["overdue"]) > 0 else "current")
 
 
+def test_the_purchases_dashboard_equals_the_monthly_purchases(
+    client: TestClient, synced: int
+) -> None:
+    found = _get(client, "/api/v1/purchases/dashboard", month=MONTHS)
+    monthly = _get(client, "/api/v1/monthly/purchases", month=MONTHS)["months"]
+    # Net purchases and invoices month by month (F-SAL-004, F-SAL-005 on the purchase side).
+    assert {m["month"]: _d(m["net"]) for m in found["monthly"]} == {
+        m["month"]: _d(m["net"]) for m in monthly
+    }
+    net = sum(Decimal(m["net"]) for m in monthly)
+    assert Decimal(found["key_figures"]["net_sales"]["value"]) == net
+    assert sum(Decimal(c["net_sales"]) for c in found["channels"]) == net
+    # The top vendors, as their pages have them.
+    first = found["top_customers"][0]
+    page = _get(client, f"/api/v1/parties/vendors/{first['party_id']}", month=MONTHS)
+    assert _d(first["net_sales"]) == _d(page["net"]["value"])
+    assert _d(first["balance"]) == _d(page["balance"])
+    # Its facet is the voucher type; a customer facet isn't taken.
+    one = found["channels"][0]["name"]
+    only = _get(client, "/api/v1/purchases/dashboard", month=MONTHS, voucher_type=one)
+    assert _d(only["key_figures"]["net_sales"]["value"]) == _d(found["channels"][0]["net_sales"])
+
+
 def test_the_sales_dashboard_facets_and_comparison(client: TestClient, synced: int) -> None:
     whole = _get(client, "/api/v1/sales/dashboard", month=MONTHS, compare="true")
     net = Decimal(whole["key_figures"]["net_sales"]["value"])

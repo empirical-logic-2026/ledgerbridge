@@ -445,6 +445,25 @@ const sales: SalesDashboard = {
   ],
 }
 
+describe('the Purchases dashboard', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows the purchase side with the vendors and the mix by voucher type', async () => {
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/purchases/dashboard': sales })
+    renderApp('#/purchases/dashboard?vtype=Purchase')
+    const net = await screen.findByRole('region', { name: 'Net purchases' })
+    expect(net).toHaveTextContent('₹48.20 Cr')
+    expect(screen.getByRole('region', { name: 'Purchase returns' })).toBeInTheDocument()
+    const request = requests.filter((r) => r.includes('/purchases/dashboard')).pop() ?? ''
+    expect(request).toContain('voucher_type=Purchase')
+    const top = screen.getByRole('table', { name: 'Top vendors' })
+    expect(within(top).getByRole('link', { name: 'Customer One' })).toHaveAttribute('href', expect.stringMatching(/^#\/purchases\/vendors\/11/))
+    const mix = screen.getByRole('group', { name: 'Net purchases by voucher type' })
+    expect(within(mix).getByRole('link', { name: 'Sales' })).toHaveAttribute('href', expect.stringMatching(/^#\/purchases\/register\?.*vtype=Sales/))
+    expect(within(screen.getByRole('navigation', { name: 'Purchases pages' })).getByRole('link', { name: 'Purchases dashboard' })).toHaveAttribute('aria-current', 'page')
+  })
+})
+
 describe('the Sales dashboard', () => {
   beforeEach(() => {
     window.localStorage.clear()

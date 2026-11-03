@@ -24,7 +24,7 @@ interface Props extends PanelProps {
 }
 
 function registerHref(query: Query, channel: string, month?: string): string | undefined {
-  const asked = month ? { ...query, channel: [channel], month: month.slice(0, 7), from: undefined, to: undefined } : { ...query, channel: [channel] }
+  const asked = month ? { ...query, channel: [channel], p: 'custom', month: month.slice(0, 7), from: undefined, to: undefined } : { ...query, channel: [channel] }
   return builtHref(['sales', 'register'], asked)
 }
 
