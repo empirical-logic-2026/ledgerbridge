@@ -39,7 +39,7 @@
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
     ./dev.ps1 diagrams                          (regenerate docs/diagrams and the schema reference from the models, render SVG/PNG)
-    ./dev.ps1 docs-export                       (Word and PDF copies of the rulebook, schema reference and history in docs/export)
+    ./dev.ps1 docs-export                       (Word and PDF copies of the rulebook, schema reference, history and formula sheet in docs/export)
     ./dev.ps1 seed-test-data
     ./dev.ps1 seed-test-data create-only
     ./dev.ps1 seed-test-data integrated-off     (or integrated-on: the test company's setting)
@@ -753,7 +753,7 @@ switch ($Command) {
         $docs = Join-Path $root 'docs'
         $export = Join-Path $docs 'export'
         New-Item -ItemType Directory -Force -Path $export | Out-Null
-        $documents = @('rules/validation-and-conversion-rules.md', 'database/schema-reference.md', 'project-history.md')
+        $documents = @('rules/validation-and-conversion-rules.md', 'database/schema-reference.md', 'project-history.md', 'formulas.md')
         foreach ($document in $documents) {
             $folder = Split-Path -Parent $document
             $leaf = Split-Path -Leaf $document
@@ -764,7 +764,10 @@ switch ($Command) {
                 $convert = @('run', '--rm', '-v', "${docs}:/data", '-w', $workdir, $pandocImage,
                     $leaf, '-o', "/data/export/$name.$format", '--toc', "--resource-path=.:$workdir")
                 if ($format -eq 'pdf') {
-                    $convert += @('--pdf-engine=xelatex', '-V', 'geometry:margin=1.6cm', '-V', 'fontsize=10pt')
+                    # The fonts in the image have no glyph for a few symbols (the rupee sign, <=):
+                    # docs/export/pdf-symbols.lua writes them out so the PDF doesn't drop them.
+                    $convert += @('--pdf-engine=xelatex', '-V', 'geometry:margin=1.6cm', '-V', 'fontsize=10pt',
+                        '--lua-filter=/data/export/pdf-symbols.lua')
                 }
                 Invoke-ToolContainer $convert "Exporting $name.$format"
             }

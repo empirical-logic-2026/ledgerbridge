@@ -1,17 +1,21 @@
-// The Reports app's Dashboard (docs/design/dashboard.md Section 0.1, screen 5): the Profit &
-// Loss and Balance Sheet cards, cash and bank, receivables, payables and stock value, and
-// three charts: sales and purchases by month, sales by channel (voucher type), and each
-// company's share of sales. Figures: core/home.py (GET /api/v1/home). Short amounts on the
-// cards (₹4.82 Cr), the exact amount on hover; "—" with the reason where a figure needs a
-// stored statement that isn't there.
+// The Reports app's Dashboard (docs/design/dashboard.md Section 0.1, screen 5): the key
+// figures (revenue, gross margin, net profit, net profit %, customers), cash and bank,
+// receivables, payables and stock value, and three charts: sales and purchases by month with
+// each month's gross and net profit marked, sales by channel (voucher type), and each
+// company's share of sales. Figures: core/home.py (GET /api/v1/home); every formula:
+// docs/formulas.md. Short amounts on the cards (₹4.82 Cr), the exact amount on hover; "—"
+// with the reason where a figure needs a stored statement that isn't there.
 
 import { Alert, Skeleton, Tooltip, Typography } from 'antd'
-import type { EChartsOption } from 'echarts'
-import type { Company, Figure, Home } from '../../api/types.ts'
+import type { Company, Home, Ratio } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
-import { formatChange, formatCompact, formatDate, formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
-import { href, type Query } from '../../router.ts'
-import { tokens, type Tokens } from '../../theme.ts'
+import { KeyCard } from '../../components/KeyCard.tsx'
+import { againstOf } from '../../selection.ts'
+import { formatCompact, formatDate, formatExact, toScaled } from '../../format.ts'
+import { type Query } from '../../router.ts'
+import { builtHref } from '../../shell/nav.ts'
+import { tokens } from '../../theme.ts'
+import { salesAndPurchases } from './homeChart.ts'
 
 export const COMBINED_NOTE = 'combined, without inter-company eliminations'
 
@@ -21,7 +25,7 @@ interface Props {
   loading: boolean
   error: Error | null
   dark: boolean
-  query: Query // the selection, for the cards' Open links
+  query: Query // the selection, for the cards' links
 }
 
 function Amount({ value, missing }: { value: string | null | undefined; missing?: string | null }) {
@@ -39,57 +43,30 @@ function Amount({ value, missing }: { value: string | null | undefined; missing?
   )
 }
 
-/** ▲ 12% in green when the change is good for the business; red when it is bad for it
- *  (sales or profit down); neutral for costs going up, so that red keeps its meaning. */
-function Change({ figure, higherIsBetter }: { figure: Figure; higherIsBetter: boolean }) {
-  if (!figure.change_pct) return null
-  const up = toScaled(figure.change_pct) >= 0n
-  const good = up === higherIsBetter
-  return (
-    <Tooltip title={figure.last_year ? `Last year ${formatExact(figure.last_year)}` : undefined}>
-      <span className={good ? 'change good' : higherIsBetter ? 'change bad' : 'change neutral'}>{formatChange(figure.change_pct)}</span>
-    </Tooltip>
-  )
-}
-
-function Row({ label, value, missing, change, to }: { label: string; value: string | null | undefined; missing?: string | null; change?: React.ReactNode; to?: string }) {
-  return (
-    <div className="card-row">
-      {to ? (
-        <a href={to} className="card-row-link">
-          {label}
-        </a>
-      ) : (
-        <span>{label}</span>
-      )}
-      <span className="card-row-value">
-        <Amount value={value} missing={missing} />
-        {change}
-      </span>
-    </div>
-  )
-}
-
-function ProfitLossCard({ home, query }: { home: Home; query: Query }) {
+function KeyFigures({ home, query }: { home: Home; query: Query }) {
   const pl = home.profit_loss
-  const lines: [string, Figure, boolean][] = [
-    ['Net sales', pl.net_sales, true],
-    ['Cost of sales', pl.cost_of_sales, false],
-    ['Gross profit', pl.gross_profit, true],
-    ['Net profit', pl.net_profit, true],
-  ]
+  const against = againstOf(home.compared_with)
+  const missing = pl.reason ? `Needs the stored statements: ${pl.reason}.` : undefined
+  const profitLoss = builtHref(['pnl', 'profit-loss'], query)
+  const percent = (ratio: Ratio) => ({ value: ratio.value, before: ratio.before, change_pct: ratio.change_pts })
+  const ofRevenue = pl.gross_margin_pct.value ? `${pl.gross_margin_pct.value}% of revenue` : undefined
+  const customers = home.customers
   return (
-    <section className="card card-wide" aria-label="Profit & Loss">
-      <div className="card-head">
-        <h2 className="card-title">Profit &amp; Loss</h2>
-        <a href={href(['statements', 'profit-loss'], query)} className="card-open">
-          Open →
-        </a>
+    <>
+      <div className="home-kpis">
+        <KeyCard label="Revenue" figure={pl.net_sales} against={against} missing={missing} note="Net sales" to={builtHref(['sales', 'dashboard'], query)} />
+        <KeyCard label="Gross margin" figure={pl.gross_profit} against={against} missing={missing} note={ofRevenue} to={profitLoss} />
+        <KeyCard label="Net profit" figure={pl.net_profit} against={against} missing={missing} to={profitLoss} />
+        <KeyCard label="Net profit %" figure={percent(pl.net_profit_pct)} unit="percent" against={against} missing={missing} note="Of revenue" to={profitLoss} />
+        <KeyCard
+          label="Customers"
+          figure={{ value: String(customers.value), before: customers.before == null ? null : String(customers.before), change_pct: customers.change_pct }}
+          unit="count"
+          against={against}
+          note="With sales in the period"
+          to={builtHref(['sales', 'customers'], query)}
+        />
       </div>
-      {lines.map(([label, figure, higher]) => (
-        <Row key={label} label={label} value={figure.value} missing={pl.reason} change={<Change figure={figure} higherIsBetter={higher} />}
-          to={href(['statements', 'profit-loss'], query)} />
-      ))}
       {pl.reason && <p className="card-note">Profit isn't available: {pl.reason}.</p>}
       {pl.shifted && (
         <p className="card-note">
@@ -97,27 +74,9 @@ function ProfitLossCard({ home, query }: { home: Home; query: Query }) {
           only for the 1st, 2nd and 31st (Educational mode).
         </p>
       )}
-      {pl.last_year_reason && !pl.reason && <p className="card-note">No comparison: {pl.last_year_reason}.</p>}
-    </section>
-  )
-}
-
-function BalanceSheetCard({ home }: { home: Home }) {
-  const bs = home.balance_sheet
-  const lines: [string, string | null | undefined][] = [
-    ['Total assets', bs.total_assets],
-    ['Current assets', bs.current_assets],
-    ['Current liabilities', bs.current_liabilities],
-    ['Capital and reserves (incl. profit to date)', bs.capital_and_reserves],
-  ]
-  return (
-    <section className="card card-wide" aria-label="Balance Sheet">
-      <h2 className="card-title">Balance Sheet</h2>
-      {lines.map(([label, value]) => (
-        <Row key={label} label={label} value={value} missing={bs.reason} />
-      ))}
-      <p className="card-note">{bs.as_of ? `As at ${formatDate(bs.as_of)}` : `Not available: ${bs.reason}.`}</p>
-    </section>
+      {pl.cut && pl.as_of && <p className="card-note">Profit is to {formatDate(pl.as_of)}, the last statement stored in this period.</p>}
+      {against && pl.before_reason && !pl.reason && <p className="card-note">No comparison for profit: {pl.before_reason}.</p>}
+    </>
   )
 }
 
@@ -131,29 +90,6 @@ function SmallCard({ label, value, note, missing }: { label: string; value: stri
       <span className="card-small-note">{note}</span>
     </section>
   )
-}
-
-function salesAndPurchases(home: Home, colours: Tokens): EChartsOption {
-  const months = home.monthly
-  const text = colours.muted
-  return {
-    backgroundColor: 'transparent',
-    grid: { left: 48, right: 8, top: 16, bottom: 28 },
-    tooltip: {
-      trigger: 'axis',
-      formatter: (params: unknown) => {
-        const [first] = params as { dataIndex: number }[]
-        const m = months[first.dataIndex]
-        return `${formatMonth(m.month)}<br/>Sales ${formatExact(m.sales)}<br/>Purchases ${formatExact(m.purchases)}`
-      },
-    },
-    xAxis: { type: 'category', data: months.map((m) => formatMonth(m.month).slice(0, 3)), axisLabel: { color: text } },
-    yAxis: { type: 'value', axisLabel: { color: text }, splitLine: { lineStyle: { color: colours.border } } },
-    series: [
-      { type: 'bar', name: 'Sales', data: months.map((m) => toLakhs(m.sales)), itemStyle: { color: colours.primary } },
-      { type: 'bar', name: 'Purchases', data: months.map((m) => toLakhs(m.purchases)), itemStyle: { color: colours.neutralBar } },
-    ],
-  }
 }
 
 /** Horizontal bars as plain markup (screen 5): a label, the amount and a bar per row. */
@@ -191,6 +127,7 @@ export function DashboardHome({ companies, home, loading, error, dark, query }: 
   const source = companies[0]?.health.source_name ?? 'the source'
   const asAt = `As at ${formatDate(home.balances.as_of)}`
   const channels = home.channels
+  const profitShown = home.monthly.some((m) => m.net_profit !== null)
   const largestChannel = channels.reduce((max, c) => (toScaled(c.net_sales) > toScaled(max) ? c.net_sales : max), '0')
   return (
     <div className="home">
@@ -200,9 +137,8 @@ export function DashboardHome({ companies, home, loading, error, dark, query }: 
           {home.combined ? ` · ${COMBINED_NOTE}` : ''}
         </Typography.Text>
       </div>
+      <KeyFigures home={home} query={query} />
       <div className="home-cards">
-        <ProfitLossCard home={home} query={query} />
-        <BalanceSheetCard home={home} />
         <div className="home-small">
           <SmallCard label="Cash & bank" value={home.balances.cash_and_bank} note={asAt} />
           <SmallCard label="Receivables" value={home.balances.receivables} note={asAt} />
@@ -221,9 +157,12 @@ export function DashboardHome({ companies, home, loading, error, dark, query }: 
             <h2 className="card-title">Sales and purchases by month (₹ lakh)</h2>
             <span className="legend">
               <span className="legend-key" style={{ background: colours.primary }} /> Sales <span className="legend-key" style={{ background: colours.neutralBar }} /> Purchases
+              <span className="legend-line" style={{ borderColor: colours.grossProfit }} /> Gross profit
+              <span className="legend-line dashed" style={{ borderColor: colours.netProfit }} /> Net profit
             </span>
           </div>
           <EChart key={dark ? 'dark' : 'light'} option={salesAndPurchases(home, colours)} dark={dark} height={300} />
+          {!profitShown && <p className="card-note">No profit marked: each month's profit needs its stored statements.</p>}
         </section>
         <section className="card" aria-label="Sales by channel">
           <h2 className="card-title">Sales by channel</h2>

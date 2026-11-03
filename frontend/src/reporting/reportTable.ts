@@ -11,7 +11,7 @@ export type ColumnChoice = 'each' | 'total' | 'last' | 'change' | 'pct'
 export const COLUMN_CHOICES: { key: ColumnChoice; label: string }[] = [
   { key: 'each', label: 'Each column' }, // each company, month or quarter
   { key: 'total', label: 'Total' },
-  { key: 'last', label: 'Last year' },
+  { key: 'last', label: 'Compared period' }, // the previous period or last year
   { key: 'change', label: 'Change %' },
   { key: 'pct', label: '% of sales' },
 ]
@@ -63,7 +63,7 @@ export function shownColumns(report: StatementReport, o: ReportOptions): ShownCo
     if (c.kind === 'total') {
       if (o.columns.includes('total')) shown.push(amount)
       if (o.columns.includes('pct') && !o.asPercent) shown.push({ key: 'total:pct', label: '% of sales', source: 'total', kind: 'pct' })
-    } else if (c.kind === 'last_year') {
+    } else if (c.kind === 'before') {
       if (o.columns.includes('last')) shown.push(amount)
       if (o.columns.includes('change')) shown.push({ key: 'change', label: 'Change', source: 'total', kind: 'change' })
     } else if (o.columns.includes('each')) {

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from api.access import CurrentAccess
-from api.v1.common import ReportSession, parse_period
+from api.v1.common import ReportSession, formula, parse_period
 from api.v1.home import PeriodOut
 from api.v1.sales import facet_names
 from core.registers import RegisterRow, register
@@ -37,9 +37,11 @@ class RegisterRowOut(BaseModel):
     particulars: str  # the first ledger entry's ledger, as the source's Day Book shows
     party_id: int | None
     party: str | None
-    debit: Decimal | None
-    credit: Decimal | None
-    side_value: Decimal  # on the Sales (Purchase) Accounts ledgers; returns negative
+    debit: Decimal | None = formula("F-REG-001")
+    credit: Decimal | None = formula("F-REG-001")
+    side_value: Decimal = formula(
+        "F-REG-002"
+    )  # on the Sales (Purchase) Accounts ledgers; returns negative
     narration: str | None
 
 

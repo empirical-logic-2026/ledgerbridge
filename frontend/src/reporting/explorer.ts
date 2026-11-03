@@ -81,7 +81,7 @@ export function fromScaled(value: bigint): string {
   return `${negative ? '-' : ''}${text.slice(0, -4)}.${text.slice(-4)}`
 }
 
-/** The sums of the amount and count columns. */
+/** The sums of the amount and count columns (F-TBL-001). */
 export function totals<R>(rows: R[], columns: ExplorerColumn<R>[]): Record<string, Cell> {
   const found: Record<string, Cell> = {}
   for (const c of columns) {
@@ -95,7 +95,8 @@ export function totals<R>(rows: R[], columns: ExplorerColumn<R>[]): Record<strin
   return found
 }
 
-/** The rows grouped by a column's value, in the order the groups first appear. */
+/** The rows grouped by a column's value, in the order the groups first appear, each with its
+ *  subtotals (F-TBL-002). */
 export function groupRows<R>(rows: R[], columns: ExplorerColumn<R>[], groupBy: string): Group<R>[] {
   const column = columns.find((c) => c.key === groupBy)
   if (!column) return []

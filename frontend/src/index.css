@@ -1,4 +1,4 @@
-/* The dashboard's layout and look (docs/design/dashboard.md Sections 0.1 and 0.2, screens 5-8).
+/* The dashboard's layout and look (docs/design/dashboard.md Sections 0.1 to 0.4; the frame: ADR-050).
    Colours: only the theme's tokens (theme.ts), as --lb-* variables Root sets per mode. */
 :root {
   font-family: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
@@ -17,133 +17,7 @@ body,
   background: var(--lb-page);
 }
 
-/* --- side bar (screen 7): charcoal in both modes -------------------------------------- */
-.shell {
-  display: flex;
-  flex-direction: row;
-  min-height: 100vh;
-}
-
-.side-bar {
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  width: 236px;
-  flex: 0 0 236px;
-  display: flex;
-  flex-direction: column;
-  background: var(--lb-charcoal);
-  color: var(--lb-on-charcoal);
-  overflow-y: auto;
-}
-
-.side-bar.collapsed {
-  width: 56px;
-  flex-basis: 56px;
-}
-
-.side-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 10px 10px 18px;
-}
-
-.side-bar.collapsed .side-head {
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 6px;
-}
-
-.side-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--lb-on-charcoal);
-  font-weight: 700;
-  font-size: 18px;
-  white-space: nowrap;
-}
-
-.side-brand svg {
-  color: var(--lb-primary-line);
-}
-
-.side-brand:hover {
-  color: var(--lb-on-charcoal-muted);
-}
-
-.side-groups {
-  flex: 1;
-  padding-bottom: 12px;
-}
-
-.side-group {
-  margin: 18px 18px 6px;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--lb-on-charcoal-muted);
-}
-
-.side-item {
-  display: block;
-  padding: 8px 20px;
-  color: var(--lb-on-charcoal);
-  border-left: 3px solid transparent;
-}
-
-.side-item:hover {
-  color: var(--lb-on-charcoal);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.side-item.active {
-  border-left-color: var(--lb-primary-line);
-  background: rgba(255, 255, 255, 0.1);
-  font-weight: 600;
-}
-
-.side-foot {
-  padding: 12px 18px 14px;
-  font-size: 12px;
-  color: var(--lb-on-charcoal-muted);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.side-status {
-  margin: 0 0 6px;
-  color: var(--lb-on-charcoal-muted);
-}
-
-.side-status-bad {
-  color: var(--lb-on-charcoal);
-  font-weight: 600;
-}
-
-.side-status-bad::before {
-  content: '! ';
-}
-
-.side-foot-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.on-dark,
-.on-dark:hover {
-  color: var(--lb-on-charcoal) !important;
-}
-
-.shell-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* --- top filter bar (screen 7) ----------------------------------------------------------- */
+/* --- the dark top bar (ADR-050): charcoal in both modes ------------------------------- */
 .top-bar {
   position: sticky;
   top: 0;
@@ -151,30 +25,214 @@ body,
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px 18px;
-  padding: 10px 24px;
+  gap: 8px 20px;
+  padding: 8px 24px;
+  background: var(--lb-charcoal);
+  color: var(--lb-on-charcoal);
+}
+
+.top-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--lb-on-charcoal);
+  white-space: nowrap;
+}
+
+.top-brand:hover,
+.top-brand:focus-visible {
+  color: var(--lb-on-charcoal-muted);
+}
+
+/* the logo is drawn on white */
+.top-logo {
+  display: flex;
+  align-items: center;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.top-logo img {
+  display: block;
+  height: 26px;
+  width: auto;
+}
+
+.top-name {
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.top-modules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  flex: 1;
+}
+
+.top-module {
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--lb-on-charcoal-muted);
+  white-space: nowrap;
+}
+
+.top-module:hover {
+  color: var(--lb-on-charcoal);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.top-module.active {
+  color: var(--lb-on-charcoal);
+  background: rgba(255, 255, 255, 0.14);
+  font-weight: 600;
+}
+
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.top-period {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toggle {
+  padding: 3px 9px;
+  border: 1px solid var(--lb-on-charcoal-muted);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--lb-on-charcoal);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.toggle.active {
+  border-color: var(--lb-primary);
+  background: var(--lb-primary);
+  color: #ffffff;
+}
+
+.top-select {
+  min-width: 110px;
+}
+
+.on-dark,
+.on-dark:hover {
+  color: var(--lb-on-charcoal) !important;
+}
+
+/* --- the page header: title, period, segment chips, updated, the module's pages ------ */
+.page-header {
+  padding: 12px 24px 0;
   background: var(--lb-surface);
   border-bottom: 1px solid var(--lb-border);
 }
 
-.top-crumbs {
-  font-size: 15px;
+.header-crumbs {
+  font-size: 13px;
 }
 
-.top-filters {
+.header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 24px;
+  padding: 4px 0 10px;
+}
+
+.header-title h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--lb-text);
+}
+
+.header-period {
+  margin: 2px 0 0;
+  color: var(--lb-muted);
+  font-size: 13px;
+}
+
+.header-right {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  flex: 1;
+  gap: 8px 14px;
 }
 
-.top-facet {
-  min-width: 140px;
+.segment-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.top-copy {
-  margin-left: auto;
+.header-facets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding-bottom: 10px;
+}
+
+.header-facet {
+  min-width: 160px;
+}
+
+.header-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--lb-positive);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.header-updated .dot {
+  background: var(--lb-positive);
+}
+
+.header-updated-bad,
+.header-updated-bad .dot {
+  color: var(--lb-negative);
+}
+
+.header-updated-bad .dot {
+  background: var(--lb-negative);
+}
+
+.header-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+}
+
+.header-tab {
+  padding: 8px 2px;
+  color: var(--lb-muted);
+  border-bottom: 2px solid transparent;
+}
+
+.header-tab:hover {
+  color: var(--lb-text);
+}
+
+.header-tab.active {
+  color: var(--lb-text);
+  border-bottom-color: var(--lb-primary);
+  font-weight: 600;
 }
 
 .picker-panel {
@@ -306,10 +364,15 @@ body,
   flex-wrap: wrap;
 }
 
-.home-cards {
+/* the key figures: revenue, gross margin, net profit, net profit %, customers */
+.home-kpis {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.05fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 18px;
+  margin-bottom: 18px;
+}
+
+.home-cards {
   margin-bottom: 18px;
 }
 
@@ -353,7 +416,7 @@ body,
 
 .home-small {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
 }
 
@@ -395,6 +458,18 @@ body,
   height: 10px;
   border-radius: 2px;
   margin: 0 4px 0 10px;
+}
+
+/* a profit line's key: a short line in its colour (dashed for net profit) */
+.legend-line {
+  display: inline-block;
+  width: 16px;
+  margin: 0 4px 3px 10px;
+  border-top: 2px solid;
+}
+
+.legend-line.dashed {
+  border-top-style: dashed;
 }
 
 .bars {
@@ -443,27 +518,30 @@ body,
 }
 
 @media (max-width: 1100px) {
-  .home-cards,
   .home-charts {
     grid-template-columns: 1fr;
+  }
+
+  .home-kpis,
+  .home-small {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 700px) {
-  .top-crumbs {
-    flex-basis: 100%;
-  }
-
   .shell-content,
-  .top-bar {
+  .top-bar,
+  .page-header {
     padding-left: 12px;
     padding-right: 12px;
   }
 
-  .top-copy {
-    margin-left: 0;
+  .top-right {
+    flex-basis: 100%;
+    flex-wrap: wrap;
   }
 
+  .home-kpis,
   .home-small {
     grid-template-columns: 1fr;
   }

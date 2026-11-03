@@ -8,7 +8,7 @@ import csv
 import io
 from collections.abc import Iterator
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 import pytest
 from alembic import command
@@ -267,7 +267,8 @@ def test_the_home_equals_the_views_the_statements_and_the_validated_balances(
     }  # fmt: skip
 
     # Sales: the monthly sales views (proven against the source), month by month and per
-    # voucher type (the channels), and the only company's share.
+    # voucher type (the channels), and the only company's share (F-SAL-004, F-SAL-009,
+    # F-SAL-015).
     view = {f"{m:%Y-%m-%d}": Decimal(str(n)) for m, n in _view(synced, "v_monthly_sales")}
     by_type = sum(Decimal(str(n)) for _, n in _view(synced, "v_monthly_sales_by_voucher_type"))
     monthly = {m["month"]: Decimal(m["sales"]) for m in found["monthly"] if Decimal(m["sales"])}
@@ -277,7 +278,7 @@ def test_the_home_equals_the_views_the_statements_and_the_validated_balances(
     assert Decimal(share["net_sales"]) == sum(view.values())
     assert Decimal(share["share_pct"]) == 100
 
-    # Profit & Loss card: the stored statements, 30-Sep less 31-Mar.
+    # Profit & Loss: the stored statements, 30-Sep less 31-Mar (F-PL-001 to F-PL-004).
     pl = found["profit_loss"]
     assert pl["available"] and pl["as_of"] == "2026-09-30" and pl["shifted"] is False
     start, end = MONTH_ENDS[0], MONTH_ENDS[-1]
@@ -292,12 +293,33 @@ def test_the_home_equals_the_views_the_statements_and_the_validated_balances(
     rest = _get(client, "/api/v1/home", month=MONTHS[1:])["profit_loss"]["net_profit"]["value"]
     assert Decimal(april) + Decimal(rest) == Decimal(pl["net_profit"]["value"])
 
-    # Balance Sheet card: the stored statement at 30-Sep.
+    # The key figures: margins as a percentage of net sales (F-PL-005, F-PL-006); each month's
+    # profit is that month's statement less the one before, and the months add up to the card.
+    net = Decimal(pl["net_profit"]["value"])
+    assert Decimal(pl["net_profit_pct"]["value"]) == (net / net_sales * 100).quantize(
+        Decimal("0.1"), ROUND_HALF_UP
+    )
+    gross = Decimal(pl["gross_profit"]["value"])
+    assert Decimal(pl["gross_margin_pct"]["value"]) == (gross / net_sales * 100).quantize(
+        Decimal("0.1"), ROUND_HALF_UP
+    )
+    for before, month_end, m in zip(MONTH_ENDS[:-1], MONTH_ENDS[1:], found["monthly"], strict=True):
+        assert Decimal(m["net_profit"]) == _profit(synced, before, month_end, NET_PROFIT)
+        assert Decimal(m["gross_profit"]) == _profit(synced, before, month_end, GROSS_PROFIT)
+    assert sum(Decimal(m["net_profit"]) for m in found["monthly"]) == net
+
+    # Customers (F-SAL-011): those with sales in the period, as the Sales dashboard counts them (one
+    # company here, so by name and by party are the same).
+    sales = _get(client, "/api/v1/sales/dashboard", month=MONTHS)
+    assert found["customers"]["value"] == sales["customers"] > 0
+
+    # Balance Sheet: the stored statement at 30-Sep (F-BS-001, F-BS-002).
     bs = found["balance_sheet"]
     assert bs["available"] and bs["as_of"] == "2026-09-30"
     assert Decimal(bs["total_assets"]) >= Decimal(bs["current_assets"]) > 0
 
-    # Balances: the validator's ledger balances (checked against the source's).
+    # Balances: the validator's ledger balances, checked against the source's (F-BAL-002 to
+    # F-BAL-004).
     with Session(get_engine()) as session:
         balances = {b.id: b.balance for b in Validator(session, synced, end).ledger_balances(end)}
 
@@ -318,25 +340,60 @@ def test_the_home_equals_the_views_the_statements_and_the_validated_balances(
         assert Decimal(b["payables"]) == -under("sundry_creditors")
 
 
-def test_profit_needs_stored_statements_and_compares_with_last_year(
+def test_profit_runs_to_the_last_stored_date_and_compares_with_a_period_before(
     client: TestClient, synced: int, statements_stored: None
 ) -> None:
-    # A range not ending on a stored date: sales yes, profit "—" with the reason.
+    # A range not ending on a stored date (RPT-016, F-CMP-002): sales to its end, profit to
+    # the last stored date within it, and said so.
     mid = _get(client, "/api/v1/home", date_from="2026-04-01", date_to="2026-09-15")
-    assert mid["profit_loss"]["available"] is False
-    assert "no statement is stored for 15-Sep-2026" in mid["profit_loss"]["reason"]
-    assert mid["profit_loss"]["net_profit"]["value"] is None
-    assert mid["balance_sheet"]["available"] is False
+    to_august = _get(client, "/api/v1/home", month=MONTHS[:5])
+    pl = mid["profit_loss"]
+    assert pl["available"] is True and pl["cut"] is True and pl["as_of"] == "2026-08-31"
+    assert pl["net_profit"] == to_august["profit_loss"]["net_profit"]
+    assert mid["balance_sheet"]["as_of"] == "2026-08-31"
     assert sum(Decimal(m["sales"]) for m in mid["monthly"]) > 0
+    # Before any stored date: no profit, with the reason.
+    early = _get(client, "/api/v1/home", date_from="2026-10-01", date_to="2026-10-15")
+    assert early["profit_loss"]["available"] is False
+    assert (
+        "no statement is stored between 01-Oct-2026 and 15-Oct-2026"
+        in early["profit_loss"]["reason"]
+    )
     # A range on stored dates: the same as the months.
     exact = _get(client, "/api/v1/home", date_from="2026-04-01", date_to="2026-09-30")
     months = _get(client, "/api/v1/home", month=MONTHS)
+    assert exact["profit_loss"]["cut"] is False
     assert exact["profit_loss"]["net_profit"] == months["profit_loss"]["net_profit"]
-    # Last year: no statements for 2025's month ends, so no comparison, with the reason.
-    compared = _get(client, "/api/v1/home", month=MONTHS, compare="true")["profit_loss"]
-    assert compared["net_profit"]["last_year"] is None
+    # Last year (`true`, as old links say): no statements for 2025's month ends, so no
+    # comparison, with the reason.
+    found = _get(client, "/api/v1/home", month=MONTHS, compare="true")
+    compared = found["profit_loss"]
+    assert found["compared_with"]["kind"] == "last_year"
+    assert compared["net_profit"]["before"] is None
     assert compared["net_profit"]["change_pct"] is None
-    assert "no statement is stored" in compared["last_year_reason"]
+    assert "no statement is stored" in compared["before_reason"]
+    assert compared["net_profit_pct"]["before"] is None
+    # The previous period: May is compared with April.
+    may = _get(client, "/api/v1/home", month="2026-05", compare="previous")
+    april = _get(client, "/api/v1/home", month="2026-04")["profit_loss"]
+    assert may["compared_with"] == {
+        "kind": "previous", "label": "Previous period", "start": "2026-04-01",
+        "end": "2026-04-30", "months": ["2026-04-01"],
+    }  # fmt: skip
+    assert may["profit_loss"]["net_profit"]["before"] == april["net_profit"]["value"]
+    assert may["customers"]["before"] == april_customers(client)
+    # Month to date: the same days of the month before.
+    mtd = _get(client, "/api/v1/home", date_from="2026-06-01", date_to="2026-06-15",
+               compare="previous", span="month")  # fmt: skip
+    assert (mtd["compared_with"]["start"], mtd["compared_with"]["end"]) == (
+        "2026-05-01", "2026-05-15",
+    )  # fmt: skip
+    # Each month's profit needs the whole month: the range's part of September has none.
+    assert [m["net_profit"] is None for m in mid["monthly"]] == [False] * 5 + [True]
+
+
+def april_customers(client: TestClient) -> int:
+    return _get(client, "/api/v1/home", month="2026-04")["customers"]["value"]
 
 
 def test_bad_periods_are_refused(client: TestClient, synced: int) -> None:
@@ -400,13 +457,22 @@ def test_the_profit_and_loss_report_adds_up(
 
     # Last year: a column, unavailable (no statements for 2025's month ends here), and why.
     compared = _get(client, PL, month=MONTHS, compare="true")
-    assert compared["columns"][-1]["key"] == "last_year"
-    assert all(line["values"]["last_year"] is None for line in compared["lines"])
-    assert "no statement is stored" in compared["last_year_reason"]
+    assert compared["columns"][-1] == {"key": "before", "label": "Last year", "kind": "before"}
+    assert all(line["values"]["before"] is None for line in compared["lines"])
+    assert "no statement is stored" in compared["before_reason"]
+    # The previous period: May against April, the change against it.
+    may = _get(client, PL, month="2026-05", compare="previous")
+    april = _get(client, PL, month="2026-04")
+    april_totals = {line["key"]: line["values"]["total"] for line in april["lines"]}
+    assert may["columns"][-1]["label"] == "Previous period"
+    assert {line["key"]: line["values"]["before"] for line in may["lines"]} == april_totals
 
-    # A range not ending on a stored date: no figures, with the reason.
+    # A range not ending on a stored date: the figures to the last stored date within it.
     mid = _get(client, PL, date_from="2026-04-01", date_to="2026-09-15")
-    assert mid["lines"] == [] and "15-Sep-2026" in mid["reason"]
+    to_august = _get(client, PL, month=MONTHS[:5])
+    assert [line["values"]["total"] for line in mid["lines"]] == [
+        line["values"]["total"] for line in to_august["lines"]
+    ]
     assert client.get(PL, params={"month": MONTHS, "view": "ledger"}).status_code == 422
 
 
@@ -550,7 +616,7 @@ def test_the_sales_dashboard_equals_the_monthly_sales_views(
     assert Decimal(k["sales_returns"]["value"]) == -sum(v[1] for v in view.values())
     assert Decimal(k["invoices"]["value"]) == invoices > 0
     assert Decimal(k["average_invoice"]["value"]) == (gross / invoices).quantize(Decimal("0.01"))
-    assert k["net_sales"]["last_year"] is None and found["compared"] is False
+    assert k["net_sales"]["before"] is None and found["compared_with"] is None
 
     # Customers: the top ones and the rest add up to net sales.
     tops = found["top_customers"]
@@ -578,7 +644,7 @@ def test_the_sales_dashboard_facets_and_comparison(client: TestClient, synced: i
     whole = _get(client, "/api/v1/sales/dashboard", month=MONTHS, compare="true")
     net = Decimal(whole["key_figures"]["net_sales"]["value"])
     # Last year has no sales: a comparison with zero has no percentage.
-    assert Decimal(whole["key_figures"]["net_sales"]["last_year"]) == 0
+    assert Decimal(whole["key_figures"]["net_sales"]["before"]) == 0
     assert whole["key_figures"]["net_sales"]["change_pct"] is None
 
     # One customer: their own net sales, as the top customers list has them.

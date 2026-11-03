@@ -100,7 +100,7 @@ class Invoice:
 class Dashboard:
     period: Period
     totals: Totals
-    last_year: Totals | None
+    before: Totals | None  # the comparison period's
     monthly: list[tuple[date, Totals]]
     top_parties: list[PartyFigures]
     other_parties: Decimal  # the net of the parties after the top ones (and of "no party")
@@ -112,19 +112,17 @@ def dashboard(
     session: Session,
     companies: list[int],
     period: Period,
-    compare: bool,
+    before: Period | None,
     facets: Facets = Facets(),  # noqa: B008
     side: Side = SALES_SIDE,
 ) -> Dashboard:
     totals = period_totals(session, companies, period, facets, side)
-    last_year = (
-        period_totals(session, companies, period.last_year(), facets, side) if compare else None
-    )
+    compared = period_totals(session, companies, before, facets, side) if before else None
     tops, others, count = _parties(session, companies, period, facets, side)
     return Dashboard(
         period=period,
         totals=totals,
-        last_year=last_year,
+        before=compared,
         monthly=monthly_totals(session, companies, period, facets, side),
         top_parties=tops,
         other_parties=others,
@@ -194,6 +192,22 @@ def monthly_totals(
     for gross, returns, other, invoices, y, m in session.execute(query):
         found[date(int(y), int(m), 1)] = to_totals(side, gross, returns, other, invoices)
     return sorted(found.items())
+
+
+def party_count(
+    session: Session,
+    companies: list[int],
+    period: Period,
+    side: Side = SALES_SIDE,
+    facets: Facets = Facets(),  # noqa: B008
+) -> int:
+    """How many customers (vendors) had entries on the side's ledgers in the period, known
+    by name across the companies (as the customer list is); vouchers without a party aren't
+    counted."""
+    query = lines(companies, period, facets, side, func.count(func.distinct(A.Party.name))).join(
+        A.Party, A.Party.id == A.Voucher.party_id
+    )
+    return int(session.scalar(query) or 0)
 
 
 def _parties(

@@ -1,16 +1,6 @@
 // The few icons the dashboard needs, drawn inline (no icon package: no new dependency).
 
 const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'currentColor', 'aria-hidden': true }
-const outline = { ...common, fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-
-export function LogoIcon() {
-  return (
-    <svg {...outline} width={22} height={22}>
-      <path d="M3 3v18h18" />
-      <path d="M7 15l4-4 3 3 5-6" />
-    </svg>
-  )
-}
 
 export function SunIcon() {
   return (

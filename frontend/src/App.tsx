@@ -1,7 +1,7 @@
-// The dashboard: which page the URL asks for ("#/<group>/<page>", the side bar's groups:
-// shell/nav.ts; "#/" is the Dashboard), the selection (companies, year, months or dates,
-// compare, facets) and the page's own options, all in the URL; the side bar and the top filter
-// bar around the page.
+// The dashboard: which page the URL asks for ("#/<module>/<page>", the top bar's modules:
+// shell/nav.ts; "#/" is the Overview), the selection (companies, period toggle, year, months or
+// dates, comparison, facets) and the page's own options, all in the URL; the top bar and the
+// page header around the page (ADR-050).
 
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
@@ -20,8 +20,8 @@ import { navigate, updateQuery, useRoute } from './router.ts'
 import { chosenPeriod, chosenYear, selectedIds, selectionQuery, useSelection } from './selection.ts'
 import { AppShell } from './shell/AppShell.tsx'
 import { findPage } from './shell/nav.ts'
-import { SideBar } from './shell/SideBar.tsx'
-import { TopBar, type Crumb } from './shell/TopBar.tsx'
+import { PageHeader, type Crumb } from './shell/PageHeader.tsx'
+import { TopBar } from './shell/TopBar.tsx'
 import type { Mode } from './theme.ts'
 
 interface Props {
@@ -37,12 +37,12 @@ export default function App({ mode, onMode, today }: Props) {
   const ids = selectedIds(selection, companies.data)
   const periods = usePeriods(ids)
   const year = chosenYear(selection, periods.data)
-  const period = chosenPeriod(selection, year, today)
+  const period = chosenPeriod(selection, year, today, periods.data?.financial_years ?? [])
   const found = findPage(route.path)
   const at = found ? `${found.group.key}/${found.page.key}` : undefined
   const home = useHome(at === 'overview/dashboard' ? ids : undefined, period, selection.compare)
   const options = readOptions(route.query)
-  const profitLoss = useProfitLoss(at === 'statements/profit-loss' ? ids : undefined, period, options.view, selection.compare)
+  const profitLoss = useProfitLoss(at === 'pnl/profit-loss' ? ids : undefined, period, options.view, selection.compare)
   const sales = useSalesDashboard(at === 'sales/dashboard' ? ids : undefined, period, selection.compare, {
     customer: selection.facets.customer,
     channel: selection.facets.channel,
@@ -85,13 +85,13 @@ export default function App({ mode, onMode, today }: Props) {
   } else if (companies.data && companies.data.length === 0) {
     content = <Alert type="info" showIcon message="No companies to show yet." description="Connect and sync a company first (companies on hold aren't shown)." />
   } else if (at === 'overview/dashboard') {
-    crumbs = [{ label: 'Overview', path: ['overview', 'dashboard'] }, { label: 'Dashboard' }]
+    crumbs = [{ label: 'Overview' }]
     content = (
       <DashboardHome companies={selected} home={home.data} loading={companies.isPending || periods.isPending || home.isPending}
         error={periods.error ?? home.error} dark={mode === 'dark'} query={query} />
     )
-  } else if (at === 'statements/profit-loss') {
-    crumbs = [{ label: 'Statements', path: ['statements', 'profit-loss'] }, { label: 'Profit & Loss' }]
+  } else if (at === 'pnl/profit-loss') {
+    crumbs = [{ label: 'P&L & KPIs', path: ['pnl', 'profit-loss'] }, { label: 'Profit & Loss' }]
     content = (
       <ProfitLoss
         companies={selected}
@@ -105,7 +105,7 @@ export default function App({ mode, onMode, today }: Props) {
         query={query}
         currentQuery={route.query.toString()}
         onApplyView={onApplyView}
-        related={[{ label: 'Dashboard', path: ['overview', 'dashboard'] }]}
+        related={[{ label: 'Overview', path: ['overview', 'dashboard'] }]}
       />
     )
   } else if (at === 'sales/dashboard') {
@@ -124,8 +124,8 @@ export default function App({ mode, onMode, today }: Props) {
         onApplyView={onApplyView}
         related={[
           { label: 'Sales register', path: ['sales', 'register'] },
-          { label: 'Dashboard', path: ['overview', 'dashboard'] },
-          { label: 'Profit & Loss', path: ['statements', 'profit-loss'] },
+          { label: 'Overview', path: ['overview', 'dashboard'] },
+          { label: 'Profit & Loss', path: ['pnl', 'profit-loss'] },
         ]}
       />
     )
@@ -157,7 +157,7 @@ export default function App({ mode, onMode, today }: Props) {
               ]
             : [
                 { label: 'Sales register', path: ['sales', 'register'] },
-                { label: 'Profit & Loss', path: ['statements', 'profit-loss'] },
+                { label: 'Profit & Loss', path: ['pnl', 'profit-loss'] },
               ]
         }
       />
@@ -219,7 +219,7 @@ export default function App({ mode, onMode, today }: Props) {
       />
     )
   } else if (partyKind && route.path.length > 2 && !partyId) {
-    content = <Result status="404" title="There is no such page" subTitle="Choose a page in the side bar." />
+    content = <Result status="404" title="There is no such page" subTitle="Choose a module in the top bar." />
   } else if (partyKind && partyId) {
     const words = PARTY_WORDS[partyKind]
     const [group, list] = words.group
@@ -239,7 +239,6 @@ export default function App({ mode, onMode, today }: Props) {
         loading={companies.isPending || periods.isPending || party.isPending}
         error={periods.error ?? party.error}
         dark={mode === 'dark'}
-        compared={selection.compare}
         tab={tab}
         onTab={(next) => updateQuery(route, { tab: next === 'invoices' ? undefined : next })}
         query={query}
@@ -277,18 +276,18 @@ export default function App({ mode, onMode, today }: Props) {
       />
     )
   } else {
-    content = <Result status="404" title="There is no such page" subTitle="Choose a page in the side bar." />
+    content = <Result status="404" title="There is no such page" subTitle="Choose a module in the top bar." />
   }
 
   return (
     <AppShell
-      sideBar={(collapsed, onCollapse) => (
-        <SideBar current={found ? [found.group.key, found.page.key] : undefined} query={query} companies={all} mode={mode} onMode={onMode}
-          collapsed={collapsed} onCollapse={onCollapse} />
-      )}
       topBar={
-        <TopBar crumbs={crumbs} page={found?.page} companies={all} selection={selection} selectedIds={ids ?? []}
-          years={periods.data?.financial_years ?? []} year={year} period={period} onChange={select} query={query} />
+        <TopBar module={found?.group.key} query={query} selection={selection} years={periods.data?.financial_years ?? []} year={year}
+          period={period} onChange={select} mode={mode} onMode={onMode} />
+      }
+      header={
+        <PageHeader crumbs={crumbs} title={crumbs[crumbs.length - 1].label} group={found?.group} page={found?.page} companies={all}
+          selection={selection} selectedIds={ids ?? []} period={period} onChange={select} query={query} />
       }
     >
       {content}

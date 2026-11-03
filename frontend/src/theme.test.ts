@@ -35,6 +35,14 @@ describe.each(['light', 'dark'] as Mode[])('the %s theme', (mode) => {
     ['muted text on the charcoal bar', t.onCharcoalMuted, t.charcoal],
   ]
 
+  // Lines on a chart need 3:1 against the card (WCAG 1.4.11, non-text contrast).
+  it.each([
+    ['gross profit line', t.grossProfit],
+    ['net profit line', t.netProfit],
+  ])('the %s stands out on the card', (_label, colour) => {
+    expect(contrast(colour, t.surface)).toBeGreaterThanOrEqual(3)
+  })
+
   it.each(pairs)('%s meets WCAG AA', (_label, fg, bg) => {
     expect(contrast(fg, bg)).toBeGreaterThanOrEqual(AA)
   })

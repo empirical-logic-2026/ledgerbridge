@@ -1,6 +1,6 @@
 // A customer's or vendor's page (docs/design/dashboard.md Section 0.3, screen 8): the header
 // with where the party sits and its key facts; key figures (balance due, overdue, net sales
-// against last year, average days to pay); tabs with the invoices and credit notes, receipts
+// against the comparison period, average days to pay); tabs with the invoices and credit notes, receipts
 // (payments), the ledger statement with the running balance, the outstanding bills and the
 // monthly trend, each in the table explorer. Figures: core/parties.py
 // (GET /api/v1/parties/{kind}/{id}).
@@ -10,6 +10,7 @@ import type { EChartsOption } from 'echarts'
 import type { BillOut, Company, EntryOut, PartyInvoiceOut, PartyMonthOut, PartyOut, SettlementOut } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
 import { KeyCard } from '../../components/KeyCard.tsx'
+import { againstOf } from '../../selection.ts'
 import { formatDate, formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
@@ -28,7 +29,6 @@ interface Props {
   loading: boolean
   error: Error | null
   dark: boolean
-  compared: boolean
   tab: PartyTab
   onTab: (tab: PartyTab) => void
   query: Query
@@ -221,7 +221,7 @@ export function PartyPage(props: Props) {
         <div className="sales-cards">
           <KeyCard label={w.balance} figure={{ value: party.balance }} note={asAt} tone="up-neutral" />
           <KeyCard label="Overdue" figure={{ value: party.overdue }} alert note={`${overdueBills} bill${overdueBills === 1 ? '' : 's'} past the due date`} tone="up-neutral" />
-          <KeyCard label={w.net} figure={party.net} compared={props.compared} note={`${Number(party.invoices.value ?? 0).toLocaleString('en-IN')} invoices`} />
+          <KeyCard label={w.net} figure={party.net} against={againstOf(party.compared_with)} note={`${Number(party.invoices.value ?? 0).toLocaleString('en-IN')} invoices`} />
           <KeyCard
             label="Average days to pay"
             figure={{ value: party.days_to_pay }}

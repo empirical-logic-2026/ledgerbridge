@@ -8,8 +8,8 @@ const line = (label: string, level: 'main' | 'sub' | 'detail', a: string | null,
   level,
   section: 'gross',
   higher_is_better: true,
-  values: { 'company:3': a, 'company:4': b, total: a && b ? String(Number(a) + Number(b)) : null, last_year: last },
-  pct_of_sales: { 'company:3': '50.0', 'company:4': '50.0', total: '50.0', last_year: null },
+  values: { 'company:3': a, 'company:4': b, total: a && b ? String(Number(a) + Number(b)) : null, before: last },
+  pct_of_sales: { 'company:3': '50.0', 'company:4': '50.0', total: '50.0', before: null },
   change_pct: change,
 })
 
@@ -23,7 +23,7 @@ const report: StatementReport = {
     { key: 'company:3', label: 'Alpha', kind: 'company' },
     { key: 'company:4', label: 'Beta', kind: 'company' },
     { key: 'total', label: 'Total', kind: 'total' },
-    { key: 'last_year', label: 'Last year', kind: 'last_year' },
+    { key: 'before', label: 'Last year', kind: 'before' },
   ],
   lines: [
     line('Sales Accounts', 'main', '341260000.0000', '41030000.0000', '340100000', '12.0'),
@@ -32,7 +32,8 @@ const report: StatementReport = {
   ],
   reason: null,
   shifted: false,
-  last_year_reason: null,
+  before_reason: null,
+  compared_with: { kind: 'last_year', label: 'Last year', start: '2025-04-01', end: '2025-09-30', months: [] },
   matching: { matches: true, dates: ['2026-09-30'], differing: 0, compared: 12, unchecked: 0 },
 }
 
@@ -55,7 +56,7 @@ describe('the table', () => {
   const o = readOptions(new URLSearchParams(''))
 
   it('shows each company, the total, last year and the change', () => {
-    expect(shownColumns(report, o).map((c) => c.key)).toEqual(['company:3', 'company:4', 'total', 'last_year', 'change'])
+    expect(shownColumns(report, o).map((c) => c.key)).toEqual(['company:3', 'company:4', 'total', 'before', 'change'])
     expect(cellValue(report.lines[0], shownColumns(report, o)[4])).toBe('12.0')
   })
 
