@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import { comparisonQuery, type CompareKind, type PeriodChoice } from '../selection.ts'
-import type { AgeingOut, BalanceSheetReport, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
+import type { AgeingOut, BalanceSheetReport, CashFlowOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -47,6 +47,15 @@ export function useProfitLoss(companies: number[] | undefined, period: PeriodCho
         view,
         ...comparisonQuery(compare, period),
       }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+/** The cash movement: cash and bank at the start and end, money in and out by category. */
+export function useCashFlow(companies: number[] | undefined, period: PeriodChoice | undefined) {
+  return useQuery({
+    queryKey: ['cash-flow', companies, period],
+    queryFn: () => getJson<CashFlowOut>('/api/v1/cash-flow', { company: companies, ...periodQuery(period) }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }

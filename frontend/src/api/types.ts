@@ -84,6 +84,23 @@ export interface Buckets {
   over_90: string
 }
 
+export interface CashFlowOut {
+  companies: number[]
+  combined: boolean
+  start: string
+  end: string
+  opening: string
+  closing: string
+  movements: MovementOut[]
+  monthly: CashMonthOut[]
+}
+
+export interface CashMonthOut {
+  month: string
+  inflow: string
+  outflow: string
+}
+
 export interface Channel {
   name: string
   net_sales: string
@@ -350,6 +367,14 @@ export interface MonthlyOut {
   combined: boolean
   period: PeriodOut
   months: MonthOut[]
+}
+
+export interface MovementOut {
+  key: string
+  label: string
+  inflow: string
+  outflow: string
+  net: string
 }
 
 export interface Option {

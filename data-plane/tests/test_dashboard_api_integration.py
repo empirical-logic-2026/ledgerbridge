@@ -501,6 +501,23 @@ def test_the_balance_sheet_balances_and_its_ratios_follow_from_it(
         )
 
 
+def test_the_cash_movement_runs_from_the_opening_to_the_closing(
+    client: TestClient, synced: int
+) -> None:
+    found = _get(client, "/api/v1/cash-flow", month=MONTHS)
+    moved = sum(Decimal(m["net"]) for m in found["movements"])
+    # F-CF-001: opening + every movement = closing, exactly.
+    assert Decimal(found["opening"]) + moved == Decimal(found["closing"])
+    # Both ends are the validated cash and bank balances (F-BAL-002).
+    september = _get(client, "/api/v1/home", month=MONTHS)["balances"]
+    assert _d(found["closing"]) == _d(september["cash_and_bank"])
+    # F-CF-002: the months' in and out are the same money.
+    ins = sum(Decimal(m["inflow"]) for m in found["monthly"])
+    outs = sum(Decimal(m["outflow"]) for m in found["monthly"])
+    assert ins - outs == moved
+    assert found["movements"] and all(m["key"] for m in found["movements"])
+
+
 def april_customers(client: TestClient) -> int:
     return _get(client, "/api/v1/home", month="2026-04")["customers"]["value"]
 
