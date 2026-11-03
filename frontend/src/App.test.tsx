@@ -150,7 +150,8 @@ describe('the dashboard', () => {
     expect(within(modules).getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
     expect(within(modules).getByRole('link', { name: 'Sales' })).toHaveAttribute('href', '#/sales/dashboard')
     expect(within(modules).getByRole('link', { name: 'P&L & KPIs' })).toHaveAttribute('href', '#/pnl/profit-loss')
-    expect(within(modules).queryByText('Balance Sheet')).toBeNull() // not built yet: not offered
+    expect(within(modules).getByRole('link', { name: 'Balance Sheet' })).toHaveAttribute('href', '#/balance-sheet/statement')
+    expect(within(modules).queryByText('Cash Flow')).toBeNull() // not built yet: not offered
     expect(within(modules).getByRole('link', { name: 'Parties' })).toHaveAttribute('href', '#/parties/receivables')
     expect(within(top).getByRole('button', { name: 'YTD' })).toHaveAttribute('aria-pressed', 'true') // the default
     expect(screen.getByRole('heading', { level: 1, name: 'Overview' })).toBeInTheDocument()
@@ -476,6 +477,49 @@ const ageingFound = {
   rows: [ageingRow(11, 'Customer One', '1161000', '600000', '400000', '161000'), ageingRow(12, 'Customer Two', '200000', '200000', '0', '0')],
   total: { ...ageingRow(0, 'Total', '1361000', '800000', '400000', '161000') },
 }
+
+const sheetLine = (key: string, label: string, section: 'assets' | 'liabilities', value: string, before: string) => ({
+  key, label, level: 'main' as const, section, value, before, change_pct: null,
+})
+const sheetFound = {
+  companies: [3, 4],
+  combined: true,
+  as_of: '2026-09-30',
+  before_as_of: '2026-08-31',
+  compared_with: { kind: 'previous' as const, label: 'Previous period', start: '2026-08-01', end: '2026-08-31', months: ['2026-08-01'] },
+  reason: null,
+  before_reason: null,
+  lines: [
+    sheetLine('assets:current assets', 'Current Assets', 'assets', '413000000', '400000000'),
+    sheetLine('liabilities:capital account', 'Capital Account', 'liabilities', '284000000', '280000000'),
+  ],
+  totals: [
+    { section: 'assets' as const, value: '628000000', before: '600000000', change_pct: '4.7' },
+    { section: 'liabilities' as const, value: '628000000', before: '600000000', change_pct: '4.7' },
+  ],
+  ratios: [
+    { key: 'current_ratio', label: 'Current ratio', unit: 'times' as const, formula_id: 'F-RAT-001', value: '1.82', before: '1.75', change: '0.07' },
+    { key: 'receivable_days', label: 'Receivable days', unit: 'days' as const, formula_id: 'F-RAT-004', value: '45', before: '40', change: '5' },
+  ],
+}
+
+describe('the Balance Sheet', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows both sides at the two dates with the change, and the ratios as tiles', async () => {
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/reports/balance-sheet': sheetFound })
+    renderApp('#/balance-sheet/statement')
+    const table = await screen.findByRole('table', { name: 'Balance Sheet' })
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Particulars', '30-Sep-2026', '31-Aug-2026', 'Change'])
+    expect(within(table).getByText('Total assets').closest('tr')).toHaveTextContent('₹62.80 Cr')
+    expect(within(table).getByText('Total liabilities and capital').closest('tr')).toHaveTextContent('▲ 4.7%')
+    const liquidity = screen.getByRole('list', { name: 'Liquidity ratios' })
+    expect(within(liquidity).getByRole('listitem', { name: 'Current ratio' })).toHaveTextContent('1.82×')
+    const days = within(screen.getByRole('list', { name: 'Working capital days' })).getByRole('listitem', { name: 'Receivable days' })
+    expect(days).toHaveTextContent('45 days')
+    expect(within(days).getByText('▲ 5 days vs previous period')).toHaveClass('bad') // slower collection
+  })
+})
 
 describe('Receivables with ageing', () => {
   afterEach(() => vi.unstubAllGlobals())

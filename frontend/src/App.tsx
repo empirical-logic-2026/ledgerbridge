@@ -5,11 +5,12 @@
 
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useAgeing, useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useAgeing, useBalanceSheet, useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { PnlKpis } from './apps/dashboard/PnlKpis.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
 import { Ageing } from './apps/parties/Ageing.tsx'
+import { BalanceSheet } from './apps/statements/BalanceSheet.tsx'
 import { Parties } from './apps/parties/Parties.tsx'
 import { PartyPage, type PartyTab } from './apps/parties/PartyPage.tsx'
 import { PARTY_WORDS, type PartyKind } from './apps/parties/words.ts'
@@ -52,6 +53,7 @@ export default function App({ mode, onMode, today }: Props) {
   const purchases = usePurchasesDashboard(at === 'purchases/dashboard' ? ids : undefined, period, selection.compare, selection.facets.voucher_type)
   const ageingKind = at === 'parties/receivables' ? 'customers' : at === 'parties/payables' ? 'vendors' : undefined
   const ageing = useAgeing(ageingKind ?? 'customers', ageingKind ? ids : undefined, period)
+  const sheet = useBalanceSheet(at === 'balance-sheet/statement' ? ids : undefined, period, selection.compare)
   const salesRegister = useRegister('sales', at === 'sales/register' ? ids : undefined, period, {
     party: selection.facets.customer,
     voucherType: selection.facets.channel,
@@ -158,6 +160,25 @@ export default function App({ mode, onMode, today }: Props) {
           { label: 'Purchase register', path: ['purchases', 'register'] },
           { label: 'Monthly purchases', path: ['purchases', 'monthly'] },
           { label: 'Sales dashboard', path: ['sales', 'dashboard'] },
+        ]}
+      />
+    )
+  } else if (at === 'balance-sheet/statement') {
+    crumbs = [{ label: 'Balance Sheet' }]
+    content = (
+      <BalanceSheet
+        companies={selected}
+        sheet={sheet.data}
+        loading={companies.isPending || periods.isPending || sheet.isPending}
+        error={periods.error ?? sheet.error}
+        query={query}
+        panelOpen={panelOpen}
+        onPanel={onPanel}
+        currentQuery={route.query.toString()}
+        onApplyView={onApplyView}
+        related={[
+          { label: 'Profit & Loss', path: ['pnl', 'profit-loss'] },
+          { label: 'Receivables', path: ['parties', 'receivables'] },
         ]}
       />
     )

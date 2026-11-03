@@ -45,6 +45,19 @@ export interface BalanceSheet {
   capital_and_reserves: string | null
 }
 
+export interface BalanceSheetReport {
+  companies: number[]
+  combined: boolean
+  as_of: string | null
+  before_as_of: string | null
+  compared_with: ComparedWith | null
+  reason: string | null
+  before_reason: string | null
+  lines: SheetLineOut[]
+  totals: SheetTotalOut[]
+  ratios: RatioOut[]
+}
+
 export interface Balances {
   as_of: string
   cash_and_bank: string
@@ -467,6 +480,16 @@ export interface Ratio {
   change_pts?: string | null
 }
 
+export interface RatioOut {
+  key: string
+  label: string
+  unit: "times" | "days"
+  formula_id: string
+  value: string | null
+  before: string | null
+  change: string | null
+}
+
 export interface Readiness {
   status: "ok" | "failed"
   mysql: "ok" | "failed"
@@ -528,6 +551,23 @@ export interface SettlementOut {
   number: string
   amount: string
   narration: string | null
+}
+
+export interface SheetLineOut {
+  key: string
+  label: string
+  level: "main" | "sub" | "detail"
+  section: "assets" | "liabilities"
+  value: string | null
+  before: string | null
+  change_pct: string | null
+}
+
+export interface SheetTotalOut {
+  section: "assets" | "liabilities"
+  value: string | null
+  before: string | null
+  change_pct: string | null
 }
 
 export interface StatementReport {

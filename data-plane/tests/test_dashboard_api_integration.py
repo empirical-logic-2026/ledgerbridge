@@ -466,6 +466,41 @@ def test_the_cost_structure_adds_up(
     )
 
 
+def test_the_balance_sheet_balances_and_its_ratios_follow_from_it(
+    client: TestClient, synced: int, statements_stored: None
+) -> None:
+    found = _get(client, "/api/v1/reports/balance-sheet", month="2026-05", compare="previous")
+    assert found["as_of"] == "2026-05-31" and found["before_as_of"] == "2026-04-30"
+    totals = {t["section"]: t for t in found["totals"]}
+    # F-BS-006: the two sides are equal, now and at the end of April.
+    assert _d(totals["assets"]["value"]) == _d(totals["liabilities"]["value"]) > 0
+    assert _d(totals["assets"]["before"]) == _d(totals["liabilities"]["before"])
+    # F-BS-005: the "before" column is April's own Balance Sheet.
+    april = _get(client, "/api/v1/reports/balance-sheet", month="2026-04")
+    assert {line["key"]: _d(line["before"]) for line in found["lines"] if line["before"]} == {
+        line["key"]: _d(line["value"]) for line in april["lines"] if line["value"]
+    }
+    # F-RAT-001: current assets over current liabilities, as the home's card has them.
+    home = _get(client, "/api/v1/home", month="2026-05")
+    bs = home["balance_sheet"]
+    ratios = {r["key"]: r for r in found["ratios"]}
+    current = Decimal(bs["current_assets"]) / Decimal(bs["current_liabilities"])
+    assert _d(ratios["current_ratio"]["value"]) == current.quantize(Decimal("0.01"), ROUND_HALF_UP)
+    assert ratios["current_ratio"]["formula_id"] == "F-RAT-001"
+    # F-RAT-004: receivables over net sales, times the month's days.
+    sales = sum(Decimal(m["sales"]) for m in home["monthly"])
+    receivable = Decimal(home["balances"]["receivables"]) / sales * 31
+    assert _d(ratios["receivable_days"]["value"]) == receivable.quantize(
+        Decimal("1"), ROUND_HALF_UP
+    )
+    # F-RAT-007: the working-capital days add up when the three are known.
+    days = [ratios[k]["value"] for k in ("receivable_days", "inventory_days", "payable_days")]
+    if None not in days:
+        assert _d(ratios["working_capital_days"]["value"]) == _d(days[0]) + _d(days[1]) - _d(
+            days[2]
+        )
+
+
 def april_customers(client: TestClient) -> int:
     return _get(client, "/api/v1/home", month="2026-04")["customers"]["value"]
 

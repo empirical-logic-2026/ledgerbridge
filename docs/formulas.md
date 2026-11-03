@@ -327,6 +327,56 @@ at one date, the period's end or the last stored date within it (§1.1), through
 - **Expression:** `−Σ amount` of those main lines.
 - **Check in Tally:** Balance Sheet, Capital Account plus Profit & Loss A/c.
 
+#### F-BS-005 Balance Sheet line at a date
+
+- **In words:** any line of the stored Balance Sheet at the period's end (or the last stored date within it), and at the comparison period's end. Assets as debits, liabilities and capital as credits, both shown positive.
+- **Expression:** `amount` (assets) or `−amount` (liabilities), at that date; never a difference of two dates.
+- **Check in Tally:** Gateway of Tally › Balance Sheet at the same date, the same line.
+
+#### F-BS-006 Total assets, total liabilities
+
+- **In words:** the main lines of each side added up; the two are equal.
+
+### 4.1 Ratios (`F-RAT`)
+
+Each ratio row carries its own ID below; the generic entry is F-RAT-000.
+
+#### F-RAT-000 A ratio at a date
+
+- **In words:** one of F-RAT-001 to F-RAT-007, at the period's end and at the comparison's; the change in the ratio's own unit. "—" when the divisor is zero or a statement is missing.
+
+#### F-RAT-001 Current ratio
+
+- **Expression:** `current assets ÷ current liabilities` (main lines with roles `current_assets`, `current_liabilities`), two decimals.
+- **Check in Tally:** Display More Reports › Ratio Analysis, Current Ratio.
+
+#### F-RAT-002 Quick ratio
+
+- **Expression:** `(current assets − closing stock (F-BAL-005)) ÷ current liabilities`, two decimals.
+- **Check in Tally:** Ratio Analysis, Quick Ratio.
+
+#### F-RAT-003 Debt to equity
+
+- **Expression:** `Loans (Liability) ÷ (Capital Account + Profit & Loss A/c)`, main lines by role, two decimals.
+- **Check in Tally:** Ratio Analysis, Debt/Equity Ratio.
+
+#### F-RAT-004 Receivable days
+
+- **Expression:** `receivables (F-BAL-003) ÷ net sales (F-SAL-004) × days`, the days from the period's start to the date; whole days.
+- **Check in Tally:** Ratio Analysis, Recv. Turnover in days.
+
+#### F-RAT-005 Payable days
+
+- **Expression:** `payables (F-BAL-004) ÷ net purchases (F-PUR-001) × days`; whole days.
+
+#### F-RAT-006 Inventory days
+
+- **Expression:** `closing stock (F-BAL-005) ÷ cost of sales (F-PL-002) × days`; whole days.
+
+#### F-RAT-007 Working-capital days
+
+- **Expression:** `F-RAT-004 + F-RAT-006 − F-RAT-005`.
+
 ## 5. Balances (`F-BAL`)
 
 Source for every `F-BAL` entry: `ledgers` (`opening_balance`, `group_id`, `is_deleted`) and the
