@@ -4,12 +4,12 @@
 // with credit notes, purchases with debit notes. Rows: core/registers.py
 // (GET /api/v1/registers/{side}).
 
-import { Alert, Button, Skeleton, Typography } from 'antd'
+import { Alert, Skeleton, Typography } from 'antd'
 import type { Company, RegisterOut, RegisterRowOut } from '../../api/types.ts'
 import { formatDate, formatMonth } from '../../format.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
-import { OptionsPanel, type Related } from '../../reporting/OptionsPanel.tsx'
+import { WhatIsThis } from '../../reporting/WhatIsThis.tsx'
 import type { Query } from '../../router.ts'
 import { builtHref } from '../../shell/nav.ts'
 import { COMBINED_NOTE } from '../dashboard/words.ts'
@@ -28,11 +28,6 @@ interface Props {
   loading: boolean
   error: Error | null
   query: Query
-  panelOpen: boolean
-  onPanel: (open: boolean) => void
-  currentQuery: string
-  onApplyView: (query: string) => void
-  related: Related[]
 }
 
 /** A party opens their page once built; on the Sales register, until then, the register
@@ -126,7 +121,7 @@ export function Register(props: Props) {
   }
 
   return (
-    <div className={props.panelOpen ? 'report-page with-panel' : 'report-page'}>
+    <div className="report-page">
       <div className="report-main">
         <div className="report-head">
           <div>
@@ -140,25 +135,10 @@ export function Register(props: Props) {
               </Typography.Text>
             )}
           </div>
-          <div className="report-toolbar">{!props.panelOpen && <Button onClick={() => props.onPanel(true)}>Options</Button>}</div>
+          <div className="report-toolbar"><WhatIsThis><Help side={side} sourceName={sourceName} /></WhatIsThis></div>
         </div>
         {content}
       </div>
-      {props.panelOpen && (
-        <OptionsPanel
-          title={`${words.title} options`}
-          page={`${side}-register`}
-          matching={undefined}
-          companiesLabel={companies.length === 1 ? companies[0].name : `all ${companies.length} companies`}
-          sourceName={sourceName}
-          related={props.related}
-          query={query}
-          currentQuery={props.currentQuery}
-          onApplyView={props.onApplyView}
-          help={<Help side={side} sourceName={sourceName} />}
-          onClose={() => props.onPanel(false)}
-        />
-      )}
     </div>
   )
 }

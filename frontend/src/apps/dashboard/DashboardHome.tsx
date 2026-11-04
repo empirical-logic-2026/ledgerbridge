@@ -11,6 +11,7 @@ import { Alert, Skeleton, Tooltip, Typography } from 'antd'
 import type { Home, SummaryLine } from '../../api/types.ts'
 import { Donut } from '../../components/Donut.tsx'
 import { EChart } from '../../components/EChart.tsx'
+import { Explained } from '../../components/Explained.tsx'
 import { KeyCard } from '../../components/KeyCard.tsx'
 import { StatusPill } from '../../components/StatusPill.tsx'
 import { formatChange, formatCompact, formatDate, formatExact, toLakhs, toScaled } from '../../format.ts'
@@ -122,15 +123,15 @@ function Summary({ home, query }: { home: Home; query: Query }) {
         <thead>
           <tr>
             <th>Line</th>
-            <th className="num">This period</th>
-            <th className="num">Last year</th>
-            <th className="num">Change</th>
+            <th className="num"><Explained label="This period" /></th>
+            <th className="num"><Explained label="Last year" /></th>
+            <th className="num"><Explained label="Change" /></th>
           </tr>
         </thead>
         <tbody>
           {home.summary.map((line) => (
             <tr key={line.key} className={line.key.endsWith('profit') ? 'line-total' : undefined}>
-              <th>{to ? <a href={to}>{line.label}</a> : line.label}</th>
+              <th>{to ? <a href={to}><Explained label={line.label} /></a> : <Explained label={line.label} />}</th>
               <td className="num">{shown(line, line.value)}</td>
               <td className="num">{shown(line, line.last_year)}</td>
               <td className="num">
@@ -162,10 +163,10 @@ function TopCustomers({ home, query }: { home: Home; query: Query }) {
           <thead>
             <tr>
               <th>Customer</th>
-              <th className="num">Net sales</th>
-              <th className="num">Share</th>
-              <th className="num">Balance due</th>
-              <th>Status</th>
+              <th className="num"><Explained label="Net sales" /></th>
+              <th className="num"><Explained label="Share" /></th>
+              <th className="num"><Explained label="Balance due" /></th>
+              <th><Explained label="Status" /></th>
             </tr>
           </thead>
           <tbody>

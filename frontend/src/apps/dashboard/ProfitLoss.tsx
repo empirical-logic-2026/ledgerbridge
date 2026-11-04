@@ -5,10 +5,12 @@
 // (GET /api/v1/reports/profit-loss).
 
 import { Alert, Button, Checkbox, Dropdown, Skeleton, Tooltip, Typography } from 'antd'
+import { Explained } from '../../components/Explained.tsx'
 import type { Company, StatementReport } from '../../api/types.ts'
 import { formatDate, formatExact, toScaled } from '../../format.ts'
 import { download } from '../../reporting/download.ts'
-import { OptionsPanel, type Related } from '../../reporting/OptionsPanel.tsx'
+import { MatchStatus } from '../../reporting/MatchStatus.tsx'
+import { WhatIsThis } from '../../reporting/WhatIsThis.tsx'
 import {
   buildCsv,
   cellValue,
@@ -39,12 +41,7 @@ interface Props {
   error: Error | null
   options: ReportOptions
   onOptions: (change: Record<string, string | string[] | undefined>) => void
-  panelOpen: boolean
-  onPanel: (open: boolean) => void
   query: Query
-  currentQuery: string
-  onApplyView: (query: string) => void
-  related: Related[]
 }
 
 function Help({ sourceName }: { sourceName: string }) {
@@ -78,7 +75,9 @@ function Table({ report, options }: { report: StatementReport; options: ReportOp
             <th scope="col">Particulars</th>
             {columns.map((c) => (
               <th key={c.key} scope="col" className="num">
-                {c.label}
+                <Explained label={c.kind === 'change' ? 'Change' : c.kind === 'pct' ? '% of sales' : c.key === 'total' ? 'This period' : c.key === 'before' ? 'Compared period' : c.label}>
+                  {c.label}
+                </Explained>
               </th>
             ))}
           </tr>
@@ -146,10 +145,13 @@ export function ProfitLoss(props: Props) {
       <Checkbox checked={options.hideZero} onChange={(e) => props.onOptions(optionsQuery({ ...options, hideZero: e.target.checked }))}>
         Hide lines that are zero
       </Checkbox>
+      <Checkbox checked={options.asPercent} onChange={(e) => props.onOptions(optionsQuery({ ...options, asPercent: e.target.checked }))}>
+        As % of sales (every amount as a percentage of its column's net sales)
+      </Checkbox>
     </div>
   )
   return (
-    <div className={props.panelOpen ? 'report-page with-panel' : 'report-page'}>
+    <div className="report-page">
       <div className="report-main">
         <div className="report-head">
           <div>
@@ -184,7 +186,7 @@ export function ProfitLoss(props: Props) {
             <Button type="primary" onClick={exportCsv} disabled={!report || report.lines.length === 0}>
               Export CSV
             </Button>
-            {!props.panelOpen && <Button onClick={() => props.onPanel(true)}>Options</Button>}
+            <WhatIsThis><Help sourceName={sourceName} /></WhatIsThis>
           </div>
         </div>
         {props.error ? (
@@ -195,6 +197,8 @@ export function ProfitLoss(props: Props) {
           <Alert type="info" showIcon message="No Profit & Loss for this period" description={`${report.reason}.`} />
         ) : (
           <>
+            <MatchStatus matching={report.matching} sourceName={sourceName}
+              companiesLabel={companies.length === 1 ? companies[0].name : companies.length === 2 ? 'both companies' : `all ${companies.length} companies`} />
             {report.shifted && (
               <p className="report-note">
                 Months ending on the 30th (or in February) run to the 2nd of the next month: {sourceName}'s statements exist only for the 1st, 2nd and
@@ -206,36 +210,6 @@ export function ProfitLoss(props: Props) {
           </>
         )}
       </div>
-      {props.panelOpen && (
-        <OptionsPanel
-          title="Profit & Loss options"
-          page="profit-loss"
-          matching={report?.matching}
-          companiesLabel={companies.length === 1 ? companies[0].name : companies.length === 2 ? 'both companies' : `all ${companies.length} companies`}
-          sourceName={sourceName}
-          views={VIEWS}
-          view={options.view}
-          onView={(view) => props.onOptions(optionsQuery({ ...options, view }))}
-          extraViews={
-            <>
-              <p className="options-muted">Always in {sourceName}'s layout and order.</p>
-              <Checkbox checked={options.asPercent} onChange={(e) => props.onOptions(optionsQuery({ ...options, asPercent: e.target.checked }))}>
-                As % of sales
-              </Checkbox>
-            </>
-          }
-          columns={[...COLUMN_CHOICES, { key: 'budget' as ColumnChoice, label: 'Budget (later)', disabled: true }]}
-          shown={options.columns}
-          onColumns={setColumns}
-          related={props.related}
-          query={props.query}
-          currentQuery={props.currentQuery}
-          onApplyView={props.onApplyView}
-          onExport={exportCsv}
-          help={<Help sourceName={sourceName} />}
-          onClose={() => props.onPanel(false)}
-        />
-      )}
     </div>
   )
 }

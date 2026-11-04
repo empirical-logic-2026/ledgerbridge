@@ -8,7 +8,7 @@
 // The same page for purchases (`side`): net purchases, the vendors and the mix by voucher type
 // (GET /api/v1/purchases/dashboard); its words: words.ts.
 
-import { Alert, Button, Skeleton, Typography } from 'antd'
+import { Alert, Skeleton, Typography } from 'antd'
 import type { EChartsOption } from 'echarts'
 import type { Company, InvoiceOut, MonthSales, PartySales, SalesDashboard as Dashboard } from '../../api/types.ts'
 import { Donut } from '../../components/Donut.tsx'
@@ -19,7 +19,7 @@ import { againstOf } from '../../selection.ts'
 import { formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
-import { OptionsPanel, type Related } from '../../reporting/OptionsPanel.tsx'
+import { WhatIsThis } from '../../reporting/WhatIsThis.tsx'
 import type { Query } from '../../router.ts'
 import { builtHref } from '../../shell/nav.ts'
 import { tokens, type Tokens } from '../../theme.ts'
@@ -34,11 +34,6 @@ interface Props {
   error: Error | null
   dark: boolean
   query: Query // the selection, kept on every link
-  panelOpen: boolean
-  onPanel: (open: boolean) => void
-  currentQuery: string
-  onApplyView: (query: string) => void
-  related: Related[]
 }
 
 function monthChart(months: MonthSales[], colours: Tokens, w: SideWords): EChartsOption {
@@ -264,31 +259,16 @@ export function SalesDashboard(props: Props) {
   }
 
   return (
-    <div className={props.panelOpen ? 'report-page with-panel' : 'report-page'}>
+    <div className="report-page">
       <div className="report-main">
         <div className="report-head">
           <div>
             {dashboard?.combined && <Typography.Text type="secondary">Several companies: {COMBINED_NOTE}</Typography.Text>}
           </div>
-          <div className="report-toolbar">{!props.panelOpen && <Button onClick={() => props.onPanel(true)}>Options</Button>}</div>
+          <div className="report-toolbar"><WhatIsThis>props.side === 'sales' ? <Help sourceName={sourceName} /> : <PurchasesHelp sourceName={sourceName} /></WhatIsThis></div>
         </div>
         {content}
       </div>
-      {props.panelOpen && (
-        <OptionsPanel
-          title={w.options}
-          page={w.page}
-          matching={undefined}
-          companiesLabel={companies.length === 1 ? companies[0].name : `all ${companies.length} companies`}
-          sourceName={sourceName}
-          related={props.related}
-          query={query}
-          currentQuery={props.currentQuery}
-          onApplyView={props.onApplyView}
-          help={props.side === 'sales' ? <Help sourceName={sourceName} /> : <PurchasesHelp sourceName={sourceName} />}
-          onClose={() => props.onPanel(false)}
-        />
-      )}
     </div>
   )
 }
