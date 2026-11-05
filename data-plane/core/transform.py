@@ -49,7 +49,7 @@ from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.orm import Session
 
 from connectors.base import Connector, SourceRecord
-from core import fx
+from core import fx, voucher_history
 from core.canonical import (
     NO_STANDARD_ACCOUNT,
     CanonicalCompany,
@@ -1387,7 +1387,61 @@ class Transformer:
                 self._fail(item.row, exc, result)
         if not prepared:
             return []
+        voucher_source_keys = {p.header["source_key"] for p in prepared}
+        voucher_history.capture_missing_baselines(
+            self.session, self.connection_id, self.entity_id, voucher_source_keys
+        )
         voucher_ids = self.upsert(A.Voucher, [p.header for p in prepared], "voucher")
+        ledger_ids = {line.row["ledger_id"] for item in prepared for line in item.lines}
+        ledgers = (
+            {
+                ledger_id: (source_key, name)
+                for ledger_id, source_key, name in self.session.execute(
+                    select(A.Ledger.id, A.Ledger.source_key, A.Ledger.name).where(
+                        A.Ledger.id.in_(ledger_ids)
+                    )
+                )
+            }
+            if ledger_ids
+            else {}
+        )
+        company_name = self.session.get_one(A.Entity, self.entity_id).name
+        for item in prepared:
+            row = item.item.row
+            postings = []
+            for line in item.lines:
+                ledger_id = line.row["ledger_id"]
+                ledger_source_key, ledger_name = ledgers[ledger_id]
+                postings.append(
+                    voucher_history.posting_snapshot(
+                        line_no=line.row["line_no"],
+                        ledger_id=ledger_id,
+                        ledger_source_key=ledger_source_key,
+                        ledger_name=ledger_name,
+                        amount=line.row["amount"],
+                        amount_fc=line.row["amount_fc"],
+                        currency_name=line.row["currency_name"],
+                        exchange_rate=line.row["exchange_rate"],
+                        is_party_line=line.row["is_party_line"],
+                        bills=line.bills,
+                        cost_allocations=line.allocations,
+                    )
+                )
+            voucher_history.capture_voucher_version(
+                self.session,
+                entity_id=self.entity_id,
+                voucher_id=voucher_ids[item.header["source_key"]],
+                connection_id=self.connection_id,
+                voucher_source_key=item.header["source_key"],
+                company_name=company_name,
+                voucher_number=item.header["voucher_number"],
+                raw_record_id=row.id,
+                payload_hash=row.payload_hash,
+                source_alter_id=row.source_alter_id,
+                source_altered_at=item.header["source_altered_at"],
+                observed_at=row.received_at,
+                postings=postings,
+            )
         # Overlapping deliveries of one voucher: only its latest version is written below.
         latest = {p.header["source_key"]: p for p in prepared}
         self._delete_children([voucher_ids[key] for key in latest])
@@ -1597,6 +1651,7 @@ class Transformer:
                 "voucher_date": v.voucher_date,
                 "reference_number": v.reference_number,
                 "reference_date": v.reference_date,
+                "source_altered_at": v.source_altered_at,
                 "effective_date": v.effective_date,
                 "party_id": party[1] if party else None,
                 "narration": v.narration,
@@ -1743,6 +1798,9 @@ def mark_deleted(
             ]
             if not gone:
                 continue
+            if model is A.Voucher:
+                for voucher in session.scalars(select(A.Voucher).where(A.Voucher.id.in_(gone))):
+                    voucher_history.capture_voucher_deletion(session, voucher, utcnow())
             _soft_delete(session, model, gone, utcnow())
             deleted[f"{object_type}:{model.__tablename__}"] = len(gone)
     session.commit()

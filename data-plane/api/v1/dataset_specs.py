@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, and_, case, distinct, func, literal, select
 from sqlalchemy.sql import FromClause
 
+from api.v1.company_display import display_company_name_expression
 from core.models import accounting as A  # noqa: N812
 from core.reporting_views import COST_ALLOCATIONS, GROUP_ANCESTORS
 
@@ -155,11 +156,23 @@ def _voucher_lines() -> Dataset:
         company_id=vl.entity_id,
         dimensions=_by_key(
             [
-                _named("company", "Company", A.Entity.id, A.Entity.name),
+                _named(
+                    "company",
+                    "Company",
+                    A.Entity.id,
+                    display_company_name_expression(A.Entity.name),
+                ),
                 *_time_dimensions(vl.voucher_date),
                 _named("voucher_type", "Voucher type", A.VoucherType.id, A.VoucherType.name),
                 Dimension(
                     "voucher_number", "Voucher number", v.id, v.voucher_number, groupable=False
+                ),
+                Dimension(
+                    "source_altered_at",
+                    "Entry Altered Date",
+                    v.id,
+                    v.source_altered_at,
+                    groupable=False,
                 ),
                 _named("ledger", "Ledger", A.Ledger.id, A.Ledger.name),
                 _named("ledger_group", "Ledger group", A.AccountGroup.id, A.AccountGroup.name),
@@ -198,7 +211,14 @@ def _voucher_lines() -> Dataset:
                 Filter("amount_max", "Amount to", "amount_max", lambda x: func.abs(vl.amount) <= x),
             ]
         ),  # fmt: skip
-        default_columns=("date", "voucher_number", "voucher_type", "ledger", "party"),
+        default_columns=(
+            "date",
+            "voucher_number",
+            "source_altered_at",
+            "voucher_type",
+            "ledger",
+            "party",
+        ),
         default_measures=("debit", "credit"),
         default_order=(vl.voucher_date, v.voucher_number, vl.id),
     )
@@ -228,11 +248,23 @@ def _vouchers() -> Dataset:
         company_id=v.entity_id,
         dimensions=_by_key(
             [
-                _named("company", "Company", A.Entity.id, A.Entity.name),
+                _named(
+                    "company",
+                    "Company",
+                    A.Entity.id,
+                    display_company_name_expression(A.Entity.name),
+                ),
                 *_time_dimensions(v.voucher_date),
                 _named("voucher_type", "Voucher type", A.VoucherType.id, A.VoucherType.name),
                 Dimension(
                     "voucher_number", "Voucher number", v.id, v.voucher_number, groupable=False
+                ),
+                Dimension(
+                    "source_altered_at",
+                    "Entry Altered Date",
+                    v.id,
+                    v.source_altered_at,
+                    groupable=False,
                 ),
                 _named("party", "Party", A.Party.id, A.Party.name),
                 _text("reference", "Reference", v.reference_number),
@@ -260,7 +292,7 @@ def _vouchers() -> Dataset:
                 Filter("amount_max", "Amount to", "amount_max", lambda x: amount <= x),
             ]
         ),  # fmt: skip
-        default_columns=("date", "voucher_number", "voucher_type", "party"),
+        default_columns=("date", "voucher_number", "source_altered_at", "voucher_type", "party"),
         default_measures=("amount",),
         default_order=(v.voucher_date, v.voucher_number, v.id),
     )

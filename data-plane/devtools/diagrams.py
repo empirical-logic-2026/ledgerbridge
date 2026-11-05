@@ -71,11 +71,12 @@ AREAS = (
     ),
     Area(
         "er-transactions",
-        "Transactions: vouchers and their child tables (ledgerbridge_accounting)",
+        "Transactions: vouchers, child tables and observed history (ledgerbridge_accounting)",
         ("vouchers", "voucher_lines", "bill_allocations", "line_cost_allocations",
-         "line_dimensions", "inventory_lines", "tax_lines"),
+         "line_dimensions", "inventory_lines", "tax_lines", "voucher_versions",
+         "voucher_version_lines", "voucher_ledger_changes"),
         ("entities", "voucher_types", "ledgers", "parties", "items", "godowns", "units",
-         "cost_categories", "cost_centres", "dimension_values", "branches"),
+         "cost_categories", "cost_centres", "dimension_values", "branches", "connections"),
     ),
     Area(
         "er-system-sync",

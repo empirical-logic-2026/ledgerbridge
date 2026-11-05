@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 
 from api.access import CurrentAccess
 from api.v1.common import ReportSession
+from api.v1.company_display import display_company_name
 from core.models import accounting as A  # noqa: N812
 from core.models.reporting import StatementLine
 from core.reporting_views import DATA_HEALTH
@@ -39,6 +40,7 @@ class Company(BaseModel):
     id: int
     code: str
     name: str
+    display_name: str
     books_from: date | None
     fy_start_month: int
     health: DataHealth
@@ -74,6 +76,7 @@ def companies(session: ReportSession, access: CurrentAccess) -> list[Company]:
             id=e.id,
             code=e.code,
             name=e.name,
+            display_name=display_company_name(e.name),
             books_from=e.books_from,
             fy_start_month=e.fy_start_month,
             health=DataHealth(

@@ -8,7 +8,7 @@ due and what is overdue. Source-independent; every formula in docs/formulas.md.
   month) and customers (F-SAL-011).
 - **Top customers** (F-OVR-002): the customers, known by name across the companies, with the
   largest net sales in the period; each with its balance due (F-PTY-001) and overdue
-  (F-PTY-002) at the period's end, so the status is "overdue" or "current".
+  (F-PTY-002) at the period's end, plus the outstanding bill states for the status summary.
 """
 
 from dataclasses import dataclass
@@ -46,6 +46,8 @@ class TopCustomer:
     net_sales: Decimal
     balance: Decimal  # due at the period's end
     overdue: Decimal
+    pending: Decimal
+    advance: Decimal
 
 
 def trend_period(end: date) -> Period:
@@ -111,6 +113,6 @@ def top_customers(session: Session, companies: list[int], period: Period) -> lis
         party = find_party(session, companies, party_id)
         if party is None:
             continue
-        due, overdue = due_and_overdue(session, party, period.end, sign)
-        found.append(TopCustomer(party.id, name, net, due, overdue))
+        due, overdue, pending, advance = due_and_overdue(session, party, period.end, sign)
+        found.append(TopCustomer(party.id, name, net, due, overdue, pending, advance))
     return found

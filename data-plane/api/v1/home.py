@@ -30,6 +30,7 @@ from api.v1.common import (
 )
 from core.home import BS_FIGURES, PL_FIGURES, StatementFigures, home
 from core.overview import TopCustomer, TrendMonth, top_customers, trend
+from core.parties import PaymentStatus, party_payment_status
 from core.sales import party_count
 
 router = APIRouter(tags=["home"])
@@ -150,6 +151,7 @@ class TopCustomerOut(BaseModel):
     balance: Decimal = formula("F-PTY-001")
     overdue: Decimal = formula("F-PTY-002")
     status: Literal["overdue", "current"]
+    payment_status: PaymentStatus
 
 
 class PeriodOut(BaseModel):
@@ -377,15 +379,21 @@ def _top(
     found: list[TopCustomer], monthly: list[tuple[date, Decimal, Decimal]]
 ) -> list[TopCustomerOut]:
     total = sum((sales for _, sales, _ in monthly), Decimal(0))
-    return [
-        TopCustomerOut(
-            party_id=c.party_id,
-            name=c.name,
-            net_sales=c.net_sales,
-            share_pct=percent_of(c.net_sales, total),
-            balance=c.balance,
-            overdue=c.overdue,
-            status="overdue" if c.overdue > 0 else "current",
+    customers = []
+    for customer in found:
+        payment_status = party_payment_status(
+            customer.balance, customer.overdue, customer.pending, customer.advance
         )
-        for c in found
-    ]
+        customers.append(
+            TopCustomerOut(
+                party_id=customer.party_id,
+                name=customer.name,
+                net_sales=customer.net_sales,
+                share_pct=percent_of(customer.net_sales, total),
+                balance=customer.balance,
+                overdue=customer.overdue,
+                status="overdue" if payment_status == "overdue" else "current",
+                payment_status=payment_status,
+            )
+        )
+    return customers

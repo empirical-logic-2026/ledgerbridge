@@ -7,9 +7,11 @@
 import { Alert, Button, Checkbox, Dropdown, Skeleton, Tooltip, Typography } from 'antd'
 import { Explained } from '../../components/Explained.tsx'
 import type { Company, StatementReport } from '../../api/types.ts'
-import { formatDate, formatExact, toScaled } from '../../format.ts'
+import { formatExact, toScaled } from '../../format.ts'
+import { companyDisplayName } from '../../companyDisplayName.ts'
 import { download } from '../../reporting/download.ts'
 import { MatchStatus } from '../../reporting/MatchStatus.tsx'
+import { ReportPeriod } from '../../reporting/ReportPeriod.tsx'
 import { WhatIsThis } from '../../reporting/WhatIsThis.tsx'
 import {
   buildCsv,
@@ -123,7 +125,7 @@ function Table({ report, options }: { report: StatementReport; options: ReportOp
 export function ProfitLoss(props: Props) {
   const { report, options, companies } = props
   const sourceName = companies[0]?.health.source_name ?? 'the source'
-  const names = companies.map((c) => c.name).join(' + ')
+  const names = companies.map(companyDisplayName).join(' + ')
   const setColumns = (columns: ColumnChoice[]) => props.onOptions(optionsQuery({ ...options, columns }))
   const exportCsv = () => report && download('profit-and-loss.csv', buildCsv(report, options))
   const columnsMenu = (
@@ -159,10 +161,10 @@ export function ProfitLoss(props: Props) {
               Profit &amp; Loss · {names}
             </Typography.Title>
             {report && (
-              <Typography.Text type="secondary">
-                {formatDate(report.period_start)} to {formatDate(report.period_end)}
-                {report.combined ? ` · ${COMBINED_NOTE}` : ''}
-              </Typography.Text>
+              <>
+                <ReportPeriod start={report.period_start} end={report.period_end} />
+                {report.combined && <Typography.Text type="secondary">{COMBINED_NOTE}</Typography.Text>}
+              </>
             )}
           </div>
           <div className="report-toolbar">
@@ -198,7 +200,7 @@ export function ProfitLoss(props: Props) {
         ) : (
           <>
             <MatchStatus matching={report.matching} sourceName={sourceName}
-              companiesLabel={companies.length === 1 ? companies[0].name : companies.length === 2 ? 'both companies' : `all ${companies.length} companies`} />
+              companiesLabel={companies.length === 1 ? companyDisplayName(companies[0]) : companies.length === 2 ? 'both companies' : `all ${companies.length} companies`} />
             {report.shifted && (
               <p className="report-note">
                 Months ending on the 30th (or in February) run to the 2nd of the next month: {sourceName}'s statements exist only for the 1st, 2nd and

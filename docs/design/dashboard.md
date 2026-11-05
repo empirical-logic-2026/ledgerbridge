@@ -27,6 +27,10 @@ This replaces the mockup's left sidebar: its items become app tiles and app menu
 
 Until login (M5) the dashboard runs on this computer only (ADR-049).
 
+The voucher and voucher-line table-explorer datasets include an **Entry Altered Date** column
+from Tally's `UPDATEDDATETIME`. It is optional and displayed as Tally's source wall-clock
+value; because the source field has no timezone offset, LedgerBridge does not convert it to UTC.
+
 ## 0.1 The approved screens (2026-10-31)
 
 Six screens, approved by the developer on 2026-10-31. Build to them: their **layout, wording and visual style**. Every figure, name and voucher number in them is illustrative (company labels are state codes, channels are public marketplace names); the built pages show the data. Where a screen shows something whose data doesn't exist yet, it is left out until it does (decision 2026-10-31): ageing ("over 60 days", "due this week"), cash cover in months, the business health score, the LIVE ticker, "Needs your attention" and the AI question panel.
@@ -44,6 +48,7 @@ Six screens, approved by the developer on 2026-10-31. Build to them: their **lay
 
 **Dashboard home (screen 5).** Top menu of the Reports app: Dashboard, Profit & Loss, Balance Sheet, Trial Balance, Sales, Purchases, Books, Parties (each shown once it is built). Under it a filter bar:
 - **Companies:** "All combined" or any combination of chips, one per company, each marked **loaded** or **not loaded** in Tally as recorded at the last sync or `entity-check` (`entity_sources.source_loaded`, migration 0025; the dashboard never contacts Tally). Several companies are added together: combined, without inter-company eliminations.
+- The company API retains the stored entity name and ID. A deployment may set `COMPANY_DISPLAY_NAMES` to a JSON object keyed by each exact stored name to supply shorter dashboard labels; an unmapped company keeps its original name. These labels affect presentation only, not accounting, source matching, or entity identity.
 - **Period:** the financial year, month chips (one or several, adjacent or not), or a from/to date range ("or dates"), and **Compare: last year** (the same period a year earlier) or no comparison.
 - **Status pill:** how many selected companies were loaded in Tally, the last sync, and whether every latest validation passed.
 
@@ -99,6 +104,7 @@ The same definition as the monthly sales views (proven day by day against Tally'
 
 - **Key figures**, each against the same months (or dates) last year: **net sales** (gross + returns + other adjustments), **invoices** (sales vouchers with an entry on those ledgers), **average invoice** (gross ÷ invoices), **sales returns** (credit notes, shown positive; rising returns are neutral, not crimson).
 - **Net sales by month**, a line chart; a month opens its sales register (until that page is built, this page for that month). Below it every month's gross, returns, other adjustments, net and invoices, with the total.
+- **Monthly net sales by company**, as separate ECharts lines using each company's dashboard display label. It follows the selected companies, period and sales filters; hover shows gross, returns, other adjustments and net, using the same calculation as the monthly sales views. It groups by entity ID and does not rely on records in the separate `branches` table.
 - **Top customers** (ten, by the voucher's party) with their share, and the rest and sales without a party as one figure; **largest invoices** (ten, by their entries on the sales ledgers, before taxes).
 - A customer opens their page (until built, this page filtered to them); an invoice its voucher page once built.
 - Written for both sides (`core/sales.py`), so the Purchases pages use the same definitions with Purchase Accounts, purchases and debit notes.
@@ -154,6 +160,10 @@ The client asked for the dashboard to follow the design pattern of their referen
 **Periods** (formula F-CMP-002): MTD, QTD and YTD run from the start of today's month, quarter (of the financial year) or financial year to today; FY is the twelve months of the year chosen; Custom keeps the month chips and the from/to dates. The default is YTD compared with the previous period. **The previous period** of MTD is the same days of the month before, of QTD the same days of the quarter before; YTD and FY are compared with the same dates a year earlier; Custom months with as many months just before, Custom dates with as many days just before. Profit (from the stored month-end statements) runs to the **last stored date within the period** and the page says "to 31-Oct-2026"; figures from the entries run to today.
 
 **Components**, used the same way on every module: **KPI cards** (coloured top border, small-capitals label, big value, change vs the comparison, sparkline); **monthly bar or line charts**; a **donut** for mixes; **horizontal bars** for cost structure (as % of net sales); **statement tables** with current, previous and change % columns and subtotals; **2×2 ratio tiles**; **detail tables** with status pills; a **waterfall** for cash. **Goal trackers** need targets: until budgets (M7b) a placeholder says so.
+
+**Status labels and meanings.** A payment status is calculated per remaining bill-wise allocation and that bill's due date, not the original invoice amount. Customer receivables use debit-positive ledger balances; supplier payables reverse the canonical debit-positive sign so an amount owed is positive for both. Positive overdue amounts are **Payment Overdue** for customers and **Payment to Supplier Overdue** for suppliers; positive amounts not yet due are **Payment Pending** or **Payment to Supplier Pending**; negative balances are **Customer Advance** or **Supplier Advance**; zero is **Fully Settled**. A party summary with overdue and other open bill states is **Multiple bill statuses**, so one overdue bill does not characterize every bill for that party. Summaries use the normalized balance, and a legacy overdue label cannot override a negative or zero balance. When bill allocation or due-date evidence is unavailable, the status is **No bill details**, not a guessed pending/overdue state. Negative bill allocations do not inflate overdue totals. Status columns have an adjacent plain-English **Meaning** column; validation and source-loaded statuses keep their own wording and meanings.
+
+**Statement dates.** Profit & Loss and Balance Sheet show the active filters as From Date, To Date and a readable reporting period. The Balance Sheet also says that balances are calculated as of the To Date; this is display metadata and does not change statement calculations.
 
 **Modules** (one PR each, in this order; what each shows comes from our data):
 
@@ -438,6 +448,9 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-04 | 0.15 | Shared status labels and adjacent meanings across payment, validation and source-loaded tables; bill-wise payment states avoid treating advances as overdue. P&L and Balance Sheet display the active date range, with the Balance Sheet as-of clarification. |
+| 2026-11-04 | 0.14 | Voucher and voucher-line transaction exports include Tally's optional `UPDATEDDATETIME` as Entry Altered Date; the source timezone is unspecified, so the timestamp is preserved without UTC conversion. |
+| 2026-11-02 | 0.13 | Deployment-local company display labels, preserving stored names and IDs; monthly net sales by company using the validated sales definition. |
 | 2026-11-02 | 0.12 | Section 0.4: the client's reference pattern (ADR-050): the dark top bar with the logo, module tabs and period toggles (MTD, QTD, YTD, FY, Custom) and the comparison with the previous period; the page header with segment chips and "Updated N min ago"; the components and the modules, one PR each; Section 0.2 superseded; the formula sheet; chart line colours. |
 | 2026-11-02 | 0.11 | Customers and vendors: the lists and the party's page (screen 8); opening bills not yet stored. |
 | 2026-11-02 | 0.10 | Monthly sales and purchases with the closing balance; sales by channel; the side bar's new items. |

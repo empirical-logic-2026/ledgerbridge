@@ -11,6 +11,7 @@
 import { Alert, Skeleton, Typography } from 'antd'
 import type { EChartsOption } from 'echarts'
 import type { Company, InvoiceOut, MonthSales, PartySales, SalesDashboard as Dashboard } from '../../api/types.ts'
+import { branchSalesChart } from './branchSalesChart.ts'
 import { Donut } from '../../components/Donut.tsx'
 import { EChart } from '../../components/EChart.tsx'
 import { StatusPill } from '../../components/StatusPill.tsx'
@@ -25,6 +26,8 @@ import { builtHref } from '../../shell/nav.ts'
 import { tokens, type Tokens } from '../../theme.ts'
 import { COMBINED_NOTE } from '../dashboard/words.ts'
 import { SIDE_WORDS, type Side, type SideWords } from './words.ts'
+import { companyDisplayName } from '../../companyDisplayName.ts'
+import { partyPaymentStatusInfo } from '../../statuses.ts'
 
 interface Props {
   side: Side
@@ -94,6 +97,7 @@ function customerColumns(names: Map<number, string>, combined: boolean, query: Q
     const all = toScaled(total)
     return all > 0n ? `${(Number((toScaled(net) * 1000n) / all) / 10).toFixed(1)}%` : null
   }
+  const kind = w.module === 'sales' ? 'customers' : 'vendors'
   return [
     { key: 'name', label: w.party, kind: 'text', value: (p) => p.name, link: (p) => partyHref({ party_id: p.party_id, name: p.name }, query, w) },
     { key: 'company', label: 'Company', kind: 'text', value: (p) => names.get(p.company) ?? `Company ${p.company}`, groupable: true, hidden: !combined },
@@ -106,9 +110,13 @@ function customerColumns(names: Map<number, string>, combined: boolean, query: Q
       label: 'Status',
       kind: 'text',
       groupable: true,
-      value: (p) => (p.status === 'overdue' ? 'Overdue' : 'Current'),
-      render: (p) => (p.status === 'overdue' ? <StatusPill text="Overdue" tone="bad" /> : <StatusPill text="Current" tone="good" />),
+      value: (p) => partyPaymentStatusInfo(p.payment_status ?? p.status, p.balance, kind).label,
+      render: (p) => {
+        const status = partyPaymentStatusInfo(p.payment_status ?? p.status, p.balance, kind)
+        return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
+      },
     },
+    { key: 'meaning', label: 'Meaning', kind: 'text', value: (p) => partyPaymentStatusInfo(p.payment_status ?? p.status, p.balance, kind).meaning },
   ]
 }
 
@@ -175,7 +183,7 @@ export function SalesDashboard(props: Props) {
   const { dashboard, companies, query } = props
   const w = SIDE_WORDS[props.side]
   const sourceName = companies[0]?.health.source_name ?? 'the source'
-  const names = new Map(companies.map((c) => [c.id, c.name]))
+  const names = new Map(companies.map((c) => [c.id, companyDisplayName(c)]))
   const colours = tokens[props.dark ? 'dark' : 'light']
 
   let content: React.ReactNode
@@ -219,6 +227,21 @@ export function SalesDashboard(props: Props) {
           />
           <ExplorerTable id={`${w.module}-by-month`} label={w.byMonthTable} columns={monthColumns(query, w)} rows={dashboard.monthly} rowKey={(m) => m.month} totalLabel="Total" />
         </section>
+        {props.side === 'sales' && dashboard.monthly_by_company.length > 0 && (
+          <section className="card" aria-label="Monthly sales by branch">
+            <div className="card-head">
+              <h2 className="card-title">Monthly net sales by branch (₹ lakh)</h2>
+              <span className="card-small-note">Hover for gross sales, returns and other adjustments</span>
+            </div>
+            <EChart
+              key={props.dark ? 'dark' : 'light'}
+              option={branchSalesChart(dashboard.monthly_by_company, companies, colours)}
+              dark={props.dark}
+              height={320}
+            />
+            <p className="report-note">Each series represents a selected company and uses its configured dashboard display name.</p>
+          </section>
+        )}
         {dashboard.channels.length > 0 && (
           <section className="card" aria-label={w.mix}>
             <h2 className="card-title">{w.mix}</h2>

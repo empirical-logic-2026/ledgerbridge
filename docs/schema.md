@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.42 (Draft) |
+| Version | 0.44 (Draft) |
 | Date | 2026-11-05 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -96,6 +96,9 @@ For XML sources, `payload` holds one source object (e.g. one Tally `<VOUCHER>` e
 
 | Migration | Milestone | Creates |
 | --- | --- | --- |
+| `0028` | M7 | `ledgerbridge_accounting.voucher_versions`, `voucher_version_lines`, and `voucher_ledger_changes`: append-only observed snapshots and their comparisons (RPT-017, ADR-051). |
+| `0027` | M7 | Nullable `ledgerbridge_accounting.vouchers.source_altered_at`, Tally's `UPDATEDDATETIME` as a timezone-unspecified source wall-clock value; no UTC conversion. |
+| `0026` | M7 | Cost categories, cost-centre links and bank instrument/reference fields; `ledgerbridge_reporting.v_cost_allocations`. |
 | `0001` | M1 | `ledgerbridge_source.raw_records`, `ledgerbridge_system.sources`, `ledgerbridge_system.connections`, `ledgerbridge_system.sync_runs` |
 | `0002` | M2 | Every other table in Sections 4 and 5, except `ledgerbridge_accounting.bank_statement_lines` (phase 2). Adds the `connections.agent_id` foreign key. |
 | `0003` | M2 | Reference data: the `INR` currency and the default standard chart of accounts, 75 accounts (Section 4.2) |
@@ -320,6 +323,7 @@ User-defined reporting dimensions beyond the built-in ones (entity, branch, cost
 | voucher_type_id | BIGINT UNSIGNED FK | |
 | voucher_number | VARCHAR(255) | Was 64 until migration `0010`. |
 | voucher_date | DATE | |
+| source_altered_at | DATETIME(6) NULL | Tally `UPDATEDDATETIME`; preserve its timezone-unspecified wall-clock value without UTC conversion. NULL when missing or invalid. |
 | reference_number | VARCHAR(255) NULL | Was 128 until migration `0010`. |
 | reference_date | DATE NULL | |
 | effective_date | DATE NULL | The source's effective date (Tally `EFFECTIVEDATE`); balances count by `voucher_date`, as Tally does. Migration `0016`. |
@@ -362,6 +366,25 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 | `ledgerbridge_accounting.bill_allocations` | `id, voucher_line_id, party_id, bill_type ENUM('new_ref','against_ref','advance','on_account'), bill_name, bill_date, due_date, amount` | Bill allocations (receivables/payables ageing) |
 | `ledgerbridge_accounting.inventory_lines` | `id, voucher_id, entity_id, voucher_date, line_no, item_id, godown_id, quantity (signed: in +, out −), stock_quantity (what the line moves in stock: the quantity, less the part tracked to a delivery or receipt note on a voucher that posts to the books; migration 0014), unit_id, rate, amount, discount_pct, batch_name` | Inventory entries |
 | `ledgerbridge_accounting.tax_lines` | `id, voucher_id, voucher_line_id NULL, tax_type ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other'), rate, taxable_amount, tax_amount, hsn_code` | GST / TDS details |
+
+#### Voucher alteration history (RPT-017, ADR-051)
+
+These accounting tables retain the voucher states LedgerBridge actually transforms. They
+are append-only; raw-record references deliberately have no cross-database foreign key.
+They do not imply that Tally returned every intermediate edit.
+
+| Table | Columns | Purpose |
+| --- | --- | --- |
+| `ledgerbridge_accounting.voucher_versions` | `id, entity_id, voucher_id, connection_id, voucher_source_key, company_name, voucher_number, capture_key, raw_record_id NULL, payload_hash NULL, source_alter_id NULL, source_altered_at NULL, observed_at, is_deleted, deletion_detected_at NULL, previous_version_id NULL` | One distinct transformed raw voucher payload, or a deletion tombstone. `capture_key` makes reprocessing idempotent. `source_altered_at` is Tally's timezone-unspecified time; `observed_at` is LedgerBridge's UTC receive/observation time. A tombstone has no invented source alteration time and uses `deletion_detected_at`. |
+| `ledgerbridge_accounting.voucher_version_lines` | `id, voucher_version_id, line_no, ledger_id, ledger_source_key, ledger_name, amount, amount_fc NULL, currency_name NULL, exchange_rate NULL, is_party_line, details, identity_hash, content_hash` | The ledger postings and bill/cost-centre details for that captured state. Amounts use the canonical sign: debit positive, credit negative. |
+| `ledgerbridge_accounting.voucher_ledger_changes` | `id, previous_version_id NULL, version_id, previous_line_id NULL, new_line_id NULL, change_type ENUM('added','modified','deleted','ambiguous'), matching_basis` | A non-unchanged comparison between the prior captured state and this state. Ambiguous candidates are stored unpaired. |
+
+`identity_hash` uses the ledger's source key and available posting context; `content_hash`
+also includes amounts and details. Equal content is removed as unchanged. A remaining
+one-to-one context match is a probable modification, not a source-issued line identity.
+Competing candidates are Ambiguous. Added/Deleted are emitted only when no opposite-side
+residuals remain in the comparison. A deletion-check tombstone compares the last captured
+postings with an empty set and dates the event by its detection time.
 
 ### 4.6 Bank data (phase 2, CON-005)
 
@@ -782,7 +805,7 @@ Checked against Tally's own balances and Stock Summary on LedgerBridge Test Co (
 | Not causes (checked 2026-10-15) | A reversing journal isn't in any balance even on its own date, also with reversing journals enabled. A voucher dated before the books' beginning is refused ("Out of Range"). A ledger's balance follows its own opening, also when its opening bills total differently (only the bill-wise outstanding uses the bills). A Stock-in-Hand ledger can't be given dated closing values through XML (integrated or not). In Educational mode a balance requested for a date other than the 1st, 2nd or 31st is wrong (for the 30th Tally included later vouchers): validation and analysis use those days only (`core/dates.py`, ADR-032). | `validate analyse` tests them on client data: ledger profiles with the books' first day, counts of optional, cancelled, post-dated, reversing and memorandum vouchers, one month's lines around a year end, opening bills against the opening, and the closing stock value at every date; and what the source's opening difference equals. |
 | Names | A master's name is compared trimmed, with spaces collapsed and case ignored: importing "Party Lima ", "PARTY LIMA" or "Party  Lima" changed the existing "Party Lima" (its name list took the name given). A ledger whose alias is another ledger's name is refused. A voucher naming an alias is stored naming the ledger. | References resolve exact, alias, then normalised (core/names.py: the same master for Tally's data); masters deleted in the source answer only to names no live master has (ADR-034). |
 | Foreign currency | A ledger kept in a foreign currency (`CURRENCYNAME`; Tally exports the rupee sign as "?") has its closing balance and its group totals at current rates; the trial balance shows the difference to the amounts entered as "Unadjusted Forex Gain/Loss". A dollar customer with Rs 8,200 entered without a dollar amount showed 0 and that line Dr 8,200. XML import refused foreign amounts written as exported. A foreign-currency ledger's Ledger Vouchers report shows a calculated line of that name on its To date (no voucher, no voucher type); the report's XML export lists only the To date's month. | Validation compares each foreign-currency ledger with its opening plus the total of Tally's own vouchers on it up to the date (its ledger-voucher collection, optional vouchers left out; VAL-013, ADR-038); its revalued closing balance is information only; `validate compare-ledger` lists a ledger's vouchers from Tally's ledger-voucher collection instead of the report. |
-| TallyPrime Edit Log | The same company opened in Edit Log (2026-10-19, same GUID, migrated): every export the sync and validation use is identical in fields, formats and values (companies, group and ledger balances, stock values, ledger vouchers, all masters, every recorded voucher, same AlterIDs); the company export adds `ISEDITLOGON` Yes and `ISCMPUAECORPORATETAXREGD`. An alteration leaves **no edit history in the XML export** (audit lists empty, `OLDAUDITENTRYIDS` -1); only `UPDATEDDATETIME` is now filled with the alteration time. | Nothing to change: the sync doesn't fetch `UPDATEDDATETIME`, so records and their hashes stay the same; seed case `EDITLOG-ALTER-1`; `tests/test_edit_log.py`. |
+| TallyPrime Edit Log | The recorded Edit Log fixture exports the current altered voucher state; audit lists are empty and `OLDAUDITENTRYIDS` is -1. The voucher projection now fetches `UPDATEDDATETIME`, but the fixture does not establish that Tally returns prior versions. | The field is stored as nullable `vouchers.source_altered_at` (migration 0027); it remains a timezone-unspecified source wall-clock value. Version history retains only distinct transformed payloads actually observed (migration 0028); `tests/test_edit_log.py`, `tests/test_voucher_history.py`. |
 | Effective dates | A voucher keeps an effective date (`EFFECTIVEDATE`) that can differ from its date. Balances count by the date: a journal dated 31 August, effective 1 September, is in the balance on 31 August (journals and sales, regular and optional, checked on 31 August and 1 and 2 September). | Stored in `vouchers.effective_date`; counting uses `voucher_date`. `validate analyse` counts vouchers whose two dates fall on different sides of a date compared. |
 | In the books | Optional vouchers, memorandum vouchers and reversing journals are in no balance (nor in a period's opening). A custom type under Journal counts like Journal; a post-dated voucher counts from its date. | Their lines aren't effective (optional flag; voucher types that don't post, inherited by custom types); dates decide the rest. |
 
@@ -794,7 +817,7 @@ Checked against Tally's own balances and Stock Summary on LedgerBridge Test Co (
 4. Overlapping data from several sources for the same entity and period is resolved using `entity_sources.precedence` and `active_from/active_to` (IMP-005).
 5. Validation runs after each transform (Section 5.2).
 6. Aggregates in `ledgerbridge_reporting` are refreshed for affected entities and dates only.
-7. **A voucher's child rows are replaced as a whole.** Whenever a voucher is created or changed in the source, all its child rows are deleted and re-inserted from the new version, together with the voucher header update, **in one transaction**. The child rows are `voucher_lines`, `bill_allocations`, `line_cost_allocations`, `line_dimensions`, `inventory_lines` and `tax_lines`. Edits therefore never leave stale lines behind, and a reader never sees half a voucher. The child tables carry no [SRC] columns; their origin is their voucher's. Their foreign keys to the voucher, or to its lines, use `ON DELETE CASCADE` so the replacement is a single delete. The voucher row itself is never physically deleted: a voucher deleted in the source is soft-deleted (rule 3). The sync implementation is M3.
+7. **A voucher's current child rows are replaced as a whole.** Whenever a voucher is created or changed in the source, its current child rows are deleted and re-inserted from the new version, together with the voucher header update, **in one transaction**. The child rows are `voucher_lines`, `bill_allocations`, `line_cost_allocations`, `line_dimensions`, `inventory_lines` and `tax_lines`. Edits therefore never leave stale current lines behind, and a reader never sees half a voucher. Independently, RPT-017 snapshots each distinct transformed raw voucher version and its ledger postings in `voucher_versions` and `voucher_version_lines`; those history rows are not replaced with the current children. `voucher_ledger_changes` stores the comparison to the prior captured version. The voucher row itself is never physically deleted: a voucher deleted in the source is soft-deleted and a detection-time tombstone is recorded. The sync implementation is M3; version capture is M7.
 
 8. **Short transactions while syncing (ADR-020).** Inserts into tables with a foreign key to `ledgerbridge_system.connections` lock that connection's row until commit. Syncs therefore commit each batch as soon as it is written and never wait for the source with uncommitted writes. Stored error summaries (`sync_runs.error_summary`, `raw_records.process_error`) hold the error type and a short message only, never SQL statements or parameters.
 
@@ -834,7 +857,8 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
-| 2026-11-05 | 0.42 | `cost_categories`; `cost_centres.cost_category_id`, `line_cost_allocations.cost_category_id`; `voucher_lines.instrument_number`, `transaction_reference`; `v_cost_allocations` (migration 0026). |
+| 2026-11-05 | 0.44 | RPT-017 / ADR-051: append-only observed voucher versions, posting snapshots, ambiguity-aware comparison rows and deletion detection timestamps (migration 0028); nullable `vouchers.source_altered_at` stores Tally `UPDATEDDATETIME` without timezone conversion (migration 0027). |
+| 2026-11-05 | 0.43 | `cost_categories`; `cost_centres.cost_category_id`, `line_cost_allocations.cost_category_id`; `voucher_lines.instrument_number`, `transaction_reference`; `v_cost_allocations` (migration 0026). |
 | 2026-10-31 | 0.41 | `entity_sources.source_checked_at`, `source_loaded`, `source_checked_by` (migration 0025, the dashboard's company chips). |
 | 2026-10-30 | 0.40 | Section 6: `v_group_ancestors`, `v_data_health` (migration 0024, dashboard D1). |
 | 2026-10-30 | 0.39 | `entities.is_on_hold` (SYN-007, migration 0023). |

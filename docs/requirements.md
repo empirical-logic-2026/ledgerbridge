@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.26 (Draft) |
-| Date | 2026-10-19 |
+| Version | 0.27 (Draft) |
+| Date | 2026-11-04 |
 | Status | Draft for review. Requirements may be added or changed in any phase (see Section 10). |
 | Related | `docs/architecture.md`, `CLAUDE.md` |
 
@@ -185,6 +185,7 @@ Priority: **P1** = phase 1, **P2** = phase 2, **P3+** = later phases.
 | RPT-014 | The dashboard follows the client's reference pattern (2026-11-02; screenshots kept outside git, layout and information design only, with our own name, theme and data): a dark top bar with the product name, module tabs (Overview, Sales, Purchases, P&L & KPIs, Balance Sheet, Cash Flow, Parties, Data) and period toggles; a page header with the title and period, segment chips (all companies or each company; channels on the Sales pages) and "Updated N min ago" from the last sync; the same components on every module (KPI cards with sparklines, monthly charts, donuts for mixes, horizontal bars for cost structure, statement tables with current, previous and change % columns, ratio tiles, detail tables with status pills, a waterfall for cash). Everything stays clickable all the way down, with breadcrumbs. Goal trackers wait for targets (budgets, M7b). | P1 |
 | RPT-015 | A formula sheet (`docs/formulas.md`, with Word and PDF copies) lists every figure the dashboard shows with an ID (e.g. F-PL-003): the formula in plain words and as an expression, the data it comes from (view and columns), the debit/credit sign rule, the date rule in Tally's Educational mode and how to check it in Tally. The code and the tests name the IDs; a test fails when a figure has no formula entry. | P1 |
 | RPT-016 | Period toggles MTD, QTD, YTD and FY (plus months or dates of the user's choice); every figure can be compared with the previous period (MTD: the same days of the month before; QTD: of the quarter before; YTD and FY: a year earlier; chosen months or dates: as many just before) or with last year. Figures from stored statements run to the last stored date within the period, and say so. | P1 |
+| RPT-017 | A voucher ledger alteration history retains each distinct voucher version LedgerBridge actually captures, its raw-record reference, payload hash, source AlterID, source alteration time and observation time, plus its ledger-posting snapshots. Comparisons label Added, Modified or Deleted only where the captured postings support that classification; otherwise they show Ambiguous and never claim an unobserved intermediate version. Deleted vouchers use the deletion-detection time, not the last source alteration time. The report is entity-scoped and filters source alteration dates from 1 April 2026 through the selected end date; deletion events filter by detection date. | P1 |
 
 ### 4.9 AI layer
 
@@ -402,6 +403,7 @@ Requirements can be added or changed in any phase. For each change:
 | 2026-10-29 | 0.24 | RPT-013 (monthly sales, proven against the source). |
 | 2026-10-30 | 0.25 | SYN-007 (entities on hold). |
 | 2026-11-02 | 0.26 | RPT-014 (the client's reference pattern), RPT-015 (formula sheet with IDs), RPT-016 (period toggles and the previous period); ADR-050. |
+| 2026-11-04 | 0.27 | RPT-017: observed voucher versions, ledger-line snapshots and ambiguity-aware alteration history; ADR-051. |
 | 2026-10-19 | 0.22 | SEC-009 widened: automated checks on every pull request, high-severity findings block merging (ADR-039). |
 | 2026-10-16 | 0.21 | VAL-013: the book value is the opening plus the source's own vouchers; DAT-012: the opening difference warning follows the source's own trial balance line. |
 | 2026-10-16 | 0.20 | Section 4.13 Foreign currency (FX-001 to FX-013): foreign-currency data kept alongside the base-currency books, revaluation snapshots, realised and unrealised gains, exposure, `forex.view` (ADR-037). |

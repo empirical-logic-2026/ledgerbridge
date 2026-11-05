@@ -38,6 +38,17 @@ def _cleanup(session: Session) -> None:
     )
     vouchers = select(A.Voucher.id).where(A.Voucher.connection_id == connection.id)
     lines = select(A.VoucherLine.id).where(A.VoucherLine.voucher_id.in_(vouchers))
+    versions = select(A.VoucherVersion.id).where(A.VoucherVersion.connection_id == connection.id)
+    session.execute(
+        delete(A.VoucherLedgerChange).where(
+            (A.VoucherLedgerChange.version_id.in_(versions))
+            | (A.VoucherLedgerChange.previous_version_id.in_(versions))
+        )
+    )
+    session.execute(
+        delete(A.VoucherVersionLine).where(A.VoucherVersionLine.voucher_version_id.in_(versions))
+    )
+    session.execute(delete(A.VoucherVersion).where(A.VoucherVersion.connection_id == connection.id))
     for model in (A.BillAllocation, A.LineCostAllocation, A.LineDimension):
         session.execute(delete(model).where(model.voucher_line_id.in_(lines)))
     for model in (A.TaxLine, A.InventoryLine, A.VoucherLine):

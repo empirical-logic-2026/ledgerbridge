@@ -16,6 +16,7 @@ import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import { builtHref } from '../../shell/nav.ts'
 import { tokens } from '../../theme.ts'
 import { PARTY_WORDS, type PartyKind } from './words.ts'
+import { partyPaymentStatusInfo } from '../../statuses.ts'
 
 interface Props extends PanelProps {
   kind: PartyKind
@@ -51,9 +52,13 @@ function columns(kind: PartyKind, query: PanelProps['query']): ExplorerColumn<Ag
       label: 'Status',
       kind: 'text',
       groupable: true,
-      value: (r) => (r.status === 'overdue' ? 'Overdue' : 'Current'),
-      render: (r) => (r.status === 'overdue' ? <StatusPill text="Overdue" tone="bad" /> : <StatusPill text="Current" tone="good" />),
+      value: (r) => partyPaymentStatusInfo(r.payment_status ?? r.status, r.balance, kind).label,
+      render: (r) => {
+        const status = partyPaymentStatusInfo(r.payment_status ?? r.status, r.balance, kind)
+        return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
+      },
     },
+    { key: 'meaning', label: 'Meaning', kind: 'text', value: (r) => partyPaymentStatusInfo(r.payment_status ?? r.status, r.balance, kind).meaning },
   ]
 }
 

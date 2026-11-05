@@ -48,6 +48,9 @@ class AgeingRow:
     name: str
     balance: Decimal  # due at the day, positive when owed in the usual direction
     buckets: dict[str, Decimal] = field(default_factory=lambda: dict.fromkeys(BUCKETS, ZERO))
+    overdue: Decimal = ZERO
+    pending: Decimal = ZERO
+    advance: Decimal = ZERO
 
     @property
     def bills(self) -> Decimal:
@@ -57,9 +60,15 @@ class AgeingRow:
     def uncovered(self) -> Decimal:
         return self.balance - self.bills
 
-    @property
-    def overdue(self) -> Decimal:
-        return self.bills - self.buckets["not_due"]
+    def add_outstanding(self, amount: Decimal, days_past_due: int) -> None:
+        self.buckets[bucket(days_past_due)] += amount
+        if amount > 0:
+            if days_past_due > 0:
+                self.overdue += amount
+            else:
+                self.pending += amount
+        elif amount < 0:
+            self.advance -= amount
 
 
 def ageing(session: Session, companies: list[int], on: date, kind: Kind) -> list[AgeingRow]:
@@ -79,7 +88,7 @@ def ageing(session: Session, companies: list[int], on: date, kind: Kind) -> list
     for name, total in balances_by_name(session, [pid for pid, _, _ in parties], on):
         rows[name].balance = sign * total
     for name, amount, days in _outstanding(session, parties, on, sign):
-        rows[name].buckets[bucket(days)] += amount
+        rows[name].add_outstanding(amount, days)
     found = [r for r in rows.values() if r.balance != 0 or r.bills != 0]
     return sorted(found, key=lambda r: (-r.balance, r.name.lower()))
 

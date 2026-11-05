@@ -25,6 +25,7 @@ from api.v1.common import (
     formula,
     parse_period,
 )
+from api.v1.company_display import display_company_name
 from api.v1.home import change_pct
 from core.balance_sheet import balance_sheet
 from core.statement_report import percent, profit_loss
@@ -116,7 +117,14 @@ def profit_loss_report(
         period_start=period.start,
         period_end=period.end,
         compared_with=described,
-        columns=[ColumnOut(key=c.key, label=c.label, kind=c.kind) for c in found.columns],
+        columns=[
+            ColumnOut(
+                key=c.key,
+                label=display_company_name(c.label) if c.kind == "company" else c.label,
+                kind=c.kind,
+            )
+            for c in found.columns
+        ],
         lines=lines,
         reason=found.reason,
         shifted=found.shifted,
@@ -174,6 +182,8 @@ class RatioOut(BaseModel):
 class BalanceSheetReport(BaseModel):
     companies: list[int]
     combined: bool
+    period_start: date
+    period_end: date
     as_of: date | None  # the date the figures are at
     before_as_of: date | None
     compared_with: ComparedWith | None
@@ -206,6 +216,8 @@ def balance_sheet_report(
     return BalanceSheetReport(
         companies=companies,
         combined=len(companies) > 1,
+        period_start=period.start,
+        period_end=period.end,
         as_of=found.as_of,
         before_as_of=found.before_as_of,
         compared_with=described,

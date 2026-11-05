@@ -16,7 +16,7 @@ a plain message: unknown parameters are refused, not ignored.
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -55,7 +55,7 @@ class DatasetRequest:
 
 @dataclass
 class ResultRow:
-    keys: dict[str, tuple[Any, str]]  # dimension -> (id, label)
+    keys: dict[str, tuple[Any, str | None]]  # dimension -> (id, label)
     values: dict[str, Decimal | int]
     level: int | None = None  # subtotals: how many outer groups they total (1 = outermost)
 
@@ -314,8 +314,16 @@ def _subtotals(
 
 def _row(dataset: Dataset, request: DatasetRequest, r: Any) -> ResultRow:
     m = r._mapping
-    keys = {k: (_plain(m[f"{k}__id"]), str(m[f"{k}__label"])) for k in request.keys}
+    keys = {k: (_plain(m[f"{k}__id"]), _label(m[f"{k}__label"])) for k in request.keys}
     return ResultRow(keys, {k: _value(dataset, k, m[k]) for k in request.measures})
+
+
+def _label(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    return str(value)
 
 
 def _ids(row: ResultRow, keys: list[str]) -> tuple[Any, ...]:

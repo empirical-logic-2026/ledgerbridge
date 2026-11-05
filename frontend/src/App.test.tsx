@@ -3,7 +3,20 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp } from 'antd'
 import App from './App.tsx'
-import type { CentrePageOut, CentresOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard } from './api/types.ts'
+import type {
+  CentrePageOut,
+  CentresOut,
+  ChannelsOut,
+  Company,
+  Home,
+  MonthlyOut,
+  PartiesOut,
+  PartyInvoiceOut,
+  PartyOut,
+  Periods,
+  RegisterOut,
+  SalesDashboard,
+} from './api/types.ts'
 
 // ECharts needs a real canvas; the wrapper is exercised in the browser, not jsdom.
 vi.mock('./components/EChart.tsx', () => ({ EChart: () => <div data-testid="chart" /> }))
@@ -19,11 +32,12 @@ const health = {
   source_checked_by: 'sync',
 }
 const companies: Company[] = [
-  { id: 3, code: 'ALPHA', name: 'Alpha', books_from: '2025-04-01', fy_start_month: 4, health },
+  { id: 3, code: 'ALPHA', name: 'Alpha', display_name: 'Alpha', books_from: '2025-04-01', fy_start_month: 4, health },
   {
     id: 4,
     code: 'BETA',
     name: 'Beta',
+    display_name: 'Beta',
     books_from: '2025-04-01',
     fy_start_month: 4,
     health: { ...health, source_loaded: false },
@@ -99,8 +113,8 @@ const home: Home = {
   ],
   summary_reason: null,
   top_customers: [
-    { party_id: 11, name: 'Customer One', net_sales: '18400000', share_pct: '3.8', balance: '1161000', overdue: '313000', status: 'overdue' },
-    { party_id: 12, name: 'Customer Two', net_sales: '9000000', share_pct: '1.9', balance: '0', overdue: '0', status: 'current' },
+    { party_id: 11, name: 'Customer One', net_sales: '18400000', share_pct: '3.8', balance: '1161000', overdue: '313000', status: 'overdue', payment_status: 'overdue' },
+    { party_id: 12, name: 'Customer Two', net_sales: '9000000', share_pct: '1.9', balance: '0', overdue: '0', status: 'current', payment_status: 'settled' },
   ],
 }
 
@@ -217,10 +231,37 @@ describe('the dashboard', () => {
     // The top customers, each opening their page, with their status.
     const top = screen.getByRole('table', { name: 'Top customers by net sales' })
     expect(within(top).getByRole('link', { name: 'Customer One' })).toHaveAttribute('href', expect.stringMatching(/^#\/sales\/customers\/11/))
-    expect(within(top).getByText('Overdue')).toHaveClass('status-bad')
-    expect(within(top).getByText('Current')).toHaveClass('status-good')
+    expect(within(top).getByText('Payment Overdue')).toHaveClass('status-bad')
+    expect(within(top).getByText('Fully Settled')).toHaveClass('status-good')
+    expect(within(top).getByText('Customer has not paid by the due date.')).toBeInTheDocument()
     expect(screen.getByText(/without inter-company eliminations/)).toBeInTheDocument()
     expect(screen.getAllByTestId('chart').length).toBeGreaterThan(1) // the charts and the sparklines
+  })
+
+  it('uses legacy customer status fields when payment_status is absent from an older API response', async () => {
+    const legacyHome = {
+      ...home,
+      top_customers: home.top_customers.map(({ payment_status: _paymentStatus, ...customer }) => customer),
+    }
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/home': legacyHome })
+    renderApp('#/overview/dashboard')
+    const table = await screen.findByRole('table', { name: 'Top customers by net sales' })
+    expect(within(table).getByText('Payment Overdue')).toBeInTheDocument()
+    expect(within(table).getByText('Fully Settled')).toBeInTheDocument()
+  })
+
+  it('keeps the Overview usable and reports malformed customer entries', async () => {
+    const malformedHome = {
+      ...home,
+      top_customers: [null, ...home.top_customers],
+    }
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/home': malformedHome })
+    renderApp('#/overview/dashboard')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Some customer rows couldn't be displayed.")
+    const table = screen.getByRole('table', { name: 'Top customers by net sales' })
+    expect(within(table).getByRole('link', { name: 'Customer One' })).toBeInTheDocument()
+    expect(within(table).getByRole('link', { name: 'Customer Two' })).toBeInTheDocument()
   })
 
   it('shows the companies as chips, all of them combined unless some are chosen', async () => {
@@ -345,7 +386,7 @@ describe('the Profit & Loss page', () => {
   const lastRequest = () => requests.filter((r) => r.includes('/reports/profit-loss')).pop() ?? ''
 
   it('shows the statement company by company with the total, last year and change', async () => {
-    renderApp('#/statements/profit-loss')
+    renderApp('#/statements/profit-loss?from=2026-04-01&to=2026-09-30')
     expect(await screen.findByRole('heading', { name: 'Profit & Loss · Alpha + Beta' })).toBeInTheDocument()
     expect(await screen.findByText(/without inter-company eliminations/)).toBeInTheDocument()
     const table = await screen.findByRole('table')
@@ -355,6 +396,10 @@ describe('the Profit & Loss page', () => {
     expect(within(table).getByText('3,822.9')).toBeInTheDocument() // ₹ lakh
     expect(within(table).getByText('-40.9').closest('td')).toHaveClass('negative') // a loss in crimson
     expect(within(table).getByText('▲ 22.5%')).toBeInTheDocument()
+    const reportPeriod = screen.getByRole('group', { name: 'Reporting period' })
+    expect(reportPeriod).toHaveTextContent(/From Date:\s*01-Apr-2026/)
+    expect(reportPeriod).toHaveTextContent(/To Date:\s*30-Sep-2026/)
+    expect(lastRequest()).toContain('date_from=2026-04-01&date_to=2026-09-30')
     // An older link opens the page in its module (P&L & KPIs).
     expect(within(screen.getByRole('navigation', { name: 'Modules' })).getByRole('link', { name: 'P&L & KPIs' })).toHaveAttribute('aria-current', 'page')
   })
@@ -440,9 +485,15 @@ const sales: SalesDashboard = {
     { month: '2026-04-01', gross: '250000000', returns: '-5000000', other: '0', net: '245000000', invoices: 60 },
     { month: '2026-05-01', gross: '242000000', returns: '-5000000', other: '0', net: '237000000', invoices: 60 },
   ],
+  monthly_by_company: [
+    { company: 3, month: '2026-04-01', gross: '140000000', returns: '-3000000', other: '0', net: '137000000' },
+    { company: 4, month: '2026-04-01', gross: '110000000', returns: '-2000000', other: '0', net: '108000000' },
+    { company: 3, month: '2026-05-01', gross: '132000000', returns: '-3000000', other: '0', net: '129000000' },
+    { company: 4, month: '2026-05-01', gross: '110000000', returns: '-2000000', other: '0', net: '108000000' },
+  ],
   top_customers: [
-    { company: 3, party_id: 11, name: 'Customer One', net_sales: '300000000', invoices: 70, balance: '1161000', overdue: '313000', status: 'overdue' },
-    { company: 4, party_id: 12, name: 'Customer Two', net_sales: '100000000', invoices: 40, balance: '0', overdue: '0', status: 'current' },
+    { company: 3, party_id: 11, name: 'Customer One', net_sales: '300000000', invoices: 70, balance: '1161000', overdue: '313000', status: 'overdue', payment_status: 'overdue' },
+    { company: 4, party_id: 12, name: 'Customer Two', net_sales: '100000000', invoices: 40, balance: '0', overdue: '0', status: 'current', payment_status: 'settled' },
   ],
   other_customers: '82000000',
   customers: 9,
@@ -464,6 +515,7 @@ const ageingRow = (id: number, name: string, balance: string, notDue: string, ov
   overdue: over90,
   uncovered,
   status: over90 === '0' ? ('current' as const) : ('overdue' as const),
+  payment_status: balance.startsWith('-') ? 'advance' : balance === '0' ? 'settled' : over90 === '0' ? 'pending' : 'overdue',
 })
 const ageingFound = {
   kind: 'customers',
@@ -480,6 +532,8 @@ const sheetLine = (key: string, label: string, section: 'assets' | 'liabilities'
 const sheetFound = {
   companies: [3, 4],
   combined: true,
+  period_start: '2026-04-01',
+  period_end: '2026-09-30',
   as_of: '2026-09-30',
   before_as_of: '2026-08-31',
   compared_with: { kind: 'previous' as const, label: 'Previous period', start: '2026-08-01', end: '2026-08-31', months: ['2026-08-01'] },
@@ -552,11 +606,17 @@ describe('the Balance Sheet', () => {
 
   it('shows both sides at the two dates with the change, and the ratios as tiles', async () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/reports/balance-sheet': sheetFound })
-    renderApp('#/balance-sheet/statement')
+    renderApp('#/balance-sheet/statement?from=2026-04-01&to=2026-09-30')
     const table = await screen.findByRole('table', { name: 'Balance Sheet' })
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Particulars', '30-Sep-2026', '31-Aug-2026', 'Change'])
     expect(within(table).getByText('Total assets').closest('tr')).toHaveTextContent('₹62.80 Cr')
     expect(within(table).getByText('Total liabilities and capital').closest('tr')).toHaveTextContent('▲ 4.7%')
+    const reportPeriod = screen.getByRole('group', { name: 'Reporting period' })
+    expect(reportPeriod).toHaveTextContent(/From Date:\s*01-Apr-2026/)
+    expect(reportPeriod).toHaveTextContent(/To Date:\s*30-Sep-2026/)
+    expect(reportPeriod).toHaveTextContent('Balances are calculated as of the To Date.')
+    const request = requests.filter((url) => url.includes('/reports/balance-sheet')).pop() ?? ''
+    expect(request).toContain('date_from=2026-04-01&date_to=2026-09-30')
     const liquidity = screen.getByRole('list', { name: 'Liquidity ratios' })
     expect(within(liquidity).getByRole('listitem', { name: 'Current ratio' })).toHaveTextContent('1.82×')
     const days = within(screen.getByRole('list', { name: 'Working capital days' })).getByRole('listitem', { name: 'Receivable days' })
@@ -579,8 +639,45 @@ describe('Receivables with ageing', () => {
     expect(within(bars).getByText('Over 90 days').closest('.hbar')).toHaveTextContent('33.3%')
     const table = screen.getByRole('table', { name: 'Customers by ageing' })
     expect(within(table).getByRole('link', { name: 'Customer One' })).toHaveAttribute('href', expect.stringMatching(/^#\/sales\/customers\/11/))
-    expect(within(table).getByText('Overdue')).toHaveClass('status-bad')
+    expect(within(table).getByText('Payment Overdue')).toHaveClass('status-bad')
+    expect(within(table).getByText('Customer has not paid by the due date.')).toBeInTheDocument()
     expect(within(screen.getByRole('navigation', { name: 'Parties pages' })).getByRole('link', { name: 'Payables' })).toHaveAttribute('href', expect.stringMatching(/^#\/parties\/payables/))
+  })
+
+  it('uses the legacy aggregate status field when payment_status is absent', async () => {
+    const legacyAgeing = {
+      ...ageingFound,
+      rows: ageingFound.rows.map(({ payment_status: _paymentStatus, ...row }) => row),
+      total: (({ payment_status: _paymentStatus, ...row }) => row)(ageingFound.total),
+    }
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/ageing/customers': legacyAgeing })
+    renderApp('#/parties/receivables')
+    const table = await screen.findByRole('table', { name: 'Customers by ageing' })
+    expect(within(table).getByText('Payment Overdue')).toBeInTheDocument()
+    expect(within(table).queryByText('Payment Pending')).toBeNull()
+    expect(within(table).getByText('No bill details')).toBeInTheDocument()
+  })
+
+  it('shows direction-aware statuses and meanings for supplier payables', async () => {
+    const vendors = {
+      ...ageingFound,
+      kind: 'vendors',
+      rows: [
+        { ...ageingRow(21, 'Supplier Credit', '-100', '0', '100', '-200'), status: 'overdue', payment_status: 'overdue' },
+        { ...ageingRow(22, 'Overdue Supplier', '100', '0', '100', '0'), payment_status: 'overdue' },
+        { ...ageingRow(23, 'Pending Supplier', '200', '200', '0', '0'), payment_status: 'pending' },
+        { ...ageingRow(24, 'Mixed Supplier', '150', '50', '100', '0'), payment_status: 'mixed' },
+      ],
+    }
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/ageing/vendors': vendors })
+    renderApp('#/parties/payables')
+
+    const table = await screen.findByRole('table', { name: 'Vendors by ageing' })
+    expect(within(table).getByText('Supplier Advance')).toHaveClass('status-good')
+    expect(within(table).getByText('Your company has paid the supplier extra. This amount is available as credit.')).toBeInTheDocument()
+    expect(within(table).getByText('Payment to Supplier Overdue')).toHaveClass('status-bad')
+    expect(within(table).getByText('Payment to Supplier Pending')).toBeInTheDocument()
+    expect(within(table).getByText('Multiple bill statuses')).toBeInTheDocument()
   })
 })
 
@@ -627,8 +724,83 @@ describe('the Sales dashboard', () => {
     expect(within(mix).getByText('20.7%')).toBeInTheDocument()
     // The top customers with their status.
     const top = screen.getByRole('table', { name: 'Top customers' })
-    expect(within(top).getByText('Overdue')).toHaveClass('status-bad')
-    expect(within(top).getByText('Current')).toHaveClass('status-good')
+    expect(within(top).getByText('Payment Overdue')).toHaveClass('status-bad')
+    expect(within(top).getByText('Fully Settled')).toHaveClass('status-good')
+    expect(within(top).getByText('Customer has not paid by the due date.')).toBeInTheDocument()
+  })
+
+  it('uses the legacy party status field when payment_status is absent', async () => {
+    const legacySales = {
+      ...sales,
+      top_customers: sales.top_customers.map(({ payment_status: _paymentStatus, ...party }) => party),
+    }
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/sales/dashboard': legacySales })
+    renderApp('#/sales/dashboard')
+    const table = await screen.findByRole('table', { name: 'Top customers' })
+    expect(within(table).getByText('Payment Overdue')).toBeInTheDocument()
+    expect(within(table).getByText('Fully Settled')).toBeInTheDocument()
+  })
+
+  it('classifies customer balances by normalized direction and requires bill details for overdue', async () => {
+    const [overdueCustomer, settledCustomer] = sales.top_customers
+    const { payment_status: _paymentStatus, ...customerWithoutBillStatus } = settledCustomer
+    const response = {
+      ...sales,
+      top_customers: [
+        { ...overdueCustomer, balance: '-100.00', overdue: '75.00', status: 'overdue', payment_status: 'overdue' },
+        { ...settledCustomer, balance: '0.00', status: 'overdue', payment_status: 'overdue' },
+        { ...overdueCustomer, party_id: 13, name: 'Customer Three', balance: '100.00', status: 'current', payment_status: 'mixed' },
+        { ...customerWithoutBillStatus, party_id: 14, name: 'Customer Four', balance: '100.00', status: 'current' },
+      ],
+    }
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/sales/dashboard': response })
+    renderApp('#/sales/dashboard')
+
+    const table = await screen.findByRole('table', { name: 'Top customers' })
+    expect(within(table).getByText('Customer Advance')).toBeInTheDocument()
+    expect(within(table).getByText('Customer has paid extra. This amount is available as credit.')).toBeInTheDocument()
+    expect(within(table).getByText('Fully Settled')).toBeInTheDocument()
+    expect(within(table).getByText('Multiple bill statuses')).toBeInTheDocument()
+    expect(within(table).getByText('No bill details')).toBeInTheDocument()
+    expect(within(table).queryByText('Payment Overdue')).toBeNull()
+  })
+
+  it('shows direction-aware supplier statuses and meanings in Purchases', async () => {
+    const [overdueSupplier, pendingSupplier] = sales.top_customers
+    const response = {
+      ...sales,
+      top_customers: [
+        { ...overdueSupplier, balance: '-100.00', status: 'overdue', payment_status: 'overdue' },
+        { ...overdueSupplier, party_id: 13, name: 'Supplier Two', balance: '100.00', status: 'overdue', payment_status: 'overdue' },
+        { ...pendingSupplier, party_id: 14, name: 'Supplier Three', balance: '200.00', status: 'current', payment_status: 'pending' },
+      ],
+    }
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/purchases/dashboard': response })
+    renderApp('#/purchases/dashboard')
+
+    const table = await screen.findByRole('table', { name: 'Top vendors' })
+    expect(within(table).getByText('Supplier Advance')).toHaveClass('status-good')
+    expect(within(table).getByText('Your company has paid the supplier extra. This amount is available as credit.')).toBeInTheDocument()
+    expect(within(table).getByText('Payment to Supplier Overdue')).toHaveClass('status-bad')
+    expect(within(table).getByText('Your company has not paid the supplier by the due date.')).toBeInTheDocument()
+    expect(within(table).getByText('Payment to Supplier Pending')).toBeInTheDocument()
+    expect(within(table).getByText('Your company needs to pay the supplier, but the due date has not passed.')).toBeInTheDocument()
+  })
+
+  it('uses configured company labels in selectors, tables and the branch chart', async () => {
+    const mapped = companies.map((company) => ({
+      ...company,
+      display_name: company.id === 3 ? 'North' : 'South',
+    }))
+    stubApi({ '/api/v1/companies': mapped, '/api/v1/periods': periods, '/api/v1/sales/dashboard': sales })
+    renderApp('#/sales/dashboard?company=3&company=4')
+    await screen.findByRole('region', { name: 'Net sales' })
+    expect(screen.getByRole('group', { name: 'Companies' })).toHaveTextContent('North')
+    expect(screen.getByRole('group', { name: 'Companies' })).toHaveTextContent('South')
+    expect(screen.getByRole('region', { name: 'Monthly sales by branch' })).toHaveTextContent(
+      'Each series represents a selected company',
+    )
+    expect(within(screen.getByRole('table', { name: 'Top customers' })).getByText('South')).toBeInTheDocument()
   })
 
   it('applies the customer and channel facets, and no others', async () => {
@@ -676,8 +848,8 @@ describe('the Sales dashboard', () => {
   it('explains a status on hover', async () => {
     renderApp('#/sales/dashboard')
     const top = await screen.findByRole('table', { name: 'Top customers' })
-    fireEvent.mouseEnter(within(top).getByText('Overdue'))
-    expect(await screen.findByText(/Outstanding bills whose due date has passed.*\(F-PTY-002\)/)).toBeInTheDocument()
+    fireEvent.mouseEnter(within(top).getByText('Payment Overdue'))
+    expect(await screen.findByText('Customer has not paid by the due date.')).toBeInTheDocument()
   })
 
 })
@@ -871,11 +1043,16 @@ const partiesFound: PartiesOut = {
     { party_id: 12, name: 'Customer Two', companies: [3], balance: '0', net: '500000', invoices: 3, last_invoice: null },
   ],
 }
-const invoice = (id: number, status: 'paid' | 'due' | 'overdue' | 'no_bill', days: number | null) => ({
-  ...row(id, '2026-08-27', 'Sales', '312750', null, '265000'),
-  status,
-  days,
-})
+const invoice = (id: number, status: 'paid' | 'due' | 'overdue' | 'advance' | 'no_bill', days: number | null) => {
+  const payment_status: PartyInvoiceOut['payment_status'] =
+    status === 'paid' ? 'settled' : status === 'due' ? 'pending' : status
+  return {
+    ...row(id, '2026-08-27', 'Sales', '312750', null, '265000'),
+    status,
+    payment_status,
+    days,
+  }
+}
 const partyFound: PartyOut = {
   kind: 'customers',
   party_id: 11,
@@ -902,7 +1079,7 @@ const partyFound: PartyOut = {
     { voucher_id: 9, company: 3, date: '2026-09-02', voucher_type: 'Receipt', number: 'R-4', particulars: 'Bank', debit: null, credit: '900000', balance: '1161000', narration: null },
   ],
   statement_truncated: false,
-  bills: [{ company: 3, name: 'V-1', date: '2026-07-27', due: '2026-08-26', amount: '313000', overdue_days: 35 }],
+  bills: [{ company: 3, name: 'V-1', date: '2026-07-27', due: '2026-08-26', amount: '313000', overdue_days: 35, payment_status: 'overdue' }],
   monthly: [{ month: '2026-08-01', net: '18400000', invoices: 214, settled: '900000' }],
 }
 
@@ -934,11 +1111,33 @@ describe('the customers and their pages', () => {
     expect(screen.getByText(/Main channel: Online Sales · Companies: Alpha · Credit period 30 days/)).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Overdue' })).toHaveTextContent('₹3.1 L')
     expect(screen.getByRole('region', { name: 'Average days to pay' })).toHaveTextContent('38 days')
-    expect(screen.getByText('Overdue 64 days')).toBeInTheDocument()
-    expect(screen.getByText('Paid')).toBeInTheDocument()
+    expect(screen.getByText('Payment Overdue (64 days)')).toBeInTheDocument()
+    expect(screen.getByText('Fully Settled')).toBeInTheDocument()
     const crumbs = document.querySelector('.header-crumbs') as HTMLElement
     expect(crumbs).toHaveTextContent('Sales/Customers/Customer One')
     expect(within(crumbs).getByRole('link', { name: 'Customers' }).getAttribute('href')).toMatch(/^#\/sales\/customers(\?|$)/)
+  })
+
+  it('uses legacy invoice status and bill values when payment_status is absent', async () => {
+    const legacyParty = {
+      ...partyFound,
+      invoices_list: partyFound.invoices_list.map(({ payment_status: _paymentStatus, ...invoiceRow }) => invoiceRow),
+      bills: partyFound.bills.map(({ payment_status: _paymentStatus, ...bill }) => bill),
+    }
+    stubApi({
+      '/api/v1/companies': [companies[0]],
+      '/api/v1/periods': periods,
+      '/api/v1/parties/customers': partiesFound,
+      '/api/v1/parties/customers/11': legacyParty,
+      '/api/v1/parties/vendors': { ...partiesFound, kind: 'vendors', parties: [] },
+    })
+    renderApp('#/sales/customers/11')
+    const invoices = await screen.findByRole('table', { name: 'Invoices' })
+    expect(within(invoices).getByText('Payment Overdue (64 days)')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Outstanding bills' }))
+    const bills = await screen.findByRole('table', { name: 'Outstanding bills' })
+    expect(within(bills).getByText('Payment Overdue')).toBeInTheDocument()
+    expect(within(bills).getByText('Customer has not paid by the due date.')).toBeInTheDocument()
   })
 
   it('opens the ledger statement with the running balance, and says when bills cover less', async () => {

@@ -8,7 +8,9 @@ import type { ReactNode } from 'react'
 import type { Company, PeriodOut } from '../api/types.ts'
 import { COMBINED_NOTE } from '../apps/dashboard/words.ts'
 import { formatDate } from '../format.ts'
+import { companyDisplayName } from '../companyDisplayName.ts'
 import type { Query } from '../router.ts'
+import { ReportPeriod } from './ReportPeriod.tsx'
 import { WhatIsThis } from './WhatIsThis.tsx'
 
 export interface PanelProps {
@@ -20,6 +22,7 @@ interface Props extends PanelProps {
   page: string // where saved views are kept
   companies: Company[] // the selected ones
   period: PeriodOut | undefined
+  dateRange?: { start: string; end: string; balanceSheet?: boolean }
   combined: boolean
   help: (sourceName: string) => ReactNode
   children: ReactNode
@@ -34,14 +37,20 @@ export function ReportFrame(props: Props) {
         <div className="report-head">
           <div>
             <Typography.Title level={2} className="report-title">
-              {props.title} · {companies.map((c) => c.name).join(' + ')}
+              {props.title} · {companies.map(companyDisplayName).join(' + ')}
             </Typography.Title>
-            {props.period && (
+            {props.dateRange ? (
+              <ReportPeriod
+                start={props.dateRange.start}
+                end={props.dateRange.end}
+                balanceSheet={props.dateRange.balanceSheet}
+              />
+            ) : props.period ? (
               <Typography.Text type="secondary">
                 {formatDate(props.period.start)} to {formatDate(props.period.end)}
                 {props.combined ? ` · ${COMBINED_NOTE}` : ''}
               </Typography.Text>
-            )}
+            ) : null}
           </div>
           <div className="report-toolbar">
             <WhatIsThis>{props.help(sourceName)}</WhatIsThis>

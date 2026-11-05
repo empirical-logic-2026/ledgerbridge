@@ -51,6 +51,34 @@ ZERO = Decimal(0)
 HALF_PAISA = Decimal("0.005")
 LIMIT = 20_000  # ledger statement entries
 Kind = Literal["customers", "vendors"]
+PaymentStatus = Literal["overdue", "pending", "advance", "settled", "no_bill", "mixed"]
+
+
+def bill_payment_status(amount: Decimal, due: date, as_of: date) -> PaymentStatus:
+    """Classify a bill's remaining allocation, not the original invoice amount."""
+    if amount <= -HALF_PAISA:
+        return "advance"
+    if amount < HALF_PAISA:
+        return "settled"
+    return "overdue" if due < as_of else "pending"
+
+
+def party_payment_status(
+    balance: Decimal, overdue: Decimal, pending: Decimal, advance: Decimal = ZERO
+) -> PaymentStatus:
+    """Summarize bill states without hiding a mixture behind one overdue label."""
+    if balance <= -HALF_PAISA:
+        return "advance"
+    if balance < HALF_PAISA:
+        return "settled"
+    if overdue > 0 and (pending > 0 or advance > 0):
+        return "mixed"
+    if pending > 0 and advance > 0:
+        return "mixed"
+    if overdue > 0:
+        return "overdue"
+    return "pending" if pending > 0 else "no_bill"
+
 
 KINDS: dict[str, tuple[tuple[str, ...], Side, str, int]] = {
     # party types listed, side, the voucher base type that settles, sign of the balance shown
@@ -289,11 +317,13 @@ def party_page(
 
 def due_and_overdue(
     session: Session, party: PartyRef, on: date, sign: int
-) -> tuple[Decimal, Decimal]:
-    """The party's balance due (F-PTY-001) and its overdue bills (F-PTY-002) at the day."""
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """The normalized balance and overdue, pending and advance bill amounts."""
     bills, _ = _bills(session, party, on, sign)
     overdue = sum((b.amount for b in bills if b.amount > 0 and b.due < on), ZERO)
-    return sign * _balance(session, party.ledger_ids, on), overdue
+    pending = sum((b.amount for b in bills if b.amount > 0 and b.due >= on), ZERO)
+    advance = sum((-b.amount for b in bills if b.amount < 0), ZERO)
+    return sign * _balance(session, party.ledger_ids, on), overdue, pending, advance
 
 
 def _balance(session: Session, ledger_ids: list[int], on: date) -> Decimal:

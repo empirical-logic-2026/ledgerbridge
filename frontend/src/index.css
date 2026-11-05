@@ -578,6 +578,23 @@ body,
   margin: 0 !important;
 }
 
+.report-period {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  color: var(--lb-muted);
+  font-size: 13px;
+}
+
+.report-period strong {
+  color: var(--lb-text);
+  font-weight: 600;
+}
+
+.report-period-separator {
+  padding: 0 6px;
+}
+
 .report-toolbar {
   display: flex;
   flex-wrap: wrap;

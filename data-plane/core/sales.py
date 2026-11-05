@@ -102,6 +102,7 @@ class Dashboard:
     totals: Totals
     before: Totals | None  # the comparison period's
     monthly: list[tuple[date, Totals]]
+    monthly_by_company: list[tuple[int, date, Totals]]
     top_parties: list[PartyFigures]
     other_parties: Decimal  # the net of the parties after the top ones (and of "no party")
     parties: int  # how many parties had entries
@@ -124,6 +125,7 @@ def dashboard(
         totals=totals,
         before=compared,
         monthly=monthly_totals(session, companies, period, facets, side),
+        monthly_by_company=monthly_totals_by_company(session, companies, period, facets, side),
         top_parties=tops,
         other_parties=others,
         parties=count,
@@ -192,6 +194,31 @@ def monthly_totals(
     for gross, returns, other, invoices, y, m in session.execute(query):
         found[date(int(y), int(m), 1)] = to_totals(side, gross, returns, other, invoices)
     return sorted(found.items())
+
+
+def monthly_totals_by_company(
+    session: Session, companies: list[int], period: Period, facets: Facets, side: Side
+) -> list[tuple[int, date, Totals]]:
+    """The dashboard's monthly calculation, grouped by entity as well as month."""
+    year, month = func.year(A.VoucherLine.voucher_date), func.month(A.VoucherLine.voucher_date)
+    query = lines(
+        companies,
+        period,
+        facets,
+        side,
+        A.VoucherLine.entity_id,
+        *split_columns(side),
+        year,
+        month,
+    ).group_by(A.VoucherLine.entity_id, year, month)
+    found = {(company, start): Totals() for company in companies for start in period.month_starts()}
+    for company, gross, returns, other, invoices, y, m in session.execute(query):
+        found[(int(company), date(int(y), int(m), 1))] = to_totals(
+            side, gross, returns, other, invoices
+        )
+    return [
+        (company, month_start, totals) for (company, month_start), totals in sorted(found.items())
+    ]
 
 
 def party_count(

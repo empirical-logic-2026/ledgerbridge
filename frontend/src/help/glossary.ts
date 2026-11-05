@@ -85,8 +85,9 @@ export const GLOSSARY: Record<string, Explanation> = {
   Payments: { text: 'What payment vouchers put on the vendor\'s ledgers in the period.', id: 'F-PTY-006' },
 
   // --- statuses ---
-  Status: { text: '"Overdue" when any of the party\'s bills is past its due date at the period\'s end, else "Current".', id: 'F-PTY-002' },
-  Current: { text: 'No bill is past its due date at the period\'s end.', id: 'F-PTY-002' },
+  Status: { text: 'Uses the remaining bill-wise amount and due date: overdue or pending when positive, advance when negative, settled at zero. Payables reverse the ledger debit/credit sign so amounts owed to suppliers are positive. Without bill details, the report does not guess a due-date status.', id: 'F-PTY-002' },
+  'No bill details': { text: 'There is no bill-wise allocation to determine a payment status.', id: 'F-PTY-002' },
+  'Multiple bill statuses': { text: 'The party has open bills with different due-date or credit states; inspect each bill for its own status.', id: 'F-PTY-002' },
   Paid: { text: 'Nothing of this invoice\'s bill is outstanding.', id: 'F-PTY-004' },
 
   // --- balance sheet and ratios ---

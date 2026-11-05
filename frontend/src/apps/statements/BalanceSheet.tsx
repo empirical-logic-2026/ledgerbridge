@@ -174,7 +174,15 @@ export function BalanceSheet(props: Props) {
     )
   }
   return (
-    <ReportFrame {...props} title="Balance Sheet" page="balance-sheet" period={undefined} combined={sheet?.combined ?? false} help={help}>
+    <ReportFrame
+      {...props}
+      title="Balance Sheet"
+      page="balance-sheet"
+      period={undefined}
+      dateRange={sheet ? { start: sheet.period_start, end: sheet.period_end, balanceSheet: true } : undefined}
+      combined={sheet?.combined ?? false}
+      help={help}
+    >
       {content}
     </ReportFrame>
   )

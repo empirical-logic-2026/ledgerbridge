@@ -31,7 +31,14 @@ from api.v1.common import (
     parse_period,
 )
 from api.v1.home import PeriodOut, change_pct, percent_of
-from core.parties import KINDS, Kind, due_and_overdue, find_party
+from core.parties import (
+    KINDS,
+    Kind,
+    PaymentStatus,
+    due_and_overdue,
+    find_party,
+    party_payment_status,
+)
 from core.report_periods import Period
 from core.sales import ChannelFigures, Facets, PartyFigures, Totals, by_channel, dashboard
 
@@ -66,6 +73,15 @@ class MonthSales(BaseModel):
     invoices: int = formula("F-SAL-005")
 
 
+class CompanyMonthSales(BaseModel):
+    company: int
+    month: date
+    gross: Decimal = formula("F-SAL-001")
+    returns: Decimal = formula("F-SAL-002")
+    other: Decimal = formula("F-SAL-003")
+    net: Decimal = formula("F-SAL-004")
+
+
 class PartySales(BaseModel):
     company: int
     party_id: int
@@ -75,6 +91,7 @@ class PartySales(BaseModel):
     balance: Decimal = formula("F-PTY-001")  # due at the period's end
     overdue: Decimal = formula("F-PTY-002")
     status: Literal["overdue", "current"]
+    payment_status: PaymentStatus
 
 
 class ChannelShare(BaseModel):
@@ -103,6 +120,7 @@ class SalesDashboard(BaseModel):
     compared_with: ComparedWith | None
     key_figures: KeyFigures
     monthly: list[MonthSales]
+    monthly_by_company: list[CompanyMonthSales]
     top_customers: list[PartySales]
     other_customers: Decimal = formula("F-SAL-013")  # the rest, and sales without a party
     customers: int = formula("F-SAL-011")  # how many customers had sales
@@ -187,6 +205,17 @@ def _dashboard(
                 invoices=t.invoices,
             )
             for m, t in found.monthly
+        ],  # fmt: skip
+        monthly_by_company=[
+            CompanyMonthSales(
+                company=company,
+                month=m,
+                gross=t.gross,
+                returns=t.returns,
+                other=t.other,
+                net=t.net,
+            )
+            for company, m, t in found.monthly_by_company
         ],  # fmt: skip
         top_customers=[
             _top_customer(session, companies, p, period.end, kind)
@@ -300,9 +329,10 @@ def _top_customer(
 ) -> PartySales:
     """A top customer (vendor) with its balance due and what is overdue at the period's end."""
     party = find_party(session, companies, p.party_id) if p.party_id is not None else None
-    due, overdue = (
-        due_and_overdue(session, party, on, KINDS[kind][3]) if party else (Decimal(0),) * 2
+    due, overdue, pending, advance = (
+        due_and_overdue(session, party, on, KINDS[kind][3]) if party else (Decimal(0),) * 4
     )
+    payment_status = party_payment_status(due, overdue, pending, advance)
     return PartySales(
         company=p.company,
         party_id=p.party_id or 0,
@@ -311,7 +341,8 @@ def _top_customer(
         invoices=p.invoices,
         balance=due,
         overdue=overdue,
-        status="overdue" if overdue > 0 else "current",
+        status="overdue" if payment_status == "overdue" else "current",
+        payment_status=payment_status,
     )
 
 

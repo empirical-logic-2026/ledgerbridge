@@ -16,6 +16,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Date,
+    DateTime,
     Enum,
     ForeignKey,
     Index,
@@ -24,6 +25,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.models.base import (
@@ -504,6 +506,10 @@ class Voucher(SourceTrackingMixin, TimestampMixin, Base):
     voucher_date: Mapped[date]
     reference_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reference_date: Mapped[date | None] = mapped_column(nullable=True)
+    # Keep Tally's timezone-unspecified wall-clock value; it is not a UTC system timestamp.
+    source_altered_at: Mapped[datetime | None] = mapped_column(
+        DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql"), nullable=True
+    )
     # The source's effective date (Tally's EFFECTIVEDATE); balances count by voucher_date.
     effective_date: Mapped[date | None] = mapped_column(nullable=True)
     party_id: Mapped[int | None] = mapped_column(Id, _fk("parties"), nullable=True)
@@ -584,6 +590,90 @@ class BillAllocation(TimestampMixin, Base):
     bill_date: Mapped[date | None] = mapped_column(nullable=True)
     due_date: Mapped[date | None] = mapped_column(nullable=True)
     amount: Mapped[Decimal] = mapped_column(Money)
+
+
+class VoucherVersion(Base):
+    """An observed voucher snapshot retained for alteration-history comparisons."""
+
+    __tablename__ = "voucher_versions"
+    __table_args__ = (
+        UniqueConstraint("connection_id", "capture_key", name="uq_voucher_versions_capture"),
+        Index("ix_voucher_versions_entity_key", "entity_id", "voucher_source_key", "id"),
+        Index("ix_voucher_versions_altered_at", "source_altered_at"),
+        _A,
+    )
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    voucher_id: Mapped[int] = mapped_column(Id, _fk("vouchers"))
+    connection_id: Mapped[int] = mapped_column(Id, ForeignKey(f"{SYSTEM}.connections.id"))
+    voucher_source_key: Mapped[str] = mapped_column(String(191))
+    company_name: Mapped[str] = mapped_column(String(255))
+    voucher_number: Mapped[str] = mapped_column(String(255))
+    capture_key: Mapped[str] = mapped_column(String(191))
+    raw_record_id: Mapped[int | None] = mapped_column(Id, nullable=True)
+    payload_hash: Mapped[str | None] = mapped_column(CHAR(64), nullable=True)
+    source_alter_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source_altered_at: Mapped[datetime | None] = mapped_column(
+        DateTime().with_variant(mysql.DATETIME(fsp=6), "mysql"), nullable=True
+    )
+    observed_at: Mapped[datetime] = mapped_column(Timestamp)
+    is_deleted: Mapped[bool] = flag()
+    deletion_detected_at: Mapped[datetime | None] = mapped_column(Timestamp, nullable=True)
+    previous_version_id: Mapped[int | None] = mapped_column(
+        Id, ForeignKey(f"{ACCOUNTING}.voucher_versions.id"), nullable=True
+    )
+
+
+class VoucherVersionLine(Base):
+    """One ledger posting as captured in a voucher version."""
+
+    __tablename__ = "voucher_version_lines"
+    __table_args__ = (
+        Index("ix_voucher_version_lines_version", "voucher_version_id", "line_no"),
+        Index("ix_voucher_version_lines_ledger", "ledger_source_key"),
+        _A,
+    )
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    voucher_version_id: Mapped[int] = mapped_column(Id, _fk("voucher_versions", ondelete="CASCADE"))
+    line_no: Mapped[int] = mapped_column(Integer)
+    ledger_id: Mapped[int] = mapped_column(Id, _fk("ledgers"))
+    ledger_source_key: Mapped[str] = mapped_column(String(191))
+    ledger_name: Mapped[str] = mapped_column(String(255))
+    amount: Mapped[Decimal] = mapped_column(Money)
+    amount_fc: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
+    currency_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    exchange_rate: Mapped[Decimal | None] = mapped_column(FxRate, nullable=True)
+    is_party_line: Mapped[bool] = flag()
+    details: Mapped[dict[str, Any]] = mapped_column(JSON)
+    identity_hash: Mapped[str] = mapped_column(CHAR(64))
+    content_hash: Mapped[str] = mapped_column(CHAR(64))
+
+
+class VoucherLedgerChange(Base):
+    """A classified difference between two captured voucher versions."""
+
+    __tablename__ = "voucher_ledger_changes"
+    __table_args__ = (
+        Index("ix_voucher_ledger_changes_version", "version_id"),
+        Index("ix_voucher_ledger_changes_previous_version", "previous_version_id"),
+        _A,
+    )
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    previous_version_id: Mapped[int | None] = mapped_column(
+        Id, _fk("voucher_versions"), nullable=True
+    )
+    version_id: Mapped[int] = mapped_column(Id, _fk("voucher_versions", ondelete="CASCADE"))
+    previous_line_id: Mapped[int | None] = mapped_column(
+        Id, _fk("voucher_version_lines"), nullable=True
+    )
+    new_line_id: Mapped[int | None] = mapped_column(Id, _fk("voucher_version_lines"), nullable=True)
+    change_type: Mapped[str] = mapped_column(
+        Enum("added", "modified", "deleted", "ambiguous", name="voucher_ledger_change_type")
+    )
+    matching_basis: Mapped[str] = mapped_column(String(64))
 
 
 def _same_quantity(context: Any) -> Decimal:
