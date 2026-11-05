@@ -111,6 +111,20 @@ CASES = {
         [SERVICES, _exec("entity-check", "--connection", "tally-test", "--source", "tally")],
     ),
     "fields": (["fields"], [SERVICES, _exec("fields")]),
+    "audit counts": (
+        ["audit", "counts"],
+        [
+            SERVICES,
+            COMMIT,
+            _exec(
+                "audit-counts",
+                "--connection",
+                "tally-test",
+                "--source",
+                "tally",
+            ),
+        ],
+    ),
     "promote-field": (
         ["promote-field", "-FieldId", "12", "-Code", "SALESMAN", "-Name", "Sales person"],
         [
