@@ -1,0 +1,5 @@
+# These findings were synthetic voucher-history test keys, not credentials. The current
+# test uses short fixture identifiers; ignore only the already-pushed historical commits.
+51387df7700df607a80849409aaf2be5ccba9bf5:data-plane/tests/test_voucher_history.py:generic-api-key:220
+51387df7700df607a80849409aaf2be5ccba9bf5:data-plane/tests/test_voucher_history.py:generic-api-key:240
+4a822886ee6f93a515459c7dd463008480418b1b:data-plane/tests/test_voucher_history.py:generic-api-key:240

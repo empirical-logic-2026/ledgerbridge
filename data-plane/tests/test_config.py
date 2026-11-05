@@ -25,3 +25,18 @@ def test_pilot_accepts_local_provider() -> None:
 def test_secrets_are_not_shown_in_repr() -> None:
     settings = Settings(_env_file=None, mysql_app_password="s3cret-value")
     assert "s3cret-value" not in repr(settings)
+
+
+def test_company_display_names_are_trimmed_and_must_not_be_blank() -> None:
+    settings = Settings(_env_file=None, company_display_names={"Stored name": " Branch "})
+    assert settings.company_display_names == {"Stored name": "Branch"}
+    assert "Stored name" not in repr(settings)
+
+    with pytest.raises(ValidationError, match="must not be blank"):
+        Settings(_env_file=None, company_display_names={"Stored name": " "})
+
+
+def test_company_display_names_load_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("COMPANY_DISPLAY_NAMES", '{"Stored name":"Branch"}')
+    settings = Settings(_env_file=None)
+    assert settings.company_display_names == {"Stored name": "Branch"}

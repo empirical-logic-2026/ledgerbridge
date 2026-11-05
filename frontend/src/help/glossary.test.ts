@@ -4,7 +4,7 @@ import { explain, GLOSSARY } from './glossary.ts'
 describe('the hover explanations', () => {
   it('say what a figure means, its formula and its ID in the formula sheet', () => {
     expect(explain('Average invoice')).toBe('Gross sales per invoice. = Gross ÷ Invoices (F-SAL-006)')
-    expect(explain('Status')).toMatch(/"Overdue" when any of the party's bills is past its due date/)
+    expect(explain('Status')).toMatch(/remaining bill-wise amount and due date/)
   })
 
   it('name only formula IDs written as in docs/formulas.md', () => {

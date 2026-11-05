@@ -137,6 +137,29 @@ def tally_date(value: str | None) -> date | None:
         return None
 
 
+def tally_datetime(value: str | None) -> datetime | None:
+    """Tally's YYYYMMDDHHMMSSmmm wall-clock time; None when blank or invalid."""
+    if not value:
+        return None
+    value = value.strip()
+    if value in ("000000000", "00000000000000000"):
+        return None
+    if len(value) != 17 or not value.isascii() or not value.isdigit():
+        return None
+    try:
+        return datetime(
+            int(value[0:4]),
+            int(value[4:6]),
+            int(value[6:8]),
+            int(value[8:10]),
+            int(value[10:12]),
+            int(value[12:14]),
+            int(value[14:17]) * 1000,
+        )
+    except ValueError:
+        return None
+
+
 def object_name(element: ET.Element) -> str | None:
     """An object's name: its NAME element, else its NAME attribute."""
     return text_of(element, "NAME") or element.get("NAME")

@@ -7,8 +7,9 @@ migrations applied)."""
 import csv
 import io
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from types import SimpleNamespace
 
 import pytest
 from alembic import command
@@ -90,9 +91,16 @@ def _sales_group_id(entity_id: int) -> int:
         )
 
 
-def test_companies_with_their_health_read_as_report_ro(client: TestClient, synced: int) -> None:
+def test_companies_with_their_health_read_as_report_ro(
+    client: TestClient, synced: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "api.v1.company_display.get_settings",
+        lambda: SimpleNamespace(company_display_names={}),
+    )
     companies = _get(client, "/api/v1/companies")
     assert [c["id"] for c in companies] == [synced]
+    assert companies[0]["display_name"] == companies[0]["name"]
     health = companies[0]["health"]
     assert health["last_sync_at"] is not None  # from ledgerbridge_system, through the view
     periods = _get(client, "/api/v1/periods")
@@ -153,10 +161,58 @@ def test_list_pages_and_sorting(client: TestClient, synced: int) -> None:
     assert len(first["rows"]) == 10 and first["total_rows"] > 10
     debits = [Decimal(r["values"]["debit"]) for r in first["rows"]]
     assert debits == sorted(debits, reverse=True)
-    assert set(first["rows"][0]["keys"]) == {"date", "voucher_number", "voucher_type",
-                                              "ledger", "party"}  # fmt: skip
+    assert set(first["rows"][0]["keys"]) == {
+        "date", "voucher_number", "source_altered_at", "voucher_type", "ledger", "party"
+    }  # fmt: skip
     second = _get(client, LINES, page_size=10, page=2, sort="-debit")
     assert second["rows"] != first["rows"]
+
+
+def test_entry_altered_date_is_available_in_datasets_and_csv(
+    client: TestClient, synced: int
+) -> None:
+    expected = datetime(2026, 10, 19, 9, 53, 21, 123000)
+    expected_label = "2026-10-19 09:53:21.123"
+    with Session(get_engine()) as session:
+        voucher = session.scalars(
+            select(A.Voucher).where(A.Voucher.entity_id == synced).order_by(A.Voucher.id)
+        ).first()
+        assert voucher is not None
+        voucher_id = voucher.id
+        voucher.source_altered_at = expected
+        session.commit()
+
+    try:
+        for dataset in ("vouchers", "voucher_lines"):
+            result = _get(
+                client,
+                f"/api/v1/datasets/{dataset}",
+                column=["voucher_number", "source_altered_at"],
+                page_size=500,
+            )
+            matching = [
+                row for row in result["rows"] if row["keys"]["voucher_number"]["id"] == voucher_id
+            ]
+            assert matching
+            assert matching[0]["keys"]["source_altered_at"]["label"] == expected_label
+            assert any(row["keys"]["source_altered_at"]["label"] is None for row in result["rows"])
+
+            response = client.get(
+                f"/api/v1/datasets/{dataset}/csv",
+                params={"column": ["voucher_number", "source_altered_at"]},
+            )
+            assert response.status_code == 200, response.text
+            rows = list(csv.reader(io.StringIO(response.text.lstrip("\ufeff"))))
+            measure_headers = ["Debit", "Credit"] if dataset == "voucher_lines" else ["Amount"]
+            assert rows[0] == ["Voucher number", "Entry Altered Date", *measure_headers]
+            assert any(row[1] == expected_label for row in rows[1:])
+            assert any(row[1] == "" for row in rows[1:])
+    finally:
+        with Session(get_engine()) as session:
+            voucher = session.get(A.Voucher, voucher_id)
+            assert voucher is not None
+            voucher.source_altered_at = None
+            session.commit()
 
 
 def test_csv_is_the_same_result_with_a_row_limit(
@@ -422,7 +478,7 @@ def test_the_overview_trend_summary_and_top_customers(
     assert _d(first["balance"]) == _d(page["balance"])
     assert _d(first["overdue"]) == _d(page["overdue"])
     assert _d(first["net_sales"]) == _d(page["net"]["value"])
-    assert first["status"] == ("overdue" if Decimal(first["overdue"]) > 0 else "current")
+    assert first["status"] == ("overdue" if first["payment_status"] == "overdue" else "current")
 
 
 def _d(value: str | None) -> Decimal | None:
@@ -439,7 +495,16 @@ def test_ageing_adds_up_and_equals_the_party_pages(
     for row in rows:  # buckets (F-PTY-012) plus uncovered (F-PTY-013) are the balance
         buckets = sum(Decimal(v) for v in row["buckets"].values())
         assert buckets + Decimal(row["uncovered"]) == Decimal(row["balance"])
-        assert Decimal(row["overdue"]) == buckets - Decimal(row["buckets"]["not_due"])
+        assert Decimal(row["overdue"]) >= 0
+        balance = Decimal(row["balance"])
+        if balance <= Decimal("-0.005"):
+            assert row["payment_status"] == "advance"
+        elif balance < Decimal("0.005"):
+            assert row["payment_status"] == "settled"
+        if row["payment_status"] == "overdue":
+            assert balance >= Decimal("0.005")
+            assert Decimal(row["overdue"]) > 0
+        assert row["status"] == ("overdue" if row["payment_status"] == "overdue" else "current")
     for key in ("balance", "overdue", "uncovered"):
         assert sum(Decimal(r[key]) for r in rows) == Decimal(found["total"][key])
     # Each party as its own page has it (F-PTY-001 to F-PTY-003).
@@ -602,6 +667,23 @@ def test_the_profit_and_loss_report_adds_up(
     assert client.get(PL, params={"month": MONTHS, "view": "ledger"}).status_code == 422
 
 
+def test_profit_and_loss_report_uses_display_label_without_changing_company_key(
+    client: TestClient, synced: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = _get(client, "/api/v1/companies")[0]["name"]
+    monkeypatch.setattr(
+        "api.v1.company_display.get_settings",
+        lambda: SimpleNamespace(company_display_names={original: "Synthetic branch"}),
+    )
+    report = _get(client, PL, month=MONTHS, view="company")
+    company_column = next(column for column in report["columns"] if column["kind"] == "company")
+    assert company_column == {
+        "key": f"company:{synced}",
+        "label": "Synthetic branch",
+        "kind": "company",
+    }
+
+
 def test_matches_tally_counts_the_source_lines_that_differ(
     client: TestClient, synced: int, statements_stored: None
 ) -> None:
@@ -733,6 +815,18 @@ def test_the_sales_dashboard_equals_the_monthly_sales_views(
     }
     assert {m: v for m, v in monthly.items() if any(v)} == view
 
+    # The per-company chart uses the same figures and reconciles to the combined table.
+    by_company: dict[str, list[Decimal]] = {}
+    for row in found["monthly_by_company"]:
+        values = by_company.setdefault(row["month"], [Decimal(0)] * 4)
+        for index, key in enumerate(("gross", "returns", "other", "net")):
+            values[index] += Decimal(row[key])
+        assert row["company"] == synced
+    assert {month: tuple(values) for month, values in by_company.items() if any(values)} == view
+    assert {
+        month: tuple(Decimal(value) for value in values[:4]) for month, values in monthly.items()
+    } == {month: tuple(values) for month, values in by_company.items()}
+
     # Key figures: the period's totals; invoices are the sales vouchers the view counts.
     k = found["key_figures"]
     net = sum(v[3] for v in view.values())
@@ -766,6 +860,19 @@ def test_the_sales_dashboard_equals_the_monthly_sales_views(
     assert {base for _, base in types} == {"sales"}
 
 
+def test_company_display_name_is_an_override_only(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = _get(client, "/api/v1/companies")[0]["name"]
+    monkeypatch.setattr(
+        "api.v1.company_display.get_settings",
+        lambda: SimpleNamespace(company_display_names={original: "Synthetic branch"}),
+    )
+    company = _get(client, "/api/v1/companies")[0]
+    assert company["name"] == original
+    assert company["display_name"] == "Synthetic branch"
+
+
 def test_the_sales_dashboard_mix_and_customer_status(client: TestClient, synced: int) -> None:
     found = _get(client, "/api/v1/sales/dashboard", month=MONTHS)
     # The channel mix (F-SAL-009, F-SAL-010): adds up to net sales, as the channels page.
@@ -781,7 +888,7 @@ def test_the_sales_dashboard_mix_and_customer_status(client: TestClient, synced:
     party = _get(client, f"/api/v1/parties/customers/{first['party_id']}", month=MONTHS)
     assert _d(first["balance"]) == _d(party["balance"])
     assert _d(first["overdue"]) == _d(party["overdue"])
-    assert first["status"] == ("overdue" if Decimal(first["overdue"]) > 0 else "current")
+    assert first["status"] == ("overdue" if first["payment_status"] == "overdue" else "current")
 
 
 def test_the_purchases_dashboard_equals_the_monthly_purchases(

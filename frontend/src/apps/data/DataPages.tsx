@@ -7,51 +7,49 @@
 import { Typography } from 'antd'
 import type { Company } from '../../api/types.ts'
 import { KeyCard } from '../../components/KeyCard.tsx'
-import { StatusPill, type PillTone } from '../../components/StatusPill.tsx'
+import { StatusPill } from '../../components/StatusPill.tsx'
 import { formatDate, timeAgo } from '../../format.ts'
+import { companyDisplayName } from '../../companyDisplayName.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
 import { lastSync } from '../../shell/status.ts'
 import { tokens } from '../../theme.ts'
+import { sourceStatusInfo, validationStatusInfo } from '../../statuses.ts'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
-function checks(c: Company): [string, PillTone] {
-  const status = c.health.validation_status
-  if (status === 'passed') return ['Passed', 'good']
-  if (status === 'failed') return ['Failed', 'bad']
-  return [status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Not checked', 'neutral']
-}
-
-function loaded(c: Company): [string, PillTone] {
-  if (c.health.source_loaded === null || c.health.source_loaded === undefined) return ['Not asked', 'neutral']
-  return c.health.source_loaded ? ['Loaded', 'good'] : ['Not loaded', 'bad']
-}
-
 const HEALTH: ExplorerColumn<Company>[] = [
-  { key: 'name', label: 'Company', kind: 'text', value: (c) => c.name },
+  { key: 'name', label: 'Company', kind: 'text', value: companyDisplayName },
   { key: 'synced', label: 'Last sync', kind: 'text', value: (c) => (c.health.last_sync_at ? timeAgo(c.health.last_sync_at) : 'Never') },
   {
     key: 'checks',
-    label: 'Checks',
+    label: 'Status',
     kind: 'text',
     groupable: true,
-    value: (c) => checks(c)[0],
-    render: (c) => <StatusPill text={checks(c)[0]} tone={checks(c)[1]} />,
+    value: (c) => validationStatusInfo(c.health.validation_status).label,
+    render: (c) => {
+      const status = validationStatusInfo(c.health.validation_status)
+      return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
+    },
   },
+  { key: 'checks_meaning', label: 'Meaning', kind: 'text', value: (c) => validationStatusInfo(c.health.validation_status).meaning },
   { key: 'checked_to', label: 'Checked up to', kind: 'date', value: (c) => c.health.validated_as_of },
   {
     key: 'loaded',
-    label: 'In the source',
+    label: 'Source status',
     kind: 'text',
     groupable: true,
-    value: (c) => loaded(c)[0],
-    render: (c) => <StatusPill text={loaded(c)[0]} tone={loaded(c)[1]} />,
+    value: (c) => sourceStatusInfo(c.health.source_loaded).label,
+    render: (c) => {
+      const status = sourceStatusInfo(c.health.source_loaded)
+      return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
+    },
   },
+  { key: 'loaded_meaning', label: 'Meaning', kind: 'text', value: (c) => sourceStatusInfo(c.health.source_loaded).meaning },
 ]
 
 const COMPANIES: ExplorerColumn<Company>[] = [
-  { key: 'name', label: 'Company', kind: 'text', value: (c) => c.name },
+  { key: 'name', label: 'Company', kind: 'text', value: companyDisplayName },
   { key: 'code', label: 'Code', kind: 'text', value: (c) => c.code },
   { key: 'books_from', label: 'Books from', kind: 'date', value: (c) => c.books_from },
   { key: 'fy', label: 'Financial year starts', kind: 'text', value: (c) => MONTHS[c.fy_start_month - 1] ?? '' },

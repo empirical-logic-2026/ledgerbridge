@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from api.access import CurrentAccess
 from api.v1.common import ReportSession, formula, parse_period
 from core.ageing import BUCKETS, AgeingRow, ageing
+from core.parties import PaymentStatus, party_payment_status
 
 router = APIRouter(prefix="/ageing", tags=["ageing"])
 
@@ -39,6 +40,7 @@ class AgeingRowOut(BaseModel):
     overdue: Decimal = formula("F-PTY-002")
     uncovered: Decimal = formula("F-PTY-013")  # the balance the stored bills don't cover
     status: Literal["overdue", "current"]
+    payment_status: PaymentStatus
 
 
 class AgeingOut(BaseModel):
@@ -51,6 +53,7 @@ class AgeingOut(BaseModel):
 
 
 def _row(r: AgeingRow) -> AgeingRowOut:
+    payment_status = party_payment_status(r.balance, r.overdue, r.pending, r.advance)
     return AgeingRowOut(
         party_id=r.party_id,
         name=r.name,
@@ -58,7 +61,8 @@ def _row(r: AgeingRow) -> AgeingRowOut:
         buckets=Buckets(**r.buckets),
         overdue=r.overdue,
         uncovered=r.uncovered,
-        status="overdue" if r.overdue > 0 else "current",
+        status="overdue" if payment_status == "overdue" else "current",
+        payment_status=payment_status,
     )
 
 
@@ -77,6 +81,9 @@ def ageing_of(
     rows = ageing(session, companies, period.end, kind)
     total = AgeingRow(0, "Total", sum((r.balance for r in rows), Decimal(0)))
     for r in rows:
+        total.overdue += r.overdue
+        total.pending += r.pending
+        total.advance += r.advance
         for b in BUCKETS:
             total.buckets[b] += r.buckets[b]
     return AgeingOut(

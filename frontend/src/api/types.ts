@@ -18,6 +18,7 @@ export interface AgeingRowOut {
   overdue: string
   uncovered: string
   status: "overdue" | "current"
+  payment_status: "overdue" | "pending" | "advance" | "settled" | "no_bill" | "mixed"
 }
 
 export interface AlertOut {
@@ -59,6 +60,8 @@ export interface BalanceSheet {
 export interface BalanceSheetReport {
   companies: number[]
   combined: boolean
+  period_start: string
+  period_end: string
   as_of: string | null
   before_as_of: string | null
   compared_with: ComparedWith | null
@@ -85,6 +88,7 @@ export interface BillOut {
   due: string
   amount: string
   overdue_days: number
+  payment_status: "overdue" | "pending" | "advance" | "settled" | "no_bill" | "mixed"
 }
 
 export interface Buckets {
@@ -186,9 +190,19 @@ export interface Company {
   id: number
   code: string
   name: string
+  display_name: string
   books_from: string | null
   fy_start_month: number
   health: DataHealth
+}
+
+export interface CompanyMonthSales {
+  company: number
+  month: string
+  gross: string
+  returns: string
+  other: string
+  net: string
 }
 
 export interface CompanyShare {
@@ -340,7 +354,7 @@ export interface InvoiceOut {
 
 export interface Key {
   id: number | string
-  label: string
+  label: string | null
 }
 
 export interface KeyFigure {
@@ -455,8 +469,9 @@ export interface PartyInvoiceOut {
   reference?: string | null
   instrument_number?: string | null
   transaction_reference?: string | null
-  status: "paid" | "due" | "overdue" | "no_bill"
+  status: "paid" | "due" | "overdue" | "advance" | "no_bill"
   days: number | null
+  payment_status: "overdue" | "pending" | "advance" | "settled" | "no_bill" | "mixed"
 }
 
 export interface PartyMonthOut {
@@ -512,6 +527,7 @@ export interface PartySales {
   balance: string
   overdue: string
   status: "overdue" | "current"
+  payment_status: "overdue" | "pending" | "advance" | "settled" | "no_bill" | "mixed"
 }
 
 export interface PeriodOut {
@@ -608,6 +624,7 @@ export interface SalesDashboard {
   compared_with: ComparedWith | null
   key_figures: KeyFigures
   monthly: MonthSales[]
+  monthly_by_company: CompanyMonthSales[]
   top_customers: PartySales[]
   other_customers: string
   customers: number
@@ -676,6 +693,7 @@ export interface TopCustomerOut {
   balance: string
   overdue: string
   status: "overdue" | "current"
+  payment_status: "overdue" | "pending" | "advance" | "settled" | "no_bill" | "mixed"
 }
 
 export interface TrendOut {

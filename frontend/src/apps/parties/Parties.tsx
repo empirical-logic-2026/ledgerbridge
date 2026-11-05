@@ -7,6 +7,7 @@ import { Alert, Skeleton } from 'antd'
 import type { Company, PartiesOut, PartyRowOut } from '../../api/types.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
+import { companyDisplayName } from '../../companyDisplayName.ts'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import type { Query } from '../../router.ts'
 import { href } from '../../router.ts'
@@ -53,7 +54,7 @@ function help(kind: PartyKind) {
 
 export function Parties(props: Props) {
   const { kind, parties } = props
-  const names = new Map(props.companies.map((c) => [c.id, c.name]))
+  const names = new Map(props.companies.map((c) => [c.id, companyDisplayName(c)]))
   let content: React.ReactNode
   if (props.error) {
     content = <Alert type="error" showIcon message={`The ${PARTY_WORDS[kind].title.toLowerCase()} couldn't be loaded.`} description={props.error.message} />

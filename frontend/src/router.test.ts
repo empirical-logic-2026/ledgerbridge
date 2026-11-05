@@ -24,7 +24,7 @@ const health = {
   source_name: 'Tally', source_loaded: true, source_checked_at: null, source_checked_by: null,
 }
 const companies: Company[] = [3, 4, 5].map((id) => ({
-  id, code: `C${id}`, name: `Company ${id}`, books_from: '2025-04-01', fy_start_month: 4, health,
+  id, code: `C${id}`, name: `Company ${id}`, display_name: `Company ${id}`, books_from: '2025-04-01', fy_start_month: 4, health,
 }))
 
 describe('the selection', () => {

@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Self
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Host-run tools (pytest, alembic, uvicorn) default to the test environment.
@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 
     app_env: Literal["test", "pilot"] = "test"
     auth_mode: Literal["local"] = "local"
+    # Optional, deployment-local dashboard labels keyed by the exact stored entity name.
+    company_display_names: dict[str, str] = Field(default_factory=dict, repr=False)
 
     mysql_host: str = "127.0.0.1"
     mysql_port: int = 3307
@@ -72,6 +74,13 @@ class Settings(BaseSettings):
     # The host address compose publishes the API on (deploy/compose.yaml passes the same
     # literal): the API warns at startup unless it is a loopback address (ADR-049).
     api_published_address: str = "127.0.0.1"
+
+    @field_validator("company_display_names")
+    @classmethod
+    def _valid_company_display_names(cls, values: dict[str, str]) -> dict[str, str]:
+        if any(not name.strip() or not label.strip() for name, label in values.items()):
+            raise ValueError("Company display-name keys and labels must not be blank")
+        return {name: label.strip() for name, label in values.items()}
 
     @model_validator(mode="after")
     def _client_data_stays_local(self) -> Self:

@@ -46,7 +46,7 @@ The lists vouchers refer to: parties (customers and suppliers), stock items with
 
 ### Transactions
 
-A voucher and everything that belongs to it: its lines (one per ledger posting), bill allocations (which invoices a payment settles), cost-centre allocations, dimension values, stock movements (inventory lines) and tax lines. They are always replaced together when the voucher changes.
+A voucher and everything that belongs to it: its current lines (one per ledger posting), bill allocations (which invoices a payment settles), cost-centre allocations, dimension values, stock movements (inventory lines) and tax lines. Current child rows are replaced together when the voucher changes. Separate append-only history tables retain each distinct version observed, its line snapshots and comparisons; they cannot recover versions the source did not return.
 
 [![Transactions](er-transactions.png)](er-transactions.svg)
 

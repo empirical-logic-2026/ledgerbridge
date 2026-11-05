@@ -703,6 +703,7 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
         ),
         reference_number=text_of(element, "REFERENCE"),
         reference_date=parser.tally_date(text_of(element, "REFERENCEDATE")),
+        source_altered_at=parser.tally_datetime(text_of(element, "UPDATEDDATETIME")),
         effective_date=parser.tally_date(text_of(element, "EFFECTIVEDATE")),
         party_ledger_name=text_of(element, "PARTYLEDGERNAME"),
         narration=text_of(element, "NARRATION"),
@@ -760,8 +761,8 @@ USED_FIELDS: dict[str, frozenset[str]] = {
     "cost_category": frozenset(_IDENTITY),
     "cost_centre": frozenset((*_MASTER, "CATEGORY")),
     "voucher": frozenset((
-        *_IDENTITY, "DATE", "EFFECTIVEDATE", "VOUCHERTYPENAME", "VOUCHERNUMBER", "REFERENCE",
-        "REFERENCEDATE",
+        *_IDENTITY, "DATE", "EFFECTIVEDATE", "UPDATEDDATETIME", "VOUCHERTYPENAME",
+        "VOUCHERNUMBER", "REFERENCE", "REFERENCEDATE",
         "PARTYLEDGERNAME", "NARRATION", "ISCANCELLED", "ISOPTIONAL", "ISPOSTDATED",
         *(f"{lst}/{path}" for lst in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST")
           for path in _LEDGER_ENTRY),

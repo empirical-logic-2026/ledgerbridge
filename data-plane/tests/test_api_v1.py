@@ -5,8 +5,9 @@ logs carry no query strings."""
 
 import logging
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -16,9 +17,9 @@ from sqlalchemy.dialects import mysql
 from api.access import Access, current_access
 from api.deps import get_report_session
 from api.main import allowed_origins, create_app, exposure_warnings
-from api.v1.dataset_query import RequestError, _grouped, _listed, parse_request
+from api.v1.dataset_query import RequestError, _grouped, _listed, _row, parse_request
 from api.v1.dataset_specs import DATASETS
-from api.v1.datasets import _safe
+from api.v1.datasets import _csv_lines, _out, _safe
 from core.config import Settings
 
 LINES = DATASETS["voucher_lines"]
@@ -129,6 +130,37 @@ def test_the_vouchers_dataset_has_its_own_allow_list() -> None:
     with pytest.raises(RequestError, match="Unknown parameter 'ledger'"):
         parse_request(vouchers, [("ledger", "5")])
     assert parse_request(vouchers, [("group_by", "party")]).measures == ["amount"]
+    for dataset in (LINES, vouchers):
+        altered = dataset.dimensions["source_altered_at"]
+        assert altered.label == "Entry Altered Date"
+        assert not altered.groupable
+
+
+def test_entry_altered_date_is_nullable_in_api_rows_and_csv() -> None:
+    dataset = DATASETS["vouchers"]
+    request = parse_request(
+        dataset,
+        [("column", "voucher_number"), ("column", "source_altered_at")],
+    )
+    raw = SimpleNamespace(
+        _mapping={
+            "voucher_number__id": 7,
+            "voucher_number__label": "JV-7",
+            "source_altered_at__id": 7,
+            "source_altered_at__label": datetime(2026, 10, 19, 9, 53, 21, 123000),
+            "amount": Decimal("12.34"),
+        }
+    )
+    row = _row(dataset, request, raw)
+    assert _out(row).keys["source_altered_at"].label == "2026-10-19 09:53:21.123"
+
+    raw._mapping["source_altered_at__label"] = None
+    missing = _row(dataset, request, raw)
+    assert _out(missing).keys["source_altered_at"].label is None
+    lines = list(_csv_lines(dataset, request, iter([row, missing]), reached=False))
+    assert lines[1] == "Voucher number,Entry Altered Date,Amount\r\n"
+    assert "JV-7,2026-10-19 09:53:21.123,12.34" in lines[2]
+    assert "JV-7,,12.34" in lines[3]
 
 
 def test_requests_become_bound_sql_without_request_text() -> None:
@@ -154,6 +186,7 @@ def test_csv_cells_cannot_run_as_formulas() -> None:
     assert _safe("+91 cash") == "'+91 cash"
     assert _safe("@sum") == "'@sum"
     assert _safe("Rent") == "Rent"
+    assert _safe(None) == ""
 
 
 @pytest.fixture

@@ -10,6 +10,7 @@ import { App as AntApp, Breadcrumb, Button, Select, Tooltip } from 'antd'
 import { getJson } from '../api/client.ts'
 import type { Company, FacetValue } from '../api/types.ts'
 import { timeAgo } from '../format.ts'
+import { companyDisplayName } from '../companyDisplayName.ts'
 import { href, type Query } from '../router.ts'
 import { periodText, type Change, type PeriodChoice, type Selection } from '../selection.ts'
 import type { Facet, NavGroup, NavPage } from './nav.ts'
@@ -97,7 +98,7 @@ function CompanyChips({ companies, selection, onChange }: Pick<Props, 'companies
         const checked = c.health.source_checked_at
         return {
           value: String(c.id),
-          text: c.name,
+          text: companyDisplayName(c),
           dot: state.replace(' ', '-'),
           tip: checked ? `${state} in ${source} when checked ${timeAgo(checked)}. Several companies are combined, without inter-company eliminations.` : `${source} not asked yet`,
         }

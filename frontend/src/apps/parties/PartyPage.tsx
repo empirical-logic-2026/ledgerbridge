@@ -5,7 +5,7 @@
 // monthly trend, each in the table explorer. Figures: core/parties.py
 // (GET /api/v1/parties/{kind}/{id}).
 
-import { Alert, Button, Skeleton, Tabs, Tag, Typography } from 'antd'
+import { Alert, Button, Skeleton, Tabs, Typography } from 'antd'
 import type { EChartsOption } from 'echarts'
 import type { BillOut, Company, EntryOut, PartyInvoiceOut, PartyMonthOut, PartyOut, SettlementOut } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
@@ -19,6 +19,9 @@ import type { Query } from '../../router.ts'
 import { builtHref } from '../../shell/nav.ts'
 import { tokens, type Tokens } from '../../theme.ts'
 import { PARTY_WORDS, type PartyKind } from './words.ts'
+import { companyDisplayName } from '../../companyDisplayName.ts'
+import { paymentStatusInfo } from '../../statuses.ts'
+import { StatusPill } from '../../components/StatusPill.tsx'
 
 export type PartyTab = 'invoices' | 'settlements' | 'statement' | 'bills' | 'monthly'
 
@@ -45,21 +48,18 @@ function voucherLink(id: number, query: Query) {
   return builtHref(['books', 'vouchers', String(id)], query)
 }
 
-function StatusTag({ invoice }: { invoice: PartyInvoiceOut }) {
-  if (invoice.status === 'paid') return <Tag className="status-tag status-paid">Paid</Tag>
-  if (invoice.status === 'overdue') return <Tag className="status-tag status-overdue">Overdue {invoice.days} days</Tag>
-  if (invoice.status === 'due') return <Tag className="status-tag status-due">{invoice.days === 0 ? 'Due today' : `Due in ${invoice.days} days`}</Tag>
-  return <span className="muted">—</span>
+function InvoiceStatus({ invoice, kind }: { invoice: PartyInvoiceOut; kind: PartyKind }) {
+  const status = paymentStatusInfo(invoice.payment_status ?? invoice.status, kind)
+  const timing =
+    invoice.status === 'overdue'
+      ? ` (${invoice.days} days)`
+      : invoice.status === 'due'
+        ? ` (${invoice.days === 0 ? 'due today' : `due in ${invoice.days} days`})`
+        : ''
+  return <StatusPill text={`${status.label}${timing}`} tone={status.tone} help={status.meaning} />
 }
 
-function statusText(i: PartyInvoiceOut): string | null {
-  if (i.status === 'paid') return 'Paid'
-  if (i.status === 'overdue') return `Overdue ${i.days} days`
-  if (i.status === 'due') return `Due in ${i.days} days`
-  return null
-}
-
-function invoiceColumns(names: Map<number, string>, combined: boolean, query: Query): ExplorerColumn<PartyInvoiceOut>[] {
+function invoiceColumns(kind: PartyKind, names: Map<number, string>, combined: boolean, query: Query): ExplorerColumn<PartyInvoiceOut>[] {
   return [
     { key: 'date', label: 'Date', kind: 'date', value: (i) => i.date },
     { key: 'type', label: 'Vch Type', kind: 'text', value: (i) => i.voucher_type, groupable: true },
@@ -72,7 +72,15 @@ function invoiceColumns(names: Map<number, string>, combined: boolean, query: Qu
       value: (i) => (i.debit !== null ? i.debit : i.credit !== null ? `-${i.credit}` : null),
     },
     { key: 'value', label: 'Before taxes', kind: 'amount', value: (i) => i.side_value, hidden: true },
-    { key: 'status', label: 'Status', kind: 'text', value: statusText, render: (i) => <StatusTag invoice={i} />, groupable: true },
+    {
+      key: 'status',
+      label: 'Status',
+      kind: 'text',
+      value: (i) => paymentStatusInfo(i.payment_status ?? i.status, kind).label,
+      render: (i) => <InvoiceStatus invoice={i} kind={kind} />,
+      groupable: true,
+    },
+    { key: 'meaning', label: 'Meaning', kind: 'text', value: (i) => paymentStatusInfo(i.payment_status ?? i.status, kind).meaning },
     { key: 'narration', label: 'Narration', kind: 'text', value: (i) => i.narration, hidden: true },
   ]
 }
@@ -103,12 +111,34 @@ function statementColumns(names: Map<number, string>, combined: boolean, query: 
   ]
 }
 
-function billColumns(names: Map<number, string>, combined: boolean): ExplorerColumn<BillOut>[] {
+function billStatusInfo(bill: BillOut, kind: PartyKind) {
+  if (bill.payment_status !== undefined && bill.payment_status !== null) {
+    return paymentStatusInfo(bill.payment_status, kind)
+  }
+  const amount = toScaled(bill.amount)
+  if (amount <= -50n) return paymentStatusInfo('advance', kind)
+  if (amount < 50n) return paymentStatusInfo('settled', kind)
+  return paymentStatusInfo(bill.overdue_days > 0 ? 'overdue' : 'pending', kind)
+}
+
+function billColumns(kind: PartyKind, names: Map<number, string>, combined: boolean): ExplorerColumn<BillOut>[] {
   return [
     { key: 'name', label: 'Bill', kind: 'text', value: (b) => b.name },
     { key: 'date', label: 'Bill date', kind: 'date', value: (b) => b.date },
     { key: 'due', label: 'Due', kind: 'date', value: (b) => b.due },
     { key: 'amount', label: 'Pending', kind: 'amount', value: (b) => b.amount },
+    {
+      key: 'status',
+      label: 'Status',
+      kind: 'text',
+      value: (b) => billStatusInfo(b, kind).label,
+      render: (b) => {
+        const status = billStatusInfo(b, kind)
+        return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
+      },
+      groupable: true,
+    },
+    { key: 'meaning', label: 'Meaning', kind: 'text', value: (b) => billStatusInfo(b, kind).meaning },
     {
       key: 'overdue',
       label: 'Overdue by',
@@ -179,7 +209,7 @@ export function PartyPage(props: Props) {
   const { kind, party, companies, query } = props
   const w = PARTY_WORDS[kind]
   const sourceName = companies[0]?.health.source_name ?? 'the source'
-  const names = new Map(companies.map((c) => [c.id, c.name]))
+  const names = new Map(companies.map((c) => [c.id, companyDisplayName(c)]))
   const colours = tokens[props.dark ? 'dark' : 'light']
 
   let content: React.ReactNode
@@ -234,7 +264,7 @@ export function PartyPage(props: Props) {
                 key: 'invoices',
                 label: kind === 'customers' ? 'Invoices and credit notes' : 'Invoices and debit notes',
                 children: (
-                  <ExplorerTable id={`${kind}-invoices`} label="Invoices" columns={invoiceColumns(names, combined, query)} rows={party.invoices_list}
+                  <ExplorerTable id={`${kind}-invoices`} label="Invoices" columns={invoiceColumns(kind, names, combined, query)} rows={party.invoices_list}
                     rowKey={(i) => String(i.voucher_id)} sortKey="date" descending totalLabel="Total" />
                 ),
               },
@@ -269,7 +299,7 @@ export function PartyPage(props: Props) {
                         the books' beginning and amounts not allocated to bills aren't listed.
                       </p>
                     )}
-                    <ExplorerTable id={`${kind}-bills`} label="Outstanding bills" columns={billColumns(names, combined)} rows={party.bills}
+                    <ExplorerTable id={`${kind}-bills`} label="Outstanding bills" columns={billColumns(kind, names, combined)} rows={party.bills}
                       rowKey={(b) => `${b.company}-${b.name}-${b.date}`} sortKey="due" totalLabel="Total" />
                   </>
                 ),

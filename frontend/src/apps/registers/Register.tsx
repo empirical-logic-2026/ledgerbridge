@@ -7,6 +7,7 @@
 import { Alert, Skeleton, Typography } from 'antd'
 import type { Company, RegisterOut, RegisterRowOut } from '../../api/types.ts'
 import { formatDate, formatMonth } from '../../format.ts'
+import { companyDisplayName } from '../../companyDisplayName.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
 import { WhatIsThis } from '../../reporting/WhatIsThis.tsx'
@@ -91,8 +92,8 @@ export function Register(props: Props) {
   const { side, register, companies, query } = props
   const words = WORDS[side]
   const sourceName = companies[0]?.health.source_name ?? 'the source'
-  const names = new Map(companies.map((c) => [c.id, c.name]))
-  const title = companies.map((c) => c.name).join(' + ')
+  const names = new Map(companies.map((c) => [c.id, companyDisplayName(c)]))
+  const title = companies.map(companyDisplayName).join(' + ')
 
   let content: React.ReactNode
   if (props.error) {

@@ -8,7 +8,7 @@
 // needs a stored statement that isn't there. Everything opens the page behind it.
 
 import { Alert, Skeleton, Tooltip, Typography } from 'antd'
-import type { Home, SummaryLine } from '../../api/types.ts'
+import type { Home, SummaryLine, TopCustomerOut } from '../../api/types.ts'
 import { Donut } from '../../components/Donut.tsx'
 import { EChart } from '../../components/EChart.tsx'
 import { Explained } from '../../components/Explained.tsx'
@@ -21,6 +21,7 @@ import { builtHref } from '../../shell/nav.ts'
 import { tokens, type Tokens } from '../../theme.ts'
 import { salesAndPurchases } from './homeChart.ts'
 import { COMBINED_NOTE } from './words.ts'
+import { partyPaymentStatusInfo } from '../../statuses.ts'
 
 interface Props {
   home: Home | undefined
@@ -107,6 +108,18 @@ function shown(line: SummaryLine, value: string | null | undefined) {
   return line.unit === 'percent' ? <span>{value}%</span> : <Amount value={value} />
 }
 
+function isTopCustomer(value: unknown): value is TopCustomerOut {
+  if (typeof value !== 'object' || value === null) return false
+  const customer = value as Record<string, unknown>
+  return (
+    typeof customer.party_id === 'number' &&
+    typeof customer.name === 'string' &&
+    typeof customer.net_sales === 'string' &&
+    (typeof customer.share_pct === 'string' || customer.share_pct === null) &&
+    typeof customer.balance === 'string'
+  )
+}
+
 function Summary({ home, query }: { home: Home; query: Query }) {
   const to = builtHref(['pnl', 'profit-loss'], query)
   return (
@@ -148,6 +161,9 @@ function Summary({ home, query }: { home: Home; query: Query }) {
 
 function TopCustomers({ home, query }: { home: Home; query: Query }) {
   const list = builtHref(['sales', 'customers'], query)
+  const hasCustomerList = Array.isArray(home.top_customers)
+  const topCustomers = hasCustomerList ? home.top_customers.filter(isTopCustomer) : []
+  const malformedCount = hasCustomerList ? home.top_customers.length - topCustomers.length : 0
   return (
     <section className="card" aria-label="Top customers">
       <div className="card-head">
@@ -158,48 +174,62 @@ function TopCustomers({ home, query }: { home: Home; query: Query }) {
           </a>
         )}
       </div>
-      {home.top_customers.length ? (
-        <table className="report-table compact" aria-label="Top customers by net sales">
-          <thead>
-            <tr>
-              <th>Customer</th>
-              <th className="num"><Explained label="Net sales" /></th>
-              <th className="num"><Explained label="Share" /></th>
-              <th className="num"><Explained label="Balance due" /></th>
-              <th><Explained label="Status" /></th>
-            </tr>
-          </thead>
-          <tbody>
-            {home.top_customers.map((c) => {
-              const to = builtHref(['sales', 'customers', String(c.party_id)], query)
-              return (
-                <tr key={c.party_id}>
-                  <th>{to ? <a href={to}>{c.name}</a> : c.name}</th>
-                  <td className="num">
-                    <Amount value={c.net_sales} />
-                  </td>
-                  <td className="num">{c.share_pct ? `${c.share_pct}%` : '—'}</td>
-                  <td className="num">
-                    <Amount value={c.balance} />
-                  </td>
-                  <td>
-                    {c.status === 'overdue' ? (
-                      <Tooltip title={`Overdue: ${formatExact(c.overdue)}`}>
-                        <span>
-                          <StatusPill text="Overdue" tone="bad" />
-                        </span>
-                      </Tooltip>
-                    ) : (
-                      <StatusPill text="Current" tone="good" />
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+      {!hasCustomerList ? (
+        <Alert
+          type="error"
+          showIcon
+          message="Customer data couldn't be displayed."
+          description="The dashboard response did not include a valid customer list."
+        />
       ) : (
-        <Typography.Text type="secondary">No sales to customers in this period.</Typography.Text>
+        <>
+          {malformedCount > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              message="Some customer rows couldn't be displayed."
+              description={`${malformedCount} customer record${malformedCount === 1 ? '' : 's'} did not match the dashboard response format.`}
+            />
+          )}
+          {topCustomers.length ? (
+            <table className="report-table compact" aria-label="Top customers by net sales">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th className="num"><Explained label="Net sales" /></th>
+                  <th className="num"><Explained label="Share" /></th>
+                  <th className="num"><Explained label="Balance due" /></th>
+                  <th><Explained label="Status" /></th>
+                  <th><Explained label="Meaning" /></th>
+                </tr>
+              </thead>
+              <tbody>
+                {topCustomers.map((c) => {
+                  const to = builtHref(['sales', 'customers', String(c.party_id)], query)
+                  const status = partyPaymentStatusInfo(c.payment_status ?? c.status, c.balance, 'customers')
+                  return (
+                    <tr key={c.party_id}>
+                      <th>{to ? <a href={to}>{c.name}</a> : c.name}</th>
+                      <td className="num">
+                        <Amount value={c.net_sales} />
+                      </td>
+                      <td className="num">{c.share_pct ? `${c.share_pct}%` : '—'}</td>
+                      <td className="num">
+                        <Amount value={c.balance} />
+                      </td>
+                      <td>
+                        <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
+                      </td>
+                      <td>{status.meaning}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          ) : malformedCount > 0 ? null : (
+            <Typography.Text type="secondary">No sales to customers in this period.</Typography.Text>
+          )}
+        </>
       )}
     </section>
   )

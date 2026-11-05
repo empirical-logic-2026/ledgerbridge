@@ -11,7 +11,7 @@ such as Tally refer to masters by name rather than by key.
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -270,6 +270,7 @@ class CanonicalVoucher:
     inventory: tuple[CanonicalInventoryLine, ...] = ()
     reference_number: str | None = None
     reference_date: date | None = None
+    source_altered_at: datetime | None = None
     # The source's effective date when it keeps one (Tally's EFFECTIVEDATE). Balances still
     # count by voucher_date: Tally does (checked on the test company, 2026-10-15).
     effective_date: date | None = None

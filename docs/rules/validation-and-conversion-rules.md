@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 1.15 |
-| Date | 2026-10-24 |
+| Version | 1.17 |
+| Date | 2026-11-04 |
 | Scope | Tally (TallyPrime) data converted into the canonical model, and its validation |
 
 The rulebook: every rule LedgerBridge follows when it converts Tally data and validates it against Tally's own figures. For each rule: **what** it is, **why** (what the pilot showed, in counts only), **how it was proven** (a Tally report, or an experiment on LedgerBridge Test Co reproduced by the seeder), **where** it lives in the code, which **tests** cover it, and its **ADR** in [architecture.md](../architecture.md). The tables and columns named here are described in the [schema reference](../database/schema-reference.md); the problem codes (LB-xxx) in the [error catalogue](../error-catalogue.md).
@@ -56,12 +56,20 @@ Rules are built generically (PIL-003): Tally specifics live in `data-plane/conne
 
 ---
 
-### 1.6 TallyPrime Edit Log changes nothing the sync reads
+### 1.6 The inspected Edit Log response does not provide prior voucher versions
 
-- **What:** a company opened in TallyPrime Edit Log exports the same fields, formats and values as in TallyPrime. An alteration keeps **no edit history in the XML export** (its audit lists stay empty); the altered voucher is exported as its current version with a new AlterID, like any alteration, and replaces the stored one (1.2, 1.3). Only `UPDATEDDATETIME` is now filled, which the sync doesn't fetch, so stored records and their hashes don't change.
+- **What:** the recorded Edit Log fixture exports the altered voucher's current state; its `AUDITENTRIES.LIST`, `ACCOUNTAUDITENTRIES.LIST`, and `OLDAUDITENTRIES.LIST` are empty and `OLDAUDITENTRYIDS` is `-1`. The request fetches `UPDATEDDATETIME` for the current snapshot, but the inspected fixture does not establish that Tally returned an earlier version.
 - **Proven:** the test company opened in Edit Log (2026-10-19): every export compared with the responses recorded from TallyPrime (identical, same AlterIDs); a journal created and altered under Edit Log (seed case `EDITLOG-ALTER-1`); full sync, validation (105 checks) and report passed.
-- **Code:** `connectors/tally/envelopes.py` (`VOUCHERS.fetch`).
+- **Code:** `connectors/tally/envelopes.py` (`VOUCHERS.fetch`), `connectors/tally/parser.py` (`alter_id`, `parse_records`).
 - **Tests:** `tests/test_edit_log.py`.
+
+### 1.7 Voucher ledger history contains observed snapshots, not guaranteed source audit events
+
+- **What:** each distinct raw voucher payload that is transformed is retained in `voucher_versions`, with its raw-record ID, payload hash, source AlterID, optional `UPDATEDDATETIME`, and observation time. `voucher_version_lines` snapshots its canonical ledger postings and allocation details. `voucher_ledger_changes` compares consecutive captured snapshots. A deletion-check absence creates a tombstone dated by local detection time, not an asserted Tally deletion time.
+- **Matching:** identical posting content is removed as unchanged. A remaining one-to-one match with the same ledger source key and posting context is classified as a probable modification, not a source-issued line identity. Competing candidates are left unpaired and marked Ambiguous. Added/Deleted entries are reported only when no opposite-side unmatched entries remain.
+- **Limit:** history includes only distinct payload versions actually fetched and transformed. Intermediate source edits may be missing, and voucher-level AlterID/UPDATEDDATETIME do not identify individual ledger entries.
+- **Code:** `core/voucher_history.py`, `core/transform.py` (`_vouchers`, `mark_deleted`), migration `0028`.
+- **Tests:** `tests/test_voucher_history.py`.
 
 ## 2. Signs and amounts
 
@@ -86,6 +94,12 @@ Rules are built generically (PIL-003): Tally specifics live in `data-plane/conne
 - **Code:** `connectors/tally/signs.py` (`tally_amount`, `tally_foreign_amount`).
 - **Tests:** `tests/test_forex.py` (`test_a_foreign_amount_keeps_both_parts`).
 - **ADR:** ADR-035, ADR-037.
+
+### 2.4 Receivables and payables use the remaining bill balance
+
+- **What:** canonical ledger balances are debit-positive. Customer receivables keep that sign; supplier payables invert it, so positive means owed to the business or to a supplier respectively. Each bill is classified from its remaining allocation after settlements and its due date: positive overdue, positive not yet due, negative advance, or zero settled. A party summary with both overdue and other open bill states is `mixed`, not overdue solely because one bill is late. A party without bill-wise evidence is `no_bill`; a legacy `current` value is not enough to distinguish pending from settled. Past-due negative allocations do not count as overdue.
+- **Code:** `core/parties.py` (`KINDS`, `_bills`, `bill_payment_status`, `party_payment_status`), `core/ageing.py` (`AgeingRow.add_outstanding`), `api/v1/ageing.py` (`_row`), `api/v1/sales.py` (`_top_customer`).
+- **Tests:** `tests/test_party_status.py`; `tests/test_dashboard_api_integration.py` (ageing and party-page reconciliation).
 
 ---
 
@@ -435,6 +449,7 @@ Only where no rule could be found, a line is the source's own figure, labelled "
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-04 | 1.16 | Rule 1.7: observed voucher-history snapshots, conservative ledger comparison and deletion detection time. |
 | 2026-10-30 | 1.15 | Voucher counts: the source's type names matched by the name rules (LB-VAL-036). |
 | 2026-10-30 | 1.14 | 16: Cost of Sales without stock; 18: each ledger's own currency. |
 | 2026-10-29 | 1.13 | 19: monthly sales and their proof. |

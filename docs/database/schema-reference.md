@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-57 tables, 651 columns.
+60 tables, 689 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -13,7 +13,7 @@ Every database, table and column of the client-hosted data plane (MySQL 8), gene
 | Database | What it holds | Tables |
 | --- | --- | --- |
 | `ledgerbridge_source` | Raw layer: every record exactly as the source sent it (ADR-005). Written only by connectors through the sync; the transform reads it. | 1 |
-| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 30 |
+| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 33 |
 | `ledgerbridge_reporting` | Semantic layer for reports and AI (M6): views and aggregate tables. Empty until M6; the only database the AI user can read (AI-003). | 1 |
 | `ledgerbridge_system` | Running the platform: connections, sync runs and progress, validation, alerts, users, roles, audit and AI logs, configuration. | 25 |
 
@@ -46,9 +46,9 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 [![Masters: parties, items, units, godowns, cost centres, voucher types, dimensions (ledgerbridge_accounting)](../diagrams/er-masters.png)](../diagrams/er-masters.svg)
 
-**Transactions: vouchers and their child tables (ledgerbridge_accounting)**
+**Transactions: vouchers, child tables and observed history (ledgerbridge_accounting)**
 
-[![Transactions: vouchers and their child tables (ledgerbridge_accounting)](../diagrams/er-transactions.png)](../diagrams/er-transactions.svg)
+[![Transactions: vouchers, child tables and observed history (ledgerbridge_accounting)](../diagrams/er-transactions.png)](../diagrams/er-transactions.svg)
 
 **System, part 1: connections, sync, raw records, validation, alerts, field catalogue**
 
@@ -135,7 +135,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `base_currency_code` → `currencies.code`.
 
-**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `items`, `ledgers`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_types`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `items`, `ledgers`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_types`, `voucher_versions`, `vouchers`.
 
 ### `ledgerbridge_accounting.entity_sources`
 
@@ -381,7 +381,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `group_id` → `account_groups.id`; `party_id` → `parties.id`; `standard_account_id` → `standard_accounts.id`; `currency_code` → `currencies.code`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `fx_revaluation_snapshots`, `voucher_lines`.
+**Referred to by:** `fx_revaluation_snapshots`, `voucher_lines`, `voucher_version_lines`.
 
 ## `ledgerbridge_accounting`: masters
 
@@ -701,6 +701,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `voucher_date` | DATE | no |  | The voucher's date (denormalised for fast period queries). |
 | `reference_number` | VARCHAR(255) | yes |  | The source's reference (e.g. the supplier's invoice number). |
 | `reference_date` | DATE | yes |  | Reference date. |
+| `source_altered_at` | DATETIME(6) | yes |  | Tally `UPDATEDDATETIME`; preserve its timezone-unspecified wall-clock value without UTC conversion. NULL when missing or invalid. |
 | `effective_date` | DATE | yes |  | The source's effective date (Tally `EFFECTIVEDATE`); balances count by `voucher_date`, as Tally does. Migration `0016`. |
 | `party_id` | BIGINT UNSIGNED | yes | FK | Main party, if any. |
 | `narration` | TEXT | yes |  | Searchable via RAG later (AI-010). |
@@ -724,7 +725,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `branch_id` → `branches.id`; `voucher_type_id` → `voucher_types.id`; `party_id` → `parties.id`; `currency_code` → `currencies.code`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `inventory_lines`, `tax_lines`, `voucher_lines`.
+**Referred to by:** `inventory_lines`, `tax_lines`, `voucher_lines`, `voucher_versions`.
 
 ### `ledgerbridge_accounting.voucher_lines`
 
@@ -858,6 +859,86 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
 
 **Refers to:** `voucher_id` → `vouchers.id`, on delete cascade; `voucher_line_id` → `voucher_lines.id`, on delete cascade.
+
+### `ledgerbridge_accounting.voucher_versions`
+
+**Purpose:** Append-only snapshots of distinct voucher payloads LedgerBridge observed, plus deletion tombstones (RPT-017, ADR-051).
+
+**Filled by:** Captured during transform and source deletion checks; retries are idempotent.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `voucher_id` | BIGINT UNSIGNED | no | FK | Refers to `vouchers`. |
+| `connection_id` | BIGINT UNSIGNED | no | FK, UK | The connection the row came from. |
+| `voucher_source_key` | VARCHAR(191) | no |  | Voucher source key. |
+| `company_name` | VARCHAR(255) | no |  | Company name. |
+| `voucher_number` | VARCHAR(255) | no |  | Voucher number. |
+| `capture_key` | VARCHAR(191) | no | UK | Capture key. |
+| `raw_record_id` | BIGINT UNSIGNED | yes |  | The raw record it was transformed from. |
+| `payload_hash` | CHAR(64) | yes |  | Payload hash. |
+| `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
+| `source_altered_at` | DATETIME(6) | yes |  | When: source altered. |
+| `observed_at` | DATETIME(6) | no |  | When: observed. |
+| `is_deleted` | BOOL | no |  | Deleted in the source (soft delete; kept for history). |
+| `deletion_detected_at` | DATETIME(6) | yes |  | When: deletion detected. |
+| `previous_version_id` | BIGINT UNSIGNED | yes | FK | Refers to `voucher_versions`. |
+
+**Keys and indexes:** unique (connection_id, capture_key); index `ix_voucher_versions_altered_at` (source_altered_at); index `ix_voucher_versions_entity_key` (entity_id, voucher_source_key, id).
+
+**Refers to:** `entity_id` → `entities.id`; `voucher_id` → `vouchers.id`; `connection_id` → `connections.id`; `previous_version_id` → `voucher_versions.id`.
+
+**Referred to by:** `voucher_ledger_changes`, `voucher_version_lines`, `voucher_versions`.
+
+### `ledgerbridge_accounting.voucher_version_lines`
+
+**Purpose:** The ledger postings and bill/cost-centre details for one observed voucher version.
+
+**Filled by:** Captured alongside each voucher version.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `voucher_version_id` | BIGINT UNSIGNED | no | FK | Refers to `voucher_versions`. |
+| `line_no` | INTEGER | no |  | Position of the line in its voucher. |
+| `ledger_id` | BIGINT UNSIGNED | no | FK | Refers to `ledgers`. |
+| `ledger_source_key` | VARCHAR(191) | no |  | Ledger source key. |
+| `ledger_name` | VARCHAR(255) | no |  | Ledger name. |
+| `amount` | NUMERIC(20, 4) | no |  | Amount in the base currency, canonical sign (debit +, credit −). |
+| `amount_fc` | NUMERIC(20, 4) | yes |  | Amount fc. |
+| `currency_name` | VARCHAR(64) | yes |  | Currency name. |
+| `exchange_rate` | NUMERIC(20, 8) | yes |  | Exchange rate. |
+| `is_party_line` | BOOL | no |  | Whether party line. |
+| `details` | JSON | no |  | Details. |
+| `identity_hash` | CHAR(64) | no |  | Identity hash. |
+| `content_hash` | CHAR(64) | no |  | Content hash. |
+
+**Keys and indexes:** index `ix_voucher_version_lines_ledger` (ledger_source_key); index `ix_voucher_version_lines_version` (voucher_version_id, line_no).
+
+**Refers to:** `voucher_version_id` → `voucher_versions.id`, on delete cascade; `ledger_id` → `ledgers.id`.
+
+**Referred to by:** `voucher_ledger_changes`.
+
+### `ledgerbridge_accounting.voucher_ledger_changes`
+
+**Purpose:** Differences between consecutive captured voucher versions; uncertain line matches are stored as ambiguous rather than guessed.
+
+**Filled by:** Generated by the voucher history comparison during capture.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `previous_version_id` | BIGINT UNSIGNED | yes | FK | Refers to `voucher_versions`. |
+| `version_id` | BIGINT UNSIGNED | no | FK | Refers to `voucher_versions`. |
+| `previous_line_id` | BIGINT UNSIGNED | yes | FK | Refers to `voucher_version_lines`. |
+| `new_line_id` | BIGINT UNSIGNED | yes | FK | Refers to `voucher_version_lines`. |
+| `change_type` | ENUM('added','modified','deleted','ambiguous') | no |  | Change type. |
+| `matching_basis` | VARCHAR(64) | no |  | Matching basis. |
+
+**Keys and indexes:** index `ix_voucher_ledger_changes_previous_version` (previous_version_id); index `ix_voucher_ledger_changes_version` (version_id).
+
+**Refers to:** `previous_version_id` → `voucher_versions.id`; `version_id` → `voucher_versions.id`, on delete cascade; `previous_line_id` → `voucher_version_lines.id`; `new_line_id` → `voucher_version_lines.id`.
 
 ## `ledgerbridge_accounting`: field catalogue
 
@@ -1035,7 +1116,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `source_id` → `sources.id`; `agent_id` → `agents.id`.
 
-**Referred to by:** `account_groups`, `alerts`, `cost_categories`, `cost_centres`, `currency_sources`, `entity_sources`, `file_layouts`, `fx_revaluation_snapshots`, `godowns`, `import_batches`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `stock_values`, `sync_checkpoints`, `sync_logs`, `sync_markers`, `sync_runs`, `sync_slow_periods`, `sync_unverified_ranges`, `units`, `voucher_types`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `cost_categories`, `cost_centres`, `currency_sources`, `entity_sources`, `file_layouts`, `fx_revaluation_snapshots`, `godowns`, `import_batches`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `stock_values`, `sync_checkpoints`, `sync_logs`, `sync_markers`, `sync_runs`, `sync_slow_periods`, `sync_unverified_ranges`, `units`, `voucher_types`, `voucher_versions`, `vouchers`.
 
 ### `ledgerbridge_system.sync_markers`
 

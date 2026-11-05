@@ -1,10 +1,11 @@
-"""TallyPrime Edit Log (2026-10-19): the test company opened in Edit Log exports the same
-data in the same formats as TallyPrime did. An alteration leaves no history in the XML
-export (the audit lists stay empty); only UPDATEDDATETIME is now filled, a field the sync
-doesn't fetch, so stored records and their hashes don't change. Recorded from the test
-company: the journal EDITLOG-ALTER-1, created and altered (31 to 37) under Edit Log."""
+"""TallyPrime Edit Log (2026-10-19): an alteration leaves no history in the XML export
+(the audit lists stay empty); UPDATEDDATETIME records the current version's source time.
+Recorded from the test company: the journal EDITLOG-ALTER-1, created and altered (31 to 37)."""
 
+from datetime import datetime
 from decimal import Decimal
+
+import pytest
 
 from connectors.tally import envelopes, mapping, parser
 from connectors.tally.connector import TallyConnector
@@ -20,11 +21,31 @@ def _voucher(name: str):  # noqa: ANN202
 
 def test_an_altered_voucher_maps_to_its_current_version() -> None:
     voucher = _voucher("voucher_altered.xml")
-    lines = mapping.voucher(voucher, parser.source_key(voucher)).lines
+    mapped = mapping.voucher(voucher, parser.source_key(voucher))
+    lines = mapped.lines
     assert [(line.ledger_name, line.amount) for line in lines] == [
         ("Rent", Decimal("37.00")),
         ("Salary Payable", Decimal("-37.00")),
     ]
+    assert mapped.source_altered_at is None
+
+
+def test_updated_datetime_maps_to_a_naive_source_wall_clock() -> None:
+    full = _voucher("voucher_altered_full.xml")
+    mapped = mapping.voucher(full, parser.source_key(full))
+    assert mapped.source_altered_at == datetime(2026, 10, 19, 9, 53, 21)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, "", "   ", "000000000", "20261319095321000", "20261019095321", "x" * 17],
+)
+def test_tally_datetime_returns_none_for_blank_or_invalid_values(value: str | None) -> None:
+    assert parser.tally_datetime(value) is None
+
+
+def test_tally_datetime_preserves_milliseconds() -> None:
+    assert parser.tally_datetime("20261019095321123") == datetime(2026, 10, 19, 9, 53, 21, 123000)
 
 
 def test_the_edit_history_isnt_in_the_export() -> None:
@@ -42,8 +63,6 @@ def test_the_edit_history_isnt_in_the_export() -> None:
     assert (full.findtext("UPDATEDDATETIME") or "").strip() not in ("", "000000000")
 
 
-def test_the_sync_doesnt_fetch_the_edit_time() -> None:
-    """UPDATEDDATETIME changes with every edit under Edit Log; fetching it would store a
-    voucher again whenever it is touched. The sync's own request leaves it out."""
-    assert "UPDATEDDATETIME" not in envelopes.VOUCHERS.fetch
+def test_the_sync_fetches_the_edit_time() -> None:
+    assert "UPDATEDDATETIME" in envelopes.VOUCHERS.fetch
     assert _voucher("voucher_altered.xml").findtext("UPDATEDDATETIME") is None

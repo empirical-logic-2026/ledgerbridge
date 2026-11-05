@@ -1,6 +1,6 @@
 """M3: sync and transform on the recorded LedgerBridge Test Co fixtures (SQLite, no Tally)."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -100,6 +100,7 @@ def test_every_voucher_balances_and_lines_are_effective_only_when_they_count(
     assert sums and all(total == 0 for _, total in sums)
     cancelled = db.scalars(select(A.Voucher).where(A.Voucher.is_cancelled.is_(True))).one()
     assert _count(db, A.VoucherLine, A.VoucherLine.voucher_id == cancelled.id) == 0
+    assert _count(db, A.Voucher, A.Voucher.source_altered_at.is_not(None)) == 0
 
 
 def test_trial_balance_matches_tally(db: Session, synced: S.Connection) -> None:
@@ -220,10 +221,20 @@ def test_altered_voucher_replaces_its_lines(
     row = _voucher_raw(db, "ALTER-1")
     voucher = db.scalars(select(A.Voucher).where(A.Voucher.source_key == row.source_key)).one()
     total_lines_before = _count(db, A.VoucherLine)
-    altered = row.payload.replace("-1500.00", "-1700.00").replace(">1500.00<", ">1700.00<")
+    altered = (
+        row.payload.replace("-1500.00", "-1700.00")
+        .replace(">1500.00<", ">1700.00<")
+        .replace(
+            "</VOUCHER>",
+            "<UPDATEDDATETIME>20261019095321123</UPDATEDDATETIME></VOUCHER>",
+        )
+    )
     assert altered != row.payload
     _redeliver(db, synced, row, altered, (row.source_alter_id or 0) + 100)
     Transformer(db, synced.id, connector).run()
+    db.refresh(voucher)
+    assert voucher.source_altered_at == datetime(2026, 10, 19, 9, 53, 21, 123000)
+    assert "UPDATEDDATETIME" not in (voucher.extra or {})
     lines = db.scalars(select(A.VoucherLine).where(A.VoucherLine.voucher_id == voucher.id)).all()
     assert len(lines) == 2
     assert _count(db, A.VoucherLine) == total_lines_before  # replaced, not appended

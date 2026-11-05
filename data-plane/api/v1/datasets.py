@@ -63,7 +63,7 @@ class DatasetInfo(BaseModel):
 
 class Key(BaseModel):
     id: int | str
-    label: str
+    label: str | None
 
 
 class Row(BaseModel):
@@ -169,7 +169,7 @@ def _csv_lines(
     buffer = io.StringIO()
     writer = csv.writer(buffer)
 
-    def line(cells: list[str]) -> str:
+    def line(cells: list[str | None]) -> str:
         buffer.seek(0)
         buffer.truncate()
         writer.writerow(cells)
@@ -203,6 +203,8 @@ def indian(n: int) -> str:
     return ",".join(pairs) + "," + tail
 
 
-def _safe(text: str) -> str:
+def _safe(text: str | None) -> str:
     """A text cell spreadsheets won't run as a formula (CSV injection)."""
+    if text is None:
+        return ""
     return f"'{text}" if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text

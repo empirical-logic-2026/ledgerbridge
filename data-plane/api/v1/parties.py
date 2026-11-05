@@ -29,7 +29,16 @@ from api.v1.common import (
 )
 from api.v1.home import PeriodOut, change_pct
 from api.v1.registers import RegisterRowOut, row_out
-from core.parties import KINDS, Bill, PartyPage, find_party, party_list, party_page
+from core.parties import (
+    KINDS,
+    Bill,
+    PartyPage,
+    PaymentStatus,
+    bill_payment_status,
+    find_party,
+    party_list,
+    party_page,
+)
 from core.report_periods import Period
 
 router = APIRouter(prefix="/parties", tags=["parties"])
@@ -69,6 +78,7 @@ class BillOut(BaseModel):
     due: date
     amount: Decimal = formula("F-PTY-004")  # outstanding; negative: an advance or overpaid
     overdue_days: int = formula("F-PTY-005")  # 0 when not yet due
+    payment_status: PaymentStatus
 
 
 class EntryOut(BaseModel):
@@ -95,8 +105,9 @@ class SettlementOut(BaseModel):
 
 
 class PartyInvoiceOut(RegisterRowOut):
-    status: Literal["paid", "due", "overdue", "no_bill"]
+    status: Literal["paid", "due", "overdue", "advance", "no_bill"]
     days: int | None = formula("F-PTY-011")  # due in (status due) or overdue by (overdue)
+    payment_status: PaymentStatus
 
 
 class PartyMonthOut(BaseModel):
@@ -270,6 +281,7 @@ def _party_out(
                 due=b.due,
                 amount=b.amount,
                 overdue_days=max(0, (page.as_of - b.due).days),
+                payment_status=bill_payment_status(b.amount, b.due, page.as_of),
             )
             for b in page.bills
         ],
@@ -283,9 +295,19 @@ def _party_out(
 def _status(bill: Bill | None, as_of: date) -> dict:
     """An invoice's bill: paid (nothing outstanding), due in N days, or overdue by N days."""
     if bill is None:
-        return {"status": "no_bill", "days": None}
-    if abs(bill.amount) < Decimal("0.005"):
-        return {"status": "paid", "days": None}
-    if bill.due < as_of:
-        return {"status": "overdue", "days": (as_of - bill.due).days}
-    return {"status": "due", "days": (bill.due - as_of).days}
+        return {"status": "no_bill", "days": None, "payment_status": "no_bill"}
+    payment_status = bill_payment_status(bill.amount, bill.due, as_of)
+    status = {
+        "overdue": "overdue",
+        "pending": "due",
+        "advance": "advance",
+        "settled": "paid",
+    }[payment_status]
+    days = (
+        (as_of - bill.due).days
+        if payment_status == "overdue"
+        else (bill.due - as_of).days
+        if payment_status == "pending"
+        else None
+    )
+    return {"status": status, "days": days, "payment_status": payment_status}
