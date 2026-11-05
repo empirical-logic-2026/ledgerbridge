@@ -323,6 +323,7 @@ A Dockerfile is a recipe. Each instruction adds a **layer**, and Docker caches l
 | Line | What it does and why |
 | --- | --- |
 | `FROM python:3.12-slim` | Start from the official Python 3.12 image, slim variant (Debian with only the basics). This is the Python version the docs require. |
+| `RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*` | Install Debian's security fixes released after the base image was published. `python:3.12-slim` is rebuilt only every few weeks, so a newly fixed vulnerability (e.g. CVE-2026-109518 in `apt`, November 2026) can still be inside it; Trivy (section 11) fails the checks on any HIGH or CRITICAL one with a fix. Removing the package lists afterwards keeps the layer small. See it: `docker run --rm --entrypoint dpkg ledgerbridge-data-plane:dev -s apt` (look for `Version:`). |
 | `COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /uvx /bin/` | Copy the `uv` tool out of its official image into ours. This is a *multi-stage copy*: we take two files without inheriting that image. It's pinned to 0.12, the uv that writes our `uv.lock`. |
 | `ENV UV_COMPILE_BYTECODE=1` | Pre-compile Python files during install, for faster start-up. |
 | `ENV UV_LINK_MODE=copy` | Copy packages instead of hard-linking, which avoids warnings inside Docker. |
@@ -498,6 +499,7 @@ See it: the PR's checks, "Details" on a job, then the step "Initialize container
 
 | Date | Change |
 | --- | --- |
+| 2026-11-05 | Section 7: the Dockerfile installs Debian's security updates on top of the base image (a fixed HIGH vulnerability in `apt` failed Trivy). |
 | 2026-11-02 | Section 9: `docs-export` also exports the formula sheet; PDFs pass through `docs/export/pdf-symbols.lua` so symbols without a glyph in the image's fonts (the rupee sign) aren't dropped. |
 | 2026-10-30 | Section 3: `./dev.ps1 dashboard` checks with `docker compose port` that the API is published on 127.0.0.1 only. |
 | 2026-10-30 | Dashboard D1: section 6.5, `API_PUBLISHED_ADDRESS` (the API warns if it is ever published beyond this computer); section 7, `--no-access-log` (no query strings in logs). |
