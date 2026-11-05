@@ -217,7 +217,7 @@ def test_history_query_scopes_multiple_companies_and_inclusive_date_window(
     ledger = A.Ledger(
         entity_id=other_entity.id,
         connection_id=synced.id,
-        source_key="synthetic-ledger-2",
+        source_key="ledger-fixture-2",
         origin="live",
         group_id=group.id,
         name="Rent",
@@ -237,7 +237,7 @@ def test_history_query_scopes_multiple_companies_and_inclusive_date_window(
     voucher = A.Voucher(
         entity_id=other_entity.id,
         connection_id=synced.id,
-        source_key="synthetic-voucher-2",
+        source_key="voucher-fixture-2",
         origin="live",
         voucher_type_id=voucher_type.id,
         voucher_number="SYN-2",

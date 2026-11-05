@@ -48,6 +48,11 @@ def _cleanup(session: Session) -> None:
     session.execute(
         delete(A.VoucherVersionLine).where(A.VoucherVersionLine.voucher_version_id.in_(versions))
     )
+    session.execute(
+        A.VoucherVersion.__table__.update()
+        .where(A.VoucherVersion.connection_id == connection.id)
+        .values(previous_version_id=None)
+    )
     session.execute(delete(A.VoucherVersion).where(A.VoucherVersion.connection_id == connection.id))
     for model in (A.BillAllocation, A.LineCostAllocation, A.LineDimension):
         session.execute(delete(model).where(model.voucher_line_id.in_(lines)))
