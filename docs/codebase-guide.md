@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.3 |
-| Date | 2026-10-13 |
+| Version | 0.42 |
+| Date | 2026-11-05 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
 
@@ -76,7 +76,8 @@ ledgerbridge/
 │   │   ├── error_catalogue.py  generates docs/error-catalogue.md from the problem registry
 │   │   └── tally_seed/         fills the test company in TallyPrime (test only)
 │   ├── migrations/
-│   │   └── versions/           one file per database change, 0001 to 0016
+│   │   ├── revision_guard.py   refuses upgrades from a revision absent in this checkout
+│   │   └── versions/           one file per database change
 │   ├── tests/
 │   │   ├── connectors/tally/   tests of the Tally connector
 │   │   ├── devtools/           tests of the seeder and the diagrams
@@ -113,7 +114,7 @@ ledgerbridge/
 | --- | --- |
 | `README.md` | The front page of the project: what it is, how to start it, and a table of everyday `dev.ps1` commands. |
 | `CLAUDE.md` | Instructions for Claude Code (the AI assistant that writes much of the code): project rules, commands, security and client-data rules, the git workflow. Also a good summary of the rules for people. |
-| `dev.ps1` | The everyday command script (PowerShell): `up`, `down`, `status`, `sync`, `validate`, `transform`, `summary`, `test` and more. Each command either runs Docker through `deploy/stack.ps1` or a Python command inside a container. Small functions at the top hold what commands share: `Invoke-Stack` / `Invoke-Checked` (run in the stack, reporting exit codes plainly), `Start-Followed` (a background job, followed), `Invoke-StackCaptured` (output kept, for files), `Invoke-ToolContainer` (mermaid-cli, pandoc), `Save-Utf8`. Run `./dev.ps1 help` for the list. |
+| `dev.ps1` | The everyday command script (PowerShell): `up`, `down`, `status`, `sync`, `validate`, `transform`, `summary`, `test` and more. Each command either runs Docker through `deploy/stack.ps1` or a Python command inside a container. `up` backs up pilot databases first, checks that the database's recorded migration revision exists in the checked-out history, then runs the one-off migration container. Small functions at the top hold what commands share: `Invoke-Stack` / `Invoke-Checked` (run in the stack, reporting exit codes plainly), `Start-Followed` (a background job, followed), `Invoke-StackCaptured` (output kept, for files), `Invoke-ToolContainer` (mermaid-cli, pandoc), `Save-Utf8`. Run `./dev.ps1 help` for the list. |
 | `.env.test.example`, `.env.pilot.example` | Templates for the settings of each environment (database users and ports, Tally address, timeouts). The real files, `.env.test` and `.env.pilot`, hold passwords and are never committed. |
 | `.gitignore` | Which files git must never track (env files, generated folders). |
 | `.gitattributes` | Keeps shell scripts with Linux line endings, because they run inside Linux containers. |
@@ -221,6 +222,7 @@ ledgerbridge/
 | File | What it is and what it's for |
 | --- | --- |
 | `env.py`, `script.py.mako` | Alembic's setup and the template for new migration files. |
+| `revision_guard.py` | Reads the recorded Alembic revision and refuses `dev.ps1 up` when the ID is absent from the checked-out history. |
 | `versions/0001_...py` to `versions/0012_...py` | One file per change to the database, applied in order: 0001 raw records and sync runs, 0002 the accounting and system tables, 0003 the standard chart of accounts, then later additions (tax types, deletion checks, validation dates and alerts, sync checkpoints, unverified ranges, run liveness and job logs, the `extra` fields and field catalogue, voucher types' standard type and whether they move stock). An applied migration is never edited; a change is always a new file. [schema.md](schema.md) Section 3 lists them. |
 
 **`devtools/error_catalogue.py`: the error catalogue.** Writes `docs/error-catalogue.md` from `core/problems.py`, so the documented codes always match what the commands print (also run by `./dev.ps1 diagrams`; a test fails when it is stale). Development only.
@@ -228,6 +230,8 @@ ledgerbridge/
 **`devtools/schema_reference.py`: the schema reference.** Writes `docs/database/schema-reference.md` from the database models: every table and column with types, keys, relationships and meanings (also run by `./dev.ps1 diagrams`; a test fails when it is stale). Development only.
 
 **`devtools/diagrams.py`: the diagrams.** Writes the Mermaid sources of the ER diagrams and the database diagram in `docs/diagrams/` from the database models, so they always match the code (`./dev.ps1 diagrams`, which also draws the images). Development only.
+
+**`migrations/revision_guard.py`: the migration-history check.** Reads the current Alembic revision and compares it with the checked-out migration scripts. `./dev.ps1 up` runs it in the one-off migrate container before applying any migration, and stops with recovery guidance if the database records an unknown revision.
 
 **`devtools/tally_seed/`: filling the test company.** Development only, never part of the product, and it may only write to the company "LedgerBridge Test Co" (it checks this before doing anything). `data.py` holds the synthetic ledgers and vouchers, including the cases that reproduce Tally's counting rules (openings, delivery and receipt notes with tracked invoices, optional, memorandum, reversing and post-dated vouchers; schema.md 7.5); `requests.py` builds Tally's import requests; `seed.py` works out what is missing and imports it; `__main__.py` is the command (`./dev.ps1 seed-test-data`).
 
@@ -247,7 +251,7 @@ ledgerbridge/
 | `test_line_attribution.py` | Which ledger a voucher line belongs to: names as Tally compares them, deleted ledgers with a live twin, ledger lines in lists not read; on fixtures recorded from the test company. |
 | `test_stock_ledger_and_dates.py` | Stock ledgers at the source's stock value, Tally's own group totals (stock value, opening difference) and effective dates; on fixtures recorded from the test company. |
 | `test_job_work.py` | Job work and godowns as Tally counts them, stock journals read once, Tally's own opening difference; on fixtures recorded from the test company. |
-| `test_dev_script_args.py`, `test_run_lock.py` | The docker compose arguments each `dev.ps1` command builds (with a stand-in for `deploy/stack.ps1`); the run lock: released however a run ends, lapsing after a shutdown, cleared when orphaned, refusals that say what they found. |
+| `test_dev_script_args.py`, `test_migration_guard.py`, `test_run_lock.py` | The docker compose arguments each `dev.ps1` command builds, the migration guard's revision comparison, and the run lock: released however a run ends, lapsing after a shutdown, cleared when orphaned, refusals that say what they found. |
 | `connectors/tally/test_*.py` | The Tally connector: requests, parser, mapping, signs, recorded fixtures. |
 | `devtools/test_tally_seed.py`, `devtools/test_diagrams.py` | The seeder and its safety checks; that the diagrams match the models and are drawn. |
 | `test_sync.py`, `test_large_sync.py`, `test_extract.py`, `test_raw_store.py`, `test_entity_lookup.py` | Syncing: small and large, resuming, finding companies, storing raw records. |
@@ -426,6 +430,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-05 | 0.42 | `dev.ps1 up` checks that the recorded Alembic revision exists in the checked-out history before migrating; `migrations/revision_guard.py`, `test_migration_guard.py`. |
 | 2026-11-02 | 0.41 | The frame to the client's reference pattern (ADR-050): `src/shell/PageHeader.tsx` and the dark `TopBar.tsx` replace `SideBar.tsx`; the period toggles and the comparison (`selection.ts`, `core/report_periods.py`, `api/v1/common.py`); `docs/formulas.md` with `tests/test_formulas.py`; `tests/test_report_periods.py`; `src/apps/dashboard/homeChart.ts`; `src/assets/company-logo-wide.png`. |
 | 2026-11-02 | 0.40 | Customers and vendors (D2 c4): `core/parties.py`, `api/v1/parties.py`, `src/apps/parties/`, `src/components/KeyCard.tsx`. |
 | 2026-11-02 | 0.39 | Monthly sales and purchases, channels (D2 c3): `api/v1/monthly.py`, `src/apps/registers/Monthly.tsx`, `src/apps/sales/Channels.tsx`, `src/reporting/ReportFrame.tsx`. |
