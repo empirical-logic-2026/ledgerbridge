@@ -59,6 +59,7 @@ def _cleanup(session: Session) -> None:
         A.ItemGroup,
         A.Godown,
         A.CostCentre,
+        A.CostCategory,
         A.AccountGroup,
     ):
         session.execute(delete(model).where(model.connection_id == connection.id))

@@ -65,7 +65,7 @@ AREAS = (
         "er-masters",
         "Masters: parties, items, units, godowns, cost centres, voucher types, dimensions "
         "(ledgerbridge_accounting)",
-        ("parties", "items", "item_groups", "units", "godowns", "cost_centres",
+        ("parties", "items", "item_groups", "units", "godowns", "cost_categories", "cost_centres",
          "voucher_types", "dimensions", "dimension_values"),
         ("entities",),
     ),
@@ -75,7 +75,7 @@ AREAS = (
         ("vouchers", "voucher_lines", "bill_allocations", "line_cost_allocations",
          "line_dimensions", "inventory_lines", "tax_lines"),
         ("entities", "voucher_types", "ledgers", "parties", "items", "godowns", "units",
-         "cost_centres", "dimension_values", "branches"),
+         "cost_categories", "cost_centres", "dimension_values", "branches"),
     ),
     Area(
         "er-system-sync",

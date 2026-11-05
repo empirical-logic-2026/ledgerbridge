@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp } from 'antd'
 import App from './App.tsx'
-import type { ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard } from './api/types.ts'
+import type { CentrePageOut, CentresOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard } from './api/types.ts'
 
 // ECharts needs a real canvas; the wrapper is exercised in the browser, not jsdom.
 vi.mock('./components/EChart.tsx', () => ({ EChart: () => <div data-testid="chart" /> }))
@@ -697,6 +697,9 @@ const row = (id: number, date: string, type: string, debit: string | null, credi
   credit,
   side_value: value,
   narration: id === 1 ? 'First sale' : null,
+  reference: id === 1 ? 'SUP-INV-4471' : null,
+  instrument_number: id === 1 ? '000451' : null,
+  transaction_reference: id === 1 ? 'UTR20260902000017' : null,
 })
 const salesRegister: RegisterOut = {
   side: 'sales',
@@ -751,6 +754,19 @@ describe('the Sales and Purchase registers', () => {
     const link = within(table).getAllByRole('link', { name: 'Customer One' })[0]
     expect(link.getAttribute('href')).toMatch(/^#\/sales\/customers\/11/)
     expect(within(table).queryByRole('link', { name: 'V-1' })).toBeNull() // no voucher page yet
+  })
+
+  it('offers the reference, cheque or transfer number and UTR as columns', async () => {
+    renderApp('#/sales/register')
+    const table = await screen.findByRole('table', { name: 'Sales register' })
+    expect(within(table).queryByText('SUP-INV-4471')).toBeNull() // hidden until chosen
+    fireEvent.click(screen.getByRole('button', { name: 'Columns ▾' }))
+    fireEvent.click(await screen.findByLabelText('Reference'))
+    fireEvent.click(await screen.findByLabelText('Cheque / transfer no.'))
+    fireEvent.click(await screen.findByLabelText('UTR'))
+    expect(await within(table).findByText('SUP-INV-4471')).toBeInTheDocument()
+    expect(within(table).getByText('000451')).toBeInTheDocument()
+    expect(within(table).getByText('UTR20260902000017')).toBeInTheDocument()
   })
 
   it('says when a register was cut short, and explains itself', async () => {
@@ -938,5 +954,77 @@ describe('the customers and their pages', () => {
   it('says so for a party that is not there', async () => {
     renderApp('#/sales/customers/77')
     expect(await screen.findByText("The customer couldn't be loaded.")).toBeInTheDocument()
+  })
+})
+
+const centresFound: CentresOut = {
+  companies: [3],
+  combined: false,
+  period: { start: '2026-08-01', end: '2026-09-30', months: [] },
+  centres: [
+    {
+      centre_id: 21, name: 'Head Office', category: 'Primary Cost Category', parent: null, companies: [3],
+      months: [{ month: '2026-08-01', amount: '1000' }, { month: '2026-09-01', amount: '6200' }], total: '7200', allocations: 3,
+    },
+    {
+      centre_id: 23, name: 'Alpha Phase 1', category: 'Projects', parent: 'Project Alpha', companies: [3],
+      months: [{ month: '2026-08-01', amount: '0' }, { month: '2026-09-01', amount: '2500' }], total: '2500', allocations: 1,
+    },
+  ],
+}
+
+const centreFound: CentrePageOut = {
+  centre: centresFound.centres[0],
+  period: centresFound.period,
+  allocations: [
+    { company: 3, date: '2026-09-01', voucher_id: 31, voucher_number: 'CC-2', voucher_type: 'Payment', ledger: 'Electricity', category: 'Primary Cost Category', amount: '4000' },
+    { company: 3, date: '2026-09-02', voucher_id: 32, voucher_number: 'PI-9', voucher_type: 'Purchase', ledger: 'Purchases', category: 'Primary Cost Category', amount: '200' },
+  ],
+  truncated: false,
+}
+
+describe('the cost centres', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    stubApi({
+      '/api/v1/companies': [companies[0]],
+      '/api/v1/periods': periods,
+      '/api/v1/cost-centres': centresFound,
+      '/api/v1/cost-centres/21': centreFound,
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('lists each cost centre by month with its category and where it sits, each opening its page', async () => {
+    renderApp('#/pnl/cost-centres')
+    const table = await screen.findByRole('table', { name: 'Cost centres' })
+    const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers).toEqual(['Cost centre', 'Cost category', 'Under', 'Aug-2026', 'Sep-2026', 'Allocated', 'Allocations'])
+    const alpha = within(table).getByRole('link', { name: 'Alpha Phase 1' })
+    expect(alpha.closest('tr')).toHaveTextContent('Project Alpha')
+    expect(within(table).getByRole('link', { name: 'Head Office' }).getAttribute('href')).toMatch(/^#\/pnl\/cost-centres\/21/)
+    expect(within(table).getByText('Total').closest('tr')).toHaveTextContent('₹9,700.00')
+    expect(document.querySelector('.header-crumbs')).toHaveTextContent('P&L & KPIs/Cost centres')
+  })
+
+  it('opens a cost centre with its allocations voucher by voucher, and breadcrumbs back', async () => {
+    renderApp('#/pnl/cost-centres/21')
+    const table = await screen.findByRole('table', { name: 'Allocations' })
+    expect(within(table).getByText('Electricity').closest('tr')).toHaveTextContent('₹4,000.00')
+    expect(within(table).getByText('Total').closest('tr')).toHaveTextContent('₹4,200.00')
+    expect(screen.getByText('Primary Cost Category · 3 allocations')).toBeInTheDocument()
+    const crumbs = document.querySelector('.header-crumbs') as HTMLElement
+    expect(crumbs).toHaveTextContent('P&L & KPIs/Cost centres/Head Office')
+    expect(within(crumbs).getByRole('link', { name: 'Cost centres' }).getAttribute('href')).toMatch(/^#\/pnl\/cost-centres(\?|$)/)
+  })
+
+  it('says so for a cost centre that is not there', async () => {
+    renderApp('#/pnl/cost-centres/77')
+    expect(await screen.findByText("The cost centre couldn't be loaded.")).toBeInTheDocument()
+  })
+
+  it('is a page of the P&L & KPIs module', async () => {
+    renderApp('#/pnl/profit-loss')
+    expect((await screen.findByRole('link', { name: 'Cost centres' })).getAttribute('href')).toMatch(/^#\/pnl\/cost-centres/)
   })
 })

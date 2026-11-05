@@ -36,6 +36,16 @@ export const GLOSSARY: Record<string, Explanation> = {
   Debit: { text: 'The voucher\'s first ledger entry when it is a debit, as the source\'s Day Book shows it.', id: 'F-REG-001' },
   Credit: { text: 'The voucher\'s first ledger entry when it is a credit.', id: 'F-REG-001' },
   Particulars: { text: 'The voucher\'s first ledger (for an invoice, the party), as the Day Book shows it.' },
+  Reference: { text: 'The voucher\'s reference as entered in the source, e.g. the supplier\'s own invoice number.' },
+  'Cheque / transfer no.': { text: 'The instrument number on the voucher\'s bank line: a cheque number or a transfer\'s number.' },
+  UTR: { text: 'The unique transaction reference the bank gave an electronic transfer (NEFT, RTGS, IMPS), from the bank line.' },
+
+  // --- cost centres ---
+  'Cost centre': { text: 'Where a cost or income is tracked (a branch, project or department), by name across the companies.' },
+  'Cost category': { text: 'The set of cost centres an allocation belongs to; one voucher line can be allocated in several categories.' },
+  Under: { text: 'The cost centre this one sits under in the source.' },
+  Allocated: { text: 'The parts of voucher lines allocated to the cost centre, with the line\'s sign (debits positive); its own allocations only, not the ones under it.', formula: 'Σ allocation amounts', id: 'F-CC-001' },
+  Allocations: { text: 'How many allocations were made to the cost centre in the period.', formula: 'Count of allocations', id: 'F-CC-003' },
 
   // --- profit and loss ---
   Revenue: { text: `Net sales from the stored Profit & Loss. ${STATEMENT}`, id: 'F-PL-001' },

@@ -1,12 +1,12 @@
 """The reporting views the dashboard API reads, as SQLAlchemy tables (read-only).
 
 They are created by migrations (0024: `v_group_ancestors`, `v_data_health`, extended in
-0025), not by the
+0025; 0026: `v_cost_allocations`), not by the
 models, so they are declared on their own metadata: Alembic's model comparison never sees
 them.
 """
 
-from sqlalchemy import Column, Date, DateTime, Integer, MetaData, String, Table
+from sqlalchemy import Column, Date, DateTime, Integer, MetaData, Numeric, String, Table
 
 from core.models.schemas import REPORTING
 
@@ -33,5 +33,27 @@ DATA_HEALTH = Table(
     Column("validated_as_of", Date),
     Column("validated_at", DateTime),
     Column("source_name", String(255)),  # migration 0025
+    schema=REPORTING,
+)
+
+# One row per cost-centre allocation of an effective line of a voucher not deleted
+# (migration 0026): entity, date, voucher, ledger, category, cost centre and amount (canonical
+# sign, as the line's).
+COST_ALLOCATIONS = Table(
+    "v_cost_allocations",
+    _views,
+    Column("entity_id", Integer),
+    Column("voucher_date", Date),
+    Column("voucher_id", Integer),
+    Column("voucher_number", String(255)),
+    Column("voucher_type", String(255)),
+    Column("voucher_line_id", Integer),
+    Column("ledger_id", Integer),
+    Column("ledger", String(255)),
+    Column("cost_category_id", Integer),
+    Column("cost_category", String(255)),
+    Column("cost_centre_id", Integer),
+    Column("cost_centre", String(255)),
+    Column("amount", Numeric(20, 4)),
     schema=REPORTING,
 )

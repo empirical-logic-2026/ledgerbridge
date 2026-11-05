@@ -61,10 +61,21 @@ erDiagram
         bigint connection_id FK, UK "to connections"
         bigint import_batch_id FK "to import_batches"
     }
+    cost_categories {
+        bigint id PK
+        bigint entity_id FK "to entities"
+        varchar name
+        varchar source_key UK
+        bool is_deleted
+        json extra
+        bigint connection_id FK, UK "to connections"
+        bigint import_batch_id FK "to import_batches"
+    }
     cost_centres {
         bigint id PK
         bigint entity_id FK "to entities"
         bigint parent_id FK "to cost_centres"
+        bigint cost_category_id FK "to cost_categories"
         varchar name
         varchar source_key UK
         bool is_deleted
@@ -110,8 +121,10 @@ erDiagram
     entities ||--o{ units : "entity_id"
     entities ||--o{ godowns : "entity_id"
     godowns |o--o{ godowns : "parent_id"
+    entities ||--o{ cost_categories : "entity_id"
     entities ||--o{ cost_centres : "entity_id"
     cost_centres |o--o{ cost_centres : "parent_id"
+    cost_categories |o--o{ cost_centres : "cost_category_id"
     entities ||--o{ voucher_types : "entity_id"
     dimensions ||--o{ dimension_values : "dimension_id"
     entities |o--o{ dimension_values : "entity_id"

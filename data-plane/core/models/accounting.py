@@ -397,6 +397,18 @@ class Godown(SourceTrackingMixin, TimestampMixin, Base):
     )
 
 
+class CostCategory(SourceTrackingMixin, TimestampMixin, Base):
+    """A set of cost centres a line's amount is allocated over; one line can be allocated in
+    several categories, each in full (Tally: Cost Category)."""
+
+    __tablename__ = "cost_categories"
+    __table_args__ = src_table_args("cost_categories", ACCOUNTING)
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    name: Mapped[str] = name_column()
+
+
 class CostCentre(SourceTrackingMixin, TimestampMixin, Base):
     __tablename__ = "cost_centres"
     __table_args__ = src_table_args("cost_centres", ACCOUNTING)
@@ -404,7 +416,10 @@ class CostCentre(SourceTrackingMixin, TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
     entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
     parent_id: Mapped[int | None] = mapped_column(Id, _fk("cost_centres"), nullable=True)
-    category: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    category: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )  # as the source names it
+    cost_category_id: Mapped[int | None] = mapped_column(Id, _fk("cost_categories"), nullable=True)
     name: Mapped[str] = name_column()
 
 
@@ -526,6 +541,10 @@ class VoucherLine(TimestampMixin, Base):
     exchange_rate: Mapped[Decimal | None] = mapped_column(FxRate, nullable=True)
     is_party_line: Mapped[bool] = flag()
     is_effective: Mapped[bool] = flag(True)
+    # A bank line's instrument: the cheque or transfer number, and the bank's unique
+    # transaction reference (UTR) when the source keeps it apart ("; " between several).
+    instrument_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    transaction_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class LineDimension(TimestampMixin, Base):
@@ -544,8 +563,9 @@ class LineCostAllocation(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
     voucher_line_id: Mapped[int] = mapped_column(Id, _fk("voucher_lines", ondelete="CASCADE"))
+    cost_category_id: Mapped[int | None] = mapped_column(Id, _fk("cost_categories"), nullable=True)
     cost_centre_id: Mapped[int] = mapped_column(Id, _fk("cost_centres"))
-    amount: Mapped[Decimal] = mapped_column(Money)
+    amount: Mapped[Decimal] = mapped_column(Money)  # canonical sign, as the line's
 
 
 class BillAllocation(TimestampMixin, Base):

@@ -5,10 +5,11 @@
 
 import { Alert, Result, Skeleton } from 'antd'
 import type { ReactNode } from 'react'
-import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { PnlKpis } from './apps/dashboard/PnlKpis.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
+import { CostCentrePage, CostCentres } from './apps/costcentres/CostCentres.tsx'
 import { Ageing } from './apps/parties/Ageing.tsx'
 import { BalanceSheet } from './apps/statements/BalanceSheet.tsx'
 import { CashFlow } from './apps/cash/CashFlow.tsx'
@@ -81,6 +82,9 @@ export default function App({ mode, onMode, today }: Props) {
   const partyId = partyKind && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
   const partyList = useParties(partyKind ?? 'customers', partyKind && !partyId ? ids : undefined, period)
   const party = useParty(partyKind ?? 'customers', partyId, partyKind ? ids : undefined, period, selection.compare)
+  const centreId = at === 'pnl/cost-centres' && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
+  const centreList = useCostCentres(at === 'pnl/cost-centres' && route.path.length < 3 ? ids : undefined, period)
+  const centre = useCostCentre(centreId, at === 'pnl/cost-centres' ? ids : undefined, period)
   const query = selectionQuery(selection)
   const all = companies.data ?? []
   const selected = all.filter((c) => ids?.includes(c.id))
@@ -112,6 +116,31 @@ export default function App({ mode, onMode, today }: Props) {
               query={query}
         />
       </>
+    )
+  } else if (at === 'pnl/cost-centres' && route.path.length > 2 && !centreId) {
+    content = <Result status="404" title="There is no such page" subTitle="Choose a module in the top bar." />
+  } else if (at === 'pnl/cost-centres' && centreId) {
+    crumbs = [{ label: 'P&L & KPIs', path: ['pnl', 'profit-loss'] }, { label: 'Cost centres', path: ['pnl', 'cost-centres'] }, { label: centre.data?.centre.name ?? 'Cost centre' }]
+    content = (
+      <CostCentrePage
+        key={centreId}
+        companies={selected}
+        centre={centre.data}
+        loading={companies.isPending || periods.isPending || centre.isPending}
+        error={periods.error ?? centre.error}
+        query={query}
+      />
+    )
+  } else if (at === 'pnl/cost-centres') {
+    crumbs = [{ label: 'P&L & KPIs', path: ['pnl', 'profit-loss'] }, { label: 'Cost centres' }]
+    content = (
+      <CostCentres
+        companies={selected}
+        centres={centreList.data}
+        loading={companies.isPending || periods.isPending || centreList.isPending}
+        error={periods.error ?? centreList.error}
+        query={query}
+      />
     )
   } else if (at === 'sales/dashboard') {
     crumbs = [{ label: 'Sales', path: ['sales', 'dashboard'] }, { label: 'Sales dashboard' }]

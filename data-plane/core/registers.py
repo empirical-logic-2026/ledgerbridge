@@ -12,6 +12,9 @@ debit or credit, and narration. Source-independent.
   Accounts, by predefined role, at any depth), positive as core/sales.py has them: the
   register's total of it is the gross plus returns of the monthly sales views.
 
+- **Reference and instrument:** the voucher's reference (e.g. a supplier's invoice number) and
+  its bank lines' cheque or transfer number and UTR.
+
 At most `limit` vouchers, the earliest first; `truncated` says when there were more.
 """
 
@@ -45,6 +48,9 @@ class RegisterRow:
     amount: Decimal  # the first entry's: debit positive, credit negative
     side_value: Decimal  # on the side's ledgers, positive for invoices
     narration: str | None
+    reference: str | None = None
+    instrument_number: str | None = None  # a bank line's cheque or transfer number
+    transaction_reference: str | None = None  # a bank line's UTR
 
 
 @dataclass
@@ -63,18 +69,21 @@ def register(
 ) -> Register:
     first = _first_entries(companies, period)
     values = _side_values(companies, period, side)
+    instruments = _instruments(companies, period)
     query = (
         select(
             A.Voucher.id, A.Voucher.entity_id, A.Voucher.voucher_date, A.VoucherType.name,
             A.VoucherType.base_type, A.Voucher.voucher_number, A.Ledger.id, A.Ledger.name,
             A.Voucher.party_id, A.Party.name, first.c.amount,
-            func.coalesce(values.c.value, 0), A.Voucher.narration,
+            func.coalesce(values.c.value, 0), A.Voucher.narration, A.Voucher.reference_number,
+            instruments.c.instrument_number, instruments.c.transaction_reference,
         )
         .join(first, first.c.voucher_id == A.Voucher.id)
         .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
         .join(A.Ledger, A.Ledger.id == first.c.ledger_id)
         .outerjoin(A.Party, A.Party.id == A.Voucher.party_id)
         .outerjoin(values, values.c.voucher_id == A.Voucher.id)
+        .outerjoin(instruments, instruments.c.voucher_id == A.Voucher.id)
         .where(
             first.c.n == 1,
             A.Voucher.is_deleted.is_(False),
@@ -90,10 +99,11 @@ def register(
     rows = [
         RegisterRow(
             int(vid), int(entity), on, vtype, base, number, int(ledger), ledger_name,
-            party_id, party, Decimal(amount), side.sign * Decimal(value), narration,
+            party_id, party, Decimal(amount), side.sign * Decimal(value), narration, reference,
+            instrument, utr,
         )
         for vid, entity, on, vtype, base, number, ledger, ledger_name, party_id, party, amount,
-        value, narration in session.execute(query)
+        value, narration, reference, instrument, utr in session.execute(query)
     ]  # fmt: skip
     return Register(rows[:limit], len(rows) > limit)
 
@@ -109,6 +119,25 @@ def _first_entries(companies: list[int], period: Period):  # noqa: ANN202
         .label("n"),
     ).where(A.VoucherLine.entity_id.in_(companies), A.VoucherLine.is_effective.is_(True))
     return in_period(numbered, period).subquery()
+
+
+def _instruments(companies: list[int], period: Period):  # noqa: ANN202
+    """Each voucher's bank instrument and UTR (from its lines that have one)."""
+    query = (
+        select(
+            A.VoucherLine.voucher_id,
+            func.max(A.VoucherLine.instrument_number).label("instrument_number"),
+            func.max(A.VoucherLine.transaction_reference).label("transaction_reference"),
+        )
+        .where(
+            A.VoucherLine.entity_id.in_(companies),
+            A.VoucherLine.is_effective.is_(True),
+            A.VoucherLine.instrument_number.is_not(None)
+            | A.VoucherLine.transaction_reference.is_not(None),
+        )
+        .group_by(A.VoucherLine.voucher_id)
+    )
+    return in_period(query, period).subquery()
 
 
 def _side_values(companies: list[int], period: Period, side: Side):  # noqa: ANN202

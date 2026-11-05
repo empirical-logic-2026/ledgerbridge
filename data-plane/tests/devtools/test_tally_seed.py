@@ -45,7 +45,7 @@ def test_expected_trial_balance_for_anchors() -> None:
     balances = expected_balances(SEED)
     # cancelled 500 and the reversing journal's 125 excluded; adjustment 300, post-dated 75;
     # the effective-date journals 11 and 13 (the optional one's 17 excluded)
-    assert balances["Rent"] == (Decimal("1436"), "Dr")  # with EDITLOG-ALTER-1 (37)
+    assert balances["Rent"] == (Decimal("3936"), "Dr")  # with EDITLOG-ALTER-1 (37), BANK-1 (2500)
     assert balances["Party Kilo"] == (Decimal("21"), "Dr")  # named by its alias
     # contra, receipts, payments, altered 1,500, post-dated 75; the memorandum's 250 excluded
     # Less the alias voucher's 21; the direct expense (300 out) and income (120 in); the
@@ -53,7 +53,7 @@ def test_expected_trial_balance_for_anchors() -> None:
     assert balances["Cash"] == (Decimal("25984"), "Dr")
     assert balances["Capital"] == (Decimal("50000"), "Cr")
     # 19,360 before ALTER-2 (receipt altered from 3,000 to 5,900); DEL-1 is deleted.
-    assert balances["Test Bank Current A/c"] == (Decimal("25260"), "Dr")
+    assert balances["Test Bank Current A/c"] == (Decimal("18160"), "Dr")  # CC-2, BANK-1, BANK-2
     # SI-3 settled in full; SI-7 (the partly tracked sale) is open.
     assert balances["Customer Gamma Stores"] == (Decimal("1200"), "Dr")
     # Tally's difference in opening balances, integrated with inventory: the ledgers'
@@ -159,6 +159,8 @@ class FakeTally:
                 self.state.stock_items.add(obj.get("NAME"))
             elif obj.tag == "COSTCENTRE":
                 self.state.cost_centres.add(obj.get("NAME"))
+            elif obj.tag == "COSTCATEGORY":
+                self.state.cost_categories.add(obj.get("NAME"))
             elif obj.tag == "VOUCHERTYPE":
                 self.state.voucher_types.add(obj.get("NAME"))
             elif obj.tag == "LEDGER":
@@ -237,6 +239,35 @@ def test_seed_skips_cost_centre_voucher_when_feature_is_off() -> None:
     assert "CC-1" not in tally.state.vouchers
     assert any("cost centres" in s for s in report.skipped)
     assert any("CC-1" in s for s in report.skipped)
+    assert not tally.state.cost_categories  # nor the categories
+
+
+def test_cost_categories_and_their_centres_are_created_parents_first() -> None:
+    tally = FakeTally()
+    seed(SEED, COMPANY, tally.read, tally, log=lambda _: None)
+    assert tally.state.cost_categories == {"Projects"}
+    assert {"Project Alpha", "Alpha Phase 1"} <= tally.state.cost_centres
+    request = rq.cost_centre_create(next(c for c in SEED.cost_centres if c.parent))
+    centre = ET.fromstring(f"<X>{request}</X>").find("COSTCENTRE")
+    assert (centre.findtext("CATEGORY"), centre.findtext("PARENT")) == ("Projects", "Project Alpha")
+
+
+def test_a_bank_payment_carries_its_instrument_and_an_invoice_line_its_cost_centres() -> None:
+    by_marker = {v.marker: v for v in SEED.vouchers}
+    payment = ET.fromstring(rq.voucher_create(by_marker["BANK-2"]))
+    bank = payment.find(".//BANKALLOCATIONS.LIST")
+    assert bank.findtext("UNIQUEREFERENCENUMBER") == "UTR20260902000017"
+    assert bank.findtext("TRANSACTIONTYPE") == "e-Fund Transfer"
+    invoice = ET.fromstring(rq.voucher_create(by_marker["CC-3"]))
+    assert invoice.findtext("REFERENCE") == "SUP-INV-4471"
+    under_item = invoice.findall(
+        ".//ACCOUNTINGALLOCATIONS.LIST/CATEGORYALLOCATIONS.LIST/COSTCENTREALLOCATIONS.LIST"
+    )
+    assert [c.findtext("NAME") for c in under_item] == ["Branch", "Head Office"]
+    two = ET.fromstring(rq.voucher_create(by_marker["CC-2"])).findall(
+        ".//CATEGORYALLOCATIONS.LIST/CATEGORY"
+    )
+    assert [c.text for c in two] == ["Primary Cost Category", "Projects"]
 
 
 def test_rejected_import_stops_with_tallys_message() -> None:

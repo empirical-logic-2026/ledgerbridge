@@ -204,7 +204,9 @@ class SourceControls:
     - `bill_outstanding`: party ledger name -> total of its outstanding bills, as the source
       reports them now; `opening_bills`: party ledger name -> total of its opening bills;
     - `year_ends`: each financial year end before the as-of date -> closing balances then;
-    - `statements`: the as-of date and each year end -> the source's own statements then.
+    - `statements`: the as-of date and each year end -> the source's own statements then;
+    - `cost_centre_totals`: cost centre source_key -> its total from the books' beginning to
+      the as-of date, its own allocations and those of the cost centres under it.
     """
 
     voucher_counts: Mapping[tuple[date, str], int] | Exception | None = None
@@ -213,6 +215,7 @@ class SourceControls:
     opening_bills: Mapping[str, Decimal] | Exception | None = None
     statements: Mapping[date, "SourceStatements | Exception"] = field(default_factory=dict)
     year_ends: Mapping[date, "SourceBalances | Exception"] = field(default_factory=dict)
+    cost_centre_totals: Mapping[str, Decimal] | Exception | None = None
 
 
 class Connector(Protocol):

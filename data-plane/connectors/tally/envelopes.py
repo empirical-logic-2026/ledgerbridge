@@ -93,9 +93,19 @@ STOCK_ITEMS = CollectionSpec(
 GODOWNS = CollectionSpec(
     "LBGodowns", "Godown", "GODOWN", "godown", (*_KEYS, "PARENT", "ISEXTERNAL", "ISINTERNAL")
 )
+COST_CATEGORIES = CollectionSpec(
+    "LBCostCategories", "CostCategory", "COSTCATEGORY", "cost_category",
+    (*_KEYS, "ALLOCATEREVENUE", "ALLOCATENONREVENUE"),
+)  # fmt: skip
 COST_CENTRES = CollectionSpec(
     "LBCostCentres", "CostCentre", "COSTCENTRE", "cost_centre", (*_KEYS, "PARENT", "CATEGORY")
 )
+# Each cost centre's total for a period as Tally reports it (CLOSINGBALANCE, its own and the
+# centres under it: recorded on the test company, 2026-11-05), for validation.
+COST_CENTRE_BALANCES = CollectionSpec(
+    "LBCostCentreBalances", "CostCentre", "COSTCENTRE", "cost_centre_balance",
+    ("GUID", "NAME", "CATEGORY", "PARENT", "CLOSINGBALANCE"),
+)  # fmt: skip
 VOUCHERS = CollectionSpec(
     "LBVouchers",
     "Voucher",
@@ -112,6 +122,16 @@ VOUCHERS = CollectionSpec(
         "AllLedgerEntries.CategoryAllocations.Category",
         "AllLedgerEntries.CategoryAllocations.CostCentreAllocations.Name",
         "AllLedgerEntries.CategoryAllocations.CostCentreAllocations.Amount",
+        # A bank line's instrument (field names as Tally exported them on the test company,
+        # 2026-11-05): the cheque or transfer number, and the UTR of an electronic transfer.
+        # Tally sends the list empty unless its key fields (Name, Date) are fetched too.
+        "AllLedgerEntries.BankAllocations.Name",
+        "AllLedgerEntries.BankAllocations.Date",
+        "AllLedgerEntries.BankAllocations.TransactionType",
+        "AllLedgerEntries.BankAllocations.InstrumentNumber",
+        "AllLedgerEntries.BankAllocations.InstrumentDate",
+        "AllLedgerEntries.BankAllocations.UniqueReferenceNumber",
+        "AllLedgerEntries.BankAllocations.Amount",
         "AllInventoryEntries.StockItemName", "AllInventoryEntries.ActualQty",
         "AllInventoryEntries.BilledQty", "AllInventoryEntries.Rate",
         "AllInventoryEntries.Amount", "AllInventoryEntries.IsDeemedPositive",
@@ -125,6 +145,11 @@ VOUCHERS = CollectionSpec(
         "AllInventoryEntries.AccountingAllocations.LedgerName",
         "AllInventoryEntries.AccountingAllocations.Amount",
         "AllInventoryEntries.AccountingAllocations.IsDeemedPositive",
+        # An item invoice keeps a line's cost allocations under the item's accounting
+        # allocation, not on the ledger entry (test company, 2026-11-05).
+        "AllInventoryEntries.AccountingAllocations.CategoryAllocations.Category",
+        "AllInventoryEntries.AccountingAllocations.CategoryAllocations.CostCentreAllocations.Name",
+        "AllInventoryEntries.AccountingAllocations.CategoryAllocations.CostCentreAllocations.Amount",
         # Stock journals and manufacturing journals: consumed (out) and produced (in) items.
         *(f"InventoryEntries{side}.{field}" for side in ("In", "Out") for field in (
             "StockItemName", "ActualQty", "BilledQty", "Rate", "Amount", "IsDeemedPositive",
@@ -247,6 +272,7 @@ MASTER_SPECS = (
     STOCK_GROUPS,
     GODOWNS,
     STOCK_ITEMS,
+    COST_CATEGORIES,
     COST_CENTRES,
 )
 ALL_SPECS = (COMPANIES, *MASTER_SPECS, VOUCHERS)

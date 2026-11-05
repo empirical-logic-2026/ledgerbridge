@@ -79,6 +79,9 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-033](#lb-val-033-sales-ledgers-with-an-opening-balance) | Sales ledgers with an opening balance | `sales_ledger_openings` | Warning |
 | [LB-VAL-034](#lb-val-034-foreign-currency-ledgers-without-an-iso-code) | Foreign-currency ledgers without an ISO code | `foreign_currency_without_iso_code` | Warning |
 | [LB-VAL-035](#lb-val-035-ledgers-the-source-revalues-not-marked-foreign) | Ledgers the source revalues not marked foreign | `revalued_ledger_not_foreign` | Warning |
+| [LB-VAL-037](#lb-val-037-cost-allocations-larger-than-their-line) | Cost allocations larger than their line | `cost_allocation_exceeds_line` | Error |
+| [LB-VAL-038](#lb-val-038-cost-centre-totals) | Cost centre totals | `cost_centre_mismatch` | Error |
+| [LB-VAL-039](#lb-val-039-source-cost-centre-totals-couldnt-be-read) | Source cost centre totals couldn't be read | `cost_centre_totals_unavailable` | Error |
 | [LB-VAL-036](#lb-val-036-voucher-type-names-written-differently) | Voucher type names written differently | `voucher_type_names_differ` | Note |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
@@ -1288,6 +1291,68 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Rebuild (`transform rebuild`), then check again; send the counts if they remain.
 
 **Next step:** `.\dev.ps1 transform rebuild -Env <env>`
+
+### LB-VAL-037: Cost allocations larger than their line
+
+`cost_allocation_exceeds_line` | Error
+
+**What it means:** Some voucher lines' cost-centre allocations, in one cost category, add up to more than the line (or have the other sign).
+
+**Common causes:**
+
+- An allocation the source let through, or a line converted without all its parts.
+
+**How to investigate:**
+
+- .\dev.ps1 report -Details -Env <env>
+
+**How to fix:**
+
+- Correct the voucher in the source, sync, then validate.
+
+**Next step:** `.\dev.ps1 validate -Env <env>`
+
+### LB-VAL-038: Cost centre totals
+
+`cost_centre_mismatch` | Error
+
+**What it means:** Some cost centres' totals (their own allocations and those of the centres under them, from the books' beginning) differ from the source's.
+
+**Usually a consequence of:** LB-TRF-001, LB-SYNC-002.
+
+**Common causes:**
+
+- Vouchers that failed to convert, or allocations fetched before the sync read them.
+
+**How to investigate:**
+
+- The report's -Details lists the cost centres by id (no names or amounts).
+
+**How to fix:**
+
+- Rebuild the converted records (transform rebuild); if they still differ, sync full.
+
+**Next step:** `.\dev.ps1 transform rebuild -Env <env>`
+
+### LB-VAL-039: Source cost centre totals couldn't be read
+
+`cost_centre_totals_unavailable` | Error
+
+**What it means:** The source's cost centre totals couldn't be read, so they weren't compared.
+
+**Common causes:**
+
+- The source timed out or stopped answering.
+
+**How to investigate:**
+
+- .\dev.ps1 entity-check -Env <env>
+
+**How to fix:**
+
+- Validate again with TallyPrime idle.
+
+**Next step:** `.\dev.ps1 validate -Env <env>`
 
 ### LB-VAL-036: Voucher type names written differently
 

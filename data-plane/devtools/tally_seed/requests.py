@@ -11,6 +11,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 from devtools.tally_seed.data import (
     AccountGroup,
+    CostCentre,
     Currency,
     Entry,
     Godown,
@@ -137,10 +138,21 @@ def voucher_type_create(name: str, parent: str) -> str:
     )
 
 
-def cost_centre_create(name: str) -> str:
+def cost_category_create(name: str) -> str:
+    """A cost category allocating revenue and non-revenue items (the tags as Tally exports
+    them, 2026-11-05)."""
     return (
-        f'<COSTCENTRE NAME={quoteattr(name)} ACTION="Create">{_names(name)}'
-        f"<CATEGORY>{COST_CATEGORY}</CATEGORY></COSTCENTRE>"
+        f'<COSTCATEGORY NAME={quoteattr(name)} ACTION="Create">{_names(name)}'
+        "<ALLOCATEREVENUE>Yes</ALLOCATEREVENUE><ALLOCATENONREVENUE>Yes</ALLOCATENONREVENUE>"
+        "</COSTCATEGORY>"
+    )
+
+
+def cost_centre_create(centre: CostCentre) -> str:
+    parent = f"<PARENT>{escape(centre.parent)}</PARENT>" if centre.parent else ""
+    return (
+        f'<COSTCENTRE NAME={quoteattr(centre.name)} ACTION="Create">{_names(centre.name)}'
+        f"<CATEGORY>{escape(centre.category)}</CATEGORY>{parent}</COSTCENTRE>"
     )
 
 
@@ -184,27 +196,54 @@ def _entry(entry: Entry, list_tag: str, party: bool = False) -> str:
         "</BILLALLOCATIONS.LIST>"
         for b in entry.bills
     )
-    centres = ""
-    if entry.cost_centres:
-        allocations = "".join(
-            "<COSTCENTREALLOCATIONS.LIST>"
-            f"<NAME>{escape(name)}</NAME><AMOUNT>{_amount(entry.side, value)}</AMOUNT>"
-            "</COSTCENTREALLOCATIONS.LIST>"
-            for name, value in entry.cost_centres
-        )
-        centres = (
-            f"<CATEGORYALLOCATIONS.LIST><CATEGORY>{COST_CATEGORY}</CATEGORY>"
-            f"<ISDEEMEDPOSITIVE>{_deemed(entry.side)}</ISDEEMEDPOSITIVE>{allocations}"
-            "</CATEGORYALLOCATIONS.LIST>"
-        )
+    categories = ((COST_CATEGORY, entry.cost_centres),) if entry.cost_centres else ()
+    centres = _categories(entry.side, (*categories, *entry.categories))
+    bank = _bank(entry) if entry.bank else ""
     return (
         f"<{list_tag}>"
         f"<LEDGERNAME>{escape(entry.ledger)}</LEDGERNAME>"
         f"<ISDEEMEDPOSITIVE>{_deemed(entry.side)}</ISDEEMEDPOSITIVE>"
         f"<ISPARTYLEDGER>{'Yes' if party else 'No'}</ISPARTYLEDGER>"
         f"<AMOUNT>{_amount(entry.side, entry.amount)}</AMOUNT>"
-        f"{bills}{centres}"
+        f"{bills}{centres}{bank}"
         f"</{list_tag}>"
+    )
+
+
+def _categories(
+    side: Side, categories: tuple[tuple[str, tuple[tuple[str, Decimal], ...]], ...]
+) -> str:
+    """Cost-centre allocations, one list per cost category."""
+    return "".join(
+        f"<CATEGORYALLOCATIONS.LIST><CATEGORY>{escape(category)}</CATEGORY>"
+        f"<ISDEEMEDPOSITIVE>{_deemed(side)}</ISDEEMEDPOSITIVE>"
+        + "".join(
+            "<COSTCENTREALLOCATIONS.LIST>"
+            f"<NAME>{escape(name)}</NAME><AMOUNT>{_amount(side, value)}</AMOUNT>"
+            "</COSTCENTREALLOCATIONS.LIST>"
+            for name, value in centres
+        )
+        + "</CATEGORYALLOCATIONS.LIST>"
+        for category, centres in categories
+    )
+
+
+def _bank(entry: Entry) -> str:
+    """A bank entry's instrument: Tally's bank allocation (for the import; the fields Tally
+    exports back are recorded in the fixtures)."""
+    bank = entry.bank
+    if bank is None:
+        return ""
+    utr = f"<UNIQUEREFERENCENUMBER>{escape(bank.utr)}</UNIQUEREFERENCENUMBER>" if bank.utr else ""
+    return (
+        "<BANKALLOCATIONS.LIST>"
+        f"<DATE>{_date(bank.instrument_date)}</DATE>"
+        f"<INSTRUMENTDATE>{_date(bank.instrument_date)}</INSTRUMENTDATE>"
+        f"<TRANSACTIONTYPE>{escape(bank.transaction_type)}</TRANSACTIONTYPE>"
+        f"<INSTRUMENTNUMBER>{escape(bank.instrument_number)}</INSTRUMENTNUMBER>{utr}"
+        f"<PAYMENTMODE>Transacted</PAYMENTMODE>"
+        f"<AMOUNT>{_amount(entry.side, entry.amount)}</AMOUNT>"
+        "</BANKALLOCATIONS.LIST>"
     )
 
 
@@ -233,11 +272,14 @@ def _inventory(line: ItemLine, tag: str = "ALLINVENTORYENTRIES.LIST") -> str:
     )
     accounting = ""
     if line.sales_ledger:
+        centres = (
+            _categories(side, ((COST_CATEGORY, line.cost_centres),)) if line.cost_centres else ""
+        )
         accounting = (
             "<ACCOUNTINGALLOCATIONS.LIST>"
             f"<LEDGERNAME>{escape(line.sales_ledger)}</LEDGERNAME>"
             f"<ISDEEMEDPOSITIVE>{_deemed(side)}</ISDEEMEDPOSITIVE><AMOUNT>{amount}</AMOUNT>"
-            "</ACCOUNTINGALLOCATIONS.LIST>"
+            f"{centres}</ACCOUNTINGALLOCATIONS.LIST>"
         )
     return (
         f"<{tag}>"

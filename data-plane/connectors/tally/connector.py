@@ -794,6 +794,19 @@ class TallyConnector:
             quantities[parser.source_key(element)] = quantity
         return quantities
 
+    def cost_centre_totals(self, entity: SourceEntity, as_of: date) -> dict[str, Decimal]:
+        """Cost centre GUID -> Tally's total from the books' beginning to `as_of` (canonical
+        sign): its own allocations and those of the cost centres under it."""
+        if entity.books_from is None:
+            raise TallyError(f"Company '{entity.name}' has no books-from date")
+        return {
+            parser.source_key(element): _canonical(element.findtext("CLOSINGBALANCE"))
+            for element in self._export_objects(
+                entity, envelopes.COST_CENTRE_BALANCES, balances_period=(entity.books_from, as_of)
+            )
+            if parser.source_key(element)
+        }
+
     def stock_by_godown(
         self, entity: SourceEntity, as_of: date, items: Iterable[str]
     ) -> dict[tuple[str, str], tuple[Decimal, Decimal]]:

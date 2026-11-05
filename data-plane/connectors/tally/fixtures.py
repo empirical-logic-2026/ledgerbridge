@@ -34,6 +34,7 @@ _KNOWN = frozenset(
         *envelopes.ALL_SPECS,
         envelopes.LEDGER_BALANCES,
         envelopes.STOCK_VALUES,
+        envelopes.COST_CENTRE_BALANCES,
         envelopes.GROUP_BALANCES,
         envelopes.BILLS,
         envelopes.LEDGER_OPENING_BILLS,

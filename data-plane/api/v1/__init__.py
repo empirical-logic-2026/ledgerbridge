@@ -8,6 +8,7 @@ from api.v1 import (
     ageing,
     cash_flow,
     companies,
+    cost_centres,
     datasets,
     facets,
     home,
@@ -31,3 +32,4 @@ router.include_router(monthly.router)
 router.include_router(parties.router)
 router.include_router(ageing.router)
 router.include_router(cash_flow.router)
+router.include_router(cost_centres.router)

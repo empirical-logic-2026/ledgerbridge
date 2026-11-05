@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+# Debian's security fixes released since the base image was published (Trivy fails the
+# checks on a fixed HIGH or CRITICAL vulnerability, e.g. CVE-2026-109518 in apt).
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
 # Keep in step with the uv version that writes uv.lock.
 COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /uvx /bin/
 

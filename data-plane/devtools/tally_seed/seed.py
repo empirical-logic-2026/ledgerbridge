@@ -33,6 +33,9 @@ STOCK_ITEMS = CollectionSpec("LBSeedItems", "StockItem", "STOCKITEM", "stock_ite
 COST_CENTRES = CollectionSpec(
     "LBSeedCostCentres", "CostCentre", "COSTCENTRE", "cost_centre", ("NAME",)
 )
+COST_CATEGORIES = CollectionSpec(
+    "LBSeedCostCategories", "CostCategory", "COSTCATEGORY", "cost_category", ("NAME",)
+)
 VOUCHER_TYPES = CollectionSpec(
     "LBSeedVoucherTypes", "VoucherType", "VOUCHERTYPE", "voucher_type", ("NAME",)
 )
@@ -128,6 +131,7 @@ class TallyState:
     reserved_groups: dict[str, str] = field(default_factory=dict)  # reserved -> current name
     currencies: set[str] = field(default_factory=set)
     groups: set[str] = field(default_factory=set)
+    cost_categories: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -205,6 +209,7 @@ def read_state(client: TallyClient, company: str) -> TallyState:
         stock_groups=_names(export(STOCK_GROUPS), "STOCKGROUP"),
         cost_centres=_names(export(COST_CENTRES), "COSTCENTRE"),
         cost_centres_enabled=cc_enabled,
+        cost_categories=_names(export(COST_CATEGORIES), "COSTCATEGORY"),
         vouchers=vouchers,
         voucher_types=_names(export(VOUCHER_TYPES), "VOUCHERTYPE"),
         godowns=_names(export(GODOWNS), "GODOWN"),
@@ -296,9 +301,13 @@ def seed(
             run(name, "voucher type", "All Masters", rq.voucher_type_create(name, parent))
             report.add("voucher types")
     if state.cost_centres_enabled:
-        for centre in seed_data.cost_centres:
-            if centre not in state.cost_centres:
-                run(centre, "cost centre", "All Masters", rq.cost_centre_create(centre))
+        for category in seed_data.cost_categories:
+            if category not in state.cost_categories:
+                run(category, "cost category", "All Masters", rq.cost_category_create(category))
+                report.add("cost categories")
+        for centre in seed_data.cost_centres:  # parents come before the centres under them
+            if centre.name not in state.cost_centres:
+                run(centre.name, "cost centre", "All Masters", rq.cost_centre_create(centre))
                 report.add("cost centres")
     else:
         report.skipped.append(

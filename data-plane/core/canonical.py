@@ -187,12 +187,32 @@ class CanonicalGodown:
 
 
 @dataclass(frozen=True)
+class CanonicalCostCategory:
+    """A cost category: a set of cost centres a line's amount is allocated over (one line
+    can be allocated in several categories, each in full)."""
+
+    source_key: str
+    name: str
+    extra: Mapping[str, Any] | None = _extra()
+
+
+@dataclass(frozen=True)
 class CanonicalCostCentre:
     source_key: str
     name: str
     parent_name: str | None
     category: str | None = None
     extra: Mapping[str, Any] | None = _extra()
+
+
+@dataclass(frozen=True)
+class CanonicalCostAllocation:
+    """A line's amount allocated to a cost centre in a cost category (canonical sign, as
+    the line's)."""
+
+    category: str | None
+    cost_centre: str
+    amount: Decimal
 
 
 @dataclass(frozen=True)
@@ -216,7 +236,12 @@ class CanonicalLine:
     foreign_unread: bool = False  # written in a foreign currency, but not readable
     is_party_line: bool = False
     bills: tuple[CanonicalBill, ...] = ()
-    cost_allocations: tuple[tuple[str, Decimal], ...] = ()  # (cost centre name, amount)
+    cost_allocations: tuple[CanonicalCostAllocation, ...] = ()
+    # A bank line's instrument: the cheque or transfer number, and the bank's unique
+    # transaction reference (UTR) when the source keeps it apart; several instruments on one
+    # line are joined with "; ".
+    instrument_number: str | None = None
+    transaction_reference: str | None = None
 
 
 @dataclass(frozen=True)
@@ -267,6 +292,7 @@ CanonicalRecord = (
     | CanonicalItemGroup
     | CanonicalItem
     | CanonicalGodown
+    | CanonicalCostCategory
     | CanonicalCostCentre
     | CanonicalVoucher
 )

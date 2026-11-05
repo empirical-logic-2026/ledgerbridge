@@ -165,6 +165,7 @@ def source_controls(
         opening_bills=opening,
         year_ends=year_ends,
         statements=statements,
+        cost_centre_totals=_read(connector, "cost_centre_totals", entity, as_of),
     )
 
 

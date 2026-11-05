@@ -177,10 +177,14 @@ def test_refusals_over_http(client_without_db: TestClient) -> None:
 
 def test_the_catalogue_lists_only_allow_listed_keys(client_without_db: TestClient) -> None:
     catalogue = {d["key"]: d for d in client_without_db.get("/api/v1/datasets").json()}
-    assert set(catalogue) == {"voucher_lines", "vouchers"}
+    assert set(catalogue) == {"voucher_lines", "vouchers", "cost_allocations"}
     lines = catalogue["voucher_lines"]
     assert {d["key"] for d in lines["dimensions"]} == set(LINES.dimensions)
     assert {m["key"] for m in lines["measures"]} == {"debit", "credit", "net", "voucher_count"}
+    assert {"reference", "instrument_number", "transaction_reference"} <= set(LINES.dimensions)
+    assert "cost_centre" in {f["key"] for f in lines["filters"]}
+    allocations = catalogue["cost_allocations"]
+    assert {"cost_category", "cost_centre"} <= {d["key"] for d in allocations["dimensions"]}
 
 
 def test_request_logs_have_no_query_strings(

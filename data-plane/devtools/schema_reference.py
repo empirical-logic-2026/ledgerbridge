@@ -86,6 +86,10 @@ TABLES: dict[str, tuple[str, str]] = {
               "Transform, from stock item masters (as at the books' beginning)."),
     "godowns": ("Godowns (locations) and whose stock they hold (`holding`, ADR-031).",
                 "Transform, from godown masters."),
+    "cost_categories": (
+        "Cost categories: sets of cost centres a line is allocated over.",
+        "Transform, from cost category masters.",
+    ),
     "cost_centres": ("Cost centres and their categories.", "Transform, from cost centre masters."),
     "dimensions": ("User-defined reporting dimensions (DAT-005), e.g. a promoted UDF.",
                    "`promote-field`, from the field catalogue."),

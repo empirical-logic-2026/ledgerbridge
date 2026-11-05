@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import { comparisonQuery, type CompareKind, type PeriodChoice } from '../selection.ts'
-import type { AgeingOut, BalanceSheetReport, CashFlowOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
+import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -194,6 +194,22 @@ export function useParty(kind: 'customers' | 'vendors', id: string | undefined, 
     queryKey: ['party', kind, id, companies, period, compare],
     queryFn: () =>
       getJson<PartyOut>(`/api/v1/parties/${kind}/${id}`, { company: companies, ...periodQuery(period), ...comparisonQuery(compare, period) }),
+    enabled: id !== undefined && companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+export function useCostCentres(companies: number[] | undefined, period: PeriodChoice | undefined) {
+  return useQuery({
+    queryKey: ['cost-centres', companies, period],
+    queryFn: () => getJson<CentresOut>('/api/v1/cost-centres', { company: companies, ...periodQuery(period) }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+export function useCostCentre(id: string | undefined, companies: number[] | undefined, period: PeriodChoice | undefined) {
+  return useQuery({
+    queryKey: ['cost-centre', id, companies, period],
+    queryFn: () => getJson<CentrePageOut>(`/api/v1/cost-centres/${id}`, { company: companies, ...periodQuery(period) }),
     enabled: id !== undefined && companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }
