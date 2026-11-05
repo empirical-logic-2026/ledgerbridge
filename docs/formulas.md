@@ -430,6 +430,23 @@ effective `voucher_lines` up to the date.
 
 - **In words:** the cash and bank debits (in) and credits (out) of each month, by voucher.
 
+### 5.2 Cost centres (`F-CC`)
+
+#### F-CC-001 Cost centre allocations (by month, total)
+
+- **In words:** the amounts of a period's voucher lines allocated to the cost centre (its own allocations; the centres under it have their own rows), effective lines of vouchers not deleted. A cost centre is known by name and category across the companies.
+- **Source:** `v_cost_allocations` (`cost_centre_id`, `voucher_date`, `amount`).
+- **Sign:** as the line's: a debit (an expense) positive.
+- **Check in Tally:** Display More Reports › Statements of Accounts › Cost Centres › Category Summary, or the cost centre's breakup, for the same period (Tally shows a centre's total with the centres under it).
+
+#### F-CC-002 An allocation
+
+- **In words:** one line's amount allocated to the cost centre in one cost category.
+
+#### F-CC-003 Allocations (count)
+
+- **In words:** how many allocations the cost centre has in the period.
+
 ## 6. Parties and bills (`F-PTY`)
 
 A party is known by **name** across the selected companies, and its ledgers are those linked

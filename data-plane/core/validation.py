@@ -9,9 +9,12 @@ Checks (all exact by default; amounts within the connection's tolerance):
 - every voucher balances; the trial balance balances at every year end and the as-of date;
 - each ledger's balance equals the source's closing balance as of the date (the profit
   carrier with the period's profit) and at every financial year end before it;
+- every voucher line's cost allocations, in each cost category, add up to no more than the
+  line;
 - with controls: vouchers per month and voucher type equal the source's counts; each stock
   item's closing quantity equals the source's; each party's bill-wise outstanding equals
-  the source's.
+  the source's; each cost centre's total (its own allocations and those of the centres under
+  it, from the books' beginning) equals the source's.
 
 When raw records failed to transform, the report says how many failures are likely their
 consequences, so the root cause is obvious (`root_cause`).
@@ -60,13 +63,16 @@ CONSEQUENCES = (
     "bills_mismatch",
     "statement_mismatch",
     "stock_value_mismatch",
+    "cost_centre_mismatch",
 )
 
 # Issue codes by check. An earlier issue is resolved only when this run ran its check and
 # didn't find it again (`_store`). *_READ: the check was attempted but the source's figures
 # couldn't be read (or aren't offered), so only those notes are covered; *_COMPARED: the
 # comparison ran.
-ALWAYS_CHECKED = ("voucher_unbalanced", "opening_difference", "tb_unbalanced")
+ALWAYS_CHECKED = (
+    "voucher_unbalanced", "opening_difference", "tb_unbalanced", "cost_allocation_exceeds_line",
+)  # fmt: skip
 CLOSING_READ = ("closing_unavailable", "closing_not_supported")
 CLOSING_COMPARED = (
     *CLOSING_READ, "closing_mismatch", "profit_carrier_mismatch", "ledger_missing",
@@ -91,10 +97,12 @@ STATEMENTS_COMPARED = (
     "stock_value_mismatch",
     "statement_taken_from_source",
 )
+COST_CENTRES_READ = ("cost_centre_totals_unavailable", "cost_centre_totals_not_supported")
+COST_CENTRES_COMPARED = (*COST_CENTRES_READ, "cost_centre_mismatch")
 # Codes from no known check (older runs): resolved as before when not found again.
 KNOWN_CODES = frozenset(
     (*ALWAYS_CHECKED, *CLOSING_COMPARED, *YEAR_END_COMPARED, *COUNTS_COMPARED,
-     *STOCK_COMPARED, *BILLS_COMPARED, *STATEMENTS_COMPARED)
+     *STOCK_COMPARED, *BILLS_COMPARED, *STATEMENTS_COMPARED, *COST_CENTRES_COMPARED)
 )  # fmt: skip
 
 
@@ -302,6 +310,7 @@ class Validator:
         # Our ledger openings' total: the trial balance must total exactly that.
         report.opening_difference = self._opening_difference(ledgers, source)
         self._trial_balance(report.opening_difference)
+        self._allocations_within_lines()
         self._closing(ledgers, source)
         self._cover(CLOSING_COMPARED if _read(source) else CLOSING_READ)
         if controls is not None:
@@ -314,6 +323,9 @@ class Validator:
             self._cover(STOCK_COMPARED if _read(controls.stock_quantities) else STOCK_READ)
             self._bills(controls.bill_outstanding, controls.opening_bills)
             self._cover(self._bills_covered(controls))
+            self._cost_centre_totals(controls.cost_centre_totals)
+            read = _read(controls.cost_centre_totals)
+            self._cover(COST_CENTRES_COMPARED if read else COST_CENTRES_READ)
             if controls.statements:
                 report.statement_summary = self._statements(controls.statements)
                 read = all(isinstance(s, SourceStatements) for s in controls.statements.values())
@@ -930,6 +942,87 @@ class Validator:
                 "Stock values per item depend on the source's valuation method and aren't "
                 "compared item by item; the total closing stock is part of the profit check.",
             )
+
+    # --- cost centres -------------------------------------------------------------------
+
+    def _allocated_lines(self):  # noqa: ANN202 - a SQL condition
+        """Effective lines of vouchers not deleted, dated up to the as-of date."""
+        return (
+            select(A.VoucherLine.id)
+            .join(A.Voucher, A.Voucher.id == A.VoucherLine.voucher_id)
+            .where(
+                A.VoucherLine.entity_id == self.entity.id,
+                A.VoucherLine.is_effective.is_(True),
+                A.Voucher.is_deleted.is_(False),
+                A.VoucherLine.voucher_date <= self.as_of,
+            )
+        )
+
+    def _allocations_within_lines(self) -> None:
+        """Each line's cost allocations, in each cost category, add up to no more than the
+        line (the same sign; a category allocates the line in full or in part)."""
+        allocated = func.sum(A.LineCostAllocation.amount)
+        rows = self.session.execute(
+            select(A.VoucherLine.id, A.VoucherLine.amount, allocated)
+            .join(A.LineCostAllocation, A.LineCostAllocation.voucher_line_id == A.VoucherLine.id)
+            .where(A.VoucherLine.id.in_(self._allocated_lines()))
+            .group_by(A.VoucherLine.id, A.VoucherLine.amount, A.LineCostAllocation.cost_category_id)
+        ).all()
+        for line_id, amount, total in rows:
+            line, total = Decimal(amount), Decimal(total)
+            within = abs(total) <= abs(line) + self.tolerance and (total * line >= 0)
+            if within:
+                self.passed += 1
+                continue
+            self._fail(
+                Finding(
+                    "cost_allocation_exceeds_line", "error", "voucher_line", str(line_id),
+                    line, total,
+                    f"Voucher line {line_id}: its cost allocations in one cost category come to "
+                    "more than the line, or have the other sign.",
+                )
+            )  # fmt: skip
+
+    def _cost_centre_totals(self, theirs: Mapping[str, Decimal] | Exception | None) -> None:
+        """Each cost centre's total from the books' beginning to the as-of date, its own
+        allocations and those of the centres under it, equals the source's."""
+        if theirs is None or isinstance(theirs, Exception):
+            self._unavailable("cost_centre_totals", theirs)
+            return
+        centres = self.session.execute(
+            select(A.CostCentre.id, A.CostCentre.parent_id, A.CostCentre.source_key).where(
+                A.CostCentre.entity_id == self.entity.id, A.CostCentre.is_deleted.is_(False)
+            )
+        ).all()
+        parents = {cid: parent for cid, parent, _ in centres}
+        keys = {cid: key for cid, _, key in centres}
+        totals: dict[int, Decimal] = dict.fromkeys(parents, ZERO)
+        for centre_id, total in self.session.execute(
+            select(A.LineCostAllocation.cost_centre_id, func.sum(A.LineCostAllocation.amount))
+            .where(A.LineCostAllocation.voucher_line_id.in_(self._allocated_lines()))
+            .group_by(A.LineCostAllocation.cost_centre_id)
+        ):
+            seen: set[int] = set()
+            node: int | None = centre_id
+            while node is not None and node in totals and node not in seen:
+                totals[node] += Decimal(total)
+                seen.add(node)
+                node = parents.get(node)
+        ours = {keys[cid]: total for cid, total in totals.items()}
+        for key in sorted(set(ours) | set(theirs)):
+            expected, actual = theirs.get(key, ZERO), ours.get(key, ZERO)
+            if abs(expected - actual) <= self.tolerance:
+                self.passed += 1
+                continue
+            centre = next((cid for cid, k in keys.items() if k == key), None)
+            self._fail(
+                Finding(
+                    "cost_centre_mismatch", "error", "cost_centre",
+                    str(centre) if centre is not None else key[:64], expected, actual,
+                    f"Cost centre {centre if centre is not None else 'missing here'}: its total "
+                    "here differs from the source's.",
+                )
+            )  # fmt: skip
 
     def _bills(
         self,

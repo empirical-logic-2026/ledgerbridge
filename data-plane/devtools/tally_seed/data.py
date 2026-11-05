@@ -72,12 +72,33 @@ class Bill:
 
 
 @dataclass(frozen=True)
+class BankDetail:
+    """A bank entry's instrument (Tally's bank allocation): a cheque, or an electronic
+    transfer with its unique transaction reference (UTR)."""
+
+    transaction_type: str  # "Cheque", "e-Fund Transfer"
+    instrument_number: str
+    instrument_date: date
+    utr: str | None = None
+
+
+@dataclass(frozen=True)
+class CostCentre:
+    name: str
+    category: str = "Primary Cost Category"
+    parent: str | None = None  # a cost centre under another
+
+
+@dataclass(frozen=True)
 class Entry:
     ledger: str
     side: Side
     amount: Decimal
     bills: tuple[Bill, ...] = ()
-    cost_centres: tuple[tuple[str, Decimal], ...] = ()
+    cost_centres: tuple[tuple[str, Decimal], ...] = ()  # in the Primary Cost Category
+    # Allocations in other cost categories: (category, ((cost centre, amount), ...)), ...
+    categories: tuple[tuple[str, tuple[tuple[str, Decimal], ...]], ...] = ()
+    bank: BankDetail | None = None
 
 
 @dataclass(frozen=True)
@@ -92,6 +113,9 @@ class ItemLine:
     destination: str | None = None  # the job worker's godown of a Material In/Out
     # Batches (quantity, tracking number) when the line is partly tracked; else one batch.
     batches: tuple[tuple[Decimal, str | None], ...] = ()
+    # Cost-centre allocations of the line's ledger amount (Primary Cost Category), which Tally
+    # keeps under the inventory entry's accounting allocation.
+    cost_centres: tuple[tuple[str, Decimal], ...] = ()
 
     def split(self) -> tuple[tuple[Decimal, str | None], ...]:
         return self.batches or ((self.quantity, self.tracking),)
@@ -174,8 +198,9 @@ class SeedData:
     ledgers: tuple[Ledger, ...]
     units: tuple[str, ...]
     stock_items: tuple[StockItem, ...]
-    cost_centres: tuple[str, ...]
+    cost_centres: tuple[CostCentre, ...]
     vouchers: tuple[Voucher, ...] = field(default=())
+    cost_categories: tuple[str, ...] = field(default=())  # besides Tally's Primary Cost Category
     voucher_types: tuple[tuple[str, str], ...] = field(default=())  # (name, parent)
     renamed_groups: tuple[tuple[str, str], ...] = field(default=())  # (reserved, new name)
     godowns: tuple[Godown, ...] = field(default=())
@@ -667,6 +692,50 @@ EDIT_LOG_VOUCHERS = (
     ),
 )  # fmt: skip
 
+# --- cost centres in several categories, under an invoice's item, and bank instruments
+# (2026-11-05): a second category with a cost centre under another, an expense split over two
+# categories, a purchase invoice allocating its item line (with the supplier's invoice number as
+# the reference), and bank payments by cheque and by electronic transfer with a UTR.
+PROJECTS = "Projects"
+COST_CENTRE_VOUCHERS = (
+    Voucher(
+        "CC-2", "Payment", date(2026, 9, 1), "Electricity over two cost categories",
+        (
+            Entry(
+                "Electricity", "Dr", _d("4000"),
+                cost_centres=(("Head Office", _d("4000")),),
+                categories=(
+                    (PROJECTS, (("Project Alpha", _d("1500")), ("Alpha Phase 1", _d("2500")))),
+                ),
+            ),
+            Entry(BANK, "Cr", _d("4000"), bank=BankDetail("Cheque", "000451", date(2026, 9, 1))),
+        ),
+        needs_cost_centres=True,
+    ),
+    Voucher(
+        "CC-3", "Purchase", date(2026, 9, 2), "Widgets for the branch, by cost centre",
+        (Entry(VENDORS[2], "Cr", _d("600"), (_bill("PI-9", "600"),)),),
+        items=(ItemLine("Widget", _d("12"), _d("50"), "Purchases", inward=True,
+                        cost_centres=(("Branch", _d("400")), ("Head Office", _d("200")))),),
+        number="PI-9", reference="SUP-INV-4471", party=VENDORS[2], needs_cost_centres=True,
+    ),
+    Voucher(
+        "BANK-1", "Payment", date(2026, 9, 1), "Rent paid by cheque",
+        (
+            Entry("Rent", "Dr", _d("2500")),
+            Entry(BANK, "Cr", _d("2500"), bank=BankDetail("Cheque", "000452", date(2026, 9, 1))),
+        ),
+    ),
+    Voucher(
+        "BANK-2", "Payment", date(2026, 9, 2), "Vendor paid by electronic transfer",
+        (
+            Entry(VENDORS[2], "Dr", _d("600"), (_bill("PI-9", "600", "Agst Ref"),)),
+            Entry(BANK, "Cr", _d("600"), bank=BankDetail(
+                "e-Fund Transfer", "NEFT-2026-0902", date(2026, 9, 2), utr="UTR20260902000017")),
+        ),
+    ),
+)  # fmt: skip
+
 # A voucher naming a ledger by its alias.
 NAME_VOUCHERS = (_journal("NAME-ALIAS-1", "Journal", date(2026, 9, 1), "Kilo Alias", "Cash", "21"),)
 
@@ -691,9 +760,16 @@ SEED = SeedData(
         StockItem("Hinge", "Nos", _d("5"), _d("2"), group="Components"),  # in a stock group
         StockItem("Bolt", "Nos"),  # bought and sold across the year end
     ),
-    cost_centres=("Head Office", "Branch"),
+    cost_categories=(PROJECTS,),
+    cost_centres=(
+        CostCentre("Head Office"),
+        CostCentre("Branch"),
+        CostCentre("Project Alpha", PROJECTS),
+        CostCentre("Alpha Phase 1", PROJECTS, parent="Project Alpha"),
+    ),
     vouchers=(
         *VOUCHERS,
+        *COST_CENTRE_VOUCHERS,
         *NAME_VOUCHERS,
         *FX_VOUCHERS,
         *EDIT_LOG_VOUCHERS,
@@ -735,6 +811,12 @@ def validate(seed: SeedData) -> list[str]:
                     problems.append(f"{v.marker}: bill allocations do not match {e.ledger}")
                 if e.cost_centres and sum(a for _, a in e.cost_centres) != e.amount:
                     problems.append(f"{v.marker}: cost centres do not match {e.ledger}")
+                for category, centres in e.categories:
+                    if sum(a for _, a in centres) != e.amount:
+                        problems.append(f"{v.marker}: {category} does not match {e.ledger}")
+            for line in v.items:
+                if line.cost_centres and sum(a for _, a in line.cost_centres) != line.amount:
+                    problems.append(f"{v.marker}: cost centres do not match {line.item}")
         for item in v.items:
             if item.sales_ledger is not None and item.sales_ledger not in known:
                 problems.append(f"{v.marker}: unknown ledger {item.sales_ledger}")

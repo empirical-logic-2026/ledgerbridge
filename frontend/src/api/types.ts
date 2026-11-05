@@ -35,6 +35,17 @@ export interface AlertOut {
   acknowledged_at: string | null
 }
 
+export interface AllocationOut {
+  company: number
+  date: string
+  voucher_id: number
+  voucher_number: string
+  voucher_type: string
+  ledger: string
+  category: string | null
+  amount: string
+}
+
 export interface BalanceSheet {
   available: boolean
   reason: string | null
@@ -99,6 +110,36 @@ export interface CashMonthOut {
   month: string
   inflow: string
   outflow: string
+}
+
+export interface CentreMonth {
+  month: string
+  amount: string
+}
+
+export interface CentreOut {
+  centre_id: number
+  name: string
+  category: string | null
+  parent: string | null
+  companies: number[]
+  months: CentreMonth[]
+  total: string
+  allocations: number
+}
+
+export interface CentrePageOut {
+  centre: CentreOut
+  period: PeriodOut
+  allocations: AllocationOut[]
+  truncated: boolean
+}
+
+export interface CentresOut {
+  companies: number[]
+  combined: boolean
+  period: PeriodOut
+  centres: CentreOut[]
 }
 
 export interface Channel {
@@ -411,6 +452,9 @@ export interface PartyInvoiceOut {
   credit: string | null
   side_value: string
   narration: string | null
+  reference?: string | null
+  instrument_number?: string | null
+  transaction_reference?: string | null
   status: "paid" | "due" | "overdue" | "no_bill"
   days: number | null
 }
@@ -546,6 +590,9 @@ export interface RegisterRowOut {
   credit: string | null
   side_value: string
   narration: string | null
+  reference?: string | null
+  instrument_number?: string | null
+  transaction_reference?: string | null
 }
 
 export interface Row {

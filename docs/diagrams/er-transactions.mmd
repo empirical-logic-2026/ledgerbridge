@@ -38,6 +38,7 @@ erDiagram
     line_cost_allocations {
         bigint id PK
         bigint voucher_line_id FK "to voucher_lines"
+        bigint cost_category_id FK "to cost_categories"
         bigint cost_centre_id FK "to cost_centres"
         decimal amount
     }
@@ -84,6 +85,9 @@ erDiagram
     units {
         bigint id PK
     }
+    cost_categories {
+        bigint id PK
+    }
     cost_centres {
         bigint id PK
     }
@@ -103,6 +107,7 @@ erDiagram
     voucher_lines ||--o{ bill_allocations : "voucher_line_id"
     parties |o--o{ bill_allocations : "party_id"
     voucher_lines ||--o{ line_cost_allocations : "voucher_line_id"
+    cost_categories |o--o{ line_cost_allocations : "cost_category_id"
     cost_centres ||--o{ line_cost_allocations : "cost_centre_id"
     voucher_lines ||--o{ line_dimensions : "voucher_line_id"
     dimension_values ||--o{ line_dimensions : "dimension_value_id"

@@ -69,7 +69,7 @@ def _ledgers_of(r: Any) -> list[str]:
 def _centres_of(r: Any) -> list[str]:
     if not isinstance(r, CanonicalVoucher):
         return []
-    return [name for line in r.lines for name, _ in line.cost_allocations]
+    return [a.cost_centre for line in r.lines for a in line.cost_allocations]
 
 
 def _items_of(r: Any) -> list[str]:

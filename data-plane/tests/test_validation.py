@@ -53,8 +53,9 @@ def test_clean_books_pass_every_check(
     report = _validate(db, synced, connector)
     assert report.status == "passed", report.findings
     assert report.findings == [] and report.checks_failed == 0
-    # 18 vouchers with lines (the cancelled one has none) + opening + TB + 21 ledgers
-    assert report.checks_passed == 17 + 1 + 1 + 21
+    # 18 vouchers with lines (the cancelled one has none) + opening + TB + the one line with
+    # cost allocations (within the line) + 21 ledgers
+    assert report.checks_passed == 17 + 1 + 1 + 1 + 21
     assert report.opening_difference == 0
     run = db.get(S.ValidationRun, report.validation_run_id)
     assert (run.status, run.as_of, run.entity_id) == ("passed", TODAY, report.entity_id)

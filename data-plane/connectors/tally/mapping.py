@@ -11,6 +11,7 @@ Postings: connectors.tally.signs.postings implements the rules of schema.md 7.2.
 
 import re
 import xml.etree.ElementTree as ET  # noqa: N817
+from collections.abc import Iterable
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
@@ -28,6 +29,8 @@ from core.canonical import (
     NO_STANDARD_ACCOUNT,
     CanonicalBill,
     CanonicalCompany,
+    CanonicalCostAllocation,
+    CanonicalCostCategory,
     CanonicalCostCentre,
     CanonicalCurrency,
     CanonicalGodown,
@@ -514,13 +517,11 @@ def _line(entry: ET.Element) -> CanonicalLine:
         for bill in entry.findall("BILLALLOCATIONS.LIST")
         if text_of(bill, "AMOUNT") or text_of(bill, "NAME")
     )
-    cost_allocations = tuple(
-        (name, _amount(alloc, "AMOUNT"))
-        for category in entry.findall("CATEGORYALLOCATIONS.LIST")
-        for alloc in category.findall("COSTCENTREALLOCATIONS.LIST")
-        if (name := text_of(alloc, "NAME"))
-    )
     currency, amount_fc, rate = _foreign(text_of(entry, "AMOUNT"))
+    instruments = [
+        (text_of(bank, "INSTRUMENTNUMBER"), text_of(bank, "UNIQUEREFERENCENUMBER"))
+        for bank in entry.findall("BANKALLOCATIONS.LIST")
+    ]
     return CanonicalLine(
         ledger_name=text_of(entry, "LEDGERNAME") or "",
         amount=_amount(entry, "AMOUNT"),
@@ -530,8 +531,46 @@ def _line(entry: ET.Element) -> CanonicalLine:
         foreign_unread=tally_foreign_unread(text_of(entry, "AMOUNT")),
         is_party_line=_flag(entry, "ISPARTYLEDGER"),
         bills=bills,
-        cost_allocations=cost_allocations,
+        cost_allocations=cost_allocations(entry),
+        instrument_number=_joined(number for number, _ in instruments),
+        transaction_reference=_joined(utr for _, utr in instruments),
     )
+
+
+def cost_allocations(entry: ET.Element) -> tuple[CanonicalCostAllocation, ...]:
+    """An entry's cost-centre allocations, by cost category (canonical sign, as the line's)."""
+    return tuple(
+        CanonicalCostAllocation(text_of(category, "CATEGORY"), name, _amount(alloc, "AMOUNT"))
+        for category in entry.findall("CATEGORYALLOCATIONS.LIST")
+        for alloc in category.findall("COSTCENTREALLOCATIONS.LIST")
+        if (name := text_of(alloc, "NAME"))
+    )
+
+
+def _joined(values: Iterable[str | None]) -> str | None:
+    """The values present, once each, joined with "; " (None when there are none)."""
+    found = list(dict.fromkeys(v for v in values if v and v != NOT_APPLICABLE))
+    return "; ".join(found) or None
+
+
+def _with_item_allocations(voucher: ET.Element, lines: list[CanonicalLine]) -> list[CanonicalLine]:
+    """An item invoice's cost allocations live under the items' accounting allocations, not
+    on the ledger entries of ALLLEDGERENTRIES (recorded on the test company, 2026-11-05):
+    each ledger line without allocations takes those of the items posting to its ledger.
+    When the postings come from the accounting allocations themselves (no ALLLEDGERENTRIES),
+    their allocations are already on the lines."""
+    if not voucher.findall("ALLLEDGERENTRIES.LIST"):
+        return lines
+    by_ledger: dict[str, list[CanonicalCostAllocation]] = {}
+    for inventory in voucher.findall("ALLINVENTORYENTRIES.LIST"):
+        for accounting in inventory.findall("ACCOUNTINGALLOCATIONS.LIST"):
+            ledger = text_of(accounting, "LEDGERNAME") or ""
+            by_ledger.setdefault(ledger, []).extend(cost_allocations(accounting))
+    found = []
+    for line in lines:
+        taken = by_ledger.pop(line.ledger_name, []) if not line.cost_allocations else []
+        found.append(replace(line, cost_allocations=tuple(taken)) if taken else line)
+    return found
 
 
 def _inventory(entry: ET.Element, inward: bool | None = None) -> CanonicalInventoryLine | None:
@@ -658,7 +697,7 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
         voucher_type_name=voucher_type_name,
         voucher_number=text_of(element, "VOUCHERNUMBER") or "",
         voucher_date=voucher_date,
-        lines=tuple(_line(entry) for entry in postings(element)),
+        lines=tuple(_with_item_allocations(element, [_line(e) for e in postings(element)])),
         inventory=tuple(
             line for e, inward in inventory_entries for line in _inventory_lines(e, inward)
         ),
@@ -686,6 +725,7 @@ _LEDGER_ENTRY = (
     "CATEGORYALLOCATIONS.LIST/CATEGORY",
     "CATEGORYALLOCATIONS.LIST/COSTCENTREALLOCATIONS.LIST/NAME",
     "CATEGORYALLOCATIONS.LIST/COSTCENTREALLOCATIONS.LIST/AMOUNT",
+    "BANKALLOCATIONS.LIST/INSTRUMENTNUMBER", "BANKALLOCATIONS.LIST/UNIQUEREFERENCENUMBER",
 )  # fmt: skip
 _INVENTORY_ENTRY = (
     "STOCKITEMNAME", "ACTUALQTY", "BILLEDQTY", "RATE", "AMOUNT", "ISDEEMEDPOSITIVE",
@@ -717,6 +757,7 @@ USED_FIELDS: dict[str, frozenset[str]] = {
     "stock_group": frozenset(_MASTER),
     "godown": frozenset((*_MASTER, "ISEXTERNAL", "ISINTERNAL")),
     "stock_item": frozenset((*_MASTER, "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE")),
+    "cost_category": frozenset(_IDENTITY),
     "cost_centre": frozenset((*_MASTER, "CATEGORY")),
     "voucher": frozenset((
         *_IDENTITY, "DATE", "EFFECTIVEDATE", "VOUCHERTYPENAME", "VOUCHERNUMBER", "REFERENCE",
@@ -807,6 +848,8 @@ def _records(record: SourceRecord, element: ET.Element) -> list[CanonicalRecord]
             return [CanonicalGodown(key, _name(element), _parent(element), _holding(element))]
         case "stock_item":
             return [stock_item(element, key)]
+        case "cost_category":
+            return [CanonicalCostCategory(key, _name(element))]
         case "cost_centre":
             return [
                 CanonicalCostCentre(

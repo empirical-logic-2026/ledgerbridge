@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.41 (Draft) |
-| Date | 2026-10-30 |
+| Version | 0.42 (Draft) |
+| Date | 2026-11-05 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
 This document describes the database inside each **client deployment**. The control plane has its own small database (users, clients, licences), described in `docs/architecture.md` Section 3.
@@ -287,7 +287,8 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 | `ledgerbridge_accounting.items` | `entity_id, item_group_id, name, code VARCHAR(255), unit_id, hsn_code VARCHAR(32), gst_rate, opening_qty, opening_value` |
 | `ledgerbridge_accounting.units` | `entity_id, symbol VARCHAR(255), name, decimal_places` |
 | `ledgerbridge_accounting.godowns` | `entity_id, parent_id, name, holding ENUM(own, ours_with_third_party, third_party_with_us) DEFAULT own` (whose stock it holds: a job worker's location, "our stock with third party", is left out of stock balances; migration 0015) |
-| `ledgerbridge_accounting.cost_centres` | `entity_id, parent_id, category VARCHAR(255), name` |
+| `ledgerbridge_accounting.cost_categories` | `entity_id, name` (Tally's cost categories; migration 0026) |
+| `ledgerbridge_accounting.cost_centres` | `entity_id, parent_id, category VARCHAR(255), cost_category_id NULL FK (migration 0026), name` |
 
 All of them also have `extra JSON NULL` ([SRC], ADR-025).
 
@@ -347,6 +348,8 @@ The double-entry lines. For every voucher, `SUM(amount) = 0` (VAL-001).
 | amount | DECIMAL(20,4) | Base currency, debit +, credit −. |
 | amount_fc | DECIMAL(20,4) NULL | Foreign-currency amount (Tally: the part before `@` of `-$100.00 @ Rs82.00/$ = -Rs8200.00`); its rate is `amount / amount_fc`. NULL in the base currency. |
 | is_party_line | BOOLEAN | |
+| instrument_number | VARCHAR(255) NULL | A bank line's cheque or transfer number (Tally `BANKALLOCATIONS.INSTRUMENTNUMBER`; several joined with "; "). Migration `0026`. |
+| transaction_reference | VARCHAR(255) NULL | A bank line's unique transaction reference, UTR (Tally `BANKALLOCATIONS.UNIQUEREFERENCENUMBER`). Migration `0026`. |
 | is_effective | BOOLEAN | FALSE when the voucher is cancelled, optional or deleted, or its voucher type doesn't post to the books (`voucher_types.is_accounting` false: orders, memorandum, delivery notes, ...; ADR-027); reports use only effective lines. |
 
 Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
@@ -355,7 +358,7 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 
 | Table | Columns | Source in Tally |
 | --- | --- | --- |
-| `ledgerbridge_accounting.line_cost_allocations` | `id, voucher_line_id, cost_centre_id, amount` | Cost category / cost centre allocations |
+| `ledgerbridge_accounting.line_cost_allocations` | `id, voucher_line_id, cost_centre_id, cost_category_id NULL FK (migration 0026), amount` (the line's sign) | Cost category / cost centre allocations, on the ledger entry or under an item invoice's accounting allocations |
 | `ledgerbridge_accounting.bill_allocations` | `id, voucher_line_id, party_id, bill_type ENUM('new_ref','against_ref','advance','on_account'), bill_name, bill_date, due_date, amount` | Bill allocations (receivables/payables ageing) |
 | `ledgerbridge_accounting.inventory_lines` | `id, voucher_id, entity_id, voucher_date, line_no, item_id, godown_id, quantity (signed: in +, out −), stock_quantity (what the line moves in stock: the quantity, less the part tracked to a delivery or receipt note on a voucher that posts to the books; migration 0014), unit_id, rate, amount, discount_pct, batch_name` | Inventory entries |
 | `ledgerbridge_accounting.tax_lines` | `id, voucher_id, voucher_line_id NULL, tax_type ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other'), rate, taxable_amount, tax_amount, hsn_code` | GST / TDS details |
@@ -622,6 +625,7 @@ Aggregate tables are refreshed by workers after each sync; views sit on top. Onl
 | `ledgerbridge_reporting.v_receivables_ageing` | View | Outstanding customer bills by ageing bucket. |
 | `ledgerbridge_reporting.v_payables_ageing` | View | Outstanding vendor bills by ageing bucket. |
 | `ledgerbridge_reporting.v_sales_monthly` | View | Sales by month, party, item, branch. |
+| `ledgerbridge_reporting.v_cost_allocations` | View | One row per cost-centre allocation of an effective line of a voucher not deleted: `entity_id, voucher_date, voucher_id, voucher_number, voucher_type, voucher_line_id, ledger_id, ledger, cost_category_id, cost_category, cost_centre_id, cost_centre, amount` (migration 0026). |
 | `ledgerbridge_reporting.v_expenses_monthly` | View | Expenses by month, ledger, cost centre. |
 | `ledgerbridge_reporting.v_consolidated_tb` | View | Trial balance across entities via `standard_accounts` (inter-company eliminations later). |
 | `ledgerbridge_reporting.v_kpis` | View | Values for `ledgerbridge_system.kpi_definitions` (health indicators). |
@@ -830,6 +834,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-11-05 | 0.42 | `cost_categories`; `cost_centres.cost_category_id`, `line_cost_allocations.cost_category_id`; `voucher_lines.instrument_number`, `transaction_reference`; `v_cost_allocations` (migration 0026). |
 | 2026-10-31 | 0.41 | `entity_sources.source_checked_at`, `source_loaded`, `source_checked_by` (migration 0025, the dashboard's company chips). |
 | 2026-10-30 | 0.40 | Section 6: `v_group_ancestors`, `v_data_health` (migration 0024, dashboard D1). |
 | 2026-10-30 | 0.39 | `entities.is_on_hold` (SYN-007, migration 0023). |

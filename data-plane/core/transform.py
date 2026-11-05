@@ -53,6 +53,7 @@ from core import fx
 from core.canonical import (
     NO_STANDARD_ACCOUNT,
     CanonicalCompany,
+    CanonicalCostCategory,
     CanonicalCostCentre,
     CanonicalCurrency,
     CanonicalGodown,
@@ -87,6 +88,7 @@ MODELS_BY_KIND: dict[type, tuple[type, ...]] = {
     CanonicalItemGroup: (A.ItemGroup,),
     CanonicalGodown: (A.Godown,),
     CanonicalItem: (A.Item,),
+    CanonicalCostCategory: (A.CostCategory,),
     CanonicalCostCentre: (A.CostCentre,),
     CanonicalVoucher: (A.Voucher,),
 }
@@ -149,6 +151,7 @@ class _Refs:
     godowns: dict[str, int | None]
     units: dict[str, int | None]
     party: Any
+    categories: dict[str, int | None]
 
 
 @dataclass
@@ -742,6 +745,7 @@ class Transformer:
             (CanonicalItemGroup, self._item_groups),
             (CanonicalGodown, self._godowns),
             (CanonicalItem, self._items),
+            (CanonicalCostCategory, self._cost_categories),
             (CanonicalCostCentre, self._cost_centres),
             (CanonicalVoucher, self._vouchers),
         ):
@@ -1313,12 +1317,23 @@ class Transformer:
         )
         return done
 
+    def _cost_categories(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
+        return self._simple(
+            items, CanonicalCostCategory, A.CostCategory, lambda r: {"name": r.name}, result,
+            "cost_category",
+        )  # fmt: skip
+
     def _cost_centres(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
+        categories = self._by_name(A.CostCategory)
         done = self._simple(
             items,
             CanonicalCostCentre,
             A.CostCentre,
-            lambda r: {"name": r.name, "category": r.category},
+            lambda r: {
+                "name": r.name,
+                "category": r.category,
+                "cost_category_id": categories.get(r.category) if r.category else None,
+            },
             result,
             "cost_centre",
         )
@@ -1358,6 +1373,7 @@ class Transformer:
                 self._by_name(A.Godown),
                 self._by_name(A.Unit, "symbol"),
                 self._by_name(A.CostCentre),
+                self._by_name(A.CostCategory),
             )
         return self._lookups
 
@@ -1381,7 +1397,7 @@ class Transformer:
     def _voucher_refs(self, item: _Raw, v: CanonicalVoucher) -> _Refs:
         """Every name the voucher refers to, resolved; raises TransformError when a
         required reference doesn't resolve."""
-        types, ledgers, items_by_name, godowns, units, centres = self._master_lookups()
+        types, ledgers, items_by_name, godowns, units, centres, categories = self._master_lookups()
         voucher_type = self._ref(item, types, v.voucher_type_name, "voucher -> voucher type")
         line_ledgers = {
             line.ledger_name: self._ref(item, ledgers, line.ledger_name, "voucher -> ledger")
@@ -1392,9 +1408,17 @@ class Transformer:
             for inv in v.inventory
         }
         cost_centres = {
-            name: self._ref(item, centres, name, "voucher -> cost centre")
+            a.cost_centre: self._ref(item, centres, a.cost_centre, "voucher -> cost centre")
             for line in v.lines
-            for name, _ in line.cost_allocations
+            for a in line.cost_allocations
+        }
+        cost_categories = {
+            a.category: self._ref(
+                item, categories, a.category, "voucher -> cost category", required=False
+            )
+            for line in v.lines
+            for a in line.cost_allocations
+            if a.category
         }
         line_godowns = {
             inv.godown_name: self._ref(
@@ -1414,8 +1438,9 @@ class Transformer:
                 item, ledgers, v.party_ledger_name, "voucher -> party ledger", required=False
             )
         return _Refs(
-            voucher_type, line_ledgers, stock_items, cost_centres, line_godowns, line_units, party
-        )
+            voucher_type, line_ledgers, stock_items, cost_centres, line_godowns, line_units, party,
+            cost_categories,
+        )  # fmt: skip
 
     def _insert_children(self, latest: dict[str, _Prepared], voucher_ids: dict[str, int]) -> None:
         """Inserts the vouchers' lines and inventory lines, then the lines' own child rows
@@ -1503,6 +1528,8 @@ class Transformer:
                             "exchange_rate": line.exchange_rate,
                             "is_party_line": line.is_party_line,
                             "is_effective": effective,
+                            "instrument_number": line.instrument_number,
+                            "transaction_reference": line.transaction_reference,
                         },
                     ),
                     bills=[
@@ -1523,9 +1550,13 @@ class Transformer:
                         fit(
                             A.LineCostAllocation,
                             no,
-                            {"cost_centre_id": refs.centres[name], "amount": amount},
+                            {
+                                "cost_category_id": refs.categories.get(a.category or ""),
+                                "cost_centre_id": refs.centres[a.cost_centre],
+                                "amount": a.amount,
+                            },
                         )
-                        for name, amount in line.cost_allocations
+                        for a in line.cost_allocations
                     ],
                     tax=fit(A.TaxLine, no, {"tax_type": tax_type, "tax_amount": line.amount})
                     if tax_type

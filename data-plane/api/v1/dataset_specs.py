@@ -21,7 +21,7 @@ from sqlalchemy import ColumnElement, and_, case, distinct, func, literal, selec
 from sqlalchemy.sql import FromClause
 
 from core.models import accounting as A  # noqa: N812
-from core.reporting_views import GROUP_ANCESTORS
+from core.reporting_views import COST_ALLOCATIONS, GROUP_ANCESTORS
 
 NONE_LABEL = "(none)"
 
@@ -113,6 +113,21 @@ def _by_key(items: list[Any]) -> dict[str, Any]:
     return {item.key: item for item in items}
 
 
+def _in_cost_centres(ids: Any) -> ColumnElement[bool]:
+    """Lines with an allocation to any of the cost centres."""
+    allocated = select(A.LineCostAllocation.voucher_line_id).where(
+        A.LineCostAllocation.cost_centre_id.in_(ids)
+    )
+    return A.VoucherLine.id.in_(allocated)
+
+
+def _text(key: str, label: str, column: Any) -> Dimension:
+    """A list column of free text (a reference or instrument number): not for grouping."""
+    return Dimension(
+        key, label, func.coalesce(column, ""), func.coalesce(column, ""), groupable=False
+    )
+
+
 def _date_filters(day: Any) -> list[Filter]:
     return [
         Filter("date_from", "From", "date_from", lambda on: day >= on),
@@ -149,6 +164,9 @@ def _voucher_lines() -> Dataset:
                 _named("ledger", "Ledger", A.Ledger.id, A.Ledger.name),
                 _named("ledger_group", "Ledger group", A.AccountGroup.id, A.AccountGroup.name),
                 _named("party", "Party", A.Party.id, A.Party.name),
+                _text("reference", "Reference", v.reference_number),
+                _text("instrument_number", "Cheque / transfer no.", vl.instrument_number),
+                _text("transaction_reference", "UTR", vl.transaction_reference),
             ]
         ),  # fmt: skip
         measures=_by_key(
@@ -173,6 +191,7 @@ def _voucher_lines() -> Dataset:
                 Filter("ledger", "Ledger", "ids", _ids(vl.ledger_id)),
                 Filter("ledger_group", "Ledger group (and below)", "ids", _in_groups),
                 Filter("party", "Party", "ids", _ids(v.party_id)),
+                Filter("cost_centre", "Cost centre", "ids", _in_cost_centres),
                 Filter(
                     "amount_min", "Amount from", "amount_min", lambda x: func.abs(vl.amount) >= x
                 ),
@@ -216,6 +235,7 @@ def _vouchers() -> Dataset:
                     "voucher_number", "Voucher number", v.id, v.voucher_number, groupable=False
                 ),
                 _named("party", "Party", A.Party.id, A.Party.name),
+                _text("reference", "Reference", v.reference_number),
             ]
         ),  # fmt: skip
         measures=_by_key(
@@ -246,7 +266,57 @@ def _vouchers() -> Dataset:
     )
 
 
-DATASETS: dict[str, Dataset] = {d.key: d for d in (_voucher_lines(), _vouchers())}
+def _cost_allocations() -> Dataset:
+    """One row per cost-centre allocation (v_cost_allocations, migration 0026)."""
+    ca = COST_ALLOCATIONS.c
+    source = COST_ALLOCATIONS.join(A.Entity.__table__, A.Entity.id == ca.entity_id)
+    return Dataset(
+        key="cost_allocations",
+        label="Cost centre allocations",
+        source=source,
+        base_conditions=(),
+        company_id=ca.entity_id,
+        dimensions=_by_key(
+            [
+                _named("company", "Company", A.Entity.id, A.Entity.name),
+                *_time_dimensions(ca.voucher_date),
+                _named("voucher_type", "Voucher type", ca.voucher_type, ca.voucher_type),
+                Dimension(
+                    "voucher_number",
+                    "Voucher number",
+                    ca.voucher_id,
+                    ca.voucher_number,
+                    groupable=False,
+                ),
+                _named("ledger", "Ledger", ca.ledger_id, ca.ledger),
+                _named("cost_category", "Cost category", ca.cost_category_id, ca.cost_category),
+                _named("cost_centre", "Cost centre", ca.cost_centre_id, ca.cost_centre),
+            ]
+        ),  # fmt: skip
+        measures=_by_key(
+            [
+                Measure("amount", "Amount", ca.amount, func.sum(ca.amount)),
+                Measure("allocations", "Allocations", literal(1), func.count(), is_count=True),
+            ]
+        ),  # fmt: skip
+        filters=_by_key(
+            [
+                *_date_filters(ca.voucher_date),
+                Filter("company", "Company", "ids", _ids(ca.entity_id)),
+                Filter("ledger", "Ledger", "ids", _ids(ca.ledger_id)),
+                Filter("cost_category", "Cost category", "ids", _ids(ca.cost_category_id)),
+                Filter("cost_centre", "Cost centre", "ids", _ids(ca.cost_centre_id)),
+            ]
+        ),  # fmt: skip
+        default_columns=("date", "voucher_number", "ledger", "cost_category", "cost_centre"),
+        default_measures=("amount",),
+        default_order=(ca.voucher_date, ca.voucher_number, ca.voucher_line_id),
+    )
+
+
+DATASETS: dict[str, Dataset] = {
+    d.key: d for d in (_voucher_lines(), _vouchers(), _cost_allocations())
+}
 
 
 def all_of(*conditions: ColumnElement[bool]) -> ColumnElement[bool]:
