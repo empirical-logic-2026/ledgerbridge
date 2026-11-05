@@ -2,7 +2,7 @@
 
 A learning guide to the Docker setup this project actually uses. It explains each file, part by part, and gives commands you can run to watch it work. It covers only the `test` environment: never run these commands with `-Env pilot`.
 
-*Last updated: 2026-10-09 (M1, branch `feature/m1-tally-poc`).*
+*Last updated: 2026-11-05.*
 
 ---
 
@@ -45,7 +45,7 @@ Note that the API is `8001` on your PC but `8000` inside its container. The host
 
 | Command | Docker work it does |
 | --- | --- |
-| `./dev.ps1 up` | Checks the host ports in `.env.test` are free. Then runs `stack.ps1 up -d --build --wait`: **build** the API image, start all containers **d**etached (in the background), and **wait** until every healthcheck passes. Then `stack.ps1 run --rm migrate` starts the one-off **`migrate`** container, which applies the database migrations as the `migrator` user and is removed afterwards (`--rm`), see section 6.6. Finally it prints the dashboard, API health and API docs URLs. |
+| `./dev.ps1 up` | Checks the host ports in `.env.test` are free. Then runs `stack.ps1 up -d --build --wait`: **build** the API image, start all containers **d**etached (in the background), and **wait** until every healthcheck passes. Before upgrading, a one-off `migrate` container runs `migrations.revision_guard` to check that the database's recorded Alembic revision exists in the checked-out migration history. An unknown revision stops `up` before any migration runs. On pilot, the existing database backup happens before this check. If the check passes, `stack.ps1 run --rm migrate` applies migrations as the `migrator` user and removes the container afterwards (`--rm`), see section 6.6. Finally it prints the dashboard, API health and API docs URLs. |
 | `./dev.ps1 status` | `stack.ps1 ps` (containers, health, ports), plus a call to `/health/ready`. |
 | `./dev.ps1 logs api` | `stack.ps1 logs -f --tail 200 api`: the last 200 lines, then **f**ollows new ones. |
 | `./dev.ps1 tally-companies` | `stack.ps1 exec -T api python -m workers.cli entities ...`: runs our CLI inside the API container, which reaches TallyPrime on your PC through `host.docker.internal:9000`. |
@@ -499,6 +499,7 @@ See it: the PR's checks, "Details" on a job, then the step "Initialize container
 
 | Date | Change |
 | --- | --- |
+| 2026-11-05 | Section 3: `./dev.ps1 up` checks the database's recorded Alembic revision in a one-off `migrate` container and stops before upgrading if the revision is absent from the checked-out migration history. |
 | 2026-11-05 | Section 7: the Dockerfile installs Debian's security updates on top of the base image (a fixed HIGH vulnerability in `apt` failed Trivy). |
 | 2026-11-02 | Section 9: `docs-export` also exports the formula sheet; PDFs pass through `docs/export/pdf-symbols.lua` so symbols without a glyph in the image's fonts (the rupee sign) aren't dropped. |
 | 2026-10-30 | Section 3: `./dev.ps1 dashboard` checks with `docker compose port` that the API is published on 127.0.0.1 only. |

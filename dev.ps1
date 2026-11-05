@@ -272,6 +272,17 @@ function Backup-Database {
     Write-Host ("Backup saved: {0} ({1:N1} MB)" -f $saved.FullName, ($saved.Length / 1MB)) -ForegroundColor Green
 }
 
+function Assert-MigrationRevision {
+    # Read alembic_version using the current migrate image before Alembic attempts an upgrade.
+    # The check stops when the database was stamped by a migration absent from this checkout.
+    Write-Host "Checking the database revision against the checked-out migration history..."
+    $check = Invoke-StackCaptured @('run', '--rm', 'migrate', 'python', '-m', 'migrations.revision_guard')
+    foreach ($line in $check.Output) { Write-Host "$line" }
+    if ($check.Code -ne 0) {
+        throw "Migration revision check failed. No migration was run; resolve the database revision mismatch before retrying."
+    }
+}
+
 function Assert-CodeCurrent {
     # The running stack's code (its image's git commit, stamped at build: ADR-045) against
     # the checked-out commit. A stack not rebuilt after an update runs the older code (pilot
@@ -459,6 +470,7 @@ switch ($Command) {
         # Pilot: a full backup before migrations can change anything (developer, 2026-10-24).
         # A failed backup stops here, before migrating.
         if ($Env -eq 'pilot') { Backup-Database }
+        Assert-MigrationRevision
         # Migrations run as the migrator user in a one-off container; the running api never
         # holds schema-change rights (schema.md 2.1).
         Write-Host "Applying database migrations (one-off migrate container)..."

@@ -31,6 +31,11 @@ Add-Content -Path $env:LEDGERBRIDGE_DEV_STACK_LOG -Value $record -Encoding UTF8
 if (($args -join ' ') -eq 'ps --status running --services') { 'api'; 'mysql' }
 $failing = $env:LEDGERBRIDGE_FAKE_CLI_EXIT
 if ($failing -and ($args -contains 'workers.cli')) { exit [int]$failing }
+$migrationFailure = $env:LEDGERBRIDGE_FAKE_MIGRATION_GUARD_EXIT
+if ($migrationFailure -and ($args -contains 'migrations.revision_guard')) {
+    'The database records Alembic revision(s) not present in this checkout: 0027.'
+    exit [int]$migrationFailure
+}
 exit 0
 """
 GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -76,6 +81,14 @@ def _job(*cli: str) -> list[str]:
 WATCH_JOB = _exec("watch", "--connection", "tally-test", "--job", "<job>")
 
 CASES = {
+    "up": (
+        ["up"],
+        [
+            ["up", "-d", "--build", "--wait"],
+            ["run", "--rm", "migrate", "python", "-m", "migrations.revision_guard"],
+            ["run", "--rm", "migrate"],
+        ],
+    ),
     "status": (["status"], [["ps"], SERVICES, _exec("status")]),
     "down": (["down"], [["down"]]),
     "logs": (["logs"], [["logs", "-f", "--tail", "200"]]),
@@ -338,6 +351,41 @@ def test_a_single_argument_stays_one_argument(tmp_path: Path) -> None:
     """The exact pilot failure: `status` runs `ps` as one argument."""
     calls = _calls(tmp_path, "status")
     assert calls[0] == ["ps"]
+
+
+def test_up_stops_before_migration_when_revision_guard_fails(tmp_path: Path) -> None:
+    stack, log = tmp_path / "fake-stack.ps1", tmp_path / "calls.jsonl"
+    stack.write_text(FAKE_STACK, encoding="utf-8")
+    env = {
+        **__import__("os").environ,
+        "LEDGERBRIDGE_DEV_STACK": str(stack),
+        "LEDGERBRIDGE_DEV_STACK_LOG": str(log),
+        "LEDGERBRIDGE_FAKE_MIGRATION_GUARD_EXIT": "2",
+    }
+    done = subprocess.run(  # noqa: S603 - fixed arguments, no shell
+        [
+            str(POWERSHELL),
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(REPO / "dev.ps1"),
+            "up",
+            "-Env",
+            "test",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        env=env,
+        cwd=REPO,
+    )
+    assert done.returncode != 0
+    assert "No migration was run" in done.stdout + done.stderr
+    calls = [json.loads(line)["args"] for line in log.read_text(encoding="utf-8-sig").splitlines()]
+    assert ["run", "--rm", "migrate"] not in calls
 
 
 def test_the_pilot_stops_when_the_stack_runs_other_code(tmp_path: Path) -> None:
