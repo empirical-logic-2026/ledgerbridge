@@ -36,6 +36,7 @@
     ./dev.ps1 statements [-From 2026-04-01]    (stock values and statements at every month end; compared with the source)
                                                 (a ledger's vouchers in Tally against ours; details to reports/<env>/private/)
     ./dev.ps1 fields
+    ./dev.ps1 audit counts                  (compare Tally and stored record counts)
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
     ./dev.ps1 diagrams                          (regenerate docs/diagrams and the schema reference from the models, render SVG/PNG)
@@ -66,7 +67,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'dashboard', 'help')]
+    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'audit', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'dashboard', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -659,6 +660,14 @@ switch ($Command) {
         Assert-EnvFile
         Assert-ApiRunning
         Invoke-Checked exec -T api python -m workers.cli fields
+    }
+    'audit' {
+        if ($Service -ne 'counts') { throw 'Usage: ./dev.ps1 audit counts' }
+        # Reads source keys/counts and stored counts; prints no company, ledger or voucher names.
+        Assert-EnvFile
+        Assert-ApiRunning
+        Assert-CodeCurrent
+        Invoke-Checked exec -T api python -m workers.cli audit-counts --connection $connection --source tally
     }
     'promote-field' {
         # Make a catalogued voucher field a reporting dimension, with backfill (ADR-025).

@@ -57,6 +57,7 @@ Note that the API is `8001` on your PC but `8000` inside its container. The host
 | Colours | When your terminal shows colours (and the output isn't redirected, and neither `-NoColor` nor `NO_COLOR` is set), `dev.ps1` turns `exec -T api ...` into `exec -T -e LB_COLOR=1 api ...`: `-e` sets an environment variable for that one command inside the container. Inside the container the output is a pipe, so the program can't tell by itself whether colours would show. |
 | `./dev.ps1 dashboard` | `stack.ps1 port api 8000` asks Docker where the API's port 8000 is published on your PC; unless the answer is `127.0.0.1:<port>` the command stops (no login yet, ADR-049). Then it starts the dashboard's dev server (Vite, not a container) on 127.0.0.1, pointed at that API. Try it: `./deploy/stack.ps1 -Env test port api 8000`. |
 | `./dev.ps1 fields`, `./dev.ps1 promote-field ...` | `exec -T api python -m workers.cli fields` / `promote-field ...`: short commands, run attached. |
+| `./dev.ps1 audit counts` | `exec -T api python -m workers.cli audit-counts --connection tally-test --source tally`: reads source counts through the API container's configured Tally connection and compares them with stored counts; it does not change data. |
 | `./dev.ps1 sync watch` | `stack.ps1 exec -T api python -m workers.cli watch ...`: follows the latest background sync from any terminal. Ctrl+C stops only the watching. |
 | `./dev.ps1 sync abandon` | After you type `abandon`: `exec -T api python -m workers.cli abandon ... --yes`, which marks runs whose process is gone as `interrupted`. |
 | `./dev.ps1 seed-test-data` | No Docker at all: it runs on your PC with `.env.test`, because `devtools/` is deliberately not in the image (section 7). |
@@ -499,6 +500,7 @@ See it: the PR's checks, "Details" on a job, then the step "Initialize container
 
 | Date | Change |
 | --- | --- |
+| 2026-11-05 | Section 3: document `./dev.ps1 audit counts`, its API-container execution and read-only source/database behavior. |
 | 2026-11-05 | Section 3: `./dev.ps1 up` checks the database's recorded Alembic revision in a one-off `migrate` container and stops before upgrading if the revision is absent from the checked-out migration history. |
 | 2026-11-05 | Section 7: the Dockerfile installs Debian's security updates on top of the base image (a fixed HIGH vulnerability in `apt` failed Trivy). |
 | 2026-11-02 | Section 9: `docs-export` also exports the formula sheet; PDFs pass through `docs/export/pdf-symbols.lua` so symbols without a glyph in the image's fonts (the rupee sign) aren't dropped. |

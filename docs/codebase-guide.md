@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.45 |
+| Version | 0.46 |
 | Date | 2026-11-05 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
@@ -87,6 +87,7 @@ ledgerbridge/
 │   ├── compose.yaml, stack.ps1, new-env.ps1
 │   └── mysql/init/             the database's first-start script
 ├── docs/
+│   ├── data-completeness.md    fetched Tally object/field coverage and count audit
 │   ├── error-catalogue.md      every error and warning code (generated)
 │   ├── formulas.md             every figure the dashboard shows, by formula ID (F-PL-003)
 │   ├── project-history.md      what was built and done so far, PR by PR
@@ -158,6 +159,7 @@ ledgerbridge/
 | `tally/fixtures.py` | `FixtureTransport` plays back recorded Tally answers in tests and CI, so they run without Tally. |
 | `tally/reports.py` | Reads Tally's own Trial Balance, Balance Sheet and Profit and Loss exports into statement lines (canonical sign), and the opening and closing stock its Profit and Loss uses. |
 | `tally/tools.py` | Developer tools for the test company only: record fixtures, run the sign check. |
+| `tally/audit.py` | Read-only count comparison between Tally master/monthly voucher counts and active canonical records; fixture tests mark unrecorded collections as unavailable. |
 
 **`core/`: the source-independent heart.** Nothing here knows about Tally.
 
@@ -196,7 +198,7 @@ ledgerbridge/
 
 | File | What it is and what it's for |
 | --- | --- |
-| `cli.py` | The command line behind almost every `dev.ps1` command (`python -m workers.cli ...`): `connect`, `sync`, `validate`, `status`, `summary`, `watch`, `abandon`, `transform-retry`/`-rebuild`/`-explain`, `fields`, `promote-field` and more. It also decides what may be printed: outside the test environment, no names or amounts. |
+| `cli.py` | The command line behind almost every `dev.ps1` command (`python -m workers.cli ...`): `connect`, `sync`, `validate`, `status`, `summary`, `watch`, `abandon`, `transform-retry`/`-rebuild`/`-explain`, `fields`, `audit-counts`, `promote-field` and more. It also decides what may be printed: outside the test environment, no names or amounts. |
 | `sync.py` | Runs a sync: company by company, fetch, store, transform, then hand over to validation; records each run. Also the deletion check and the transform-only runs (retry, rebuild). |
 | `fetch.py` | Fetches one company piece by piece ("chunks", usually a month of vouchers), saves progress so an interrupted sync can resume, and copes with a slow or busy Tally. |
 | `extract.py` | Finding or creating a connection, and the older "raw records only" extraction. |
@@ -369,7 +371,7 @@ Take `./dev.ps1 sync full`:
 3. `workers/cli.py` runs the sync (flows a to c) and writes its output to the database (`workers/runs.py`).
 4. `dev.ps1` then runs `python -m workers.cli watch` to show that output as it arrives.
 
-Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the same way, but in the foreground. `report` runs twice: once as Markdown, which `dev.ps1` saves under `reports/<env>/`, then as text for the screen. When the terminal shows colours, `dev.ps1` adds `-e LB_COLOR=1` and the status words are coloured. `./dev.ps1 test` runs the tests on the computer itself, not in a container.
+Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit counts`) run the same way, but in the foreground. `audit counts` reads the configured Tally source and stored rows, reporting counts only. `report` runs twice: once as Markdown, which `dev.ps1` saves under `reports/<env>/`, then as text for the screen. When the terminal shows colours, `dev.ps1` adds `-e LB_COLOR=1` and the status words are coloured. `./dev.ps1 test` runs the tests on the computer itself, not in a container.
 
 ### (f) Database migrations
 
@@ -386,6 +388,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 | What does an error or warning code mean? | [error-catalogue.md](error-catalogue.md); the codes live in `data-plane/core/problems.py`. |
 | Where is the health report? | `data-plane/workers/report.py` (`./dev.ps1 report`). |
 | Where are the validation checks? | `data-plane/core/validation.py`; run by `data-plane/workers/validate.py`; described in [schema.md](schema.md) Section 5.2. Why they differ: `data-plane/workers/analyse.py` (`./dev.ps1 validate analyse`). |
+| Where is the Tally completeness audit? | [data-completeness.md](data-completeness.md), `data-plane/connectors/tally/audit.py`, and `data-plane/workers/cli.py` (`./dev.ps1 audit counts`). |
 | Where are the environment settings? | `.env.test` / `.env.pilot` (not in git; templates `.env.*.example`), read by `data-plane/core/config.py`. |
 | Where are the tests? | `data-plane/tests/` (Python) and `frontend/src/**/*.test.ts(x)`; recorded Tally answers in `data-plane/tests/fixtures/tally/`. |
 | Where is a `dev.ps1` command implemented? | The command's block in `dev.ps1`, which calls `python -m workers.cli <command>`, implemented in `data-plane/workers/cli.py`. |
@@ -435,6 +438,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`) run the sam
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-05 | 0.46 | Tally data-completeness inventory and read-only `audit counts` command (`connectors/tally/audit.py`; recorded-fixture tests). |
 | 2026-11-05 | 0.42 | `dev.ps1 up` checks that the recorded Alembic revision exists in the checked-out history before migrating; `migrations/revision_guard.py`, `test_migration_guard.py`. |
 | 2026-11-05 | 0.43 | Exact stored-name display labels (`api/v1/company_display.py`, `core/config.py`, `src/companyDisplayName.ts`) and the Sales dashboard's monthly company series (`core/sales.py`, `api/v1/sales.py`, `src/apps/sales/branchSalesChart.ts`). |
 | 2026-11-05 | 0.44 | Migration 0027 stores Tally `UPDATEDDATETIME`; migration 0028 stores append-only voucher-version snapshots, ledger-posting comparisons and deletion detection (RPT-017 / ADR-051). |

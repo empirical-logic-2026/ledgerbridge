@@ -22,6 +22,7 @@ result. The worker's schedule (workers/celery_app.py) runs the same sync code wi
     python -m workers.cli transform-rebuild --connection tally-pilot [--entity NAME]
     python -m workers.cli transform-explain --connection tally-pilot [--check-source]
     python -m workers.cli fields [--entity-id 3]
+    python -m workers.cli audit-counts --connection tally-test --source tally
     python -m workers.cli validate-analyse --connection tally-pilot [--entity NAME]
     python -m workers.cli statements --connection tally-pilot [--entity NAME] [--from D]
     python -m workers.cli compare-ledger --connection tally-pilot --ledger 88 [--from D --to D]
@@ -351,6 +352,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     fields.add_argument("--entity-id", type=int, action="append", help="entity id (repeatable)")
 
+    audit = sub.add_parser(
+        "audit-counts",
+        help="compare read-only Tally master and voucher counts with stored records",
+    )
+    connection_args(audit)
+
     promote = sub.add_parser(
         "promote-field", help="make a catalogued voucher field a reporting dimension"
     )
@@ -559,6 +566,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _status(session)
     if args.command == "fields":
         return _fields(session, args)
+    if args.command == "audit-counts":
+        return _audit_counts(session, args)
     if args.command == "promote-field":
         return _promote(session, args)
     if args.command in ("transform-retry", "transform-rebuild"):
@@ -1825,6 +1834,75 @@ def _fields(session: Session, args: argparse.Namespace) -> int:
         print(
             f"field {f.id}: entity {f.entity_id}, {f.object_type}, prefix {f.prefix or 'none'}, "
             f"{f.inferred_type}, in {f.record_count:,} records{path}"
+        )
+    return 0
+
+
+def _audit_counts(session: Session, args: argparse.Namespace) -> int:
+    """Compare source and stored counts without printing company or voucher-type names."""
+    from connectors.tally.audit import audit_counts
+    from connectors.tally.connector import TallyConnector
+
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print("No matching connection is configured.", file=sys.stderr)
+        return 2
+    connector = connector_for(session, connection)
+    if not isinstance(connector, TallyConnector):
+        print("Count audit is currently available only for Tally connections.", file=sys.stderr)
+        return 2
+    available = {entity.key: entity for entity in connector.list_entities()}
+
+    links = session.execute(
+        select(A.EntitySource, A.Entity)
+        .join(A.Entity, A.Entity.id == A.EntitySource.entity_id)
+        .where(A.EntitySource.connection_id == connection.id)
+        .order_by(A.EntitySource.id)
+    ).all()
+    labels = Labels(session, connection)
+    if not links:
+        print("No linked companies are available for this connection.")
+        return 0
+
+    as_of = date.today()
+    for link, entity_row in links:
+        label = labels.for_entity(entity_row.id)
+        if entity_row.is_on_hold:
+            print(f"{label}: skipped (on hold)")
+            continue
+        source_entity = available.get(link.source_entity_key)
+        if source_entity is None:
+            print(f"{label}: skipped (source company is not loaded)")
+            continue
+        if source_entity.books_from is None:
+            print(f"{label}: skipped (books-from date is unavailable)")
+            continue
+
+        result = audit_counts(
+            session, connection.id, entity_row.id, source_entity, connector, as_of
+        )
+        print(f"{label}: master record counts (Tally minus stored)")
+        for row in result.masters:
+            if row.source_count is None:
+                print(f"  {row.object_type}: source count unavailable, stored {row.stored_count:,}")
+            else:
+                print(
+                    f"  {row.object_type}: source {row.source_count:,}, "
+                    f"stored {row.stored_count:,}, difference {row.difference:+,}"
+                )
+        print(f"{label}: voucher counts by month and stored voucher-type id")
+        for row in result.vouchers:
+            print(
+                f"  {row.month:%Y-%m} {row.voucher_type}: source {row.source_count:,}, "
+                f"stored {row.stored_count:,}, difference {row.difference:+,}"
+            )
+        excluded = result.exclusions
+        print(
+            f"{label}: retained vouchers excluded from financial postings "
+            "(some non-accounting types may move stock): "
+            f"cancelled {excluded.cancelled:,}; optional {excluded.optional:,}; "
+            f"non-accounting types {excluded.non_accounting_type:,}; "
+            f"soft-deleted {excluded.deleted:,}"
         )
     return 0
 
