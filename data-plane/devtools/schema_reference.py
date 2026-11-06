@@ -199,7 +199,9 @@ COLUMNS: dict[tuple[str, str], str] = {
                                            "less the part tracked to a note.",
     ("godowns", "holding"): "own / ours_with_third_party (a job worker's) / third_party_with_us.",
     ("validation_issues", "check_code"): "The check (see the error catalogue, LB-VAL-xxx).",
-    ("stock_values", "scope"): "total (what the source's profit uses), stock_group, godown or item.",
+    ("stock_values", "scope"): (
+        "total (what the source's profit uses), stock_group, godown or item."
+    ),
     ("stock_values", "integrated"): "Whether the source integrates accounts with inventory "
                                     "(total rows).",
     ("fx_revaluation_snapshots", "unrealised_gain_loss"): "Book value less revalued value "
