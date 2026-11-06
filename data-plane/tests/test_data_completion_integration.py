@@ -54,6 +54,7 @@ def synced() -> Iterator[int]:
         for other in session.scalars(select(A.Entity).where(A.Entity.id != entity_id)):
             other.is_on_hold = False
         session.commit()
+        _cleanup(session)  # leaves nothing behind for the other tests
     patch.undo()
 
 
