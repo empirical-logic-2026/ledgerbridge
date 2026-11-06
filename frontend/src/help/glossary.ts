@@ -47,6 +47,14 @@ export const GLOSSARY: Record<string, Explanation> = {
   Allocated: { text: 'The parts of voucher lines allocated to the cost centre, with the line\'s sign (debits positive); its own allocations only, not the ones under it.', formula: 'Σ allocation amounts', id: 'F-CC-001' },
   Allocations: { text: 'How many allocations were made to the cost centre in the period.', formula: 'Count of allocations', id: 'F-CC-003' },
 
+  // --- transactions ---
+  'Voucher Type': { text: 'The kind of voucher (Sales, Payment, Journal, ...), by name.' },
+  'Voucher Number': { text: 'The voucher\'s number in the source.' },
+  'Reference Number': { text: 'The voucher\'s reference as entered in the source, e.g. the supplier\'s own invoice number.' },
+  'Party Name': { text: 'The voucher\'s party (customer or vendor), when it has one.' },
+  'Ledger Name': { text: 'The ledger of this line.' },
+  Narration: { text: 'The voucher\'s narration as entered in the source.' },
+
   // --- stock ---
   'Stock value': { text: 'The source\'s own value of all stock (its valuation method) at the last stored date within the period.', id: 'F-STK-007' },
   'Stock items': { text: 'How many stock items the companies have, by name.' },

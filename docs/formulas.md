@@ -6,7 +6,7 @@ against Tally, and as the reference for each page's "What is this?" help.
 
 | Field | Value |
 | --- | --- |
-| Version | 1.1 |
+| Version | 1.2 |
 | Date | 2026-11-06 |
 | Requirement | RPT-015 |
 | Word and PDF | `docs/export/formulas.docx`, `docs/export/formulas.pdf` (`./dev.ps1 docs-export`) |
@@ -496,6 +496,15 @@ Quantities are ours: an item's opening plus the stock movements of vouchers not 
 - **In words:** the inventory line's amount on the voucher (purchase or sale value, not the stock valuation), signed like the quantity.
 - **Source:** `inventory_lines.amount`.
 
+### 5.4 Transactions (`F-TRN`)
+
+#### F-TRN-001 A line's debit or credit
+
+- **In words:** each effective ledger line (not cancelled or optional, of a voucher type that posts to the books, of a voucher not deleted) of the period, one row per line: its amount as a Debit when positive, as a Credit (shown positive) when negative. A voucher's debits equal its credits.
+- **Source:** `voucher_lines.amount` (`is_effective`), with the voucher, its type, party and the line's ledger; particulars are the voucher's ledgers on the other side.
+- **Sign:** canonical: debit positive.
+- **Check in Tally:** Display More Reports › Day Book for the same dates (the voucher's lines with Alt+F1 detailed), or the ledger's Ledger Vouchers report.
+
 ## 6. Parties and bills (`F-PTY`)
 
 A party is known by **name** across the selected companies, and its ledgers are those linked
@@ -698,6 +707,7 @@ against the source's own (`figures = 'source'`), line by line and in total.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 1.2 | 2026-11-06 | Transactions (`F-TRN-001`). |
 | 1.1 | 2026-11-06 | Stock (`F-STK-001` to `F-STK-008`); the Amounts setting (F-FMT-001, F-FMT-002: Lakhs or Full everywhere). |
 | 1.0 | 2026-11-02 | Rewritten as the formula sheet (RPT-015): an ID per figure with words, expression, source, sign, Educational-mode rule and the check in Tally; the comparison with the previous period (F-CMP-002, RPT-016); date ranges to the last stored date; `test_formulas.py`; Word and PDF copies. |
 | 0.1 | 2026-11-02 | First version: building blocks, sales and purchases, the Dashboard's key figures, registers, parties, tables, showing amounts. |
