@@ -101,7 +101,7 @@ export const GLOSSARY: Record<string, Explanation> = {
   '1–30 days': { text: 'Outstanding bills 1 to 30 days past their due date.', id: 'F-PTY-012' },
   '31–60 days': { text: 'Outstanding bills 31 to 60 days past their due date.', id: 'F-PTY-012' },
   '61–90 days': { text: 'Outstanding bills 61 to 90 days past their due date.', id: 'F-PTY-012' },
-  'Not in bills': { text: 'The part of the balance the stored bills don\'t cover: bills from before the books\' beginning (opening bills) aren\'t stored yet.', formula: 'Balance due − Σ outstanding bills', id: 'F-PTY-013' },
+  'Not in bills': { text: 'The part of the balance the bills (opening bills and the vouchers\' bills) don\'t cover: amounts not split into bills, such as on account.', formula: 'Balance due − Σ outstanding bills', id: 'F-PTY-013' },
   Pending: { text: 'The bill\'s new reference less everything settled against it, up to the period\'s end.', id: 'F-PTY-004' },
   Due: { text: 'The bill\'s own due date, else its date plus the party\'s credit period.', id: 'F-PTY-005' },
   'Overdue by': { text: 'Days from the bill\'s due date to the period\'s end.', formula: 'Period end − due date', id: 'F-PTY-005' },

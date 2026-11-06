@@ -35,6 +35,13 @@ erDiagram
         enum bill_type
         decimal amount
     }
+    opening_bills {
+        bigint id PK
+        bigint entity_id FK "to entities"
+        bigint ledger_id FK "to ledgers"
+        bigint party_id FK "to parties"
+        decimal amount
+    }
     line_cost_allocations {
         bigint id PK
         bigint voucher_line_id FK "to voucher_lines"
@@ -134,6 +141,9 @@ erDiagram
     ledgers ||--o{ voucher_lines : "ledger_id"
     voucher_lines ||--o{ bill_allocations : "voucher_line_id"
     parties |o--o{ bill_allocations : "party_id"
+    entities ||--o{ opening_bills : "entity_id"
+    ledgers ||--o{ opening_bills : "ledger_id"
+    parties |o--o{ opening_bills : "party_id"
     voucher_lines ||--o{ line_cost_allocations : "voucher_line_id"
     cost_categories |o--o{ line_cost_allocations : "cost_category_id"
     cost_centres ||--o{ line_cost_allocations : "cost_centre_id"

@@ -4,7 +4,7 @@ RPT-014; docs/design/dashboard.md Section 0.4), as at the period's end.
 For any combination of the companies the caller may see (`company`, repeatable; default all,
 combined) and a period (`month`, repeatable, or `date_from` and `date_to`): each party, known by
 name across those companies, with its balance due, its outstanding bills by bucket and what
-the bills don't cover (opening bills aren't stored yet). How: core/ageing.py.
+the bills (opening bills included) don't cover. How: core/ageing.py.
 """
 
 from datetime import date

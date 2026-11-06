@@ -163,6 +163,9 @@ VOUCHERS = CollectionSpec(
         "AllLedgerEntries.IsDeemedPositive", "AllLedgerEntries.IsPartyLedger",
         "AllLedgerEntries.BillAllocations.Name", "AllLedgerEntries.BillAllocations.BillType",
         "AllLedgerEntries.BillAllocations.Amount",
+        # A bill's date and credit period ("30 Days", or a due date: "31-Oct-26").
+        "AllLedgerEntries.BillAllocations.BillDate",
+        "AllLedgerEntries.BillAllocations.BillCreditPeriod",
         "AllLedgerEntries.CategoryAllocations.Category",
         "AllLedgerEntries.CategoryAllocations.CostCentreAllocations.Name",
         "AllLedgerEntries.CategoryAllocations.CostCentreAllocations.Amount",
@@ -291,8 +294,11 @@ LEDGER_OPENING_BILLS = CollectionSpec(
     "Ledger",
     "LEDGER",
     "ledger_opening_bills",
-    ("GUID", "NAME", "BILLALLOCATIONS.NAME", "BILLALLOCATIONS.OPENINGBALANCE"),
-)
+    (
+        "GUID", "ALTERID", "NAME", "BILLALLOCATIONS.NAME", "BILLALLOCATIONS.OPENINGBALANCE",
+        "BILLALLOCATIONS.BILLDATE", "BILLALLOCATIONS.BILLCREDITPERIOD",
+    ),
+)  # fmt: skip
 
 # One ledger's vouchers as Tally lists them (its standard collection type of a ledger's
 # vouchers; Child Of the ledger): the vouchers in the books (optional ones left out), with
@@ -315,6 +321,7 @@ MASTER_SPECS = (
     CURRENCIES,
     GROUPS,
     LEDGERS,
+    LEDGER_OPENING_BILLS,  # after the ledgers: their bills (data completion, part 2)
     VOUCHER_TYPES,
     UNITS,
     STOCK_GROUPS,

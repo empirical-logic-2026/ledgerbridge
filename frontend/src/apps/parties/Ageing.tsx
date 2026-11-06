@@ -72,8 +72,8 @@ function help(kind: PartyKind) {
         credit period): not due, 1–30, 31–60, 61–90 and over 90 days (formula F-PTY-012).
       </p>
       <p>
-        <strong>Not in bills</strong> is the balance the stored bills don't cover: bills from before the books' beginning (opening bills) aren't
-        stored yet (F-PTY-013).
+        <strong>Not in bills</strong> is the balance the bills don't cover (opening bills and the vouchers' bills): what isn't split into bills,
+        such as amounts on account (F-PTY-013).
       </p>
       <p>
         <strong>To compare with {sourceName}:</strong> Display More Reports → Statements of Accounts → Outstandings →{' '}
@@ -104,7 +104,7 @@ export function Ageing(props: Props) {
           <KeyCard label={w.balance} figure={{ value: t.balance }} note={asAt} accent={green} />
           <KeyCard label="Overdue" figure={{ value: t.overdue }} note={asAt} alert accent={charcoal} />
           <KeyCard label="Over 90 days" figure={{ value: t.buckets.over_90 }} note="Past their due date" alert accent={colours.negative} />
-          <KeyCard label="Not in bills" figure={{ value: t.uncovered }} note="Opening bills aren't stored yet" accent={grey} />
+          <KeyCard label="Not in bills" figure={{ value: t.uncovered }} note="Not split into bills" accent={grey} />
         </div>
         <section className="card" aria-label="By days past due">
           <h2 className="card-title">Outstanding bills by days past due</h2>

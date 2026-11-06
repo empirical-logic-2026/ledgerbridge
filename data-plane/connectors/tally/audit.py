@@ -87,9 +87,11 @@ def audit_counts(
     if as_of < entity.books_from:
         raise ValueError("The audit end date precedes the company's books-from date")
 
+    # Master types with a table of their own (a ledger's opening bills share its key).
+    specs = [spec for spec in envelopes.MASTER_SPECS if spec.object_type in _MASTER_TABLES]
     source_masters = {
         spec.object_type: len(connector.chunk_keys(entity, Chunk(spec.object_type)))
-        for spec in envelopes.MASTER_SPECS
+        for spec in specs
     }
     masters = [
         MasterCount(
@@ -110,7 +112,7 @@ def audit_counts(
             or 0,
         )
     ]
-    for spec in envelopes.MASTER_SPECS:
+    for spec in specs:
         model = _MASTER_TABLES[spec.object_type]
         conditions = [model.entity_id == entity_id, model.is_deleted.is_(False)]
         if spec.object_type == "group":

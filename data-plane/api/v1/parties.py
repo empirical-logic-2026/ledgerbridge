@@ -129,9 +129,7 @@ class PartyOut(BaseModel):
     compared_with: ComparedWith | None
     balance: Decimal = formula("F-PTY-001")
     overdue: Decimal = formula("F-PTY-002")
-    bills_cover: Decimal = formula(
-        "F-PTY-003"
-    )  # what the stored bills add up to (opening bills aren't stored)
+    bills_cover: Decimal = formula("F-PTY-003")  # the outstanding bills, opening bills included
     net: PartyFigure = formula("F-SAL-004")
     invoices: PartyFigure = formula("F-SAL-005")
     settled: Decimal = formula("F-PTY-006")

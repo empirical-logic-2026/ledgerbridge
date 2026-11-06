@@ -132,8 +132,13 @@ TABLES: dict[str, tuple[str, str]] = {
     "line_dimensions": ("A voucher line's value for each dimension.",
                         "Transform, with the voucher."),
     "line_cost_allocations": ("Cost centre allocations of a line.", "Transform, with the voucher."),
-    "bill_allocations": ("Bill-wise allocations of a line (receivables and payables ageing).",
+    "bill_allocations": ("Bill-wise allocations of a line, with the bill's date and due date "
+                         "(receivables and payables ageing).",
                          "Transform, with the voucher."),
+    "opening_bills": ("The bills of a ledger's opening balance: name, bill date, due date, "
+                      "amount (receivables and payables ageing).",
+                      "Transform, from the ledgers' opening bills; replaced as a whole per "
+                      "ledger."),
     "inventory_lines": ("Stock movements of a voucher (in +, out −) by item, godown and batch; "
                         "`stock_quantity` is what moves stock (tracked lines move nothing).",
                         "Transform, with the voucher."),

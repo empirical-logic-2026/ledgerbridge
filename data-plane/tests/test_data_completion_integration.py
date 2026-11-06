@@ -5,6 +5,7 @@ its checks here."""
 
 from collections.abc import Iterator
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from alembic import command
@@ -16,6 +17,7 @@ from connectors.tally.connector import TallyConnector
 from connectors.tally.fixtures import FixtureTransport
 from core.db import get_engine
 from core.models import accounting as A  # noqa: N812
+from core.validation import Validator
 from tests.conftest import FIXTURES
 from tests.test_migrations_integration import _config
 from tests.test_sync_integration import CONNECTION, _cleanup
@@ -107,3 +109,78 @@ def test_part_1_the_transactions_page_shows_cheque_and_utr_apart(
     assert all(
         r["tally_bank_entry_id"] is None or r["tally_bank_entry_id"] != r["utr"] for r in rows
     )
+
+
+# --- part 2: bill dates, due dates, opening bills ---------------------------------------------
+
+
+def _opening_bills(session: Session, entity_id: int, ledger: str) -> list[tuple]:
+    return [
+        (r.bill_name, r.bill_date, r.due_date, r.amount, r.party_id is not None)
+        for r in session.scalars(
+            select(A.OpeningBill)
+            .join(A.Ledger, A.Ledger.id == A.OpeningBill.ledger_id)
+            .where(A.OpeningBill.entity_id == entity_id, A.Ledger.name == ledger)
+            .order_by(A.OpeningBill.bill_name)
+        )
+    ]
+
+
+def test_part_2_opening_bills_are_stored_with_their_party(synced: int) -> None:
+    with Session(get_engine()) as session:
+        assert _opening_bills(session, synced, "Customer Theta GST") == [
+            ("OB-T1", date(2025, 3, 1), date(2025, 3, 31), Decimal("10000.0000"), True),
+            ("OB-T2", date(2025, 3, 31), None, Decimal("5000.0000"), True),
+        ]
+        assert _opening_bills(session, synced, "Vendor Iota GST") == [
+            ("OB-I1", date(2025, 3, 1), date(2025, 4, 15), Decimal("-5000.0000"), True),
+            ("OB-I2", date(2025, 3, 31), None, Decimal("-3000.0000"), True),
+        ]
+
+
+def test_part_2_voucher_bills_keep_their_date_and_due_date(synced: int) -> None:
+    with Session(get_engine()) as session:
+        rows = session.execute(
+            select(
+                A.BillAllocation.bill_name, A.BillAllocation.bill_date, A.BillAllocation.due_date
+            )
+            .join(A.VoucherLine, A.VoucherLine.id == A.BillAllocation.voucher_line_id)
+            .join(A.Voucher, A.Voucher.id == A.VoucherLine.voucher_id)
+            .where(
+                A.Voucher.entity_id == synced,
+                A.BillAllocation.bill_type == "new_ref",
+                A.BillAllocation.bill_name.in_(("INV-T1", "PI-I2")),
+            )
+            .order_by(A.BillAllocation.bill_name)
+        ).all()
+        assert [tuple(r) for r in rows] == [
+            ("INV-T1", date(2026, 10, 1), date(2026, 10, 31)),
+            ("PI-I2", date(2026, 10, 2), date(2026, 10, 31)),
+        ]
+
+
+def test_part_2_ageing_counts_the_opening_bills(client: TestClient, synced: int) -> None:
+    for kind, party in (("customers", "Customer Theta GST"), ("vendors", "Vendor Iota GST")):
+        response = client.get(f"/api/v1/ageing/{kind}", params={"month": ["2026-10"]})
+        assert response.status_code == 200, response.text
+        (row,) = [r for r in response.json()["rows"] if r["name"] == party]
+        # Every amount of these parties is in a bill: the opening ones included.
+        assert Decimal(row["uncovered"]) == 0, (kind, row)
+        # The opening bills, from March 2025, are over 90 days past due by October 2026.
+        assert Decimal(row["buckets"]["over_90"]) > 0, (kind, row)
+
+
+def test_part_2_opening_bills_add_up_to_the_openings(synced: int) -> None:
+    """LB-VAL-041: database only, so it runs in every validation (nothing is committed)."""
+    with Session(get_engine()) as session:
+        report = Validator(session, synced, date(2026, 10, 31)).run(None)
+        assert "opening_bills_differ" not in {f.check_code for f in report.findings}
+        bill = session.scalars(
+            select(A.OpeningBill).where(A.OpeningBill.entity_id == synced).limit(1)
+        ).one()
+        bill.amount += 1
+        session.flush()
+        report = Validator(session, synced, date(2026, 10, 31)).run(None)
+        (found,) = [f for f in report.findings if f.check_code == "opening_bills_differ"]
+        assert (found.object_type, found.object_id) == ("ledger", str(bill.ledger_id))
+        session.rollback()

@@ -922,6 +922,35 @@ PROBLEMS: tuple[Problem, ...] = (
         ".\\dev.ps1 validate -Env {env}",
     ),
     _p(
+        "LB-VAL-040",
+        "opening_bills_mismatch",
+        "Opening bills",
+        ERROR,
+        "Some parties' opening bills (from before the books' beginning) differ in total from "
+        "the source's.",
+        (
+            "Ledgers that failed to convert (their opening bills fail with them).",
+            "Opening bills changed in the source after the last sync.",
+        ),
+        ("The report's -Details lists the ledgers by id (no names or amounts).",),
+        ("Sync again; if they still differ, sync full.",),
+        ".\\dev.ps1 sync -Env {env}",
+        _FAILED,
+    ),
+    _p(
+        "LB-VAL-041",
+        "opening_bills_differ",
+        "Opening bills don't add up to the opening",
+        WARNING,
+        "Some ledgers' opening bills don't add up to their opening balance. The source allows "
+        "this: the balance follows the opening, and the bills cover more or less of it in "
+        "receivables and payables ageing.",
+        ("Opening bills entered for a different total than the ledger's opening balance.",),
+        ("The report's -Details lists the ledgers by id (no names or amounts).",),
+        ("Correct the opening bills or the opening balance in the source, then sync.",),
+        ".\\dev.ps1 report -Details -Env {env}",
+    ),
+    _p(
         "LB-VAL-036",
         "voucher_type_names_differ",
         "Voucher type names written differently",

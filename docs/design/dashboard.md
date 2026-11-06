@@ -129,7 +129,7 @@ A party is known by its **name** across the selected companies (as the facets ar
 
 - **Lists** (Customers under Sales, Vendors under Purchases): each party with its net sales (purchases) and invoices in the period, the last invoice and the balance due at the period's end; the name opens the party's page.
 - **The party's page** (`#/sales/customers/<id>`, `#/purchases/vendors/<id>`), the detail-page pattern: where it sits (its ledger's groups), its name and key facts (main channel, companies, credit period); key figures: **balance due** (payable), **overdue**, **net sales** (purchases) against last year, **average days to pay**; tabs: **invoices and credit (debit) notes** with each one's status (paid, due in N days, overdue N days), **receipts** (payments), the **ledger statement** with the opening and running balance (Dr/Cr), the **outstanding bills**, and the **monthly trend**.
-- **Bills** come from the bill allocations of the vouchers in the books (on account excluded), due on their due date or else their date plus the party's credit period. **Opening bills** (from before the books' beginning) aren't stored yet: where the bills add up to less than the balance, the page says how much they cover. Storing opening bills is a later change (connector and schema).
+- **Bills** come from the bill allocations of the vouchers in the books (on account excluded), due on their due date or else their date plus the party's credit period. **Opening bills** (from before the books' beginning) count as bills raised on their bill date (stored since data completion part 2). Where the bills add up to less than the balance (amounts on account), the page says how much they cover.
 - Every customer and vendor name on the Sales and Purchases pages now opens this page.
 
 ### The table explorer
@@ -173,7 +173,7 @@ The client asked for the dashboard to follow the design pattern of their referen
 | Overview | key cards: net sales · gross profit (gross margin %) · net profit (net profit %) · cash & bank · customers; monthly sales and purchases with gross and net profit marked; sales by channel (donut); P&L summary vs last year; top customers | 2 |
 | Sales | the Sales dashboard, register, monthly and channels in the pattern, channel chips | 3 |
 | Purchases | the same for purchases | 4 |
-| Parties | customers and vendors; receivables and payables with ageing (not due, 1–30, 31–60, 61–90, over 90 days past due; opening bills not yet stored) | 5 |
+| Parties | customers and vendors; receivables and payables with ageing (not due, 1–30, 31–60, 61–90, over 90 days past due; opening bills included) | 5 |
 | P&L & KPIs | the full Profit & Loss with change %, margin tiles, expense structure as % of net sales, monthly trend, goal tracker placeholder | 6 |
 | Balance Sheet | the Balance Sheet with change %; current ratio, quick ratio, debt to equity, receivable, payable and inventory days, working-capital days | 7 |
 | Cash Flow | a simple cash movement: in and out of cash and bank by category, as a waterfall (the full operating / investing / financing statement is planned separately: it needs every ledger classified) | 8 |
