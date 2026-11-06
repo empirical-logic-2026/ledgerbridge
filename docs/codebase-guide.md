@@ -74,6 +74,8 @@ ledgerbridge/
 │   ├── devtools/               developer tools, never in the product
 │   │   ├── diagrams.py         generates the diagrams from the models
 │   │   ├── error_catalogue.py  generates docs/error-catalogue.md from the problem registry
+│   │   ├── tally_full_export.py    records every field of the test company (test only)
+│   │   ├── tally_field_inventory.py lists every Tally field from it: docs/data-completeness-fields.md
 │   │   └── tally_seed/         fills the test company in TallyPrime (test only)
 │   ├── migrations/
 │   │   ├── revision_guard.py   refuses upgrades from a revision absent in this checkout
@@ -87,7 +89,8 @@ ledgerbridge/
 │   ├── compose.yaml, stack.ps1, new-env.ps1
 │   └── mysql/init/             the database's first-start script
 ├── docs/
-│   ├── data-completeness.md    fetched Tally object/field coverage and count audit
+│   ├── data-completeness.md    every Tally object type and field: stored, in extra or not fetched
+│   ├── data-completeness-fields.md  every field, generated from the full export
 │   ├── error-catalogue.md      every error and warning code (generated)
 │   ├── formulas.md             every figure the dashboard shows, by formula ID (F-PL-003)
 │   ├── project-history.md      what was built and done so far, PR by PR
@@ -236,6 +239,10 @@ ledgerbridge/
 
 **`devtools/diagrams.py`: the diagrams.** Writes the Mermaid sources of the ER diagrams and the database diagram in `docs/diagrams/` from the database models, so they always match the code (`./dev.ps1 diagrams`, which also draws the images). Development only.
 
+**`devtools/tally_full_export.py`: the full export of the test company.** Asks TallyPrime for everything it has, not the connector's field list: every master as Tally's own export writes it, the company, and every voucher whole with all its sub-lists (found in rounds). Same guards as the seeder (only the test company loaded, `APP_ENV=test`); export requests only. Writes `tests/fixtures/tally/full-export/`. Development only.
+
+**`devtools/tally_field_inventory.py`: every Tally field.** Reads that recording and writes `docs/data-completeness-fields.md`: every field of every object type, how often the test company sets it, and whether the connector stores it as a column, keeps it in `extra`, or never fetches it (worked out from `envelopes.py` and `mapping.USED_FIELDS`). `--check` proves the recording complete against Tally's own Day Book export. A test fails when the file is stale. Development only.
+
 **`migrations/revision_guard.py`: the migration-history check.** Reads the current Alembic revision and compares it with the checked-out migration scripts. `./dev.ps1 up` runs it in the one-off migrate container before applying any migration, and stops with recovery guidance if the database records an unknown revision.
 
 **`devtools/tally_seed/`: filling the test company.** Development only, never part of the product, and it may only write to the company "LedgerBridge Test Co" (it checks this before doing anything). `data.py` holds the synthetic ledgers and vouchers, including the cases that reproduce Tally's counting rules (openings, delivery and receipt notes with tracked invoices, optional, memorandum, reversing and post-dated vouchers; schema.md 7.5); `requests.py` builds Tally's import requests; `seed.py` works out what is missing and imports it; `__main__.py` is the command (`./dev.ps1 seed-test-data`).
@@ -247,6 +254,7 @@ ledgerbridge/
 | `conftest.py` | Shared test setup: an in-memory database standing in for MySQL, the recorded Tally answers, the test company's name. |
 | `sim_tally.py` | A simulated Tally for tests: large companies, slow months, timeouts, custom fields, values that don't fit, names written differently. |
 | `fixtures/tally/` | Real answers recorded from the test company (`*.xml`) and `manifest.json`, which says which request each file answers. Test company data only. |
+| `fixtures/tally/full-export/` | One full export of the test company, every field (`devtools/tally_full_export.py`); read by the field inventory, not replayed. |
 | `fixtures/tally/rules/` | Answers recorded from the test company that prove Tally's counting rules: ledger and stock item openings fetched for different periods, and tracked notes and invoices. |
 | `test_counting_rules.py` | Tally's counting rules (schema.md 7.5): openings fetched at the books' beginning, stock moved once for tracked invoices, and the seed matching Tally's own figures. |
 | `test_dates.py` | Reliable dates in Educational mode: validation as of the latest reliable date, year and month ends moved forward, detection and the connection setting. |
@@ -260,6 +268,7 @@ ledgerbridge/
 | `test_dev_script_args.py`, `test_migration_guard.py`, `test_run_lock.py` | The docker compose arguments each `dev.ps1` command builds, the migration guard's revision comparison, and the run lock: released however a run ends, lapsing after a shutdown, cleared when orphaned, refusals that say what they found. |
 | `connectors/tally/test_*.py` | The Tally connector: requests, parser, mapping, signs, recorded fixtures. |
 | `devtools/test_tally_seed.py`, `devtools/test_diagrams.py` | The seeder and its safety checks; that the diagrams match the models and are drawn. |
+| `devtools/test_tally_full_export.py` | The full export's safety checks and requests; that the recording is complete and the generated field list current. |
 | `test_sync.py`, `test_large_sync.py`, `test_extract.py`, `test_raw_store.py`, `test_entity_lookup.py` | Syncing: small and large, resuming, finding companies, storing raw records. |
 | `test_validation.py`, `test_standard_accounts.py` | Validation checks and the standard chart of accounts. |
 | `test_retransform.py`, `test_references.py`, `test_pilot_robustness.py` | Problems found during the pilot: transform retry and rebuild, safe error messages, values that don't fit, names that differ, custom fields, background jobs and interrupted runs. |
@@ -391,7 +400,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 | What does an error or warning code mean? | [error-catalogue.md](error-catalogue.md); the codes live in `data-plane/core/problems.py`. |
 | Where is the health report? | `data-plane/workers/report.py` (`./dev.ps1 report`). |
 | Where are the validation checks? | `data-plane/core/validation.py`; run by `data-plane/workers/validate.py`; described in [schema.md](schema.md) Section 5.2. Why they differ: `data-plane/workers/analyse.py` (`./dev.ps1 validate analyse`). |
-| Where is the Tally completeness audit? | [data-completeness.md](data-completeness.md), `data-plane/connectors/tally/audit.py`, and `data-plane/workers/cli.py` (`./dev.ps1 audit counts`). |
+| Where is the Tally completeness audit? | [data-completeness.md](data-completeness.md) (every field: [data-completeness-fields.md](data-completeness-fields.md), from `data-plane/tests/fixtures/tally/full-export/`), `data-plane/connectors/tally/audit.py`, and `data-plane/workers/cli.py` (`./dev.ps1 audit counts`). |
 | Where are the environment settings? | `.env.test` / `.env.pilot` (not in git; templates `.env.*.example`), read by `data-plane/core/config.py`. |
 | Where are the tests? | `data-plane/tests/` (Python) and `frontend/src/**/*.test.ts(x)`; recorded Tally answers in `data-plane/tests/fixtures/tally/`. |
 | Where is a `dev.ps1` command implemented? | The command's block in `dev.ps1`, which calls `python -m workers.cli <command>`, implemented in `data-plane/workers/cli.py`. |
@@ -442,6 +451,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 | Date | Version | Change |
 | --- | --- | --- |
 | 2026-11-06 | 0.48 | The Stock page (`core/stock.py`, `api/v1/stock.py`, `src/apps/stock/`, migration 0029: the source's value per item); the Amounts setting (`src/amountFormat.ts`, `src/components/Money.tsx`); `tests/test_stock.py`, `tests/test_stock_integration.py`. |
+| 2026-11-06 | 0.47 | `devtools/tally_full_export.py`, `devtools/tally_field_inventory.py`, `tests/fixtures/tally/full-export/` and `docs/data-completeness-fields.md`: the data-completeness audit from a full test-company export. |
 | 2026-11-05 | 0.46 | Tally data-completeness inventory and read-only `audit counts` command (`connectors/tally/audit.py`; recorded-fixture tests). |
 | 2026-11-05 | 0.42 | `dev.ps1 up` checks that the recorded Alembic revision exists in the checked-out history before migrating; `migrations/revision_guard.py`, `test_migration_guard.py`. |
 | 2026-11-05 | 0.43 | Exact stored-name display labels (`api/v1/company_display.py`, `core/config.py`, `src/companyDisplayName.ts`) and the Sales dashboard's monthly company series (`core/sales.py`, `api/v1/sales.py`, `src/apps/sales/branchSalesChart.ts`). |
