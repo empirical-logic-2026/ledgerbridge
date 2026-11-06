@@ -761,6 +761,37 @@ export interface TopCustomerOut {
   payment_status: "overdue" | "pending" | "advance" | "settled" | "no_bill" | "mixed"
 }
 
+export interface TransactionOut {
+  line_id: number
+  company: number
+  date: string
+  voucher_id: number
+  voucher_type: string
+  voucher_number: string
+  reference: string | null
+  party_id: number | null
+  party: string | null
+  gstin: string | null
+  ledger_id: number
+  ledger: string
+  particulars: string | null
+  debit: string | null
+  credit: string | null
+  narration: string | null
+  bills: string | null
+  cost_centres: string | null
+  order_number?: string | null
+  instrument: string | null
+}
+
+export interface TransactionsOut {
+  companies: number[]
+  combined: boolean
+  period: PeriodOut
+  rows: TransactionOut[]
+  truncated: boolean
+}
+
 export interface TrendOut {
   month: string
   net_sales: string

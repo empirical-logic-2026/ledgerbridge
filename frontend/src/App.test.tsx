@@ -18,6 +18,7 @@ import type {
   SalesDashboard,
   StockItemPageOut,
   StockOut,
+  TransactionsOut,
 } from './api/types.ts'
 
 // ECharts needs a real canvas; the wrapper is exercised in the browser, not jsdom.
@@ -1348,5 +1349,73 @@ describe('the stock', () => {
   it('says so for an item that is not there', async () => {
     renderApp('#/stock/summary/77')
     expect(await screen.findByText("The stock item couldn't be loaded.")).toBeInTheDocument()
+  })
+})
+
+const line = (id: number, ledger: string, debit: string | null, credit: string | null, extra: object = {}) => ({
+  line_id: id, company: 3, date: '2026-09-01', voucher_id: 31, voucher_type: 'Payment', voucher_number: 'CC-2', reference: null,
+  party_id: null, party: null, gstin: null, ledger_id: 100 + id, ledger, particulars: null, debit, credit,
+  narration: 'Electricity for September', bills: null, cost_centres: null, order_number: null, instrument: null, ...extra,
+})
+
+const transactionsFound: TransactionsOut = {
+  companies: [3],
+  combined: false,
+  period: { start: '2026-09-01', end: '2026-09-30', months: [] },
+  rows: [
+    line(1, 'Electricity', '4000', null, { particulars: 'HDFC Bank', cost_centres: 'Head Office, Project Alpha' }),
+    line(2, 'HDFC Bank', null, '4000', { particulars: 'Electricity', instrument: '000451' }),
+    line(3, 'Vendor Three', null, '600', {
+      voucher_id: 32, voucher_type: 'Purchase', voucher_number: 'PI-9', reference: 'SUP-INV-4471', party_id: 7, party: 'Vendor Three',
+      gstin: '29ABCDE1234F1Z5', particulars: 'Purchases', bills: 'PI-9', narration: null,
+    }),
+    line(4, 'Purchases', '600', null, {
+      voucher_id: 32, voucher_type: 'Purchase', voucher_number: 'PI-9', reference: 'SUP-INV-4471', party_id: 7, party: 'Vendor Three',
+      gstin: '29ABCDE1234F1Z5', particulars: 'Vendor Three', cost_centres: 'Branch', narration: null,
+    }),
+  ],
+  truncated: false,
+}
+
+describe('the transactions', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    stubApi({ '/api/v1/companies': [companies[0]], '/api/v1/periods': periods, '/api/v1/transactions': transactionsFound })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('is a page of the Books module', async () => {
+    renderApp('#/overview/dashboard')
+    expect((await screen.findByRole('link', { name: 'Books' })).getAttribute('href')).toMatch(/^#\/books\/transactions/)
+  })
+
+  it('lists every ledger line with the fifteen columns, in order', async () => {
+    fullAmounts()
+    renderApp('#/books/transactions')
+    const table = await screen.findByRole('table', { name: 'Transactions' })
+    const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers).toEqual([
+      'Date', 'Voucher Type', 'Voucher Number', 'Reference Number', 'Party Name', 'Ledger Name', 'Particulars', 'Debit', 'Credit',
+      'Narration', 'Bill Number', 'Cost Centre', 'Order Number', 'GSTIN', 'Cheque / UTR Number',
+    ])
+    const expense = within(table).getByText('Head Office, Project Alpha').closest('tr') as HTMLElement
+    expect(expense).toHaveTextContent('Electricity')
+    expect(expense).toHaveTextContent('HDFC Bank')
+    expect(expense).toHaveTextContent('₹4,000.00')
+    expect(within(table).getByText('000451')).toBeInTheDocument()
+    const invoice = within(table).getAllByText('SUP-INV-4471')[0].closest('tr') as HTMLElement // the vendor's line
+    expect(invoice).toHaveTextContent('Vendor Three')
+    expect(invoice).toHaveTextContent('29ABCDE1234F1Z5')
+    expect(invoice).toHaveTextContent('PI-9')
+    const total = within(table).getByText('Total').closest('tr') as HTMLElement
+    expect(total.textContent?.match(/₹4,600\.00/g)).toHaveLength(2) // debits equal credits
+    expect(document.querySelector('.header-crumbs')).toHaveTextContent('Books/Transactions')
+  })
+
+  it('explains the order number, which is not read from the source yet', async () => {
+    renderApp('#/books/transactions')
+    const table = await screen.findByRole('table', { name: 'Transactions' })
+    fireEvent.mouseEnter(within(table).getByText('Order Number'))
+    expect(await screen.findByText(/not read from the source yet/)).toBeInTheDocument()
   })
 })

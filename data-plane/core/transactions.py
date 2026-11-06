@@ -1,0 +1,177 @@
+"""The Transactions page (RPT-014; formula F-TRN-001): one row per ledger line of the
+selected companies and period, with its voucher's date, type, number, reference, party and
+narration, the line's ledger and amount, the voucher's other ledgers (particulars), and the
+line's bills, cost centres and bank instrument. Source-independent: read from the books.
+
+- **Lines:** effective lines (`is_effective`: not cancelled or optional, of a type that posts
+  to the books) of vouchers that aren't deleted, the earliest first; at most `LIMIT`, with
+  `truncated` saying when there were more.
+- **Particulars:** the voucher's ledgers on the other side of the line (credit lines for a
+  debit line and the reverse), as the source's ledger report shows them; every other ledger
+  when none is on the other side. Each ledger once, in the voucher's order.
+- **Amounts:** canonical sign, debit positive: a debit line's amount is its Debit, a credit
+  line's its Credit (shown positive).
+"""
+
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, aliased
+
+from core.home import in_period
+from core.models import accounting as A  # noqa: N812
+from core.report_periods import Period
+
+LIMIT = 20_000  # rows on the page
+JOIN = ", "
+
+
+@dataclass
+class TransactionRow:
+    line_id: int
+    company: int
+    on: date
+    voucher_id: int
+    voucher_type: str
+    voucher_number: str
+    reference: str | None
+    party_id: int | None
+    party: str | None
+    gstin: str | None
+    ledger_id: int
+    ledger: str
+    particulars: str | None
+    debit: Decimal | None
+    credit: Decimal | None
+    narration: str | None
+    bills: str | None
+    cost_centres: str | None
+    instrument: str | None  # cheque or transfer number, and the UTR
+
+
+@dataclass
+class TransactionPage:
+    rows: list[TransactionRow]
+    truncated: bool
+
+
+def _joined(values: list[str]) -> str | None:
+    """Each value once, in order; None when there are none."""
+    unique = list(dict.fromkeys(v for v in values if v))
+    return JOIN.join(unique) if unique else None
+
+
+def _instrument(number: str | None, utr: str | None) -> str | None:
+    return " / ".join(v for v in (number, utr) if v) or None
+
+
+def _lines(session: Session, companies: list[int], period: Period):  # noqa: ANN202
+    party = aliased(A.Party)
+    query = in_period(
+        select(
+            A.VoucherLine.id, A.VoucherLine.entity_id, A.VoucherLine.voucher_date,
+            A.Voucher.id, A.VoucherType.name, A.Voucher.voucher_number,
+            A.Voucher.reference_number, A.Voucher.party_id, party.name, party.gstin,
+            A.VoucherLine.ledger_id, A.Ledger.name, A.VoucherLine.amount, A.Voucher.narration,
+            A.VoucherLine.instrument_number, A.VoucherLine.transaction_reference,
+        )
+        .join(A.Voucher, A.Voucher.id == A.VoucherLine.voucher_id)
+        .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
+        .join(A.Ledger, A.Ledger.id == A.VoucherLine.ledger_id)
+        .outerjoin(party, party.id == A.Voucher.party_id)
+        .where(
+            A.VoucherLine.entity_id.in_(companies),
+            A.VoucherLine.is_effective.is_(True),
+            A.Voucher.is_deleted.is_(False),
+        ),
+        period,
+    ).order_by(A.VoucherLine.voucher_date, A.Voucher.id, A.VoucherLine.line_no)  # fmt: skip
+    return session.execute(query.limit(LIMIT + 1)).all()
+
+
+def _voucher_ledgers(
+    session: Session, voucher_ids: set[int]
+) -> dict[int, list[tuple[int, str, Decimal]]]:
+    """Each voucher's effective lines: (line id, ledger, amount), in the voucher's order."""
+    found: dict[int, list[tuple[int, str, Decimal]]] = defaultdict(list)
+    for chunk in _chunks(sorted(voucher_ids)):
+        for vid, line_id, ledger, amount in session.execute(
+            select(A.VoucherLine.voucher_id, A.VoucherLine.id, A.Ledger.name, A.VoucherLine.amount)
+            .join(A.Ledger, A.Ledger.id == A.VoucherLine.ledger_id)
+            .where(A.VoucherLine.voucher_id.in_(chunk), A.VoucherLine.is_effective.is_(True))
+            .order_by(A.VoucherLine.voucher_id, A.VoucherLine.line_no)
+        ):
+            found[int(vid)].append((int(line_id), ledger, Decimal(amount)))
+    return found
+
+
+def _particulars(
+    line_id: int, amount: Decimal, lines: list[tuple[int, str, Decimal]]
+) -> str | None:
+    others = [(ledger, other) for lid, ledger, other in lines if lid != line_id]
+    opposite = [ledger for ledger, other in others if (other < 0) != (amount < 0) and other != 0]
+    return _joined(opposite or [ledger for ledger, _ in others])
+
+
+def _per_line(session: Session, line_ids: list[int], query) -> dict[int, list[str]]:  # noqa: ANN001
+    """Names per line from a query of (line id, name) limited by `line_ids`."""
+    found: dict[int, list[str]] = defaultdict(list)
+    for chunk in _chunks(line_ids):
+        for line_id, name in session.execute(query(chunk)):
+            if name:
+                found[int(line_id)].append(name)
+    return found
+
+
+def _bills(chunk: list[int]):  # noqa: ANN202
+    return (
+        select(A.BillAllocation.voucher_line_id, A.BillAllocation.bill_name)
+        .where(A.BillAllocation.voucher_line_id.in_(chunk))
+        .order_by(A.BillAllocation.voucher_line_id, A.BillAllocation.id)
+    )
+
+
+def _cost_centres(chunk: list[int]):  # noqa: ANN202
+    return (
+        select(A.LineCostAllocation.voucher_line_id, A.CostCentre.name)
+        .join(A.CostCentre, A.CostCentre.id == A.LineCostAllocation.cost_centre_id)
+        .where(A.LineCostAllocation.voucher_line_id.in_(chunk))
+        .order_by(A.LineCostAllocation.voucher_line_id, A.LineCostAllocation.id)
+    )
+
+
+def _chunks(ids: list[int], size: int = 1_000) -> list[list[int]]:
+    return [ids[i : i + size] for i in range(0, len(ids), size)]
+
+
+def transactions(session: Session, companies: list[int], period: Period) -> TransactionPage:
+    """Every effective ledger line of the companies in the period, the earliest first."""
+    found = _lines(session, companies, period)
+    truncated = len(found) > LIMIT
+    found = found[:LIMIT]
+    voucher_lines = _voucher_ledgers(session, {int(r[3]) for r in found})
+    line_ids = [int(r[0]) for r in found]
+    bills = _per_line(session, line_ids, _bills)
+    centres = _per_line(session, line_ids, _cost_centres)
+    rows = []
+    for (line_id, entity, on, vid, vtype, number, reference, party_id, party, gstin, ledger_id,
+         ledger, amount, narration, instrument, utr) in found:  # fmt: skip
+        amount = Decimal(amount)
+        rows.append(
+            TransactionRow(
+                line_id=int(line_id), company=int(entity), on=on, voucher_id=int(vid),
+                voucher_type=vtype, voucher_number=number, reference=reference,
+                party_id=int(party_id) if party_id is not None else None, party=party,
+                gstin=gstin, ledger_id=int(ledger_id), ledger=ledger,
+                particulars=_particulars(int(line_id), amount, voucher_lines[int(vid)]),
+                debit=amount if amount > 0 else None,
+                credit=-amount if amount < 0 else None,
+                narration=narration, bills=_joined(bills[int(line_id)]),
+                cost_centres=_joined(centres[int(line_id)]),
+                instrument=_instrument(instrument, utr),
+            )
+        )  # fmt: skip
+    return TransactionPage(rows, truncated)

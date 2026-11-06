@@ -30,6 +30,8 @@ const COST_CENTRES = 'Each cost centre is shown whole: filter the list with its 
 
 const STOCK = 'Each item is shown whole: filter the list with its own filter, or open the item.'
 
+const BOOKS = 'Every line is listed: filter the table with its own filter, or group it.'
+
 const PARTIES = 'Each party is shown whole: filter the list with its own filter, or open the party.'
 
 const page = (key: string, label: string, built = false, facets: Facet[] = [], whyNoFacets?: string): NavPage => ({
@@ -72,6 +74,7 @@ export const NAV: NavGroup[] = [
   { key: 'stock', label: 'Stock', pages: [page('summary', 'Stock summary', true, [], STOCK)] },
   { key: 'cash-flow', label: 'Cash Flow', pages: [page('movement', 'Cash movement', true, [], STATEMENT)] },
   { key: 'parties', label: 'Parties', pages: [page('receivables', 'Receivables', true, [], PARTIES), page('payables', 'Payables', true, [], PARTIES)] },
+  { key: 'books', label: 'Books', pages: [page('transactions', 'Transactions', true, [], BOOKS)] },
   { key: 'data', label: 'Data', pages: [page('health', 'Data health', true, [], DATA), page('companies', 'Companies', true, [], DATA)] },
 ]
 

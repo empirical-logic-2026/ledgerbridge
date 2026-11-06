@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.48 |
+| Version | 0.49 |
 | Date | 2026-11-06 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
@@ -180,6 +180,7 @@ ledgerbridge/
 | `report_periods.py` | The period a report covers (whole months or a date range), the period it is compared with (`Period.previous`: the same days of the month or quarter before, a year earlier, or as many months or days just before; `last_year`) and the stored statements its figures come from: the one at the end less the one before the start (in Educational mode a 30-day month ends on the 2nd of the next month; a date range runs to the last stored date within it). |
 | `home.py` | The dashboard home's figures (`GET /api/v1/home`): Profit & Loss and Balance Sheet cards from the stored statements, balances and stock value, sales and purchases by month, channel and company; groups found by their predefined role. |
 | `stock.py` | The Stock page (`GET /api/v1/stock` and `.../{item_id}`, `api/v1/stock.py`): every item's opening, inward, outward and closing quantity (ours, by `stock_moving`: the same rule validation proves against the source, VAL-006), the source's own value per item, stock group and godown at the last stored date within the period, the stock value by date, and one item's movements and months. |
+| `transactions.py` | The Transactions page (`GET /api/v1/transactions`, `api/v1/transactions.py`): one row per effective ledger line, with its voucher's date, type, number, reference, party and GSTIN, narration, the voucher's other ledgers (particulars), and the line's bills, cost centres and cheque or UTR number. |
 | `registers.py` | The Sales and Purchase registers (`GET /api/v1/registers/{side}`): one row per voucher, Day Book style (the first ledger entry as Particulars, Debit or Credit, narration) with its value on the side's ledgers. |
 | `parties.py` | Customers and vendors (`GET /api/v1/parties/...`): the lists and one party's page, by name across the companies: balance due, sales or purchases, receipts or payments, the ledger statement with the running balance, the outstanding bills and the average days to pay. Its payment statuses use remaining allocations and due dates; `due_and_overdue` also distinguishes bills not yet due from balances with no bill detail. |
 | `sales.py` | The Sales dashboard's figures (`GET /api/v1/sales/dashboard`), written for both sides (sales, purchases): gross, returns, other adjustments and net by month, invoices, the top parties and the largest invoices; the same definition as the monthly sales views, filtered by customer and channel names. |
@@ -339,6 +340,7 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `src/components/EChart.tsx` | A reusable chart component; a clicked bar or point can open a page. |
 | `src/components/KeyCard.tsx` | A key-figure card with the change against the comparison period ("vs previous period"), its page as a link (Overview, Sales dashboard, party pages). |
 | `src/apps/stock/Stock.tsx` | The Stock module: the stock summary (value, value by date, by stock group and godown, every item with quantities, value and rate) and one item's page (movements with the quantity after each, month by month). |
+| `src/apps/books/Transactions.tsx` | The Books module's Transactions page: every ledger line in the table explorer with the fifteen columns (Order Number empty until it is fetched). |
 | `src/index.css`, `src/test-setup.ts`, `src/*.test.ts(x)` | Styles, the tests' setup, and the tests (formats, router and selection, search bar, the shell and Overview against a stubbed API). |
 | `vite.config.ts`, `tsconfig*.json`, `.oxlintrc.json`, `.env.example`, `.gitignore` | Build, TypeScript and code-check settings, and the API address setting. |
 
@@ -450,6 +452,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-06 | 0.49 | The Transactions page: `core/transactions.py`, `api/v1/transactions.py`, `src/apps/books/Transactions.tsx`, `tests/test_transactions_integration.py`. |
 | 2026-11-06 | 0.48 | The Stock page (`core/stock.py`, `api/v1/stock.py`, `src/apps/stock/`, migration 0029: the source's value per item); the Amounts setting (`src/amountFormat.ts`, `src/components/Money.tsx`); `tests/test_stock.py`, `tests/test_stock_integration.py`. |
 | 2026-11-06 | 0.47 | `devtools/tally_full_export.py`, `devtools/tally_field_inventory.py`, `tests/fixtures/tally/full-export/` and `docs/data-completeness-fields.md`: the data-completeness audit from a full test-company export. |
 | 2026-11-05 | 0.46 | Tally data-completeness inventory and read-only `audit counts` command (`connectors/tally/audit.py`; recorded-fixture tests). |
