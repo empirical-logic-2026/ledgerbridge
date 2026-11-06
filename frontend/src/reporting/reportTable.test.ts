@@ -76,12 +76,13 @@ describe('the table', () => {
     expect(shownLines(report, { ...o, hideZero: true }).map((l) => l.label)).toEqual(['Sales Accounts', 'Net Profit'])
   })
 
-  it('writes amounts in lakh when they are large, else in rupees', () => {
-    expect(unitFor(report)).toBe('lakh')
-    expect(formatCell('341260000.0000', 'lakh')).toBe('3,412.6')
-    expect(formatCell('33100', 'rupees')).toBe('33,100')
-    expect(formatCell('-5000.5', 'rupees')).toBe('-5,001')
-    expect(unitFor({ ...report, lines: [report.lines[2]] })).toBe('rupees')
+  it('writes amounts in lakh or in full rupees, as the Amounts setting says', () => {
+    expect(unitFor('lakhs')).toBe('lakh')
+    expect(unitFor('full')).toBe('rupees')
+    expect(formatCell('341260000.0000', 'lakh')).toBe('3,412.60')
+    expect(formatCell('33100', 'rupees')).toBe('33,100.00')
+    expect(formatCell('-5000.505', 'rupees')).toBe('-5,000.51')
+    expect(formatCell('-0.001', 'rupees')).toBe('0.00')
   })
 
   it('exports exactly the table on screen as CSV, exact rupees, formulas guarded', () => {

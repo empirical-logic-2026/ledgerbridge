@@ -731,8 +731,8 @@ class TaxLine(TimestampMixin, Base):
 class StockValue(TimestampMixin, Base):
     """The source's stock value as of a date, for the period from the books' beginning:
     `total` is the stock its profit uses (opening at the books' beginning, closing at the
-    date); `stock_group` and `godown` rows, by name, where the source gives them. Canonical
-    sign (stock is a debit)."""
+    date); `stock_group`, `godown` and `item` rows (migration 0029), by name, where the source
+    gives them. Canonical sign (stock is a debit)."""
 
     __tablename__ = "stock_values"
     __table_args__ = (
@@ -748,7 +748,7 @@ class StockValue(TimestampMixin, Base):
     origin: Mapped[str] = mapped_column(Enum(*ORIGINS, name="origin"))
     as_of: Mapped[date] = mapped_column(Date)
     scope: Mapped[str] = mapped_column(
-        Enum("total", "stock_group", "godown", name="stock_value_scope")
+        Enum("total", "stock_group", "godown", "item", name="stock_value_scope")
     )
     scope_name: Mapped[str] = mapped_column(String(255), default="")
     opening_value: Mapped[Decimal | None] = mapped_column(Money, nullable=True)

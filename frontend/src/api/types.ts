@@ -674,6 +674,71 @@ export interface StatementReport {
   matching: MatchingOut
 }
 
+export interface StockDatedValue {
+  date: string
+  value: string
+}
+
+export interface StockItemMonthOut {
+  month: string
+  inward: string
+  outward: string
+  closing: string
+  value: string | null
+}
+
+export interface StockItemOut {
+  item_id: number
+  name: string
+  group: string | null
+  unit: string | null
+  companies: number[]
+  opening: string
+  inward: string
+  outward: string
+  closing: string
+  value: string | null
+  rate: string | null
+}
+
+export interface StockItemPageOut {
+  item: StockItemOut
+  period: PeriodOut
+  value_on: string | null
+  movements: StockMovementOut[]
+  truncated: boolean
+  months: StockItemMonthOut[]
+}
+
+export interface StockMovementOut {
+  company: number
+  date: string
+  voucher_id: number
+  voucher_number: string
+  voucher_type: string
+  godown: string | null
+  quantity: string
+  balance: string
+  amount: string
+}
+
+export interface StockNamedValue {
+  name: string
+  value: string
+}
+
+export interface StockOut {
+  companies: number[]
+  combined: boolean
+  period: PeriodOut
+  value_on: string | null
+  total_value: string | null
+  items: StockItemOut[]
+  by_group: StockNamedValue[]
+  by_godown: StockNamedValue[]
+  by_date: StockDatedValue[]
+}
+
 export interface SummaryLine {
   key: string
   label: string

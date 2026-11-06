@@ -3,8 +3,7 @@
 // buckets and the cost structure (as % of net sales). The share comes from the caller, worked
 // out from exact amounts.
 
-import { Tooltip } from 'antd'
-import { formatCompact, formatExact } from '../format.ts'
+import { Money } from './Money.tsx'
 
 export interface Bar {
   label: string
@@ -24,9 +23,7 @@ export function HBars({ label, bars }: { label: string; bars: Bar[] }) {
             <span className="hbar-fill" style={{ width: `${Math.max(0, Math.min(100, b.share ?? 0))}%`, background: b.colour }} />
           </span>
           <span className="hbar-share">{b.share === null ? '—' : `${b.share.toFixed(1)}%`}</span>
-          <Tooltip title={formatExact(b.amount)}>
-            <span className="hbar-amount">{formatCompact(b.amount)}</span>
-          </Tooltip>
+          <Money value={b.amount} className="hbar-amount" />
         </div>
       ))}
     </div>

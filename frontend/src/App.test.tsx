@@ -16,6 +16,8 @@ import type {
   Periods,
   RegisterOut,
   SalesDashboard,
+  StockItemPageOut,
+  StockOut,
 } from './api/types.ts'
 
 // ECharts needs a real canvas; the wrapper is exercised in the browser, not jsdom.
@@ -120,6 +122,8 @@ const home: Home = {
 
 let requests: string[] = []
 
+afterEach(() => window.localStorage.removeItem('ledgerbridge.amounts')) // the Amounts setting stays per test
+
 function stubApi(answers: Record<string, unknown>) {
   requests = []
   vi.stubGlobal(
@@ -131,6 +135,11 @@ function stubApi(answers: Record<string, unknown>) {
       return new Response(JSON.stringify(answers[path]))
     }),
   )
+}
+
+/** Amounts in full (the Amounts setting), for tests of exact table figures. */
+function fullAmounts() {
+  window.localStorage.setItem('ledgerbridge.amounts', 'full')
 }
 
 function renderApp(hash: string, onMode = vi.fn()) {
@@ -194,6 +203,30 @@ describe('the dashboard', () => {
     expect(screen.queryByRole('group', { name: 'Channels' })).toBeNull()
   })
 
+  it('shows amounts in lakhs with the full amount on hover, or in full when chosen (F-FMT-001)', async () => {
+    window.localStorage.removeItem('ledgerbridge.amounts')
+    renderApp('#/overview/dashboard')
+    const net = await screen.findByRole('region', { name: 'Net sales' })
+    fireEvent.mouseEnter(within(net).getByText('₹4,820.00 L'))
+    expect(await screen.findByText('₹48,20,00,000.00')).toBeInTheDocument()
+    const top = screen.getByRole('table', { name: 'Top customers by net sales' })
+    expect(within(top).getByText('₹11.61 L')).toBeInTheDocument()
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Amounts' }))
+    fireEvent.click((await screen.findAllByText('Full amounts')).slice(-1)[0])
+    expect(await within(net).findByText('₹48,20,00,000.00')).toBeInTheDocument()
+    expect(within(top).getByText('₹11,61,000.00')).toBeInTheDocument()
+    expect(window.localStorage.getItem('ledgerbridge.amounts')).toBe('full') // remembered
+  })
+
+  it('keeps the Overview\'s tables inside their cards: long text wraps, a wide table scrolls', async () => {
+    renderApp('#/overview/dashboard')
+    const top = await screen.findByRole('table', { name: 'Top customers by net sales' })
+    expect(top.parentElement).toHaveClass('report-table-wrap')
+    expect(screen.getByRole('table', { name: 'Profit & Loss against last year' }).parentElement).toHaveClass('report-table-wrap')
+    const meaning = within(top).getAllByRole('cell').find((c) => c.textContent?.startsWith('Customer has not paid'))
+    expect(meaning).toHaveClass('wrap')
+  })
+
   it('copies the page\'s link, which holds the whole selection', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
@@ -205,14 +238,14 @@ describe('the dashboard', () => {
   it('shows the key cards with sparklines, the charts, the summary against last year and the top customers', async () => {
     renderApp('#/overview/dashboard?compare=1')
     const net = await screen.findByRole('region', { name: 'Net sales' })
-    expect(within(net).getByText('₹48.20 Cr')).toBeInTheDocument()
+    expect(within(net).getByText('₹4,820.00 L')).toBeInTheDocument()
     expect(within(net).getByText('▲ 12% vs last year')).toHaveClass('good')
     expect(net).toHaveClass('kpi-card')
     const gross = screen.getByRole('region', { name: 'Gross profit' })
-    expect(within(gross).getByText('₹15.10 Cr')).toBeInTheDocument()
+    expect(within(gross).getByText('₹1,510.00 L')).toBeInTheDocument()
     expect(within(gross).getByText('Gross margin 31.3%')).toBeInTheDocument()
     expect(within(screen.getByRole('region', { name: 'Net profit' })).getByText('Net margin 12.9%')).toBeInTheDocument()
-    expect(within(screen.getByRole('region', { name: 'Cash & bank' })).getByText('₹1.15 Cr')).toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Cash & bank' })).getByText('₹115.00 L')).toBeInTheDocument()
     const customers = screen.getByRole('region', { name: 'Customers' })
     expect(within(customers).getByText('1,240')).toBeInTheDocument()
     expect(within(customers).getByText('▲ 12.7% vs last year')).toHaveClass('good')
@@ -393,8 +426,8 @@ describe('the Profit & Loss page', () => {
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
       'Particulars', 'Alpha', 'Beta', 'Total', 'Last year', 'Change',
     ])
-    expect(within(table).getByText('3,822.9')).toBeInTheDocument() // ₹ lakh
-    expect(within(table).getByText('-40.9').closest('td')).toHaveClass('negative') // a loss in crimson
+    expect(within(table).getByText('3,822.90')).toBeInTheDocument() // ₹ lakh
+    expect(within(table).getByText('-40.90').closest('td')).toHaveClass('negative') // a loss in crimson
     expect(within(table).getByText('▲ 22.5%')).toBeInTheDocument()
     const reportPeriod = screen.getByRole('group', { name: 'Reporting period' })
     expect(reportPeriod).toHaveTextContent(/From Date:\s*01-Apr-2026/)
@@ -592,11 +625,11 @@ describe('the cash movement', () => {
       },
     })
     renderApp('#/cash-flow/movement')
-    expect(await screen.findByRole('region', { name: 'Money in' })).toHaveTextContent('₹9.0 L')
-    expect(screen.getByRole('region', { name: 'Money out' })).toHaveTextContent('₹7.0 L')
-    expect(screen.getByRole('region', { name: 'Cash & bank at the end' })).toHaveTextContent('₹12.0 L')
+    expect(await screen.findByRole('region', { name: 'Money in' })).toHaveTextContent('₹9.00 L')
+    expect(screen.getByRole('region', { name: 'Money out' })).toHaveTextContent('₹7.00 L')
+    expect(screen.getByRole('region', { name: 'Cash & bank at the end' })).toHaveTextContent('₹12.00 L')
     const table = screen.getByRole('table', { name: 'Cash movement by what it was for' })
-    expect(within(table).getByText('Suppliers').closest('tr')).toHaveTextContent('-₹7,00,000.00')
+    expect(within(table).getByText('Suppliers').closest('tr')).toHaveTextContent('-₹7.00 L')
     expect(screen.getByText(/full cash flow statement \(operating, investing, financing\) is planned separately/)).toBeInTheDocument()
   })
 })
@@ -609,7 +642,7 @@ describe('the Balance Sheet', () => {
     renderApp('#/balance-sheet/statement?from=2026-04-01&to=2026-09-30')
     const table = await screen.findByRole('table', { name: 'Balance Sheet' })
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Particulars', '30-Sep-2026', '31-Aug-2026', 'Change'])
-    expect(within(table).getByText('Total assets').closest('tr')).toHaveTextContent('₹62.80 Cr')
+    expect(within(table).getByText('Total assets').closest('tr')).toHaveTextContent('₹6,280.00 L')
     expect(within(table).getByText('Total liabilities and capital').closest('tr')).toHaveTextContent('▲ 4.7%')
     const reportPeriod = screen.getByRole('group', { name: 'Reporting period' })
     expect(reportPeriod).toHaveTextContent(/From Date:\s*01-Apr-2026/)
@@ -632,8 +665,8 @@ describe('Receivables with ageing', () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/ageing/customers': ageingFound })
     renderApp('#/parties/receivables')
     const due = await screen.findByRole('region', { name: 'Balance due' })
-    expect(due).toHaveTextContent('₹13.6 L')
-    expect(screen.getByRole('region', { name: 'Over 90 days' })).toHaveTextContent('₹4.0 L')
+    expect(due).toHaveTextContent('₹13.61 L')
+    expect(screen.getByRole('region', { name: 'Over 90 days' })).toHaveTextContent('₹4.00 L')
     const bars = screen.getByRole('list', { name: 'Outstanding bills by bucket' })
     expect(within(bars).getByText('Not due').closest('.hbar')).toHaveTextContent('66.7%')
     expect(within(bars).getByText('Over 90 days').closest('.hbar')).toHaveTextContent('33.3%')
@@ -688,7 +721,7 @@ describe('the Purchases dashboard', () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/purchases/dashboard': sales })
     renderApp('#/purchases/dashboard?vtype=Purchase')
     const net = await screen.findByRole('region', { name: 'Net purchases' })
-    expect(net).toHaveTextContent('₹48.20 Cr')
+    expect(net).toHaveTextContent('₹4,820.00 L')
     expect(screen.getByRole('region', { name: 'Purchase returns' })).toBeInTheDocument()
     const request = requests.filter((r) => r.includes('/purchases/dashboard')).pop() ?? ''
     expect(request).toContain('voucher_type=Purchase')
@@ -712,7 +745,7 @@ describe('the Sales dashboard', () => {
   it('shows the key figures with the change against last year', async () => {
     renderApp('#/sales/dashboard')
     const net = await screen.findByRole('region', { name: 'Net sales' })
-    expect(net).toHaveTextContent('₹48.20 Cr')
+    expect(net).toHaveTextContent('₹4,820.00 L')
     expect(net).toHaveTextContent('▲ 12% vs last year')
     expect(screen.getByRole('region', { name: 'Invoices' })).toHaveTextContent('120')
     expect(within(screen.getByRole('region', { name: 'Sales returns' })).getByText(/▲ 25%/)).toHaveClass('change', 'neutral')
@@ -899,6 +932,7 @@ describe('the Sales and Purchase registers', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('lists the vouchers Day Book style, by month with subtotals and the grand total', async () => {
+    fullAmounts()
     renderApp('#/sales/register')
     const table = await screen.findByRole('table', { name: 'Sales register' })
     const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent)
@@ -1006,6 +1040,7 @@ describe('monthly sales and purchases, and sales by channel', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('shows each month with its closing balance, without adding up the closing balances', async () => {
+    fullAmounts()
     renderApp('#/sales/monthly')
     const table = await screen.findByRole('table', { name: 'Monthly sales' })
     expect(within(table).getByRole('link', { name: 'Apr-2026' }).getAttribute('href')).toMatch(/^#\/sales\/register\?.*month=2026-04/)
@@ -1024,6 +1059,7 @@ describe('monthly sales and purchases, and sales by channel', () => {
   })
 
   it('lists the channels with their months, each opening the register filtered to it', async () => {
+    fullAmounts()
     renderApp('#/sales/channels')
     const table = await screen.findByRole('table', { name: 'Sales by channel' })
     expect(within(table).getByRole('link', { name: 'Online Sales' }).getAttribute('href')).toContain('channel=Online+Sales')
@@ -1097,6 +1133,7 @@ describe('the customers and their pages', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('lists the customers, each opening their page', async () => {
+    fullAmounts()
     renderApp('#/sales/customers')
     const table = await screen.findByRole('table', { name: 'Customers' })
     expect(within(table).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toMatch(/^#\/sales\/customers\/11/)
@@ -1109,7 +1146,7 @@ describe('the customers and their pages', () => {
     expect(await within(screen.getByRole('region', { name: 'Page' })).findByRole('heading', { level: 1, name: 'Customer One' })).toBeInTheDocument()
     expect(screen.getByText('Customer · Sundry Debtors · Online customers')).toBeInTheDocument()
     expect(screen.getByText(/Main channel: Online Sales · Companies: Alpha · Credit period 30 days/)).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Overdue' })).toHaveTextContent('₹3.1 L')
+    expect(screen.getByRole('region', { name: 'Overdue' })).toHaveTextContent('₹3.13 L')
     expect(screen.getByRole('region', { name: 'Average days to pay' })).toHaveTextContent('38 days')
     expect(screen.getByText('Payment Overdue (64 days)')).toBeInTheDocument()
     expect(screen.getByText('Fully Settled')).toBeInTheDocument()
@@ -1195,6 +1232,7 @@ describe('the cost centres', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('lists each cost centre by month with its category and where it sits, each opening its page', async () => {
+    fullAmounts()
     renderApp('#/pnl/cost-centres')
     const table = await screen.findByRole('table', { name: 'Cost centres' })
     const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent)
@@ -1207,6 +1245,7 @@ describe('the cost centres', () => {
   })
 
   it('opens a cost centre with its allocations voucher by voucher, and breadcrumbs back', async () => {
+    fullAmounts()
     renderApp('#/pnl/cost-centres/21')
     const table = await screen.findByRole('table', { name: 'Allocations' })
     expect(within(table).getByText('Electricity').closest('tr')).toHaveTextContent('₹4,000.00')
@@ -1225,5 +1264,89 @@ describe('the cost centres', () => {
   it('is a page of the P&L & KPIs module', async () => {
     renderApp('#/pnl/profit-loss')
     expect((await screen.findByRole('link', { name: 'Cost centres' })).getAttribute('href')).toMatch(/^#\/pnl\/cost-centres/)
+  })
+})
+
+const stockItem = (id: number, name: string, closing: string, value: string | null, rate: string | null) => ({
+  item_id: id, name, group: 'Finished Goods', unit: 'Nos', companies: [3],
+  opening: '20', inward: '30', outward: String(50 - Number(closing)), closing, value, rate,
+})
+
+const stockFound: StockOut = {
+  companies: [3],
+  combined: false,
+  period: { start: '2026-04-01', end: '2026-09-30', months: [] },
+  value_on: '2026-08-31',
+  total_value: '1250000',
+  items: [stockItem(41, 'Widget', '40', '1000000', '25000.00'), stockItem(42, 'Gadget', '-10', '250000', null)],
+  by_group: [{ name: 'Finished Goods', value: '1250000' }],
+  by_godown: [{ name: 'Main Location', value: '1250000' }],
+  by_date: [{ date: '2026-05-31', value: '900000' }, { date: '2026-08-31', value: '1250000' }],
+}
+
+const stockPage: StockItemPageOut = {
+  item: stockFound.items[0],
+  period: stockFound.period,
+  value_on: '2026-08-31',
+  movements: [
+    { company: 3, date: '2026-05-02', voucher_id: 7, voucher_number: 'P-1', voucher_type: 'Purchase', godown: 'Main Location', quantity: '30', balance: '50', amount: '600000' },
+    { company: 3, date: '2026-08-02', voucher_id: 8, voucher_number: 'S-1', voucher_type: 'Sales', godown: 'Main Location', quantity: '-10', balance: '40', amount: '-300000' },
+  ],
+  truncated: false,
+  months: [
+    { month: '2026-05-01', inward: '30', outward: '0', closing: '50', value: '900000' },
+    { month: '2026-08-01', inward: '0', outward: '10', closing: '40', value: '1000000' },
+  ],
+}
+
+describe('the stock', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    stubApi({
+      '/api/v1/companies': [companies[0]],
+      '/api/v1/periods': periods,
+      '/api/v1/stock': stockFound,
+      '/api/v1/stock/41': stockPage,
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('is a module of its own, with the stock summary', async () => {
+    renderApp('#/overview/dashboard')
+    expect((await screen.findByRole('link', { name: 'Stock' })).getAttribute('href')).toMatch(/^#\/stock\/summary/)
+  })
+
+  it('shows the value, the items with their quantities, value and rate, and negative stock', async () => {
+    renderApp('#/stock/summary')
+    const value = await screen.findByRole('region', { name: 'Stock value' })
+    expect(value).toHaveTextContent('₹12.50 L')
+    expect(value).toHaveTextContent('At 31-Aug-2026, the last stored date in the period')
+    expect(screen.getByRole('region', { name: 'Items with negative stock' })).toHaveTextContent('1')
+    const table = screen.getByRole('table', { name: 'Stock items' })
+    const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent)
+    expect(headers).toEqual(['Item', 'Stock group', 'Unit', 'Opening qty', 'Inward qty', 'Outward qty', 'Closing qty', 'Rate', 'Value'])
+    const widget = within(table).getByRole('link', { name: 'Widget' })
+    expect(widget.getAttribute('href')).toMatch(/^#\/stock\/summary\/41/)
+    expect(widget.closest('tr')).toHaveTextContent('₹10.00 L')
+    expect(within(table).getByText('Gadget').closest('tr')).toHaveTextContent('-10')
+    expect(screen.getByRole('list', { name: 'Stock value by godown' })).toHaveTextContent('Main Location')
+    expect(document.querySelector('.header-crumbs')).toHaveTextContent('Stock/Stock summary')
+  })
+
+  it('opens an item with its movements, the quantity after each, and its months', async () => {
+    renderApp('#/stock/summary/41')
+    expect(await screen.findByRole('region', { name: 'Closing quantity' })).toHaveTextContent('40')
+    expect(screen.getByRole('region', { name: 'Rate' })).toHaveTextContent('₹0.25 L')
+    const movements = screen.getByRole('table', { name: 'Movements' })
+    expect(within(movements).getByText('S-1').closest('tr')).toHaveTextContent('-10')
+    expect(within(movements).getByText('S-1').closest('tr')).toHaveTextContent('40')
+    fireEvent.click(screen.getByRole('tab', { name: 'Month by month' }))
+    expect(await screen.findByRole('table', { name: 'Month by month' })).toHaveTextContent('Aug-2026')
+    expect(document.querySelector('.header-crumbs')).toHaveTextContent('Stock/Stock summary/Widget')
+  })
+
+  it('says so for an item that is not there', async () => {
+    renderApp('#/stock/summary/77')
+    expect(await screen.findByText("The stock item couldn't be loaded.")).toBeInTheDocument()
   })
 })

@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.46 |
-| Date | 2026-11-05 |
+| Version | 0.48 |
+| Date | 2026-11-06 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
 
@@ -176,6 +176,7 @@ ledgerbridge/
 | `statement_differences.py` | A pilot-safe summary of the statement lines that differ from the source's: safe labels (standard names; custom groups described by where they sit), missing or different, on how many dates, and which tested amounts each difference equals (Direct Expenses, stock, forex, the last year end's profit and stock). Printed by validation and `statements`. |
 | `report_periods.py` | The period a report covers (whole months or a date range), the period it is compared with (`Period.previous`: the same days of the month or quarter before, a year earlier, or as many months or days just before; `last_year`) and the stored statements its figures come from: the one at the end less the one before the start (in Educational mode a 30-day month ends on the 2nd of the next month; a date range runs to the last stored date within it). |
 | `home.py` | The dashboard home's figures (`GET /api/v1/home`): Profit & Loss and Balance Sheet cards from the stored statements, balances and stock value, sales and purchases by month, channel and company; groups found by their predefined role. |
+| `stock.py` | The Stock page (`GET /api/v1/stock` and `.../{item_id}`, `api/v1/stock.py`): every item's opening, inward, outward and closing quantity (ours, by `stock_moving`: the same rule validation proves against the source, VAL-006), the source's own value per item, stock group and godown at the last stored date within the period, the stock value by date, and one item's movements and months. |
 | `registers.py` | The Sales and Purchase registers (`GET /api/v1/registers/{side}`): one row per voucher, Day Book style (the first ledger entry as Particulars, Debit or Credit, narration) with its value on the side's ledgers. |
 | `parties.py` | Customers and vendors (`GET /api/v1/parties/...`): the lists and one party's page, by name across the companies: balance due, sales or purchases, receipts or payments, the ledger statement with the running balance, the outstanding bills and the average days to pay. Its payment statuses use remaining allocations and due dates; `due_and_overdue` also distinguishes bills not yet due from balances with no bill detail. |
 | `sales.py` | The Sales dashboard's figures (`GET /api/v1/sales/dashboard`), written for both sides (sales, purchases): gross, returns, other adjustments and net by month, invoices, the top parties and the largest invoices; the same definition as the monthly sales views, filtered by customer and channel names. |
@@ -309,7 +310,8 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `index.html`, `public/favicon.svg` | The page that loads the app, and its icon. |
 | `src/main.tsx`, `src/Root.tsx`, `src/App.tsx` | Start the app; `Root.tsx` holds the theme (light or dark, remembered in the browser) and today's date; `App.tsx` picks the page from the URL (`#/<group>/<page>`; `#/` is the Dashboard), holds the selection, and puts the side bar and the top filter bar around the page. |
 | `src/router.ts`, `src/selection.ts` | Our small router (pages are `#/<module>/<page>?company=..&p=..`, ADR-050; `updateQuery` changes some keys and keeps the others) and the selection kept in that query: any combination of companies, the period toggle (MTD, QTD, YTD, FY, Custom months or dates), the financial year, the comparison (previous period, last year, none) and the facets. |
-| `src/format.ts` | Amounts in rupees with Indian grouping, lakhs and crores, from the API's decimal strings without floating point; dates DD-MMM-YYYY. |
+| `src/format.ts` | Amounts in rupees with Indian grouping or in lakhs (`formatLakhs`), from the API's decimal strings without floating point; dates DD-MMM-YYYY. |
+| `src/amountFormat.ts`, `src/components/Money.tsx` | The Amounts setting (Lakhs or Full, in the top bar, remembered in the browser; F-FMT-001, F-FMT-002): a React context, `useAmountFormat`, and `<Money>`, which shows an amount as set (in lakhs with the exact amount on hover). |
 | `src/companyDisplayName.ts` | The frontend's single company-label helper: use the API's configured display name, falling back to its original name. |
 | `src/statuses.ts` | Shared business-readable labels, meanings and tones for payment, validation and source-loaded statuses. |
 | `src/theme.ts`, `src/theme.test.ts` | Our colours defined once as tokens, light and dark (charcoal, forest green, crimson, the profit line colours and the key cards' accents; written as `--lb-*` CSS variables by `Root.tsx`), and the test that every text colour meets WCAG AA and chart lines 3:1. |
@@ -327,6 +329,7 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `src/api/types.ts` | The API's response types, generated from its OpenAPI schema by `python -m devtools.api_types` (never edited by hand; a test fails when stale). |
 | `src/components/EChart.tsx` | A reusable chart component; a clicked bar or point can open a page. |
 | `src/components/KeyCard.tsx` | A key-figure card with the change against the comparison period ("vs previous period"), its page as a link (Overview, Sales dashboard, party pages). |
+| `src/apps/stock/Stock.tsx` | The Stock module: the stock summary (value, value by date, by stock group and godown, every item with quantities, value and rate) and one item's page (movements with the quantity after each, month by month). |
 | `src/index.css`, `src/test-setup.ts`, `src/*.test.ts(x)` | Styles, the tests' setup, and the tests (formats, router and selection, search bar, the shell and Overview against a stubbed API). |
 | `vite.config.ts`, `tsconfig*.json`, `.oxlintrc.json`, `.env.example`, `.gitignore` | Build, TypeScript and code-check settings, and the API address setting. |
 
@@ -438,6 +441,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-06 | 0.48 | The Stock page (`core/stock.py`, `api/v1/stock.py`, `src/apps/stock/`, migration 0029: the source's value per item); the Amounts setting (`src/amountFormat.ts`, `src/components/Money.tsx`); `tests/test_stock.py`, `tests/test_stock_integration.py`. |
 | 2026-11-05 | 0.46 | Tally data-completeness inventory and read-only `audit counts` command (`connectors/tally/audit.py`; recorded-fixture tests). |
 | 2026-11-05 | 0.42 | `dev.ps1 up` checks that the recorded Alembic revision exists in the checked-out history before migrating; `migrations/revision_guard.py`, `test_migration_guard.py`. |
 | 2026-11-05 | 0.43 | Exact stored-name display labels (`api/v1/company_display.py`, `core/config.py`, `src/companyDisplayName.ts`) and the Sales dashboard's monthly company series (`core/sales.py`, `api/v1/sales.py`, `src/apps/sales/branchSalesChart.ts`). |

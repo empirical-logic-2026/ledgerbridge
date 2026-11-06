@@ -3,13 +3,15 @@
 // dates, comparison, facets) and the page's own options, all in the URL; the top bar and the
 // page header around the page (ADR-050).
 
+import { AmountFormatProvider } from './components/Money.tsx'
 import { Alert, Result, Skeleton } from 'antd'
 import type { ReactNode } from 'react'
-import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockItem, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { PnlKpis } from './apps/dashboard/PnlKpis.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
 import { CostCentrePage, CostCentres } from './apps/costcentres/CostCentres.tsx'
+import { StockItemPage, StockSummary } from './apps/stock/Stock.tsx'
 import { Ageing } from './apps/parties/Ageing.tsx'
 import { BalanceSheet } from './apps/statements/BalanceSheet.tsx'
 import { CashFlow } from './apps/cash/CashFlow.tsx'
@@ -85,6 +87,9 @@ export default function App({ mode, onMode, today }: Props) {
   const centreId = at === 'pnl/cost-centres' && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
   const centreList = useCostCentres(at === 'pnl/cost-centres' && route.path.length < 3 ? ids : undefined, period)
   const centre = useCostCentre(centreId, at === 'pnl/cost-centres' ? ids : undefined, period)
+  const stockItemId = at === 'stock/summary' && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
+  const stock = useStock(at === 'stock/summary' && route.path.length < 3 ? ids : undefined, period)
+  const stockItem = useStockItem(stockItemId, at === 'stock/summary' ? ids : undefined, period)
   const query = selectionQuery(selection)
   const all = companies.data ?? []
   const selected = all.filter((c) => ids?.includes(c.id))
@@ -139,6 +144,32 @@ export default function App({ mode, onMode, today }: Props) {
         centres={centreList.data}
         loading={companies.isPending || periods.isPending || centreList.isPending}
         error={periods.error ?? centreList.error}
+        query={query}
+      />
+    )
+  } else if (at === 'stock/summary' && route.path.length > 2 && !stockItemId) {
+    content = <Result status="404" title="There is no such page" subTitle="Choose a module in the top bar." />
+  } else if (at === 'stock/summary' && stockItemId) {
+    crumbs = [{ label: 'Stock', path: ['stock', 'summary'] }, { label: 'Stock summary', path: ['stock', 'summary'] }, { label: stockItem.data?.item.name ?? 'Stock item' }]
+    content = (
+      <StockItemPage
+        key={stockItemId}
+        companies={selected}
+        page={stockItem.data}
+        loading={companies.isPending || periods.isPending || stockItem.isPending}
+        error={periods.error ?? stockItem.error}
+        query={query}
+      />
+    )
+  } else if (at === 'stock/summary') {
+    crumbs = [{ label: 'Stock', path: ['stock', 'summary'] }, { label: 'Stock summary' }]
+    content = (
+      <StockSummary
+        companies={selected}
+        stock={stock.data}
+        loading={companies.isPending || periods.isPending || stock.isPending}
+        error={periods.error ?? stock.error}
+        dark={mode === 'dark'}
         query={query}
       />
     )
@@ -311,17 +342,19 @@ export default function App({ mode, onMode, today }: Props) {
   }
 
   return (
-    <AppShell
-      topBar={
-        <TopBar module={found?.group.key} query={query} selection={selection} years={periods.data?.financial_years ?? []} year={year}
-          period={period} onChange={select} mode={mode} onMode={onMode} />
-      }
-      header={
-        <PageHeader crumbs={crumbs} title={crumbs[crumbs.length - 1].label} group={found?.group} page={found?.page} companies={all}
-          selection={selection} selectedIds={ids ?? []} period={period} onChange={select} query={query} />
-      }
-    >
-      {content}
-    </AppShell>
+    <AmountFormatProvider>
+      <AppShell
+        topBar={
+          <TopBar module={found?.group.key} query={query} selection={selection} years={periods.data?.financial_years ?? []} year={year}
+            period={period} onChange={select} mode={mode} onMode={onMode} />
+        }
+        header={
+          <PageHeader crumbs={crumbs} title={crumbs[crumbs.length - 1].label} group={found?.group} page={found?.page} companies={all}
+            selection={selection} selectedIds={ids ?? []} period={period} onChange={select} query={query} />
+        }
+      >
+        {content}
+      </AppShell>
+    </AmountFormatProvider>
   )
 }

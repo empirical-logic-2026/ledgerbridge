@@ -611,6 +611,15 @@ body,
   overflow-x: auto;
 }
 
+/* Long text in a table (a status's meaning, a long name) wraps instead of pushing the table
+   out of its card; the rest of a row stays on one line. */
+.report-table th.wrap,
+.report-table td.wrap {
+  white-space: normal;
+  min-width: 160px;
+  max-width: 280px;
+}
+
 .report-table {
   width: 100%;
   border-collapse: collapse;
@@ -820,6 +829,13 @@ body,
   margin-top: 18px;
 }
 
+/* A grid item may shrink to its column: a wide table then scrolls inside its card. */
+.home-tables > *,
+.home-charts > *,
+.home-kpis > * {
+  min-width: 0;
+}
+
 .report-table.compact th,
 .report-table.compact td {
   padding: 6px 8px;
@@ -877,6 +893,7 @@ body,
 /* status pills in detail tables */
 .status-pill {
   display: inline-block;
+  white-space: nowrap;
   padding: 1px 8px;
   border-radius: 10px;
   font-size: 12px;

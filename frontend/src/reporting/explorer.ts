@@ -20,6 +20,7 @@ export interface ExplorerColumn<R> {
   groupable?: boolean
   hidden?: boolean // not shown until chosen in Columns
   render?: (row: R) => ReactNode // shown instead of the value (e.g. a status tag); the value still sorts, filters and exports
+  wrap?: boolean // long text (e.g. a status's meaning) wraps onto more lines
   summed?: boolean // false: no subtotal or total (e.g. a closing balance); amounts and counts are summed
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  formatCompact,
+  formatLakhs,
   formatDate,
   formatExact,
   formatMonth,
@@ -34,14 +34,15 @@ describe('amounts', () => {
     expect(formatExact('0.1')).toBe('₹0.10') // exact here, unlike in floating point
   })
 
-  it('shorten to lakhs and crores', () => {
-    expect(formatCompact('48200000')).toBe('₹4.82 Cr')
-    expect(formatCompact('6240000')).toBe('₹62.4 L')
-    expect(formatCompact('100000')).toBe('₹1.0 L')
-    expect(formatCompact('99999.4')).toBe('₹99,999')
-    expect(formatCompact('-6240000')).toBe('-₹62.4 L')
-    expect(formatCompact('1234567890123.4567')).toBe('₹1,23,456.79 Cr')
-    expect(formatCompact('0')).toBe('₹0')
+  it('show every amount in lakhs, to two decimals (the Amounts setting: Lakhs)', () => {
+    expect(formatLakhs('1235000')).toBe('₹12.35 L')
+    expect(formatLakhs('48200000')).toBe('₹482.00 L') // ₹4.82 crore
+    expect(formatLakhs('1234567890123.4567')).toBe('₹1,23,45,678.90 L')
+    expect(formatLakhs('45000')).toBe('₹0.45 L')
+    expect(formatLakhs('-120000')).toBe('-₹1.20 L')
+    expect(formatLakhs('499.99')).toBe('₹0.00 L')
+    expect(formatLakhs('-499.99')).toBe('₹0.00 L') // no minus on a figure shown as zero
+    expect(formatLakhs('500')).toBe('₹0.01 L') // half away from zero
   })
 
   it('become lakhs for charts only', () => {

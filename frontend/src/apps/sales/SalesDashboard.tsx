@@ -116,7 +116,7 @@ function customerColumns(names: Map<number, string>, combined: boolean, query: Q
         return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
       },
     },
-    { key: 'meaning', label: 'Meaning', kind: 'text', value: (p) => partyPaymentStatusInfo(p.payment_status ?? p.status, p.balance, kind).meaning },
+    { key: 'meaning', label: 'Meaning', kind: 'text', value: (p) => partyPaymentStatusInfo(p.payment_status ?? p.status, p.balance, kind).meaning, wrap: true },
   ]
 }
 

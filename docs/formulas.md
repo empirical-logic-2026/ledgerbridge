@@ -6,8 +6,8 @@ against Tally, and as the reference for each page's "What is this?" help.
 
 | Field | Value |
 | --- | --- |
-| Version | 1.0 |
-| Date | 2026-11-02 |
+| Version | 1.1 |
+| Date | 2026-11-06 |
 | Requirement | RPT-015 |
 | Word and PDF | `docs/export/formulas.docx`, `docs/export/formulas.pdf` (`./dev.ps1 docs-export`) |
 
@@ -447,6 +447,55 @@ effective `voucher_lines` up to the date.
 
 - **In words:** how many allocations the cost centre has in the period.
 
+### 5.3 Stock (`F-STK`)
+
+Quantities are ours: an item's opening plus the stock movements of vouchers not deleted, cancelled or optional, of a type that moves stock, not at a job worker's location (the rule validation proves against Tally item by item, VAL-006). A line moves its `stock_quantity`: the quantity, less any part a delivery or receipt note already moved. Values are Tally's own (its valuation method), stored at its statement dates: a period's value is the one at the **last stored date within it**, shown with that date. An item is known by name across the companies.
+
+#### F-STK-001 Opening quantity
+
+- **In words:** the item's quantity at the period's start: its opening plus every movement before that day.
+- **Source:** `items.opening_qty` + Σ `inventory_lines.stock_quantity` (moving lines, `voucher_date` before the start).
+- **Check in Tally:** Stock Summary › the item › Opening quantity for the same period.
+
+#### F-STK-002 Inward
+
+- **In words:** the quantity that came in during the period (purchases, receipts, production, transfers in).
+- **Expression:** Σ positive `stock_quantity` of moving lines in the period.
+- **Check in Tally:** Stock Item Monthly Summary, Inwards column.
+
+#### F-STK-003 Outward
+
+- **In words:** the quantity that went out (sales, deliveries, consumption, transfers out), shown positive.
+- **Expression:** − Σ negative `stock_quantity` of moving lines in the period.
+- **Check in Tally:** Stock Item Monthly Summary, Outwards column.
+
+#### F-STK-004 Closing quantity
+
+- **In words:** the quantity at the period's end: the opening plus every movement up to that day. For a period of adjacent months, F-STK-001 + F-STK-002 − F-STK-003. On an item's page, the quantity after each movement.
+- **Check in Tally:** Stock Summary, Closing quantity. Proven at each validation (VAL-006).
+
+#### F-STK-005 Value (item, stock group, godown)
+
+- **In words:** Tally's own closing value at the last stored date within the period (its valuation method: average cost, FIFO, ...). Stock groups and godowns at the top level; their values hold the ones under them.
+- **Source:** `stock_values` (`scope` `item`, `stock_group` or `godown`, by name; `closing_value`).
+- **Educational mode:** stored only on statement dates (§1.1).
+- **Check in Tally:** Stock Summary at that date (Closing Value); by godown: Godown Summary.
+
+#### F-STK-006 Rate
+
+- **In words:** the value per unit.
+- **Expression:** F-STK-005 ÷ F-STK-004, to 2 decimals; "—" when either is missing or the quantity is zero.
+
+#### F-STK-007 Stock value (total, by date)
+
+- **In words:** F-BAL-005 at the last stored date within the period, and at each of the last twelve stored dates up to its end.
+- **Source:** `stock_values` (`scope = 'total'`).
+
+#### F-STK-008 A movement's value
+
+- **In words:** the inventory line's amount on the voucher (purchase or sale value, not the stock valuation), signed like the quantity.
+- **Source:** `inventory_lines.amount`.
+
 ## 6. Parties and bills (`F-PTY`)
 
 A party is known by **name** across the selected companies, and its ledgers are those linked
@@ -631,16 +680,15 @@ against the source's own (`figures = 'source'`), line by line and in total.
 
 ## 11. Showing amounts (`F-FMT`)
 
-#### F-FMT-001 Short amounts (cards)
+#### F-FMT-001 Amounts in lakhs (the Amounts setting: Lakhs)
 
-- ₹1 crore and above: crores to 2 decimals ("₹4.82 Cr").
-- ₹1 lakh and above: lakhs to 1 decimal ("₹62.4 L").
-- Below that: whole rupees with Indian grouping ("₹45,300").
+- The top bar's **Amounts** setting (Lakhs or Full) applies to every card, summary, statement and table; it is kept in the browser. Lakhs is the default.
+- Lakhs: every amount in lakhs to 2 decimals, with Indian grouping ("₹12.35 L", "₹482.00 L" for ₹4.82 crore, "₹0.45 L" for ₹45,000). Hovering shows the exact amount (F-FMT-002).
 - Rounding is half away from zero, and applies only when the amount is shown.
 
-#### F-FMT-002 Exact amounts (hover, tables, CSV)
+#### F-FMT-002 Exact amounts (Full, hover, CSV)
 
-- To the paisa with Indian grouping ("₹4,82,00,000.00"). Sums use the unrounded amounts.
+- To the paisa with Indian grouping ("₹4,82,00,000.00"): every amount when the setting is Full, the hover in Lakhs, and always in CSV exports. Sums use the unrounded amounts.
 
 #### F-FMT-003 Chart amounts
 
@@ -650,5 +698,6 @@ against the source's own (`figures = 'source'`), line by line and in total.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 1.1 | 2026-11-06 | Stock (`F-STK-001` to `F-STK-008`); the Amounts setting (F-FMT-001, F-FMT-002: Lakhs or Full everywhere). |
 | 1.0 | 2026-11-02 | Rewritten as the formula sheet (RPT-015): an ID per figure with words, expression, source, sign, Educational-mode rule and the check in Tally; the comparison with the previous period (F-CMP-002, RPT-016); date ranges to the last stored date; `test_formulas.py`; Word and PDF copies. |
 | 0.1 | 2026-11-02 | First version: building blocks, sales and purchases, the Dashboard's key figures, registers, parties, tables, showing amounts. |

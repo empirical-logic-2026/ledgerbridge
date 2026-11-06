@@ -32,7 +32,7 @@ const HEALTH: ExplorerColumn<Company>[] = [
       return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
     },
   },
-  { key: 'checks_meaning', label: 'Meaning', kind: 'text', value: (c) => validationStatusInfo(c.health.validation_status).meaning },
+  { key: 'checks_meaning', label: 'Meaning', kind: 'text', value: (c) => validationStatusInfo(c.health.validation_status).meaning, wrap: true },
   { key: 'checked_to', label: 'Checked up to', kind: 'date', value: (c) => c.health.validated_as_of },
   {
     key: 'loaded',
@@ -45,7 +45,7 @@ const HEALTH: ExplorerColumn<Company>[] = [
       return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
     },
   },
-  { key: 'loaded_meaning', label: 'Meaning', kind: 'text', value: (c) => sourceStatusInfo(c.health.source_loaded).meaning },
+  { key: 'loaded_meaning', label: 'Meaning', kind: 'text', value: (c) => sourceStatusInfo(c.health.source_loaded).meaning, wrap: true },
 ]
 
 const COMPANIES: ExplorerColumn<Company>[] = [
