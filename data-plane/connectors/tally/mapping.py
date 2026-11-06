@@ -13,7 +13,7 @@ import re
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections.abc import Iterable
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -42,6 +42,8 @@ from core.canonical import (
     CanonicalItemGroup,
     CanonicalLedger,
     CanonicalLine,
+    CanonicalOpeningBill,
+    CanonicalOpeningBills,
     CanonicalParty,
     CanonicalRate,
     CanonicalRecord,
@@ -509,13 +511,60 @@ def stock_item(element: ET.Element, key: str) -> CanonicalItem:
 # --- vouchers --------------------------------------------------------------------------
 
 
+_DAYS = re.compile(r"(\d+)\s*(?:DAYS?)?", re.IGNORECASE)
+_DUE_FORMATS = ("%d-%b-%y", "%d-%b-%Y", "%d-%m-%Y", "%d-%m-%y", "%Y%m%d")
+
+
+def due_date(bill_date: date | None, credit_period: str | None) -> date | None:
+    """A bill's due date from Tally's credit period: days after the bill's date ("30 Days")
+    or a date ("31-Oct-26", as Tally exports a due date; recorded 2026-11-06)."""
+    text = (credit_period or "").strip()
+    if not text or text == NOT_APPLICABLE:
+        return None
+    days = _DAYS.fullmatch(text)
+    if days:
+        return bill_date + timedelta(days=int(days.group(1))) if bill_date else None
+    for form in _DUE_FORMATS:
+        try:
+            return datetime.strptime(text, form).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _bill(bill: ET.Element) -> CanonicalBill:
+    on = parser.tally_date(text_of(bill, "BILLDATE"))
+    return CanonicalBill(
+        bill_type=BILL_TYPES.get(text_of(bill, "BILLTYPE") or "", "on_account"),
+        name=text_of(bill, "NAME"),
+        amount=_amount(bill, "AMOUNT"),
+        bill_date=on,
+        due_date=due_date(on, text_of(bill, "BILLCREDITPERIOD")),
+    )
+
+
+def opening_bills(element: ET.Element, key: str) -> CanonicalOpeningBills:
+    """A ledger's opening bills (its bill-wise opening balance), canonical sign."""
+    bills = []
+    for bill in element.findall("BILLALLOCATIONS.LIST"):
+        name = text_of(bill, "NAME")
+        if not name:
+            continue
+        on = parser.tally_date(text_of(bill, "BILLDATE"))
+        bills.append(
+            CanonicalOpeningBill(
+                name=name,
+                amount=_amount(bill, "OPENINGBALANCE"),
+                bill_date=on,
+                due_date=due_date(on, text_of(bill, "BILLCREDITPERIOD")),
+            )
+        )
+    return CanonicalOpeningBills(key, tuple(bills))
+
+
 def _line(entry: ET.Element) -> CanonicalLine:
     bills = tuple(
-        CanonicalBill(
-            bill_type=BILL_TYPES.get(text_of(bill, "BILLTYPE") or "", "on_account"),
-            name=text_of(bill, "NAME"),
-            amount=_amount(bill, "AMOUNT"),
-        )
+        _bill(bill)
         for bill in entry.findall("BILLALLOCATIONS.LIST")
         if text_of(bill, "AMOUNT") or text_of(bill, "NAME")
     )
@@ -793,6 +842,7 @@ _MASTER = (*_IDENTITY, "PARENT")
 _LEDGER_ENTRY = (
     "LEDGERNAME", "AMOUNT", "ISDEEMEDPOSITIVE", "ISPARTYLEDGER",
     "BILLALLOCATIONS.LIST/NAME", "BILLALLOCATIONS.LIST/BILLTYPE", "BILLALLOCATIONS.LIST/AMOUNT",
+    "BILLALLOCATIONS.LIST/BILLDATE", "BILLALLOCATIONS.LIST/BILLCREDITPERIOD",
     "CATEGORYALLOCATIONS.LIST/CATEGORY",
     "CATEGORYALLOCATIONS.LIST/COSTCENTREALLOCATIONS.LIST/NAME",
     "CATEGORYALLOCATIONS.LIST/COSTCENTREALLOCATIONS.LIST/AMOUNT",
@@ -831,6 +881,10 @@ USED_FIELDS: dict[str, frozenset[str]] = {
     "godown": frozenset((*_MASTER, "ISEXTERNAL", "ISINTERNAL")),
     "stock_item": frozenset((*_MASTER, "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE")),
     "cost_category": frozenset(_IDENTITY),
+    "ledger_opening_bills": frozenset((
+        *_IDENTITY, "BILLALLOCATIONS.LIST/NAME", "BILLALLOCATIONS.LIST/OPENINGBALANCE",
+        "BILLALLOCATIONS.LIST/BILLDATE", "BILLALLOCATIONS.LIST/BILLCREDITPERIOD",
+    )),
     "cost_centre": frozenset((*_MASTER, "CATEGORY")),
     "voucher": frozenset((
         *_IDENTITY, "DATE", "EFFECTIVEDATE", "UPDATEDDATETIME", "VOUCHERTYPENAME",
@@ -896,8 +950,12 @@ def to_canonical(record: SourceRecord) -> list[CanonicalRecord]:
     extra = unmapped_fields(element, record.object_type)
     if extra is None:
         return records
-    # The object's own record carries them (not e.g. the synthetic Primary group).
-    return [replace(r, extra=extra) if r.source_key == record.source_key else r for r in records]
+    # The object's own record carries them (not e.g. the synthetic Primary group). A ledger's
+    # opening bills have none of their own: the ledger record keeps the ledger's.
+    return [
+        replace(r, extra=extra) if r.source_key == record.source_key and hasattr(r, "extra") else r
+        for r in records
+    ]
 
 
 def _records(record: SourceRecord, element: ET.Element) -> list[CanonicalRecord]:
@@ -923,6 +981,8 @@ def _records(record: SourceRecord, element: ET.Element) -> list[CanonicalRecord]
             return [stock_item(element, key)]
         case "cost_category":
             return [CanonicalCostCategory(key, _name(element))]
+        case "ledger_opening_bills":
+            return [opening_bills(element, key)]
         case "cost_centre":
             return [
                 CanonicalCostCentre(

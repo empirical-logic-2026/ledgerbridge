@@ -509,11 +509,10 @@ Quantities are ours: an item's opening plus the stock movements of vouchers not 
 
 A party is known by **name** across the selected companies, and its ledgers are those linked
 to any party of that name (`parties`, `ledgers.party_id`). Bills come from
-`bill_allocations` (`bill_name`, `bill_type`, `bill_date`, `due_date`, `amount`) of effective
-vouchers.
-
-**Opening bills** (from before the books' beginning) aren't stored yet, so the bills can
-cover less than the balance. Every page says so.
+`opening_bills` (the ledgers' bills from before the books' beginning, as new bills on their
+bill date) and `bill_allocations` (`bill_name`, `bill_type`, `bill_date`, `due_date`,
+`amount`) of effective vouchers. A bill without a due date is due its date plus the party's
+credit days.
 
 #### F-PTY-001 Balance due
 
@@ -531,7 +530,7 @@ cover less than the balance. Every page says so.
 
 #### F-PTY-003 Bills cover
 
-- **In words:** all outstanding bills added up. It is less than the balance when opening bills are missing.
+- **In words:** all outstanding bills added up, opening bills included. It is less than the balance when amounts aren't split into bills (on account).
 - **Expression:** `Σ F-PTY-004`.
 - **Check in Tally:** Outstandings › Ledger (party), the total pending.
 
@@ -590,7 +589,7 @@ cover less than the balance. Every page says so.
 
 #### F-PTY-013 Uncovered by bills
 
-- **In words:** the balance due (F-PTY-001) less the outstanding bills (F-PTY-003). It is the part from before the books' beginning (opening bills aren't stored yet), plus anything posted without a bill.
+- **In words:** the balance due (F-PTY-001) less the outstanding bills (F-PTY-003). It is anything posted without a bill (on account), and any difference between a ledger's opening balance and its opening bills (validation warns: LB-VAL-041).
 
 ## 7. Registers (`F-REG`)
 

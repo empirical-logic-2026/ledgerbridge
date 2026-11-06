@@ -600,6 +600,24 @@ class BillAllocation(TimestampMixin, Base):
     amount: Mapped[Decimal] = mapped_column(Money)
 
 
+class OpeningBill(TimestampMixin, Base):
+    """A bill of a ledger's opening balance (its bill-wise opening; migration 0031): the
+    bills from before the books' beginning, for ageing. Replaced as a whole with each read of
+    the ledger's opening bills. Canonical sign (debit positive)."""
+
+    __tablename__ = "opening_bills"
+    __table_args__ = _A
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    ledger_id: Mapped[int] = mapped_column(Id, _fk("ledgers", ondelete="CASCADE"), index=True)
+    party_id: Mapped[int | None] = mapped_column(Id, _fk("parties"), nullable=True)
+    bill_name: Mapped[str] = mapped_column(String(255))
+    bill_date: Mapped[date | None] = mapped_column(nullable=True)
+    due_date: Mapped[date | None] = mapped_column(nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Money)
+
+
 class VoucherVersion(Base):
     """An observed voucher snapshot retained for alteration-history comparisons."""
 

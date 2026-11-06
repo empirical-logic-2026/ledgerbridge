@@ -3,14 +3,14 @@
 due at a day and its outstanding bills by how long past due they are. Source-independent;
 formulas F-PTY-012 to F-PTY-014 in docs/formulas.md.
 
-- **Bills:** as on the party's page (core/parties.py): per ledger and bill name, the
-  allocations of effective vouchers up to the day ("on account" excluded), due on the
-  allocation's due date, else the bill's date plus the party's credit days; settled when less
-  than half a paisa is left.
+- **Bills:** as on the party's page (core/parties.py): per ledger and bill name, the opening
+  bills and the allocations of effective vouchers up to the day ("on account" excluded), due
+  on the bill's due date, else the bill's date plus the party's credit days; settled when
+  less than half a paisa is left.
 - **Buckets** (F-PTY-012), by the days from the due date to the day: not due, 1-30, 31-60,
   61-90 and over 90 days. An advance or overpayment (a negative bill) counts where it falls.
-- **Uncovered** (F-PTY-013): the balance due less the bills. Bills from before the books'
-  beginning (opening bills) aren't stored yet, so the bills can cover less than the balance.
+- **Uncovered** (F-PTY-013): the balance due less the bills: what isn't split into bills
+  (e.g. "on account", or a ledger not kept bill by bill).
 """
 
 from collections import defaultdict
@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.models import accounting as A  # noqa: N812
-from core.parties import KINDS, Kind, balances_by_name
+from core.parties import KINDS, Kind, balances_by_name, opening_bill_rows
 
 ZERO = Decimal(0)
 HALF_PAISA = Decimal("0.005")
@@ -108,7 +108,13 @@ def _outstanding(
     )
     if not ledgers:
         return []
-    rows = session.execute(
+    opening = [
+        (ledger, name, kind, bill_on, due_on, day, amount)
+        for ledger, name, kind, bill_on, due_on, day, _, _, amount in opening_bill_rows(
+            session, list(ledgers)
+        )
+    ]
+    vouchers = session.execute(
         select(
             A.VoucherLine.ledger_id, A.BillAllocation.bill_name, A.BillAllocation.bill_type,
             A.BillAllocation.bill_date, A.BillAllocation.due_date, A.Voucher.voucher_date,
@@ -127,7 +133,7 @@ def _outstanding(
     )  # fmt: skip
     amounts: dict[tuple[int, str], Decimal] = defaultdict(lambda: ZERO)
     due: dict[tuple[int, str], date] = {}
-    for ledger, name, kind, bill_on, due_on, voucher_on, amount in rows:
+    for ledger, name, kind, bill_on, due_on, voucher_on, amount in [*opening, *vouchers]:
         key = (ledger, name or "")
         day = bill_on or voucher_on
         if key not in due:

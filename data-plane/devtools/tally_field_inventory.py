@@ -39,11 +39,12 @@ RESERVEDNAME_READ = frozenset(("group", "voucher_type"))
 DOC = Path(__file__).resolve().parents[2] / "docs" / "data-completeness-fields.md"
 
 # Tally's tag of each object type the connector fetches, and the collection it uses.
-FETCHED: dict[str, envelopes.CollectionSpec] = {
-    "COMPANY": envelopes.COMPANIES,
-    **{spec.object_tag: spec for spec in envelopes.MASTER_SPECS},
-    "VOUCHER": envelopes.VOUCHERS,
-}
+# Every collection the connector fetches, per object tag (a ledger's opening bills are
+# fetched as LEDGER too); the first is the type's own.
+SPECS: dict[str, list[envelopes.CollectionSpec]] = {}
+for _spec in (envelopes.COMPANIES, *envelopes.MASTER_SPECS, envelopes.VOUCHERS):
+    SPECS.setdefault(_spec.object_tag, []).append(_spec)
+FETCHED: dict[str, envelopes.CollectionSpec] = {tag: specs[0] for tag, specs in SPECS.items()}
 # Where each type is in the recording.
 SOURCES = {"COMPANY": "company.xml", "VOUCHER": "vouchers.xml"}  # the rest: masters.xml
 
@@ -117,17 +118,17 @@ def fetch_paths(spec: envelopes.CollectionSpec) -> set[str]:
 
 
 def status(tag: str, path: str, attribute: bool = False) -> str:
-    spec = FETCHED.get(tag)
-    if spec is None:
+    specs = SPECS.get(tag, [])
+    if not specs:
         return "not fetched"
-    if path in USED_FIELDS.get(spec.object_type, frozenset()):
+    if any(path in USED_FIELDS.get(spec.object_type, frozenset()) for spec in specs):
         return "column"
-    if path == "RESERVEDNAME" and spec.object_type in RESERVEDNAME_READ:
+    if path == "RESERVEDNAME" and specs[0].object_type in RESERVEDNAME_READ:
         return "column"  # mapping._reserved: a group's role, a voucher type's base type
     if attribute:
         # Tally sends an object's attributes with every collection, asked for or not.
         return "raw only"
-    if spec.native or path in fetch_paths(spec):
+    if any(spec.native or path in fetch_paths(spec) for spec in specs):
         return "extra"
     return "not fetched"
 

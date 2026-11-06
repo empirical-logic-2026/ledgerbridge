@@ -82,6 +82,8 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-037](#lb-val-037-cost-allocations-larger-than-their-line) | Cost allocations larger than their line | `cost_allocation_exceeds_line` | Error |
 | [LB-VAL-038](#lb-val-038-cost-centre-totals) | Cost centre totals | `cost_centre_mismatch` | Error |
 | [LB-VAL-039](#lb-val-039-source-cost-centre-totals-couldnt-be-read) | Source cost centre totals couldn't be read | `cost_centre_totals_unavailable` | Error |
+| [LB-VAL-040](#lb-val-040-opening-bills) | Opening bills | `opening_bills_mismatch` | Error |
+| [LB-VAL-041](#lb-val-041-opening-bills-dont-add-up-to-the-opening) | Opening bills don't add up to the opening | `opening_bills_differ` | Warning |
 | [LB-VAL-036](#lb-val-036-voucher-type-names-written-differently) | Voucher type names written differently | `voucher_type_names_differ` | Note |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
@@ -1353,6 +1355,49 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Validate again with TallyPrime idle.
 
 **Next step:** `.\dev.ps1 validate -Env <env>`
+
+### LB-VAL-040: Opening bills
+
+`opening_bills_mismatch` | Error
+
+**What it means:** Some parties' opening bills (from before the books' beginning) differ in total from the source's.
+
+**Usually a consequence of:** LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
+
+**Common causes:**
+
+- Ledgers that failed to convert (their opening bills fail with them).
+- Opening bills changed in the source after the last sync.
+
+**How to investigate:**
+
+- The report's -Details lists the ledgers by id (no names or amounts).
+
+**How to fix:**
+
+- Sync again; if they still differ, sync full.
+
+**Next step:** `.\dev.ps1 sync -Env <env>`
+
+### LB-VAL-041: Opening bills don't add up to the opening
+
+`opening_bills_differ` | Warning
+
+**What it means:** Some ledgers' opening bills don't add up to their opening balance. The source allows this: the balance follows the opening, and the bills cover more or less of it in receivables and payables ageing.
+
+**Common causes:**
+
+- Opening bills entered for a different total than the ledger's opening balance.
+
+**How to investigate:**
+
+- The report's -Details lists the ledgers by id (no names or amounts).
+
+**How to fix:**
+
+- Correct the opening bills or the opening balance in the source, then sync.
+
+**Next step:** `.\dev.ps1 report -Details -Env <env>`
 
 ### LB-VAL-036: Voucher type names written differently
 

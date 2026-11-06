@@ -195,7 +195,8 @@ function Help({ kind, sourceName }: { kind: PartyKind; sourceName: string }) {
       </p>
       <p>
         <strong>Where the figures come from:</strong> the books, rebuilt after every sync; the balances are validated against {sourceName}'s. Bills
-        from before the books' beginning (opening bills) aren't stored yet, so the bills can cover less than the balance: the page then says so.
+        include the opening bills (from before the books' beginning); where an amount isn't split into bills (on account), the bills cover less
+        than the balance: the page then says so.
       </p>
       <p>
         <strong>To compare with {sourceName}:</strong> the ledger statement is the party's Ledger Vouchers for the same dates; the outstanding bills

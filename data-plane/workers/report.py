@@ -72,6 +72,7 @@ CONTROL_KEYS = frozenset(
         "voucher_count_mismatch",
         "stock_quantity_mismatch",
         "bills_mismatch",
+        "opening_bills_mismatch",
         "year_end_balances_unavailable",
         "voucher_counts_unavailable",
         "stock_quantities_unavailable",

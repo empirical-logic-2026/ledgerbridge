@@ -12,11 +12,11 @@ are those linked to any of those parties.
 - **Ledger statement:** the opening at the period's start, every effective entry on the
   party's ledgers in the period with the other side's first ledger as Particulars, and the
   running balance.
-- **Outstanding bills** at the period's end: the bill allocations of effective vouchers up to
-  that day ("on account" excluded), added up per ledger and bill name; due on the allocation's
-  due date, else the bill's date plus the party's credit days. Bills from before the books'
-  beginning (opening bills) aren't stored, so the bills can cover less than the balance due:
-  `bills_cover` says how much they do.
+- **Outstanding bills** at the period's end: the ledgers' opening bills (raised before the
+  books' beginning) and the bill allocations of effective vouchers up to that day ("on
+  account" excluded), added up per ledger and bill name; due on the bill's due date, else the
+  bill's date plus the party's credit days. A balance not split into bills (e.g. "on account")
+  isn't covered by them: `bills_cover` says how much they cover.
 - **Average days to pay:** settlements ("against" allocations) in the period, the days from
   the bill's date, weighted by amount.
 """
@@ -438,9 +438,37 @@ def _settlements(
     ]
 
 
+def opening_bill_rows(session: Session, ledger_ids: list[int]) -> list[tuple]:
+    """The ledgers' opening bills as bill rows, new bills raised before the books' beginning:
+    (ledger, name, "new_ref", bill date, due date, the bill's date or else the books'
+    beginning, no voucher, entity, amount)."""
+    if not ledger_ids:
+        return []
+    rows = session.execute(
+        select(
+            A.OpeningBill.ledger_id, A.OpeningBill.bill_name, A.OpeningBill.bill_date,
+            A.OpeningBill.due_date, A.Entity.books_from, A.OpeningBill.entity_id,
+            A.OpeningBill.amount,
+        )
+        .join(A.Entity, A.Entity.id == A.OpeningBill.entity_id)
+        .where(A.OpeningBill.ledger_id.in_(ledger_ids))
+        .order_by(A.OpeningBill.id)
+    )  # fmt: skip
+    return [
+        (ledger, name, "new_ref", bill_on, due, bill_on or books_from or date.min, None, entity,
+         amount)
+        for ledger, name, bill_on, due, books_from, entity, amount in rows
+    ]  # fmt: skip
+
+
 def _bill_rows(session: Session, party: PartyRef, on: date) -> list[tuple]:
+    """Every bill row of the party's ledgers up to the day: opening bills first."""
     if not party.ledger_ids:
         return []
+    return [*opening_bill_rows(session, party.ledger_ids), *_voucher_bill_rows(session, party, on)]
+
+
+def _voucher_bill_rows(session: Session, party: PartyRef, on: date) -> list[tuple]:
     return session.execute(
         select(
             A.VoucherLine.ledger_id, A.BillAllocation.bill_name, A.BillAllocation.bill_type,
@@ -476,7 +504,8 @@ def _bills(
         if bill is None:
             bill = bills[key] = Bill(ledger, name or "", day, due or day + credit, ZERO, entity)
         if kind == "new_ref":
-            raised.setdefault(vid, key)
+            if vid is not None:  # an opening bill has no voucher
+                raised.setdefault(vid, key)
             if due:
                 bill.due = due
         bill.amount += sign * Decimal(amount)

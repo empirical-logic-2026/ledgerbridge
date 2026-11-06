@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-60 tables, 695 columns.
+61 tables, 705 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -13,7 +13,7 @@ Every database, table and column of the client-hosted data plane (MySQL 8), gene
 | Database | What it holds | Tables |
 | --- | --- | --- |
 | `ledgerbridge_source` | Raw layer: every record exactly as the source sent it (ADR-005). Written only by connectors through the sync; the transform reads it. | 1 |
-| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 33 |
+| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 34 |
 | `ledgerbridge_reporting` | Semantic layer for reports and AI (M6): views and aggregate tables. Empty until M6; the only database the AI user can read (AI-003). | 1 |
 | `ledgerbridge_system` | Running the platform: connections, sync runs and progress, validation, alerts, users, roles, audit and AI logs, configuration. | 25 |
 
@@ -135,7 +135,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `base_currency_code` → `currencies.code`.
 
-**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `items`, `ledgers`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_types`, `voucher_versions`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `items`, `ledgers`, `opening_bills`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_types`, `voucher_versions`, `vouchers`.
 
 ### `ledgerbridge_accounting.entity_sources`
 
@@ -381,7 +381,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `group_id` → `account_groups.id`; `party_id` → `parties.id`; `standard_account_id` → `standard_accounts.id`; `currency_code` → `currencies.code`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `fx_revaluation_snapshots`, `voucher_lines`, `voucher_version_lines`.
+**Referred to by:** `fx_revaluation_snapshots`, `opening_bills`, `voucher_lines`, `voucher_version_lines`.
 
 ## `ledgerbridge_accounting`: masters
 
@@ -420,7 +420,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `bill_allocations`, `ledgers`, `vouchers`.
+**Referred to by:** `bill_allocations`, `ledgers`, `opening_bills`, `vouchers`.
 
 ### `ledgerbridge_accounting.items`
 
@@ -766,7 +766,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 ### `ledgerbridge_accounting.bill_allocations`
 
-**Purpose:** Bill-wise allocations of a line (receivables and payables ageing).
+**Purpose:** Bill-wise allocations of a line, with the bill's date and due date (receivables and payables ageing).
 
 **Filled by:** Transform, with the voucher.
 
@@ -784,6 +784,29 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
 
 **Refers to:** `voucher_line_id` → `voucher_lines.id`, on delete cascade; `party_id` → `parties.id`.
+
+### `ledgerbridge_accounting.opening_bills`
+
+**Purpose:** The bills of a ledger's opening balance: name, bill date, due date, amount (receivables and payables ageing).
+
+**Filled by:** Transform, from the ledgers' opening bills; replaced as a whole per ledger.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `ledger_id` | BIGINT UNSIGNED | no | FK | Refers to `ledgers`. |
+| `party_id` | BIGINT UNSIGNED | yes | FK | Refers to `parties`. |
+| `bill_name` | VARCHAR(255) | no |  | Bill name. |
+| `bill_date` | DATE | yes |  | Bill date. |
+| `due_date` | DATE | yes |  | Due date. |
+| `amount` | NUMERIC(20, 4) | no |  | Amount in the base currency, canonical sign (debit +, credit −). |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** index `ix_ledgerbridge_accounting_opening_bills_ledger_id` (ledger_id).
+
+**Refers to:** `entity_id` → `entities.id`; `ledger_id` → `ledgers.id`, on delete cascade; `party_id` → `parties.id`.
 
 ### `ledgerbridge_accounting.line_cost_allocations`
 

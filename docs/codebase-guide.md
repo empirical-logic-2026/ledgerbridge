@@ -455,6 +455,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-06 | 0.51 | Data completion part 2: opening bills (`core/models/accounting.py` `OpeningBill`, migration 0031, `core/parties.py` `opening_bill_rows`), `tests/test_bill_dates.py`. |
 | 2026-11-06 | 0.50 | Data completion part 1: `core/utr.py`, `connectors/tally/find_field.py` (`./dev.ps1 find-field`), `voucher_lists.txt`, the never-fetched list (`envelopes.DENIED`), `tests/fixtures/tally/rules/data-completion/`, `tests/test_bank_details.py`, `tests/test_utr.py`. |
 | 2026-11-06 | 0.49 | The Transactions page: `core/transactions.py`, `api/v1/transactions.py`, `src/apps/books/Transactions.tsx`, `tests/test_transactions_integration.py`. |
 | 2026-11-06 | 0.48 | The Stock page (`core/stock.py`, `api/v1/stock.py`, `src/apps/stock/`, migration 0029: the source's value per item); the Amounts setting (`src/amountFormat.ts`, `src/components/Money.tsx`); `tests/test_stock.py`, `tests/test_stock_integration.py`. |

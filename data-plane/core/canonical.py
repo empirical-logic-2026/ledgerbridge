@@ -221,6 +221,26 @@ class CanonicalBill:
     name: str | None
     amount: Decimal
     bill_date: date | None = None
+    due_date: date | None = None  # the credit period applied to the bill's date, or a date
+
+
+@dataclass(frozen=True)
+class CanonicalOpeningBill:
+    """One bill of a ledger's opening balance (canonical sign, debit positive)."""
+
+    name: str
+    amount: Decimal
+    bill_date: date | None = None
+    due_date: date | None = None
+
+
+@dataclass(frozen=True)
+class CanonicalOpeningBills:
+    """A ledger's opening bills, all of them (replacing the ones stored); `source_key` is
+    the ledger's."""
+
+    source_key: str
+    bills: tuple[CanonicalOpeningBill, ...]
 
 
 @dataclass(frozen=True)
@@ -303,5 +323,6 @@ CanonicalRecord = (
     | CanonicalGodown
     | CanonicalCostCategory
     | CanonicalCostCentre
+    | CanonicalOpeningBills
     | CanonicalVoucher
 )

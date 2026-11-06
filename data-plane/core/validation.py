@@ -62,6 +62,7 @@ CONSEQUENCES = (
     "voucher_count_mismatch",
     "stock_quantity_mismatch",
     "bills_mismatch",
+    "opening_bills_mismatch",
     "statement_mismatch",
     "stock_value_mismatch",
     "cost_centre_mismatch",
@@ -73,6 +74,7 @@ CONSEQUENCES = (
 # comparison ran.
 ALWAYS_CHECKED = (
     "voucher_unbalanced", "opening_difference", "tb_unbalanced", "cost_allocation_exceeds_line",
+    "opening_bills_differ",
 )  # fmt: skip
 CLOSING_READ = ("closing_unavailable", "closing_not_supported")
 CLOSING_COMPARED = (
@@ -90,7 +92,7 @@ BILLS_READ = (
     "bill_outstanding_not_supported",
     "bills_not_compared",
 )
-BILLS_COMPARED = (*BILLS_READ, "bills_mismatch")
+BILLS_COMPARED = (*BILLS_READ, "bills_mismatch", "opening_bills_mismatch")
 STATEMENTS_READ = ("statements_unavailable", "statements_not_supported")
 STATEMENTS_COMPARED = (
     *STATEMENTS_READ,
@@ -305,6 +307,7 @@ class Validator:
         report.opening_difference = self._opening_difference(ledgers, source)
         self._trial_balance(report.opening_difference)
         self._allocations_within_lines()
+        self._opening_bills_add_up()
         self._closing(ledgers, source)
         self._cover(CLOSING_COMPARED if _read(source) else CLOSING_READ)
         if controls is not None:
@@ -1021,8 +1024,9 @@ class Validator:
         outstanding: Mapping[str, Decimal] | Exception | None,
         opening: Mapping[str, Decimal] | Exception | None,
     ) -> None:
-        """VAL-007: each party's bill-wise outstanding (its opening bills plus every bill
-        allocation of effective vouchers, 'on account' excluded) equals the source's.
+        """VAL-007: each party's bill-wise outstanding (its stored opening bills plus every
+        bill allocation of effective vouchers, 'on account' excluded) equals the source's;
+        and its stored opening bills total the source's (`opening_bills_mismatch`).
 
         The source reports bills as outstanding now, whatever the as-of date, so the check
         runs only for validations as of today or later and counts every voucher."""
@@ -1055,6 +1059,11 @@ class Validator:
         ):
             ours[name] += Decimal(total)
             ledger_ids[name] = ledger_id
+        stored = self._stored_opening_bills()
+        for name, (ledger_id, total) in stored.items():
+            ours[name] += total
+            ledger_ids[name] = ledger_id
+        self._opening_bills_match(opening, {n: t for n, (_, t) in stored.items()}, ledger_ids)
         parties = (
             set(ours)
             | {p for p, v in outstanding.items() if v}
@@ -1062,7 +1071,7 @@ class Validator:
         )
         for party in sorted(parties):
             expected = Decimal(outstanding.get(party, ZERO))
-            actual = Decimal(opening.get(party, ZERO)) + ours.get(party, ZERO)
+            actual = ours.get(party, ZERO)
             if abs(expected - actual) <= self.tolerance:
                 self.passed += 1
                 continue
@@ -1076,6 +1085,71 @@ class Validator:
                     expected,
                     actual,
                     f"Bill-wise outstanding of '{party}' differs from the source.",
+                )
+            )
+
+    def _stored_opening_bills(self) -> dict[str, tuple[int, Decimal]]:
+        """Ledger name -> (ledger id, its stored opening bills' total)."""
+        return {
+            name: (ledger_id, Decimal(total))
+            for ledger_id, name, total in self.session.execute(
+                select(A.Ledger.id, A.Ledger.name, func.sum(A.OpeningBill.amount))
+                .join(A.OpeningBill, A.OpeningBill.ledger_id == A.Ledger.id)
+                .where(A.Ledger.entity_id == self.entity.id, A.Ledger.is_deleted.is_(False))
+                .group_by(A.Ledger.id, A.Ledger.name)
+            )
+        }
+
+    def _opening_bills_match(
+        self,
+        source: Mapping[str, Decimal],
+        stored: Mapping[str, Decimal],
+        ledger_ids: Mapping[str, int],
+    ) -> None:
+        """Each party's stored opening bills total the source's opening bills."""
+        parties = {p for p, v in source.items() if v} | {p for p, v in stored.items() if v}
+        for party in sorted(parties):
+            expected = Decimal(source.get(party, ZERO))
+            actual = stored.get(party, ZERO)
+            if abs(expected - actual) <= self.tolerance:
+                self.passed += 1
+                continue
+            known = party in ledger_ids
+            self._fail(
+                Finding(
+                    "opening_bills_mismatch",
+                    "error",
+                    "ledger" if known else "source_party",
+                    str(ledger_ids[party]) if known else party[:64],
+                    expected,
+                    actual,
+                    f"Opening bills of '{party}' differ from the source's.",
+                )
+            )
+
+    def _opening_bills_add_up(self) -> None:
+        """Each ledger's stored opening bills total its opening balance. The source allows
+        them to differ (the balance follows the opening; only the bill-wise outstanding uses
+        the bills), so a difference is a warning: the bills then cover more or less than the
+        balance."""
+        for ledger_id, opening, total in self.session.execute(
+            select(A.Ledger.id, A.Ledger.opening_balance, func.sum(A.OpeningBill.amount))
+            .join(A.OpeningBill, A.OpeningBill.ledger_id == A.Ledger.id)
+            .where(A.Ledger.entity_id == self.entity.id, A.Ledger.is_deleted.is_(False))
+            .group_by(A.Ledger.id, A.Ledger.opening_balance)
+        ):
+            if abs(Decimal(opening or 0) - Decimal(total)) <= self.tolerance:
+                self.passed += 1
+                continue
+            self._fail(
+                Finding(
+                    "opening_bills_differ",
+                    "warning",
+                    "ledger",
+                    str(ledger_id),
+                    Decimal(opening or 0),
+                    Decimal(total),
+                    "A ledger's opening bills don't add up to its opening balance.",
                 )
             )
 

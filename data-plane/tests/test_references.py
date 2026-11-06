@@ -108,8 +108,12 @@ def test_references_resolve_by_alias_and_normalisation(db: Session, sim) -> None
     assert result.status == "succeeded", result.error
     unresolved = sum(1 for _, ok in NAME_VARIANTS.values() if not ok)
     # Only the references no rule may match fail: 3 vouchers, and the ledger naming a
-    # group that wasn't fetched.
-    assert result.failed_by_object_type == {"voucher": unresolved, "ledger": 1}
+    # group that wasn't fetched (with its opening bills: their ledger isn't stored).
+    assert result.failed_by_object_type == {
+        "voucher": unresolved,
+        "ledger": 1,
+        "ledger_opening_bills": 1,
+    }
     assert _voucher_ledgers(db, 5) == ["Rent", "Cash"]  # case
     assert _voucher_ledgers(db, 6) == ["Salary Payable", "Cash"]  # double space
     assert _voucher_ledgers(db, 7) == [NFC_NAME, "Cash"]  # Unicode NFD vs NFC
@@ -142,6 +146,7 @@ def test_references_resolve_by_alias_and_normalisation(db: Session, sim) -> None
     assert errors == {
         "TransformError: voucher refers to an unknown ledger",
         "TransformError: ledger refers to an unknown group",
+        "TransformError: opening bills of a ledger not stored",
     }
 
 

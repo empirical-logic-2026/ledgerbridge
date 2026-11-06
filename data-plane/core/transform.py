@@ -61,6 +61,7 @@ from core.canonical import (
     CanonicalItem,
     CanonicalItemGroup,
     CanonicalLedger,
+    CanonicalOpeningBills,
     CanonicalRecord,
     CanonicalUnit,
     CanonicalVoucher,
@@ -740,6 +741,7 @@ class Transformer:
             (CanonicalCurrency, self._currencies),
             (CanonicalGroup, self._groups),
             (CanonicalLedger, self._ledgers),
+            (CanonicalOpeningBills, self._opening_bills),
             (CanonicalVoucherType, self._voucher_types),
             (CanonicalUnit, self._units),
             (CanonicalItemGroup, self._item_groups),
@@ -1317,6 +1319,49 @@ class Transformer:
         )
         return done
 
+    def _opening_bills(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
+        """Each ledger's opening bills, replacing the ones stored (the ledger is written
+        first: a ledger not stored fails its record)."""
+        keys = [
+            r.source_key for i in items for r in i.records if isinstance(r, CanonicalOpeningBills)
+        ]
+        ledgers = {
+            key: (ledger_id, party_id)
+            for key, ledger_id, party_id in self.session.execute(
+                select(A.Ledger.source_key, A.Ledger.id, A.Ledger.party_id).where(
+                    A.Ledger.connection_id == self.connection_id,
+                    A.Ledger.entity_id == self.entity_id,
+                    A.Ledger.source_key.in_(keys),
+                )
+            )
+        }
+        ok, rows, replaced = [], [], []
+        now = utcnow()
+        for item in items:
+            found = [r for r in item.records if isinstance(r, CanonicalOpeningBills)]
+            missing = [r for r in found if r.source_key not in ledgers]
+            if missing:
+                self._fail(item.row, TransformError("opening bills of a ledger not stored"), result)
+                continue
+            for record in found:
+                ledger_id, party_id = ledgers[record.source_key]
+                replaced.append(ledger_id)
+                rows += [
+                    {
+                        "entity_id": self.entity_id, "ledger_id": ledger_id,
+                        "party_id": party_id, "bill_name": bill.name[:255],
+                        "bill_date": bill.bill_date, "due_date": bill.due_date,
+                        "amount": bill.amount, "created_at": now, "updated_at": now,
+                    }
+                    for bill in record.bills
+                ]  # fmt: skip
+            ok.append(item)
+        if replaced:
+            self.session.execute(delete(A.OpeningBill).where(A.OpeningBill.ledger_id.in_(replaced)))
+        if rows:
+            self.session.execute(insert(A.OpeningBill), rows)
+        return ok
+
     def _cost_categories(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         return self._simple(
             items, CanonicalCostCategory, A.CostCategory, lambda r: {"name": r.name}, result,
@@ -1601,6 +1646,7 @@ class Transformer:
                                 "bill_type": bill.bill_type,
                                 "bill_name": bill.name,
                                 "bill_date": bill.bill_date,
+                                "due_date": bill.due_date,
                                 "amount": bill.amount,
                             },
                         )

@@ -82,9 +82,9 @@ def test_status_comes_from_the_connector() -> None:
     assert inventory.status("VOUCHER", "ALLLEDGERENTRIES.LIST/AMOUNT") == "column"
     path = "ALLLEDGERENTRIES.LIST/BANKALLOCATIONS.LIST/PAYMENTMODE"
     assert inventory.status("VOUCHER", path) == "extra"
-    assert inventory.status("VOUCHER", "ALLLEDGERENTRIES.LIST/BILLALLOCATIONS.LIST/BILLDATE") == (
-        "not fetched"
-    )
+    path = "ALLLEDGERENTRIES.LIST/BILLALLOCATIONS.LIST/BILLDATE"
+    assert inventory.status("VOUCHER", path) == "column"
+    assert inventory.status("LEDGER", "BILLALLOCATIONS.LIST/BILLCREDITPERIOD") == "column"
     assert inventory.status("CURRENCY", "DECIMALSYMBOL") == "extra"  # read whole
     assert inventory.status("TAXUNIT", "NAME") == "not fetched"
 
