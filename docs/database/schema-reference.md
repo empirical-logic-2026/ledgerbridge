@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-60 tables, 689 columns.
+60 tables, 695 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -747,8 +747,14 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `exchange_rate` | NUMERIC(20, 8) | yes |  | Exchange rate. |
 | `is_party_line` | BOOL | no |  | Whether party line. |
 | `is_effective` | BOOL | no |  | Counts in the books: not cancelled, optional or deleted, and of a type that posts. |
-| `instrument_number` | VARCHAR(255) | yes |  | A bank line's cheque or transfer number (Tally `BANKALLOCATIONS.INSTRUMENTNUMBER`; several joined with "; "). Migration `0026`. |
-| `transaction_reference` | VARCHAR(255) | yes |  | A bank line's unique transaction reference, UTR (Tally `BANKALLOCATIONS.UNIQUEREFERENCENUMBER`). Migration `0026`. |
+| `instrument_number` | VARCHAR(255) | yes |  | A bank line's cheque or instrument number (Tally `BANKALLOCATIONS.INSTRUMENTNUMBER`; several joined with "; "). Migration `0026`. |
+| `utr` | VARCHAR(255) | yes |  | The UTR: only a value that looks like one (NEFT/RTGS `[A-Z]{4}[NR]` + 10 to 17 characters, IMPS/UPI 12 digits, or labelled "UTR"; `core/utr.py`), from the bank allocation's reference fields, a user-defined field, else the voucher's narration. Was `transaction_reference` (which held Tally's own code) until migration `0030`. |
+| `tally_bank_entry_id` | VARCHAR(255) | yes |  | The source's own id for the bank entry (Tally `UNIQUEREFERENCENUMBER`, a code it generates); never a UTR. Migration `0030`. |
+| `utr_source` | VARCHAR(16) | yes |  | Where the UTR was found: `bank_field`, `udf` or `narration`. Migration `0030`. |
+| `transaction_type` | VARCHAR(64) | yes |  | Cheque, e-Fund Transfer, ... (Tally `TRANSACTIONTYPE`). Migration `0030`. |
+| `instrument_date` | DATE | yes |  | The instrument's own date (`INSTRUMENTDATE`). Migration `0030`. |
+| `bank_cleared_date` | DATE | yes |  | The date the bank cleared it, bank reconciliation (`BANKERSDATE`). Migration `0030`. |
+| `bank_recon_status` | VARCHAR(64) | yes |  | Reconciliation status (`BANKRECONSTATUS`, e.g. Reconciled). Migration `0030`. |
 | `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
 | `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
 

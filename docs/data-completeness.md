@@ -6,6 +6,11 @@
 | Evidence | One full export of LedgerBridge Test Co (synthetic test data), recorded by `python -m devtools.tally_full_export` into `data-plane/tests/fixtures/tally/full-export/` |
 | Every field, generated | [data-completeness-fields.md](data-completeness-fields.md) (`python -m devtools.tally_field_inventory`; a test fails when it is stale) |
 
+**Counts below are from the first recording (2026-11-06 morning: 79 vouchers, 231 masters).**
+The recording was made again after the data-completion seeding (85 vouchers, 242 masters of
+15 types); every field's current count and status (which changes as each data-completion part
+fetches more) is in the generated [data-completeness-fields.md](data-completeness-fields.md).
+
 This audit says, for every object type and every field TallyPrime exports, whether we store it
 as a column, keep it in `extra`, or never fetch it; what it means; and what we recommend. It
 proposes; it changes nothing (no behaviour changed with it).

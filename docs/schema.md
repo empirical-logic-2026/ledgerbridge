@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.45 (Draft) |
+| Version | 0.46 (Draft) |
 | Date | 2026-11-06 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -352,8 +352,14 @@ The double-entry lines. For every voucher, `SUM(amount) = 0` (VAL-001).
 | amount | DECIMAL(20,4) | Base currency, debit +, credit −. |
 | amount_fc | DECIMAL(20,4) NULL | Foreign-currency amount (Tally: the part before `@` of `-$100.00 @ Rs82.00/$ = -Rs8200.00`); its rate is `amount / amount_fc`. NULL in the base currency. |
 | is_party_line | BOOLEAN | |
-| instrument_number | VARCHAR(255) NULL | A bank line's cheque or transfer number (Tally `BANKALLOCATIONS.INSTRUMENTNUMBER`; several joined with "; "). Migration `0026`. |
-| transaction_reference | VARCHAR(255) NULL | A bank line's unique transaction reference, UTR (Tally `BANKALLOCATIONS.UNIQUEREFERENCENUMBER`). Migration `0026`. |
+| instrument_number | VARCHAR(255) NULL | A bank line's cheque or instrument number (Tally `BANKALLOCATIONS.INSTRUMENTNUMBER`; several joined with "; "). Migration `0026`. |
+| utr | VARCHAR(255) NULL | The UTR: only a value that looks like one (NEFT/RTGS `[A-Z]{4}[NR]` + 10 to 17 characters, IMPS/UPI 12 digits, or labelled "UTR"; `core/utr.py`), from the bank allocation's reference fields, a user-defined field, else the voucher's narration. Was `transaction_reference` (which held Tally's own code) until migration `0030`. |
+| utr_source | VARCHAR(16) NULL | Where the UTR was found: `bank_field`, `udf` or `narration`. Migration `0030`. |
+| tally_bank_entry_id | VARCHAR(255) NULL | The source's own id for the bank entry (Tally `UNIQUEREFERENCENUMBER`, a code it generates); never a UTR. Migration `0030`. |
+| transaction_type | VARCHAR(64) NULL | Cheque, e-Fund Transfer, ... (Tally `TRANSACTIONTYPE`). Migration `0030`. |
+| instrument_date | DATE NULL | The instrument's own date (`INSTRUMENTDATE`). Migration `0030`. |
+| bank_cleared_date | DATE NULL | The date the bank cleared it, bank reconciliation (`BANKERSDATE`). Migration `0030`. |
+| bank_recon_status | VARCHAR(64) NULL | Reconciliation status (`BANKRECONSTATUS`, e.g. Reconciled). Migration `0030`. |
 | is_effective | BOOLEAN | FALSE when the voucher is cancelled, optional or deleted, or its voucher type doesn't post to the books (`voucher_types.is_accounting` false: orders, memorandum, delivery notes, ...; ADR-027); reports use only effective lines. |
 
 Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
@@ -860,6 +866,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
 | 2026-11-06 | 0.45 | `stock_values.scope` `item`: each stock item's own value at the statement dates (migration 0029; the Stock page). |
 | 2026-11-05 | 0.44 | RPT-017 / ADR-051: append-only observed voucher versions, posting snapshots, ambiguity-aware comparison rows and deletion detection timestamps (migration 0028); nullable `vouchers.source_altered_at` stores Tally `UPDATEDDATETIME` without timezone conversion (migration 0027). |
+| 2026-11-06 | 0.46 | `voucher_lines`: `transaction_reference` renamed `utr` (by rule only), `utr_source`, `tally_bank_entry_id`, `transaction_type`, `instrument_date`, `bank_cleared_date`, `bank_recon_status` (migration 0030). |
 | 2026-11-05 | 0.43 | `cost_categories`; `cost_centres.cost_category_id`, `line_cost_allocations.cost_category_id`; `voucher_lines.instrument_number`, `transaction_reference`; `v_cost_allocations` (migration 0026). |
 | 2026-10-31 | 0.41 | `entity_sources.source_checked_at`, `source_loaded`, `source_checked_by` (migration 0025, the dashboard's company chips). |
 | 2026-10-30 | 0.40 | Section 6: `v_group_ancestors`, `v_data_health` (migration 0024, dashboard D1). |

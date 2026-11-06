@@ -13,6 +13,7 @@ import re
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import date
 from decimal import Decimal
 
 import httpx
@@ -23,7 +24,7 @@ from connectors.tally.envelopes import CollectionSpec
 from connectors.tally.signs import postings, tally_amount
 from core.config import Settings
 from devtools.tally_seed import requests as rq
-from devtools.tally_seed.data import SeedData, Voucher
+from devtools.tally_seed.data import FY_END, FY_START, SeedData, Voucher
 
 UNITS = CollectionSpec("LBSeedUnits", "Unit", "UNIT", "unit", ("NAME",))
 STOCK_GROUPS = CollectionSpec(
@@ -42,6 +43,11 @@ VOUCHER_TYPES = CollectionSpec(
 GODOWNS = CollectionSpec("LBSeedGodowns", "Godown", "GODOWN", "godown", ("NAME",))
 CURRENCIES = CollectionSpec("LBSeedCurrencies", "Currency", "CURRENCY", "currency", ("NAME",))
 GROUPS = CollectionSpec("LBSeedGroups", "Group", "GROUP", "group", ("NAME",))
+# Tally's own type names (its type list, CMPINFO: STOCKCATEGORY, BUDGET).
+STOCK_CATEGORIES = CollectionSpec(
+    "LBSeedStockCategories", "StockCategory", "STOCKCATEGORY", "stock_category", ("NAME",)
+)
+BUDGETS = CollectionSpec("LBSeedBudgets", "Budget", "BUDGET", "budget", ("NAME",))
 _MARKER = re.compile(r"\[lb-seed:([A-Z0-9-]+)\]")
 
 
@@ -132,6 +138,8 @@ class TallyState:
     currencies: set[str] = field(default_factory=set)
     groups: set[str] = field(default_factory=set)
     cost_categories: set[str] = field(default_factory=set)
+    stock_categories: set[str] = field(default_factory=set)
+    budgets: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -177,9 +185,9 @@ def _voucher_amounts(voucher: ET.Element) -> dict[str, Decimal]:
 
 
 def read_state(client: TallyClient, company: str) -> TallyState:
-    def export(spec: CollectionSpec) -> ET.Element:
+    def export(spec: CollectionSpec, period: tuple[date, date] | None = None) -> ET.Element:
         return parser.parse_response(
-            client.post(envelopes.collection_request(spec, company=company))
+            client.post(envelopes.collection_request(spec, company=company, period=period))
         )
 
     companies = parser.objects(export(envelopes.COMPANIES), "COMPANY")
@@ -189,11 +197,24 @@ def read_state(client: TallyClient, company: str) -> TallyState:
     )
     ledgers = {
         name: tally_amount(o.findtext("OPENINGBALANCE")) or Decimal(0)
-        for o in parser.objects(export(envelopes.LEDGERS), "LEDGER")
+        # At the books' beginning: without it Tally gives the current year's opening, and
+        # ledgers with entries before it were altered again on every run.
+        for o in parser.objects(
+            parser.parse_response(
+                client.post(
+                    envelopes.collection_request(
+                        envelopes.LEDGERS, company=company, balances_period=(FY_START, FY_START)
+                    )
+                )
+            ),
+            "LEDGER",
+        )
         if (name := parser.object_name(o))
     }
     vouchers: dict[str, VoucherState] = {}
-    for v in parser.objects(export(envelopes.VOUCHERS), "VOUCHER"):
+    # Every seeded date: without a period Tally lists its current year only, and the seeder
+    # created the earlier year's vouchers again on every run (7 copies by 2026-11-06).
+    for v in parser.objects(export(envelopes.VOUCHERS, (FY_START, FY_END)), "VOUCHER"):
         match = _MARKER.search(v.findtext("NARRATION") or "")
         if not match:
             continue
@@ -215,6 +236,8 @@ def read_state(client: TallyClient, company: str) -> TallyState:
         godowns=_names(export(GODOWNS), "GODOWN"),
         currencies=_names(export(CURRENCIES), "CURRENCY"),
         groups=_names(export(GROUPS), "GROUP"),
+        stock_categories=_names(export(STOCK_CATEGORIES), "STOCKCATEGORY"),
+        budgets=_names(export(BUDGETS), "BUDGET"),
         reserved_groups={
             reserved: name
             for g in parser.objects(export(GROUPS), "GROUP")
@@ -292,6 +315,20 @@ def seed(
         if group not in state.stock_groups:
             run(group, "stock group", "All Masters", rq.stock_group_create(group))
             report.add("stock groups")
+    for category in seed_data.stock_categories:
+        if category not in state.stock_categories:
+            run(category, "stock category", "All Masters", rq.stock_category_create(category))
+            report.add("stock categories")
+    missing_items = [i for i in seed_data.stock_items if i.name not in state.stock_items]
+    if seed_data.price_levels and missing_items:  # the items' price lists name them
+        levels = ", ".join(seed_data.price_levels)
+        run(
+            levels,
+            "price levels",
+            "All Masters",
+            rq.company_price_levels(company, seed_data.price_levels),
+        )
+        report.altered.append(f"price levels {levels}")
     for item in seed_data.stock_items:
         if item.name not in state.stock_items:
             run(item.name, "stock item", "All Masters", rq.stock_item_create(item))
@@ -338,6 +375,12 @@ def seed(
         elif state.ledgers[ledger.name] != wanted:
             run(ledger.name, "opening balance", "All Masters", rq.ledger_set_opening(ledger))
             report.altered.append(f"opening balance of {ledger.name}")
+
+    existing = {"VOUCHERTYPE": state.voucher_types, "BUDGET": state.budgets}
+    for tag, name, body in seed_data.raw_masters:  # after the ledgers they name
+        if name not in existing[tag]:
+            run(name, tag.lower(), "All Masters", rq.raw_master(tag, name, body))
+            report.add(f"{tag.lower()}s")
 
     for voucher in seed_data.vouchers:
         if voucher.marker in state.vouchers:

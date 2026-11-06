@@ -37,6 +37,8 @@
                                                 (a ledger's vouchers in Tally against ours; details to reports/<env>/private/)
     ./dev.ps1 fields
     ./dev.ps1 audit counts                  (compare Tally and stored record counts)
+    ./dev.ps1 find-field -Company "<name>" -Date <dd-mm-yyyy> -VoucherNumber "<no>" -Text "<text>"
+                                            (which fields of one voucher hold a text: paths only)
     ./dev.ps1 promote-field -FieldId 12 -Code SALESMAN -Name "Salesman"
     ./dev.ps1 test
     ./dev.ps1 diagrams                          (regenerate docs/diagrams and the schema reference from the models, render SVG/PNG)
@@ -67,7 +69,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'audit', 'promote-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'dashboard', 'help')]
+    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'audit', 'promote-field', 'find-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'dashboard', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -120,6 +122,15 @@ param(
     # For `validate compare-ledger`: the ledger's id (as reports and `validate analyse`
     # name ledgers).
     [int]$Ledger = 0,
+
+    # For `find-field`: the voucher's date (dd-mm-yyyy), its number, and the text to look for.
+    [string]$Date = '',
+    [string]$VoucherNumber = '',
+    [string]$Text = '',
+
+    # For `connect`: user-defined fields to fetch on vouchers, as `find-field` prints their
+    # paths (e.g. UDF:VCHUTR.LIST/UDF:VCHUTR); replaces the connection's list.
+    [string[]]$Udf = @(),
 
     # For `sync full`: ignore an interrupted full sync's progress and fetch everything again.
     [switch]$Restart,
@@ -396,6 +407,7 @@ switch ($Command) {
         if ($PauseSec -ge 0) { $connectArgs += @('--pause-sec', "$PauseSec") }
         if ($PartMonth) { $connectArgs += @('--part-month', $PartMonth) }
         if ($Educational) { $connectArgs += @('--educational', $Educational) }
+        foreach ($field in $Udf) { $connectArgs += @('--udf', $field) }
         if ($Activate -and $Paused) { throw 'Use -Activate or -Paused, not both.' }
         if ($Activate) { $connectArgs += '--activate' }
         if ($Paused) { $connectArgs += '--pause' }
@@ -653,6 +665,19 @@ switch ($Command) {
         if ($NoValidate -and $Service -ne 'explain') { $retryArgs += '--no-validate' }
         if ($CheckSource -and $Service -eq 'explain') { $retryArgs += '--check-source' }
         Start-Followed 'transform' $job $retryArgs
+    }
+    'find-field' {
+        # Which fields of one voucher hold a text (e.g. a UTR from a bank statement): asks
+        # Tally (read-only) for that voucher with every field and prints the field paths
+        # only, never the values; nothing is stored or logged.
+        $usage = 'Usage: ./dev.ps1 find-field -Company "<name>" -Date <dd-mm-yyyy> -VoucherNumber "<no>" -Text "<text>"'
+        if ($Company.Count -ne 1 -or -not $Date -or -not $VoucherNumber -or -not $Text) { throw $usage }
+        try {
+            $on = [datetime]::ParseExact($Date, 'dd-MM-yyyy', [Globalization.CultureInfo]::InvariantCulture).ToString('yyyy-MM-dd')
+        } catch { throw "The date must be dd-mm-yyyy. $usage" }
+        Assert-EnvFile
+        Assert-ApiRunning
+        Invoke-Checked exec -T api python -m workers.cli find-field --connection $connection --entity $Company[0] --date $on --voucher-number $VoucherNumber --text $Text
     }
     'fields' {
         # The field catalogue: fields with no column (e.g. Tally UDFs), per entity. Field

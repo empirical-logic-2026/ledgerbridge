@@ -58,14 +58,15 @@ def test_expected_trial_balance_for_anchors() -> None:
     assert balances["Customer Gamma Stores"] == (Decimal("1200"), "Dr")
     # Tally's difference in opening balances, integrated with inventory: the ledgers'
     # openings other than the Stock-in-Hand group's, plus the opening stock value (Gadget
-    # 1,000, Steel Sheet 1,000, Hinge 10). Zero: Tally shows no difference.
+    # 1,000, Steel Sheet 1,000, Hinge 10, Gizmo 600, Gizmo Pro 360). Zero: Tally shows no
+    # difference.
     stock = sum(i.opening_qty * i.opening_rate for i in SEED.stock_items)
     openings = sum(
         (x.opening if x.opening_side == "Dr" else -x.opening)
         for x in SEED.ledgers
         if x.parent != "Inventories"
     )
-    assert (openings, stock) == (-2010, 2010)
+    assert (openings, stock) == (-2970, 2970)
 
 
 @pytest.mark.parametrize(
@@ -139,7 +140,8 @@ class FakeTally:
 
     def post(self, request_xml: str) -> ImportResult:
         self.requests += 1
-        for obj in ET.fromstring(request_xml).find(".//TALLYMESSAGE"):
+        # Tally's own markers (&#4;) aren't XML characters: left out to read the request.
+        for obj in ET.fromstring(request_xml.replace("&#4;", "")).find(".//TALLYMESSAGE"):
             action = obj.get("ACTION")
             if obj.tag == "UNIT":
                 self.state.units.add(obj.get("NAME"))
@@ -163,6 +165,10 @@ class FakeTally:
                 self.state.cost_categories.add(obj.get("NAME"))
             elif obj.tag == "VOUCHERTYPE":
                 self.state.voucher_types.add(obj.get("NAME"))
+            elif obj.tag == "STOCKCATEGORY":
+                self.state.stock_categories.add(obj.get("NAME"))
+            elif obj.tag == "BUDGET":
+                self.state.budgets.add(obj.get("NAME"))
             elif obj.tag == "LEDGER":
                 self.state.ledgers[obj.get("NAME")] = tally_amount(obj.findtext("OPENINGBALANCE"))
             elif obj.tag == "VOUCHER" and action == "Delete":

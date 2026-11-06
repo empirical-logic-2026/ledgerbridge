@@ -547,10 +547,18 @@ class VoucherLine(TimestampMixin, Base):
     exchange_rate: Mapped[Decimal | None] = mapped_column(FxRate, nullable=True)
     is_party_line: Mapped[bool] = flag()
     is_effective: Mapped[bool] = flag(True)
-    # A bank line's instrument: the cheque or transfer number, and the bank's unique
-    # transaction reference (UTR) when the source keeps it apart ("; " between several).
+    # A bank line's instrument ("; " between several): the cheque or instrument number, its
+    # kind, dates and reconciliation status (migration 0030); the source's own id for the bank
+    # entry, never a UTR; the UTR, only a value that looks like one (core/utr.py), and where
+    # it was found (bank_field, udf or narration).
     instrument_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    transaction_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    utr: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tally_bank_entry_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    utr_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    transaction_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    instrument_date: Mapped[date | None] = mapped_column(nullable=True)
+    bank_cleared_date: Mapped[date | None] = mapped_column(nullable=True)
+    bank_recon_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class LineDimension(TimestampMixin, Base):

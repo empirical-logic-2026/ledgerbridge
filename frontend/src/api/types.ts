@@ -468,7 +468,7 @@ export interface PartyInvoiceOut {
   narration: string | null
   reference?: string | null
   instrument_number?: string | null
-  transaction_reference?: string | null
+  utr?: string | null
   status: "paid" | "due" | "overdue" | "advance" | "no_bill"
   days: number | null
   payment_status: "overdue" | "pending" | "advance" | "settled" | "no_bill" | "mixed"
@@ -608,7 +608,7 @@ export interface RegisterRowOut {
   narration: string | null
   reference?: string | null
   instrument_number?: string | null
-  transaction_reference?: string | null
+  utr?: string | null
 }
 
 export interface Row {
@@ -781,7 +781,13 @@ export interface TransactionOut {
   bills: string | null
   cost_centres: string | null
   order_number?: string | null
-  instrument: string | null
+  cheque: string | null
+  utr: string | null
+  utr_source: string | null
+  transaction_type: string | null
+  instrument_date: string | null
+  bank_cleared_date: string | null
+  tally_bank_entry_id: string | null
 }
 
 export interface TransactionsOut {

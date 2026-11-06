@@ -180,15 +180,20 @@ def test_the_reference_and_the_bank_instruments_are_stored(synced: int) -> None:
 
         def bank_line(marker: str) -> tuple:
             return s.execute(
-                select(A.VoucherLine.instrument_number, A.VoucherLine.transaction_reference).where(
+                select(
+                    A.VoucherLine.instrument_number,
+                    A.VoucherLine.tally_bank_entry_id,
+                    A.VoucherLine.utr,
+                ).where(
                     A.VoucherLine.voucher_id == _voucher_id(s, synced, marker),
                     A.VoucherLine.instrument_number.is_not(None),
                 )
             ).one()
 
-        assert bank_line("CC-2") == ("000451", None)
-        assert bank_line("BANK-1") == ("000452", None)
-        assert bank_line("BANK-2") == ("NEFT-2026-0902", "UTR20260902000017")
+        assert bank_line("CC-2") == ("000451", None, None)
+        assert bank_line("BANK-1") == ("000452", None, None)
+        # Tally's UNIQUEREFERENCENUMBER is its own id for the entry, never read as a UTR.
+        assert bank_line("BANK-2") == ("NEFT-2026-0902", "UTR20260902000017", None)
 
 
 def test_the_view_has_one_row_per_allocation_for_report_ro(synced: int) -> None:
@@ -301,8 +306,8 @@ def test_the_explorer_filters_by_cost_centre_and_shows_the_instruments(
     assert {r["reference"] for r in register if r["reference"]} >= {"SUP-INV-4471"}
     payments = _get(
         client, "/api/v1/datasets/voucher_lines", date_from="2026-09-01", date_to="2026-09-30",
-        column=["voucher_number", "instrument_number", "transaction_reference"],
+        column=["voucher_number", "instrument_number", "tally_bank_entry_id", "utr"],
         measure="credit", page_size=500,
     )["rows"]  # fmt: skip
-    utrs = {r["keys"]["transaction_reference"]["label"] for r in payments}
-    assert "UTR20260902000017" in utrs
+    ids = {r["keys"]["tally_bank_entry_id"]["label"] for r in payments}
+    assert "UTR20260902000017" in ids

@@ -62,13 +62,27 @@ class Ledger:
     # The opening is entered by hand in TallyPrime (a foreign-currency opening: Tally's XML
     # import refused foreign amounts, ADR-035): created without one and never altered.
     opening_by_hand: bool = False
+    # Opening bills (bill-wise opening balance), adding up to the opening (2026-11-06).
+    opening_bills: tuple["OpeningBill", ...] = ()
+    extra: str = ""  # more of the ledger's XML as Tally imports it (e.g. GST registration)
+
+
+@dataclass(frozen=True)
+class OpeningBill:
+    """One bill of a ledger's opening balance, on the ledger's side."""
+
+    name: str
+    on: date
+    amount: Decimal
+    credit_period: str | None = None  # "30 Days" or a due date as Tally writes it
 
 
 @dataclass(frozen=True)
 class Bill:
     name: str
-    bill_type: Literal["New Ref", "Agst Ref"]
+    bill_type: Literal["New Ref", "Agst Ref", "On Account"]  # On Account: no name
     amount: Decimal
+    credit_period: str | None = None  # a new bill's credit period: "30 Days" or a due date
 
 
 @dataclass(frozen=True)
@@ -80,6 +94,8 @@ class BankDetail:
     instrument_number: str
     instrument_date: date
     utr: str | None = None
+    bankers_date: date | None = None  # the date the bank cleared it (bank reconciliation)
+    extra: str = ""  # more bank-allocation fields as Tally imports them (no account details)
 
 
 @dataclass(frozen=True)
@@ -116,6 +132,7 @@ class ItemLine:
     # Cost-centre allocations of the line's ledger amount (Primary Cost Category), which Tally
     # keeps under the inventory entry's accounting allocation.
     cost_centres: tuple[tuple[str, Decimal], ...] = ()
+    batch_extra: str = ""  # more of each batch allocation's XML (e.g. an order number)
 
     def split(self) -> tuple[tuple[Decimal, str | None], ...]:
         return self.batches or ((self.quantity, self.tracking),)
@@ -144,6 +161,7 @@ class Voucher:
     post_dated: bool = False
     stock_journal: bool = False  # items go to the in (inward) and out lists of a journal
     effective: date | None = None  # Tally's effective date, when not the voucher's date
+    head_extra: str = ""  # more of the voucher's own XML (orders, GST, numbering series)
 
     @property
     def tombstone(self) -> str:
@@ -166,6 +184,9 @@ class StockItem:
     opening_qty: Decimal = Decimal(0)
     opening_rate: Decimal = Decimal(0)
     group: str | None = None  # a stock group (else Primary)
+    # The opening by (godown, batch, quantity), at the opening rate; else all in one batch.
+    opening_batches: tuple[tuple[str, str, Decimal], ...] = ()
+    extra: str = ""  # more of the item's XML (HSN, category, reorder level, prices)
 
 
 @dataclass(frozen=True)
@@ -207,13 +228,19 @@ class SeedData:
     stock_groups: tuple[str, ...] = field(default=())
     currencies: tuple[Currency, ...] = field(default=())
     groups: tuple[AccountGroup, ...] = field(default=())
+    stock_categories: tuple[str, ...] = field(default=())
+    price_levels: tuple[str, ...] = field(default=())  # the company's, before items use them
+    # Masters given whole as Tally imports them: (Tally tag, name, XML), e.g. a budget or a
+    # voucher type with numbering series; created when no master of that name exists.
+    raw_masters: tuple[tuple[str, str, str], ...] = field(default=())
 
 
 # Voucher types whose vouchers don't post to the books (Tally leaves them out of every
 # balance), and those whose inventory lines don't move stock.
 NON_POSTING_TYPES = frozenset((
     "Delivery Note", "Receipt Note", "Rejections In", "Rejections Out", "Memorandum",
-    "Reversing Journal", "Material In", "Material Out", "Stock Journal",
+    "Reversing Journal", "Material In", "Material Out", "Stock Journal", "Sales Order",
+    "Purchase Order",
 ))  # fmt: skip
 NON_STOCK_TYPES = frozenset(("Memorandum", "Sales Order", "Purchase Order"))
 
@@ -739,6 +766,178 @@ COST_CENTRE_VOUCHERS = (
 # A voucher naming a ledger by its alias.
 NAME_VOUCHERS = (_journal("NAME-ALIAS-1", "Journal", date(2026, 9, 1), "Kilo Alias", "Cash", "21"),)
 
+# --- data completion (2026-11-06): bank details, bills, godowns and batches, orders, GST,
+# numbering series and other masters, on masters of their own (no existing balance moves).
+# Fields given as Tally imports them; what Tally keeps is recorded in the fixtures.
+SEED_BANK = "Seed Bank Two"
+THETA = "Customer Theta GST"
+IOTA = "Vendor Iota GST"
+GIZMO = "Gizmo"
+BRANCH_STORE = "Branch Store"
+WHOLESALE = "Wholesale"
+SEED_SALES = "Seed Sales"
+OCT_1, OCT_2 = date(2026, 10, 1), date(2026, 10, 2)
+
+DATA_LEDGERS = (
+    Ledger(SEED_BANK, "Bank Accounts", _d("10000"), "Dr"),
+    Ledger("Courier Charges", "Indirect Expenses"),
+    Ledger(THETA, "Sundry Debtors", _d("15000"), "Dr", bill_wise=True,
+           opening_bills=(OpeningBill("OB-T1", date(2025, 3, 1), _d("10000"), "30 Days"),
+                          OpeningBill("OB-T2", date(2025, 3, 31), _d("5000"))),
+           extra=("<LEDGSTREGDETAILS.LIST><APPLICABLEFROM>20250401</APPLICABLEFROM>"
+                  "<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>"
+                  "<PLACEOFSUPPLY>Karnataka</PLACEOFSUPPLY><GSTIN>29AAACT1234A1Z5</GSTIN>"
+                  "</LEDGSTREGDETAILS.LIST>")),
+    Ledger(IOTA, "Sundry Creditors", _d("8000"), "Cr", bill_wise=True,
+           opening_bills=(OpeningBill("OB-I1", date(2025, 3, 1), _d("5000"), "45 Days"),
+                          OpeningBill("OB-I2", date(2025, 3, 31), _d("3000"))),
+           extra=("<LEDGSTREGDETAILS.LIST><APPLICABLEFROM>20250401</APPLICABLEFROM>"
+                  "<GSTREGISTRATIONTYPE>Composition</GSTREGISTRATIONTYPE>"
+                  "<PLACEOFSUPPLY>Maharashtra</PLACEOFSUPPLY><GSTIN>27AAACI5678B1Z2</GSTIN>"
+                  "</LEDGSTREGDETAILS.LIST>")),
+    # Balances the openings above and the opening stock of Gizmo and Gizmo Pro
+    # (25,000 + 600 + 360 - 8,000).
+    Ledger("Capital - Seed Openings", "Capital Account", _d("17960"), "Cr"),
+)  # fmt: skip
+
+GIZMO_ITEM = StockItem(
+    GIZMO, "Nos", _d("30"), _d("20"),
+    opening_batches=(("Main Location", "Batch A", _d("20")), (BRANCH_STORE, "Batch B", _d("10"))),
+    extra=(
+        "<CATEGORY>Electronics</CATEGORY>"
+        "<REORDERBASE> 10 Nos</REORDERBASE><MINIMUMORDERBASE> 5 Nos</MINIMUMORDERBASE>"
+        "<GSTDETAILS.LIST><APPLICABLEFROM>20250401</APPLICABLEFROM><HSNCODE>8471</HSNCODE>"
+        "<TAXABILITY>Taxable</TAXABILITY>"
+        # Tally keeps the rates only with its "Any" state marker (&#4;), 2026-11-06.
+        "<STATEWISEDETAILS.LIST><STATENAME>&#4; Any</STATENAME>"
+        + "".join(
+            f"<RATEDETAILS.LIST><GSTRATEDUTYHEAD>{head}</GSTRATEDUTYHEAD>"
+            f"<GSTRATEVALUATIONTYPE>Based on Value</GSTRATEVALUATIONTYPE><GSTRATE> {rate}</GSTRATE>"
+            "</RATEDETAILS.LIST>"
+            for head, rate in (("IGST", 18), ("CGST", 9), ("SGST/UTGST", 9))
+        )
+        + "</STATEWISEDETAILS.LIST></GSTDETAILS.LIST>"
+        "<HSNDETAILS.LIST><APPLICABLEFROM>20250401</APPLICABLEFROM><HSNCODE>8471</HSNCODE>"
+        "</HSNDETAILS.LIST>"
+        f"<FULLPRICELIST.LIST><DATE>20250401</DATE><PRICELEVEL>{WHOLESALE}</PRICELEVEL>"
+        "<PRICELEVELLIST.LIST><RATE>35.00/Nos</RATE></PRICELEVELLIST.LIST></FULLPRICELIST.LIST>"
+    ),
+)  # fmt: skip
+
+# A batch-wise item: its opening by named batch (an item that isn't batch-wise keeps every
+# batch as Primary Batch, 2026-11-06).
+GIZMO_PRO_ITEM = StockItem(
+    "Gizmo Pro", "Nos", _d("12"), _d("30"),
+    opening_batches=(("Main Location", "Batch A", _d("8")), (BRANCH_STORE, "Batch B", _d("4"))),
+    extra="<ISBATCHWISEON>Yes</ISBATCHWISEON>",
+)  # fmt: skip
+
+SEED_SALES_TYPE = (
+    "VOUCHERTYPE", SEED_SALES,
+    "<PARENT>Sales</PARENT><NUMBERINGMETHOD>Automatic</NUMBERINGMETHOD><ISACTIVE>Yes</ISACTIVE>"
+    "<VOUCHERNUMBERSERIES.LIST><NAME>Default</NAME><NUMBERINGMETHOD>Automatic</NUMBERINGMETHOD>"
+    "</VOUCHERNUMBERSERIES.LIST><VOUCHERNUMBERSERIES.LIST><NAME>Branch</NAME>"
+    "<NUMBERINGMETHOD>Automatic</NUMBERINGMETHOD></VOUCHERNUMBERSERIES.LIST>",
+)  # fmt: skip
+# As Tally keeps a budget entered in TallyPrime (recorded 2026-11-06): a period with its
+# ledgers' amounts on nett transactions (a debit budget positive).
+BUDGET = (
+    "BUDGET", "FY27 Plan",
+    "<BUDGETPERIODS.LIST><STARTINGFROM>20260401</STARTINGFROM><ENDINGAT>20270331</ENDINGAT>"
+    + "".join(
+        f"<ACCOUNTINGALLOCATIONS.LIST><NAME>{name}</NAME><ISTRANSACTION>Yes</ISTRANSACTION>"
+        f"<AMOUNT>{amount}</AMOUNT></ACCOUNTINGALLOCATIONS.LIST>"
+        for name, amount in (("Electricity", "60000.00"), ("Courier Charges", "12000.00"))
+    )
+    + "</BUDGETPERIODS.LIST>",
+)  # fmt: skip
+
+IRN = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"  # synthetic, 64 hex
+DATA_VOUCHERS = (
+    # Part 1: an NEFT with no reference (Tally makes its own), its UTR in the narration; a
+    # cheque with its instrument and cleared dates; an IMPS with a 12-digit bank reference.
+    Voucher("BANK-3", "Payment", OCT_1, "Courier paid by NEFT, UTR HDFCN52026100112345",
+            (Entry("Courier Charges", "Dr", _d("1200")),
+             Entry(SEED_BANK, "Cr", _d("1200"),
+                   bank=BankDetail("e-Fund Transfer", "NEFT", OCT_1)))),
+    Voucher("BANK-4", "Receipt", OCT_2, "Cheque from Theta",
+            (Entry(SEED_BANK, "Dr", _d("3000"),
+                   bank=BankDetail("Cheque", "000777", OCT_1, bankers_date=OCT_2)),
+             Entry(THETA, "Cr", _d("3000"), (_bill("OB-T1", "3000", "Agst Ref"),)))),
+    Voucher("BANK-5", "Payment", OCT_2, "Paid Iota by IMPS",
+            (Entry(IOTA, "Dr", _d("2000"), (_bill("OB-I1", "2000", "Agst Ref"),)),
+             Entry(SEED_BANK, "Cr", _d("2000"),
+                   bank=BankDetail("e-Fund Transfer", "IMPS", OCT_2,
+                                   extra="<BANKTRANSACTIONREFERENCE>629012345678"
+                                         "</BANKTRANSACTIONREFERENCE>")))),
+    # Parts 2 and 5: a GST invoice with a 30-day credit period, place of supply, IRN and an
+    # e-way bill.
+    Voucher("BILL-1", "Sales", OCT_1, "GST invoice to Theta",
+            (Entry(THETA, "Dr", _d("236"), (Bill("INV-T1", "New Ref", _d("236"), "30 Days"),)),
+             Entry("Output CGST", "Cr", _d("18")), Entry("Output SGST", "Cr", _d("18"))),
+            items=(ItemLine(GIZMO, _d("5"), _d("40"), "Sales - Goods"),),
+            number="INV-T1", party=THETA,
+            head_extra=("<PLACEOFSUPPLY>Karnataka</PLACEOFSUPPLY>"
+                        f"<IRN>{IRN}</IRN><IRNACKNO>112610012345678</IRNACKNO>"
+                        "<IRNACKDATE>20261001</IRNACKDATE>"
+                        "<EWAYBILLDETAILS.LIST><BILLNUMBER>331001234567</BILLNUMBER>"
+                        "<BILLDATE>20261001</BILLDATE></EWAYBILLDETAILS.LIST>")),
+    # Part 3: 5 Gizmo moved from Main Location to Branch Store.
+    Voucher("STK-1", "Stock Journal", OCT_2, "Gizmo to Branch Store", (),
+            items=(ItemLine(GIZMO, _d("5"), _d("20"), None),
+                   ItemLine(GIZMO, _d("5"), _d("20"), None, inward=True, godown=BRANCH_STORE)),
+            stock_journal=True,),
+    # Part 2: a purchase invoice due on a date.
+    Voucher("BILL-2", "Purchase", OCT_2, "Gizmo from Iota",
+            (Entry(IOTA, "Cr", _d("120"), (Bill("PI-I2", "New Ref", _d("120"), "31-Oct-2026"),)),),
+            items=(ItemLine(GIZMO, _d("6"), _d("20"), "Purchases", inward=True),),
+            number="PI-I2", party=IOTA),
+    # Part 6: a voucher in a second numbering series.
+    Voucher("SER-1", SEED_SALES, OCT_2, "Branch series sale",
+            (Entry(THETA, "Dr", _d("40"), (_bill("INV-B1", "40"),)),),
+            items=(ItemLine(GIZMO, _d("1"), _d("40"), "Sales - Goods"),),
+            party=THETA, head_extra="<VOUCHERNUMBERSERIES>Branch</VOUCHERNUMBERSERIES>"),
+)  # fmt: skip
+
+
+# Part 4: a sales order and an invoice for part of it; a purchase order and its invoice.
+# As Tally takes an order (found 2026-11-06 from one entered in TallyPrime): the order number
+# in the voucher's REFERENCE and on every item line (ORDERNO) with the order's due date, and
+# the party's amount On Account; else Tally refuses it ("Bad Order Number in Voucher!").
+def _order_line(number: str) -> str:
+    return f'<ORDERNO>{number}</ORDERNO><ORDERDUEDATE P="31-Oct-2026">31-Oct-2026</ORDERDUEDATE>'
+
+
+def _against(number: str) -> str:
+    return (
+        "<INVOICEORDERLIST.LIST><BASICORDERDATE>20261001</BASICORDERDATE>"
+        f"<BASICPURCHASEORDERNO>{number}</BASICPURCHASEORDERNO></INVOICEORDERLIST.LIST>"
+    )
+
+
+ORDER_VOUCHERS = (
+    Voucher("ORD-1", "Sales Order", OCT_1, "Seed sales order",
+            (Entry(THETA, "Dr", _d("160"), (Bill("", "On Account", _d("160")),)),),
+            items=(ItemLine(GIZMO, _d("4"), _d("40"), "Sales - Goods",
+                            batch_extra=_order_line("SO-1")),),
+            reference="SO-1", party=THETA),
+    Voucher("ORD-1-INV", "Sales", OCT_2, "Part of order SO-1",
+            (Entry(THETA, "Dr", _d("80"), (_bill("INV-T2", "80"),)),),
+            items=(ItemLine(GIZMO, _d("2"), _d("40"), "Sales - Goods",
+                            batch_extra=_order_line("SO-1")),),
+            number="INV-T2", party=THETA, head_extra=_against("SO-1")),
+    Voucher("ORD-2", "Purchase Order", OCT_1, "Order to Iota",
+            (Entry(IOTA, "Cr", _d("120"), (Bill("", "On Account", _d("120")),)),),
+            items=(ItemLine(GIZMO, _d("6"), _d("20"), "Purchases", inward=True,
+                            batch_extra=_order_line("PO-1")),),
+            reference="PO-1", party=IOTA),
+    Voucher("ORD-2-INV", "Purchase", OCT_2, "Invoice for order PO-1",
+            (Entry(IOTA, "Cr", _d("120"), (_bill("PI-I3", "120"),)),),
+            items=(ItemLine(GIZMO, _d("6"), _d("20"), "Purchases", inward=True,
+                            batch_extra=_order_line("PO-1")),),
+            number="PI-I3", party=IOTA, head_extra=_against("PO-1")),
+)  # fmt: skip
+
 SEED = SeedData(
     ledgers=(
         *LEDGERS,
@@ -747,6 +946,7 @@ SEED = SeedData(
         *LAYOUT_LEDGERS,
         *NETTING_LEDGERS,
         *YEAR_END_LEDGERS,
+        *DATA_LEDGERS,
     ),
     groups=NETTING_GROUPS,
     currencies=(USD,),
@@ -759,6 +959,8 @@ SEED = SeedData(
         StockItem("Client Fabric", "Nos"),  # a principal's material, with us
         StockItem("Hinge", "Nos", _d("5"), _d("2"), group="Components"),  # in a stock group
         StockItem("Bolt", "Nos"),  # bought and sold across the year end
+        GIZMO_ITEM,  # openings by godown and batch, HSN, category, reorder level, a price
+        GIZMO_PRO_ITEM,  # batch-wise: openings by named batch
     ),
     cost_categories=(PROJECTS,),
     cost_centres=(
@@ -776,9 +978,18 @@ SEED = SeedData(
         *LAYOUT_VOUCHERS,
         *NETTING_VOUCHERS,
         *YEAR_END_VOUCHERS,
+        *DATA_VOUCHERS,
+        *ORDER_VOUCHERS,
     ),
     voucher_types=(("Adjustment Journal", "Journal"),),  # a custom type under Journal
-    godowns=(Godown(JOB_WORKER, external=True), Godown(PRINCIPAL, internal=True)),
+    godowns=(
+        Godown(JOB_WORKER, external=True),
+        Godown(PRINCIPAL, internal=True),
+        Godown(BRANCH_STORE),
+    ),
+    stock_categories=("Electronics",),
+    raw_masters=(SEED_SALES_TYPE, BUDGET),
+    price_levels=(WHOLESALE,),
     renamed_groups=(STOCK_IN_HAND,),
     stock_groups=("Components",),
 )
@@ -824,6 +1035,13 @@ def validate(seed: SeedData) -> list[str]:
                 problems.append(f"{v.marker}: batches don't add up for {item.item}")
             if item.item not in items:
                 problems.append(f"{v.marker}: unknown stock item {item.item}")
+    for ledger in seed.ledgers:
+        if ledger.opening_bills and sum(b.amount for b in ledger.opening_bills) != ledger.opening:
+            problems.append(f"{ledger.name}: opening bills don't add up to the opening")
+    for stock_item in seed.stock_items:
+        batches = stock_item.opening_batches
+        if batches and sum(q for _, _, q in batches) != stock_item.opening_qty:
+            problems.append(f"{stock_item.name}: opening batches don't add up to the opening")
     markers = [v.marker for v in seed.vouchers]
     if len(set(markers)) != len(markers):
         problems.append("duplicate voucher markers")

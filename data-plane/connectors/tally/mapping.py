@@ -13,6 +13,7 @@ import re
 import xml.etree.ElementTree as ET  # noqa: N817
 from collections.abc import Iterable
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -25,6 +26,7 @@ from connectors.tally.signs import (
     tally_foreign_parts,
     tally_foreign_unread,
 )
+from core import utr
 from core.canonical import (
     NO_STANDARD_ACCOUNT,
     CanonicalBill,
@@ -518,10 +520,13 @@ def _line(entry: ET.Element) -> CanonicalLine:
         if text_of(bill, "AMOUNT") or text_of(bill, "NAME")
     )
     currency, amount_fc, rate = _foreign(text_of(entry, "AMOUNT"))
-    instruments = [
-        (text_of(bank, "INSTRUMENTNUMBER"), text_of(bank, "UNIQUEREFERENCENUMBER"))
+    # Tally sends an empty bank allocation on other lines too: only those with a value count.
+    banks = [
+        bank
         for bank in entry.findall("BANKALLOCATIONS.LIST")
+        if any((field.text or "").strip() for field in bank.iter() if field is not bank)
     ]
+    line_utr, source = _utr_of(banks, entry)
     return CanonicalLine(
         ledger_name=text_of(entry, "LEDGERNAME") or "",
         amount=_amount(entry, "AMOUNT"),
@@ -532,9 +537,70 @@ def _line(entry: ET.Element) -> CanonicalLine:
         is_party_line=_flag(entry, "ISPARTYLEDGER"),
         bills=bills,
         cost_allocations=cost_allocations(entry),
-        instrument_number=_joined(number for number, _ in instruments),
-        transaction_reference=_joined(utr for _, utr in instruments),
+        instrument_number=_joined(text_of(b, "INSTRUMENTNUMBER") for b in banks),
+        transaction_type=_joined(text_of(b, "TRANSACTIONTYPE") for b in banks),
+        instrument_date=_first_date(banks, "INSTRUMENTDATE"),
+        bank_cleared_date=_first_date(banks, "BANKERSDATE"),
+        bank_recon_status=_joined(text_of(b, "BANKRECONSTATUS") for b in banks),
+        tally_bank_entry_id=_joined(text_of(b, "UNIQUEREFERENCENUMBER") for b in banks),
+        utr=line_utr,
+        utr_source=source,
+        has_bank_details=bool(banks),
     )
+
+
+# The bank-allocation fields a bank's own transaction reference can be kept in (recorded on the
+# test company: an IMPS reference in BANKTRANSACTIONREFERENCE, 2026-11-06). Never
+# UNIQUEREFERENCENUMBER: Tally fills it with a code of its own.
+UTR_FIELDS = (
+    "BANKTRANSACTIONREFERENCE", "BETRANSACTIONREFERENCE", "BANKREFERENCE", "BANKREFNUMBER",
+    "TRANSACTIONID", "BANKOPERATIONREFERENCE", "BEOPERATIONREFERENCE", "BANKPORTALREFERENCE",
+)  # fmt: skip
+
+
+def _udf_values(element: ET.Element) -> list[str]:
+    """The values of an object's own user-defined fields (UDF:..., also in their lists)."""
+    values = []
+    for child in element:
+        if not parser.restore_name(child.tag).startswith("UDF:"):
+            continue
+        values += [t.strip() for t in child.itertext() if t.strip()]
+    return values
+
+
+def _utr_of(banks: list[ET.Element], entry: ET.Element) -> tuple[str | None, str | None]:
+    """The UTR in a bank line's reference fields, else in its user-defined fields."""
+    for bank in banks:
+        for field in UTR_FIELDS:
+            if found := utr.as_utr(text_of(bank, field)):
+                return found, "bank_field"
+    for value in (*(v for b in banks for v in _udf_values(b)), *_udf_values(entry)):
+        if found := utr.as_utr(value):
+            return found, "udf"
+    return None, None
+
+
+def _first_date(elements: list[ET.Element], tag: str) -> date | None:
+    return min(
+        (d for e in elements if (d := parser.tally_date(text_of(e, tag))) is not None),
+        default=None,
+    )
+
+
+def _with_voucher_utr(voucher: ET.Element, lines: list[CanonicalLine]) -> list[CanonicalLine]:
+    """Bank lines without a UTR of their own take one from the voucher's user-defined fields,
+    else from its narration (utr_source: udf or narration)."""
+    from_udf = next((u for v in _udf_values(voucher) if (u := utr.as_utr(v))), None)
+    from_narration = utr.in_text(text_of(voucher, "NARRATION"))
+    found, source = (from_udf, "udf") if from_udf else (from_narration, "narration")
+    if found is None:
+        return lines
+    return [
+        replace(line, utr=found, utr_source=source)
+        if line.has_bank_details and line.utr is None
+        else line
+        for line in lines
+    ]
 
 
 def cost_allocations(entry: ET.Element) -> tuple[CanonicalCostAllocation, ...]:
@@ -697,7 +763,11 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
         voucher_type_name=voucher_type_name,
         voucher_number=text_of(element, "VOUCHERNUMBER") or "",
         voucher_date=voucher_date,
-        lines=tuple(_with_item_allocations(element, [_line(e) for e in postings(element)])),
+        lines=tuple(
+            _with_voucher_utr(
+                element, _with_item_allocations(element, [_line(e) for e in postings(element)])
+            )
+        ),
         inventory=tuple(
             line for e, inward in inventory_entries for line in _inventory_lines(e, inward)
         ),
@@ -727,6 +797,8 @@ _LEDGER_ENTRY = (
     "CATEGORYALLOCATIONS.LIST/COSTCENTREALLOCATIONS.LIST/NAME",
     "CATEGORYALLOCATIONS.LIST/COSTCENTREALLOCATIONS.LIST/AMOUNT",
     "BANKALLOCATIONS.LIST/INSTRUMENTNUMBER", "BANKALLOCATIONS.LIST/UNIQUEREFERENCENUMBER",
+    "BANKALLOCATIONS.LIST/TRANSACTIONTYPE", "BANKALLOCATIONS.LIST/INSTRUMENTDATE",
+    "BANKALLOCATIONS.LIST/BANKERSDATE", "BANKALLOCATIONS.LIST/BANKRECONSTATUS",
 )  # fmt: skip
 _INVENTORY_ENTRY = (
     "STOCKITEMNAME", "ACTUALQTY", "BILLEDQTY", "RATE", "AMOUNT", "ISDEEMEDPOSITIVE",

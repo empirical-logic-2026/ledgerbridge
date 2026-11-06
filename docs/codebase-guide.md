@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.49 |
+| Version | 0.50 |
 | Date | 2026-11-06 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
@@ -162,6 +162,7 @@ ledgerbridge/
 | `tally/fixtures.py` | `FixtureTransport` plays back recorded Tally answers in tests and CI, so they run without Tally. |
 | `tally/reports.py` | Reads Tally's own Trial Balance, Balance Sheet and Profit and Loss exports into statement lines (canonical sign), and the opening and closing stock its Profit and Loss uses. |
 | `tally/tools.py` | Developer tools for the test company only: record fixtures, run the sign check. |
+| `tally/find_field.py`, `tally/voucher_lists.txt` | `./dev.ps1 find-field`: one voucher asked for with every field and sub-list (the sub-lists recorded on the test company, then any nested one), and the paths of the fields holding a text, never the values; also the requests behind the full test-company export. |
 | `tally/audit.py` | Read-only count comparison between Tally master/monthly voucher counts and active canonical records; fixture tests mark unrecorded collections as unavailable. |
 
 **`core/`: the source-independent heart.** Nothing here knows about Tally.
@@ -179,6 +180,7 @@ ledgerbridge/
 | `statement_differences.py` | A pilot-safe summary of the statement lines that differ from the source's: safe labels (standard names; custom groups described by where they sit), missing or different, on how many dates, and which tested amounts each difference equals (Direct Expenses, stock, forex, the last year end's profit and stock). Printed by validation and `statements`. |
 | `report_periods.py` | The period a report covers (whole months or a date range), the period it is compared with (`Period.previous`: the same days of the month or quarter before, a year earlier, or as many months or days just before; `last_year`) and the stored statements its figures come from: the one at the end less the one before the start (in Educational mode a 30-day month ends on the 2nd of the next month; a date range runs to the last stored date within it). |
 | `home.py` | The dashboard home's figures (`GET /api/v1/home`): Profit & Loss and Balance Sheet cards from the stored statements, balances and stock value, sales and purchases by month, channel and company; groups found by their predefined role. |
+| `utr.py` | The UTR rule: a value is a bank's transaction reference only when it looks like one (NEFT/RTGS, IMPS/UPI, or labelled UTR); never the source's own codes. |
 | `stock.py` | The Stock page (`GET /api/v1/stock` and `.../{item_id}`, `api/v1/stock.py`): every item's opening, inward, outward and closing quantity (ours, by `stock_moving`: the same rule validation proves against the source, VAL-006), the source's own value per item, stock group and godown at the last stored date within the period, the stock value by date, and one item's movements and months. |
 | `transactions.py` | The Transactions page (`GET /api/v1/transactions`, `api/v1/transactions.py`): one row per effective ledger line, with its voucher's date, type, number, reference, party and GSTIN, narration, the voucher's other ledgers (particulars), and the line's bills, cost centres and cheque or UTR number. |
 | `registers.py` | The Sales and Purchase registers (`GET /api/v1/registers/{side}`): one row per voucher, Day Book style (the first ledger entry as Particulars, Debit or Credit, narration) with its value on the side's ledgers. |
@@ -255,6 +257,7 @@ ledgerbridge/
 | `conftest.py` | Shared test setup: an in-memory database standing in for MySQL, the recorded Tally answers, the test company's name. |
 | `sim_tally.py` | A simulated Tally for tests: large companies, slow months, timeouts, custom fields, values that don't fit, names written differently. |
 | `fixtures/tally/` | Real answers recorded from the test company (`*.xml`) and `manifest.json`, which says which request each file answers. Test company data only. |
+| `fixtures/tally/rules/data-completion/` | The seeded test company (2026-11-06) through the connector's requests with every field data-completion parts 1 to 7 fetch: bank details, bills, godowns and batches, orders, GST, settings, other masters. |
 | `fixtures/tally/full-export/` | One full export of the test company, every field (`devtools/tally_full_export.py`); read by the field inventory, not replayed. |
 | `fixtures/tally/rules/` | Answers recorded from the test company that prove Tally's counting rules: ledger and stock item openings fetched for different periods, and tracked notes and invoices. |
 | `test_counting_rules.py` | Tally's counting rules (schema.md 7.5): openings fetched at the books' beginning, stock moved once for tracked invoices, and the seed matching Tally's own figures. |
@@ -452,6 +455,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-06 | 0.50 | Data completion part 1: `core/utr.py`, `connectors/tally/find_field.py` (`./dev.ps1 find-field`), `voucher_lists.txt`, the never-fetched list (`envelopes.DENIED`), `tests/fixtures/tally/rules/data-completion/`, `tests/test_bank_details.py`, `tests/test_utr.py`. |
 | 2026-11-06 | 0.49 | The Transactions page: `core/transactions.py`, `api/v1/transactions.py`, `src/apps/books/Transactions.tsx`, `tests/test_transactions_integration.py`. |
 | 2026-11-06 | 0.48 | The Stock page (`core/stock.py`, `api/v1/stock.py`, `src/apps/stock/`, migration 0029: the source's value per item); the Amounts setting (`src/amountFormat.ts`, `src/components/Money.tsx`); `tests/test_stock.py`, `tests/test_stock_integration.py`. |
 | 2026-11-06 | 0.47 | `devtools/tally_full_export.py`, `devtools/tally_field_inventory.py`, `tests/fixtures/tally/full-export/` and `docs/data-completeness-fields.md`: the data-completeness audit from a full test-company export. |
