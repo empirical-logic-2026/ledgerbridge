@@ -80,7 +80,7 @@ def test_status_comes_from_the_connector() -> None:
     assert inventory.status("GROUP", "RESERVEDNAME", attribute=True) == "column"
     assert inventory.status("LEDGER", "RESERVEDNAME", attribute=True) == "raw only"
     assert inventory.status("VOUCHER", "ALLLEDGERENTRIES.LIST/AMOUNT") == "column"
-    path = "ALLLEDGERENTRIES.LIST/BANKALLOCATIONS.LIST/INSTRUMENTDATE"
+    path = "ALLLEDGERENTRIES.LIST/BANKALLOCATIONS.LIST/PAYMENTMODE"
     assert inventory.status("VOUCHER", path) == "extra"
     assert inventory.status("VOUCHER", "ALLLEDGERENTRIES.LIST/BILLALLOCATIONS.LIST/BILLDATE") == (
         "not fetched"
@@ -93,7 +93,7 @@ def test_the_recording_is_complete() -> None:
     """Every field Tally's own Day Book export sets is in the recorded vouchers."""
     assert inventory.completeness_problems(export.DEFAULT_OUT) == []
     fields = inventory.inventory(export.DEFAULT_OUT)
-    assert fields["VOUCHER"].objects == 79
+    assert fields["VOUCHER"].objects == 85
     assert fields["COMPANY"].objects == 1
     # Fields the connector fetches by name that aren't part of an exported object.
     assert "MASTERID" in inventory.computed_on_request("LEDGER", fields["LEDGER"])

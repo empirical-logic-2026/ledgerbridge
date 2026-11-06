@@ -38,7 +38,13 @@ class TransactionOut(BaseModel):
     bills: str | None
     cost_centres: str | None
     order_number: str | None = None  # not fetched from the source yet: always empty
-    instrument: str | None  # cheque or transfer number, and the UTR
+    cheque: str | None  # a bank line's cheque or instrument number
+    utr: str | None  # only a value that looks like a bank's UTR
+    utr_source: str | None  # where it was found: bank_field, udf or narration
+    transaction_type: str | None  # Cheque, e-Fund Transfer, ...
+    instrument_date: date | None
+    bank_cleared_date: date | None  # the bank's date (bank reconciliation)
+    tally_bank_entry_id: str | None  # the source's own id for the bank entry, not a UTR
 
 
 class TransactionsOut(BaseModel):
@@ -72,7 +78,10 @@ def list_transactions(
                 reference=r.reference, party_id=r.party_id, party=r.party, gstin=r.gstin,
                 ledger_id=r.ledger_id, ledger=r.ledger, particulars=r.particulars,
                 debit=r.debit, credit=r.credit, narration=r.narration, bills=r.bills,
-                cost_centres=r.cost_centres, instrument=r.instrument,
+                cost_centres=r.cost_centres, cheque=r.cheque, utr=r.utr,
+                utr_source=r.utr_source, transaction_type=r.transaction_type,
+                instrument_date=r.instrument_date, bank_cleared_date=r.bank_cleared_date,
+                tally_bank_entry_id=r.tally_bank_entry_id,
             )
             for r in page.rows
         ],

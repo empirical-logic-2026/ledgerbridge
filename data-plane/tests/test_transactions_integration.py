@@ -3,7 +3,7 @@ company synced with the cost-centre and bank recordings of 2026-11-05 (the fixtu
 tests/test_cost_centres_integration.py): a payment with cost centres paid by cheque 000451
 (CC-2), a purchase invoice with reference SUP-INV-4471 (CC-3), and an e-Fund Transfer with
 UTR UTR20260902000017 (BANK-2). One row per effective ledger line, its voucher's other
-ledgers as particulars, and the line's bills, cost centres and instrument."""
+ledgers as particulars, and the line's bills, cost centres and bank details."""
 
 from collections import Counter, defaultdict
 from decimal import Decimal
@@ -83,7 +83,7 @@ def test_particulars_are_the_other_side_and_the_line_details_are_on_their_lines(
         "Project Alpha",
         "Alpha Phase 1",
     }
-    assert bank["instrument"] == "000451" and expense["instrument"] is None
+    assert bank["cheque"] == "000451" and expense["cheque"] is None
 
     invoice = _of(rows, purchase)
     assert {r["reference"] for r in invoice} == {"SUP-INV-4471"}
@@ -93,8 +93,10 @@ def test_particulars_are_the_other_side_and_the_line_details_are_on_their_lines(
     assert set(purchases["cost_centres"].split(", ")) == {"Branch", "Head Office"}
     assert Counter(r["voucher_type"] for r in invoice) == Counter({"Purchase": len(invoice)})
 
-    utr = next(r for r in _of(rows, transfer) if r["instrument"])
-    assert utr["instrument"] == "NEFT-2026-0902 / UTR20260902000017"
+    neft = next(r for r in _of(rows, transfer) if r["cheque"])
+    assert neft["cheque"] == "NEFT-2026-0902" and neft["transaction_type"] == "e-Fund Transfer"
+    # Tally's own id for the entry: kept apart, never shown as the UTR.
+    assert neft["tally_bank_entry_id"] == "UTR20260902000017" and neft["utr"] is None
 
 
 def test_the_period_limits_the_rows(client: TestClient, synced: int) -> None:

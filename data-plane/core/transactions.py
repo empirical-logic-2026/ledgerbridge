@@ -49,7 +49,13 @@ class TransactionRow:
     narration: str | None
     bills: str | None
     cost_centres: str | None
-    instrument: str | None  # cheque or transfer number, and the UTR
+    cheque: str | None  # a bank line's cheque or instrument number
+    utr: str | None  # only a value that looks like a UTR (core/utr.py)
+    utr_source: str | None  # bank_field, udf or narration
+    transaction_type: str | None
+    instrument_date: date | None
+    bank_cleared_date: date | None
+    tally_bank_entry_id: str | None  # the source's own id for the bank entry, never a UTR
 
 
 @dataclass
@@ -64,10 +70,6 @@ def _joined(values: list[str]) -> str | None:
     return JOIN.join(unique) if unique else None
 
 
-def _instrument(number: str | None, utr: str | None) -> str | None:
-    return " / ".join(v for v in (number, utr) if v) or None
-
-
 def _lines(session: Session, companies: list[int], period: Period):  # noqa: ANN202
     party = aliased(A.Party)
     query = in_period(
@@ -76,7 +78,9 @@ def _lines(session: Session, companies: list[int], period: Period):  # noqa: ANN
             A.Voucher.id, A.VoucherType.name, A.Voucher.voucher_number,
             A.Voucher.reference_number, A.Voucher.party_id, party.name, party.gstin,
             A.VoucherLine.ledger_id, A.Ledger.name, A.VoucherLine.amount, A.Voucher.narration,
-            A.VoucherLine.instrument_number, A.VoucherLine.transaction_reference,
+            A.VoucherLine.instrument_number, A.VoucherLine.utr, A.VoucherLine.utr_source,
+            A.VoucherLine.transaction_type, A.VoucherLine.instrument_date,
+            A.VoucherLine.bank_cleared_date, A.VoucherLine.tally_bank_entry_id,
         )
         .join(A.Voucher, A.Voucher.id == A.VoucherLine.voucher_id)
         .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
@@ -158,7 +162,8 @@ def transactions(session: Session, companies: list[int], period: Period) -> Tran
     centres = _per_line(session, line_ids, _cost_centres)
     rows = []
     for (line_id, entity, on, vid, vtype, number, reference, party_id, party, gstin, ledger_id,
-         ledger, amount, narration, instrument, utr) in found:  # fmt: skip
+         ledger, amount, narration, cheque, utr, utr_source, transaction_type, instrument_date,
+         cleared, tally_id) in found:  # fmt: skip
         amount = Decimal(amount)
         rows.append(
             TransactionRow(
@@ -171,7 +176,9 @@ def transactions(session: Session, companies: list[int], period: Period) -> Tran
                 credit=-amount if amount < 0 else None,
                 narration=narration, bills=_joined(bills[int(line_id)]),
                 cost_centres=_joined(centres[int(line_id)]),
-                instrument=_instrument(instrument, utr),
+                cheque=cheque, utr=utr, utr_source=utr_source,
+                transaction_type=transaction_type, instrument_date=instrument_date,
+                bank_cleared_date=cleared, tally_bank_entry_id=tally_id,
             )
         )  # fmt: skip
     return TransactionPage(rows, truncated)

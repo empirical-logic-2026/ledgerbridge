@@ -5,38 +5,40 @@
     "2025-04-01",
     "2027-03-31"
   ],
-  "voucher_list_paths_fetched": 174,
+  "voucher_list_paths_fetched": 178,
   "voucher_rounds": 2,
   "objects": {
     "company.xml": {
       "COMPANY": 1
     },
     "masters.xml": {
+      "BUDGET": 1,
       "COSTCATEGORY": 2,
       "COSTCENTRE": 4,
       "CURRENCY": 4,
-      "GODOWN": 3,
+      "GODOWN": 4,
       "GROUP": 31,
       "INCOMETAXCLASSIFICATION": 94,
       "INCOMETAXSLAB": 10,
-      "LEDGER": 46,
+      "LEDGER": 51,
+      "STOCKCATEGORY": 1,
       "STOCKGROUP": 2,
-      "STOCKITEM": 7,
+      "STOCKITEM": 9,
       "TAXUNIT": 2,
       "UNIT": 1,
-      "VOUCHERTYPE": 25
+      "VOUCHERTYPE": 26
     },
     "daybook.xml": {
-      "VOUCHER": 5
+      "VOUCHER": 9
     },
     "vouchers.xml": {
-      "VOUCHER": 79
+      "VOUCHER": 85
     }
   },
   "sizes": {
-    "company.xml": 16645,
-    "masters.xml": 1647613,
-    "daybook.xml": 246335,
-    "vouchers.xml.gz": 555271
+    "company.xml": 16656,
+    "daybook.xml": 460937,
+    "masters.xml.gz": 39319,
+    "vouchers.xml.gz": 610682
   }
 }

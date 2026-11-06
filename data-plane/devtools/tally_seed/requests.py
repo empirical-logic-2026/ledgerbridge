@@ -61,6 +61,22 @@ def _names(name: str, *aliases: str) -> str:
     return f"<NAME.LIST>{listed}</NAME.LIST>"
 
 
+def _opening_bills(ledger: Ledger) -> str:
+    """The ledger's opening bills, each on the ledger's side (debit negative)."""
+    return "".join(
+        "<BILLALLOCATIONS.LIST>"
+        f"<NAME>{escape(b.name)}</NAME><BILLDATE>{_date(b.on)}</BILLDATE>"
+        f"<OPENINGBALANCE>{_amount(ledger.opening_side, b.amount)}</OPENINGBALANCE>"
+        + (
+            f"<BILLCREDITPERIOD>{escape(b.credit_period)}</BILLCREDITPERIOD>"
+            if b.credit_period
+            else ""
+        )
+        + "<ISADVANCE>No</ISADVANCE></BILLALLOCATIONS.LIST>"
+        for b in ledger.opening_bills
+    )
+
+
 def ledger_create(ledger: Ledger) -> str:
     gst = ""
     if ledger.gst_duty_head:
@@ -71,9 +87,9 @@ def ledger_create(ledger: Ledger) -> str:
         f"<PARENT>{escape(ledger.parent)}</PARENT>"
         f"<ISBILLWISEON>{'Yes' if ledger.bill_wise else 'No'}</ISBILLWISEON>"
         + (f"<CURRENCYNAME>{escape(ledger.currency)}</CURRENCYNAME>" if ledger.currency else "")
-        + f"{gst}"
+        + f"{gst}{ledger.extra}"
         f"<OPENINGBALANCE>{_amount(ledger.opening_side, ledger.opening)}</OPENINGBALANCE>"
-        "</LEDGER>"
+        f"{_opening_bills(ledger)}</LEDGER>"
     )
 
 
@@ -109,25 +125,48 @@ def godown_create(godown: Godown) -> str:
     )
 
 
+def _opening(quantity: Decimal, rate: Decimal, unit: str) -> str:
+    """An opening stock: an asset (debit), so its value is negative in Tally's XML."""
+    return (
+        f"<OPENINGBALANCE> {quantity:.0f} {escape(unit)}</OPENINGBALANCE>"
+        f"<OPENINGVALUE>{-quantity * rate:.2f}</OPENINGVALUE>"
+        f"<OPENINGRATE>{rate:.2f}/{escape(unit)}</OPENINGRATE>"
+    )
+
+
 def stock_item_create(item: StockItem) -> str:
     opening = ""
     if item.opening_qty:
-        # An opening stock is an asset (debit): its value is negative in Tally's XML.
-        value = f"{-item.opening_qty * item.opening_rate:.2f}"
-        fields = (
-            f"<OPENINGBALANCE> {item.opening_qty:.0f} {escape(item.unit)}</OPENINGBALANCE>"
-            f"<OPENINGVALUE>{value}</OPENINGVALUE>"
-            f"<OPENINGRATE>{item.opening_rate:.2f}/{escape(item.unit)}</OPENINGRATE>"
-        )
-        opening = (
-            f"{fields}<BATCHALLOCATIONS.LIST><GODOWNNAME>{GODOWN}</GODOWNNAME>"
-            f"<BATCHNAME>{BATCH}</BATCHNAME>{fields}</BATCHALLOCATIONS.LIST>"
+        batches = item.opening_batches or ((GODOWN, BATCH, item.opening_qty),)
+        opening = _opening(item.opening_qty, item.opening_rate, item.unit) + "".join(
+            f"<BATCHALLOCATIONS.LIST><GODOWNNAME>{escape(godown)}</GODOWNNAME>"
+            f"<BATCHNAME>{escape(batch)}</BATCHNAME>"
+            f"{_opening(quantity, item.opening_rate, item.unit)}</BATCHALLOCATIONS.LIST>"
+            for godown, batch, quantity in batches
         )
     parent = f"<PARENT>{escape(item.group)}</PARENT>" if item.group else ""
     return (
         f'<STOCKITEM NAME={quoteattr(item.name)} ACTION="Create">{_names(item.name)}'
-        f"{parent}<BASEUNITS>{escape(item.unit)}</BASEUNITS>{opening}</STOCKITEM>"
+        f"{parent}<BASEUNITS>{escape(item.unit)}</BASEUNITS>{item.extra}{opening}</STOCKITEM>"
     )
+
+
+def company_price_levels(company: str, levels: tuple[str, ...]) -> str:
+    """Turns on price levels and names them (the company's list, used by item price lists)."""
+    listed = "".join(f"<PRICELEVELLIST>{escape(level)}</PRICELEVELLIST>" for level in levels)
+    return (
+        f'<COMPANY NAME={quoteattr(company)} ACTION="Alter"><USEPRICELEVELS>Yes</USEPRICELEVELS>'
+        f'<PRICELEVELLIST.LIST TYPE="String">{listed}</PRICELEVELLIST.LIST></COMPANY>'
+    )
+
+
+def stock_category_create(name: str) -> str:
+    return f'<STOCKCATEGORY NAME={quoteattr(name)} ACTION="Create">{_names(name)}</STOCKCATEGORY>'
+
+
+def raw_master(tag: str, name: str, body: str) -> str:
+    """A master given whole (its XML as Tally imports it), created."""
+    return f'<{tag} NAME={quoteattr(name)} ACTION="Create">{_names(name)}{body}</{tag}>'
 
 
 def voucher_type_create(name: str, parent: str) -> str:
@@ -191,8 +230,14 @@ def currency_create(currency: Currency) -> str:
 def _entry(entry: Entry, list_tag: str, party: bool = False) -> str:
     bills = "".join(
         "<BILLALLOCATIONS.LIST>"
-        f"<NAME>{escape(b.name)}</NAME><BILLTYPE>{b.bill_type}</BILLTYPE>"
-        f"<AMOUNT>{_amount(entry.side, b.amount)}</AMOUNT>"
+        + (f"<NAME>{escape(b.name)}</NAME>" if b.name else "")
+        + f"<BILLTYPE>{b.bill_type}</BILLTYPE>"
+        + (
+            f"<BILLCREDITPERIOD>{escape(b.credit_period)}</BILLCREDITPERIOD>"
+            if b.credit_period
+            else ""
+        )
+        + f"<AMOUNT>{_amount(entry.side, b.amount)}</AMOUNT>"
         "</BILLALLOCATIONS.LIST>"
         for b in entry.bills
     )
@@ -241,7 +286,8 @@ def _bank(entry: Entry) -> str:
         f"<INSTRUMENTDATE>{_date(bank.instrument_date)}</INSTRUMENTDATE>"
         f"<TRANSACTIONTYPE>{escape(bank.transaction_type)}</TRANSACTIONTYPE>"
         f"<INSTRUMENTNUMBER>{escape(bank.instrument_number)}</INSTRUMENTNUMBER>{utr}"
-        f"<PAYMENTMODE>Transacted</PAYMENTMODE>"
+        + (f"<BANKERSDATE>{_date(bank.bankers_date)}</BANKERSDATE>" if bank.bankers_date else "")
+        + f"{bank.extra}<PAYMENTMODE>Transacted</PAYMENTMODE>"
         f"<AMOUNT>{_amount(entry.side, entry.amount)}</AMOUNT>"
         "</BANKALLOCATIONS.LIST>"
     )
@@ -266,6 +312,7 @@ def _inventory(line: ItemLine, tag: str = "ALLINVENTORYENTRIES.LIST") -> str:
         "<BATCHALLOCATIONS.LIST>"
         f"<GODOWNNAME>{escape(line.godown)}</GODOWNNAME>{destination}<BATCHNAME>{BATCH}</BATCHNAME>"
         + (f"<TRACKINGNUMBER>{escape(tracking)}</TRACKINGNUMBER>" if tracking else "")
+        + line.batch_extra
         + f"<AMOUNT>{_amount(side, quantity * line.rate)}</AMOUNT>{_qty(quantity)}"
         "</BATCHALLOCATIONS.LIST>"
         for quantity, tracking in line.split()
@@ -301,7 +348,7 @@ def _voucher_body(voucher: Voucher, entries: tuple[Entry, ...]) -> str:
         head += f"<VOUCHERNUMBER>{escape(voucher.number)}</VOUCHERNUMBER>"
     if voucher.reference:
         head += f"<REFERENCE>{escape(voucher.reference)}</REFERENCE>"
-    head += f"<NARRATION>{escape(voucher.tagged_narration)}</NARRATION>"
+    head += f"<NARRATION>{escape(voucher.tagged_narration)}</NARRATION>{voucher.head_extra}"
     if voucher.optional:
         head += "<ISOPTIONAL>Yes</ISOPTIONAL>"
     if voucher.post_dated:
@@ -326,10 +373,18 @@ def _voucher_body(voucher: Voucher, entries: tuple[Entry, ...]) -> str:
 
 
 def voucher_create(voucher: Voucher) -> str:
+    """A new voucher; with items, in Tally's invoice view, or for a stock journal its
+    consumption view (Tally raised an exception importing one in the invoice view when it
+    moved an item between godowns, 2026-11-06)."""
     view = ' OBJVIEW="Invoice Voucher View"' if voucher.items else ""
+    body = _voucher_body(voucher, voucher.entries)
+    if voucher.stock_journal:
+        view = ' OBJVIEW="Consumption Voucher View"'
+        body = body.replace(
+            "</NARRATION>", "</NARRATION><PERSISTEDVIEW>Consumption Voucher View</PERSISTEDVIEW>", 1
+        )
     return (
-        f'<VOUCHER VCHTYPE={quoteattr(voucher.voucher_type)} ACTION="Create"{view}>'
-        f"{_voucher_body(voucher, voucher.entries)}</VOUCHER>"
+        f'<VOUCHER VCHTYPE={quoteattr(voucher.voucher_type)} ACTION="Create"{view}>{body}</VOUCHER>'
     )
 
 

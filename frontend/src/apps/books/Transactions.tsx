@@ -2,8 +2,8 @@
 // and period chosen, in the table explorer: date, voucher type and number, the reference (e.g.
 // the supplier's invoice number), the party, the line's ledger, the voucher's other ledgers
 // (particulars), debit and credit, narration, the line's bills and cost centres, the order
-// number (not fetched from the source yet), the party's GSTIN and the bank line's cheque or
-// UTR number. Rows: core/transactions.py (GET /api/v1/transactions).
+// number (not fetched from the source yet), the party's GSTIN, and the bank line's cheque
+// number and UTR (only a value that looks like one), with its other bank details hidden. Rows: core/transactions.py (GET /api/v1/transactions).
 
 import { Alert, Skeleton, Typography } from 'antd'
 import type { Company, TransactionOut, TransactionsOut } from '../../api/types.ts'
@@ -19,6 +19,12 @@ interface Props extends PanelProps {
   page: TransactionsOut | undefined
   loading: boolean
   error: Error | null
+}
+
+const UTR_SOURCES: Record<string, string> = {
+  bank_field: "From the bank line's details",
+  udf: 'From a user-defined field',
+  narration: 'Found in the narration',
 }
 
 function columns(page: TransactionsOut, companies: Company[], query: Query): ExplorerColumn<TransactionOut>[] {
@@ -46,7 +52,19 @@ function columns(page: TransactionsOut, companies: Company[], query: Query): Exp
     { key: 'cost_centres', label: 'Cost Centre', kind: 'text', value: (r) => r.cost_centres ?? null, groupable: true, help: 'The cost centres this line is allocated to.' },
     { key: 'order', label: 'Order Number', kind: 'text', value: (r) => r.order_number ?? null, help: 'The sales or purchase order (PO / SO number): not read from the source yet, so empty for now.' },
     { key: 'gstin', label: 'GSTIN', kind: 'text', value: (r) => r.gstin ?? null, help: "The party's GST identification number, from its ledger." },
-    { key: 'instrument', label: 'Cheque / UTR Number', kind: 'text', value: (r) => r.instrument ?? null, help: "A bank line's cheque or transfer number and the bank's UTR." },
+    { key: 'cheque', label: 'Cheque Number', kind: 'text', value: (r) => r.cheque ?? null, help: "A bank line's cheque or instrument number." },
+    {
+      key: 'utr',
+      label: 'UTR',
+      kind: 'text',
+      value: (r) => r.utr ?? null,
+      render: (r) => (r.utr ? <span title={UTR_SOURCES[r.utr_source ?? ''] ?? ''}>{r.utr}</span> : <span className="muted">—</span>),
+      help: "The bank's unique transaction reference: only a value that looks like one (NEFT/RTGS, IMPS/UPI, or written after \"UTR\"). Hover a value for where it was found.",
+    },
+    { key: 'transaction_type', label: 'Bank transaction type', kind: 'text', value: (r) => r.transaction_type ?? null, groupable: true, hidden: true, help: 'Cheque, e-Fund Transfer and so on, as the source records the bank line.' },
+    { key: 'instrument_date', label: 'Instrument date', kind: 'date', value: (r) => r.instrument_date ?? null, hidden: true, help: "The cheque's or transfer's own date." },
+    { key: 'bank_cleared_date', label: 'Bank cleared date', kind: 'date', value: (r) => r.bank_cleared_date ?? null, hidden: true, help: 'The date the bank cleared it (bank reconciliation); empty while not reconciled.' },
+    { key: 'tally_bank_entry_id', label: 'Tally bank entry ID', kind: 'text', value: (r) => r.tally_bank_entry_id ?? null, hidden: true, help: "The source's own id for the bank entry (a code Tally generates): not a UTR." },
     { key: 'company', label: 'Company', kind: 'text', value: (r) => names.get(r.company) ?? `Company ${r.company}`, groupable: true, hidden: !page.combined },
   ]
 }

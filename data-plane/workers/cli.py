@@ -26,6 +26,8 @@ result. The worker's schedule (workers/celery_app.py) runs the same sync code wi
     python -m workers.cli validate-analyse --connection tally-pilot [--entity NAME]
     python -m workers.cli statements --connection tally-pilot [--entity NAME] [--from D]
     python -m workers.cli compare-ledger --connection tally-pilot --ledger 88 [--from D --to D]
+    python -m workers.cli find-field --connection tally-test --entity "LedgerBridge Test Co" \
+        --date 2026-10-02 --voucher-number 18 --text 62901
     python -m workers.cli promote-field --field-id 12 --code SALESMAN --name "Salesman"
 
 `extract` only stores raw records (M1); `sync` also transforms them (M3); `check-deletions`
@@ -261,6 +263,17 @@ def _parser() -> argparse.ArgumentParser:
     analyse.add_argument("--as-of", type=date.fromisoformat, help="as of this date (default today)")
     analyse.add_argument("--job", help="job id: also write the output to sync_logs, for `watch`")
 
+    find = sub.add_parser(
+        "find-field",
+        help="which fields of one voucher hold a text: their paths only, never the values; "
+        "nothing is stored",
+    )
+    connection_args(find)
+    find.add_argument("--entity", required=True, help="the company's exact name in the source")
+    find.add_argument("--date", type=date.fromisoformat, required=True, help="the voucher's date")
+    find.add_argument("--voucher-number", required=True, help="the voucher's number")
+    find.add_argument("--text", required=True, help="the text to look for (3 characters or more)")
+
     compare = sub.add_parser(
         "compare-ledger",
         help="one ledger's vouchers in the source against ours, voucher by voucher (counts "
@@ -396,6 +409,12 @@ def _parser() -> argparse.ArgumentParser:
         "--pause-sec",
         type=float,
         help="pause between requests during a sync, to ease the load on the source (0 = none)",
+    )
+    connect.add_argument(
+        "--udf",
+        action="append",
+        help="a user-defined field to fetch on vouchers, as find-field prints its path "
+        "(UDF:NAME.LIST/UDF:NAME; repeatable; replaces the connection's list)",
     )
     connect.add_argument(
         "--educational",
@@ -578,6 +597,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _validate_analyse(session, args)
     if args.command == "compare-ledger":
         return _compare_ledger(session, args)
+    if args.command == "find-field":
+        return _find_field(session, args)
     if args.command == "statements":
         return _statements(session, args)
     if args.command == "fx-rules":
@@ -939,6 +960,15 @@ def _connect(session: Session, args: argparse.Namespace) -> int:
         connection.config = {**connection.config, "part_month_requests": args.part_month}
     if args.educational:
         connection.config = {**connection.config, "educational": args.educational}
+    if args.udf:
+        from connectors.tally import envelopes
+
+        try:  # refuses anything but a user-defined field path, and denied names
+            envelopes.with_udfs(envelopes.VOUCHERS, tuple(args.udf))
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        connection.config = {**connection.config, "udf_fields": list(args.udf)}
     if args.activate:
         connection.status = "active"
     elif args.pause:
@@ -1726,6 +1756,38 @@ def _statements(session: Session, args: argparse.Namespace) -> int:
             code = 1
     print("Result: statements finished")
     return code
+
+
+def _find_field(session: Session, args: argparse.Namespace) -> int:
+    """The paths of one voucher's fields that hold a text (connectors/tally/find_field.py):
+    paths only, never values, nothing stored or logged. Asks the source for that voucher with
+    every field and sub-list."""
+    from connectors.tally import find_field
+    from connectors.tally.connector import TallyConnector
+
+    connection = session.scalar(select(Connection).where(Connection.name == args.connection))
+    if connection is None:
+        print(f"No connection '{args.connection}'.", file=sys.stderr)
+        return 2
+    connector = connector_for(session, connection)
+    if not isinstance(connector, TallyConnector):
+        print("find-field is available only for Tally connections.", file=sys.stderr)
+        return 2
+    entities = select_entities(connector, connection, names=[args.entity])
+    if not entities:
+        print("That company isn't loaded in the source.", file=sys.stderr)
+        return 2
+    try:
+        count, paths = find_field.find_field(
+            connector.client.post, entities[0].name, args.date, args.voucher_number, args.text
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"{count} voucher(s) with that date and number; {len(paths)} field(s) hold the text:")
+    for path in paths:
+        print(f"  {path}")
+    return 0
 
 
 def _compare_ledger(session: Session, args: argparse.Namespace) -> int:

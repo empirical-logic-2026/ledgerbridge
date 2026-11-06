@@ -50,7 +50,7 @@ class RegisterRow:
     narration: str | None
     reference: str | None = None
     instrument_number: str | None = None  # a bank line's cheque or transfer number
-    transaction_reference: str | None = None  # a bank line's UTR
+    utr: str | None = None  # a bank line's UTR
 
 
 @dataclass
@@ -76,7 +76,7 @@ def register(
             A.VoucherType.base_type, A.Voucher.voucher_number, A.Ledger.id, A.Ledger.name,
             A.Voucher.party_id, A.Party.name, first.c.amount,
             func.coalesce(values.c.value, 0), A.Voucher.narration, A.Voucher.reference_number,
-            instruments.c.instrument_number, instruments.c.transaction_reference,
+            instruments.c.instrument_number, instruments.c.utr,
         )
         .join(first, first.c.voucher_id == A.Voucher.id)
         .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
@@ -127,13 +127,12 @@ def _instruments(companies: list[int], period: Period):  # noqa: ANN202
         select(
             A.VoucherLine.voucher_id,
             func.max(A.VoucherLine.instrument_number).label("instrument_number"),
-            func.max(A.VoucherLine.transaction_reference).label("transaction_reference"),
+            func.max(A.VoucherLine.utr).label("utr"),
         )
         .where(
             A.VoucherLine.entity_id.in_(companies),
             A.VoucherLine.is_effective.is_(True),
-            A.VoucherLine.instrument_number.is_not(None)
-            | A.VoucherLine.transaction_reference.is_not(None),
+            A.VoucherLine.instrument_number.is_not(None) | A.VoucherLine.utr.is_not(None),
         )
         .group_by(A.VoucherLine.voucher_id)
     )

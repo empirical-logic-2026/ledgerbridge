@@ -237,11 +237,19 @@ class CanonicalLine:
     is_party_line: bool = False
     bills: tuple[CanonicalBill, ...] = ()
     cost_allocations: tuple[CanonicalCostAllocation, ...] = ()
-    # A bank line's instrument: the cheque or transfer number, and the bank's unique
-    # transaction reference (UTR) when the source keeps it apart; several instruments on one
-    # line are joined with "; ".
+    # A bank line's instrument (several on one line joined with "; "): the cheque or
+    # instrument number, its kind (Cheque, e-Fund Transfer, ...), dates and reconciliation
+    # status; the source's own id for the bank entry (never a UTR); and the UTR, only a value
+    # that looks like one (core/utr.py), with where it was found.
     instrument_number: str | None = None
-    transaction_reference: str | None = None
+    transaction_type: str | None = None
+    instrument_date: date | None = None
+    bank_cleared_date: date | None = None
+    bank_recon_status: str | None = None
+    tally_bank_entry_id: str | None = None
+    utr: str | None = None
+    utr_source: str | None = None  # bank_field, udf or narration
+    has_bank_details: bool = False
 
 
 @dataclass(frozen=True)

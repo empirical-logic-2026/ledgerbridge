@@ -12,6 +12,7 @@ Tally ignores field names it doesn't know, so fields that differ between TallyPr
 Tally.ERP 9 releases (e.g. GSTIN, state) are listed in both forms.
 """
 
+import re
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from xml.sax.saxutils import escape
@@ -106,6 +107,48 @@ COST_CENTRE_BALANCES = CollectionSpec(
     "LBCostCentreBalances", "CostCentre", "COSTCENTRE", "cost_centre_balance",
     ("GUID", "NAME", "CATEGORY", "PARENT", "CLOSINGBALANCE"),
 )  # fmt: skip
+# Never fetched (bank account and payee details, payroll and employee data, user names): no
+# request may name them; tests/test_denied_fields.py checks every collection. A bank line's
+# e-mail and city are left out too: only BANK_FIELDS are fetched from bank allocations.
+DENIED = frozenset((
+    "ACCOUNTNUMBER", "IFSCODE", "MICRCODE", "SWIFTCODE", "IBAN", "BANKIBAN", "BANKBSRCODE",
+    "BANKACCHOLDERNAME", "BANKPARTYNAME", "PAYMENTFAVOURING", "BENEFICIARYCODE",
+    "BENEFICIARYBANKCHANGES", "VIRTUALPAYMENTADDRESS", "CARDNUMBER", "BANKNAME",
+    "BRANCHNAME", "BANKLOCATION", "BANKCODE", "DRAWEEBANKCODE", "CLEARINGBANKCODE",
+    "BANKEMPLOYEENAME", "ENTEREDBY", "ALTEREDBY", "ATTENDANCEENTRIES", "ATTDRECORDS",
+    "PAYROLLMODEOFPAYMENT", "EMPLOYEENAME", "EMPLOYEENUMBER",
+))  # fmt: skip
+# The bank-allocation fields fetched besides the instrument (names as Tally exports them).
+BANK_FIELDS = (
+    "BankersDate", "BankReconStatus", "BankManualStatus", "PaymentMode", "TransferMode",
+    "TypeOfTransaction", "BankTransactionReference", "BETransactionReference", "BankReference",
+    "BankRefNumber", "TransactionId", "BankOperationReference", "BEOperationReference",
+    "BankPortalReference", "InstrumentReturnDate", "Status", "BankersStatus",
+)  # fmt: skip
+
+
+def denied_in(fetch: tuple[str, ...]) -> set[str]:
+    """The fields of a fetch list that are DENIED (by the last part of each name)."""
+    return {f for f in fetch if f.split(".")[-1].upper().removeprefix("UDF:") in DENIED}
+
+
+_UDF_PATH = re.compile(r"^(?:(ALLLEDGERENTRIES)\.LIST/)?UDF:([A-Z0-9_]+)(?:\.LIST/UDF:\2)?$")
+
+
+def with_udfs(spec: CollectionSpec, paths: tuple[str, ...]) -> CollectionSpec:
+    """The voucher collection with a connection's user-defined fields, given as the paths
+    find-field prints (UDF:VCHUTR.LIST/UDF:VCHUTR, or under ALLLEDGERENTRIES.LIST/ for a ledger
+    line's). Anything else, or a denied name, is refused."""
+    names = []
+    for path in paths:
+        found = _UDF_PATH.match(path.strip().upper())
+        if found is None or found.group(2) in DENIED:
+            raise ValueError(f"Not a user-defined field path: {path!r}")
+        list_name, name = found.groups()
+        names.append(f"AllLedgerEntries.{name}" if list_name else name)
+    return replace(spec, fetch=(*spec.fetch, *dict.fromkeys(names)))
+
+
 VOUCHERS = CollectionSpec(
     "LBVouchers",
     "Voucher",
@@ -133,6 +176,10 @@ VOUCHERS = CollectionSpec(
         "AllLedgerEntries.BankAllocations.InstrumentDate",
         "AllLedgerEntries.BankAllocations.UniqueReferenceNumber",
         "AllLedgerEntries.BankAllocations.Amount",
+        # Every other bank-allocation field Tally exports, except the account and payee
+        # details (DENIED): reconciliation, e-payment status and the bank's own references,
+        # where a UTR can be (an IMPS reference in BankTransactionReference, 2026-11-06).
+        *(f"AllLedgerEntries.BankAllocations.{field}" for field in BANK_FIELDS),
         "AllInventoryEntries.StockItemName", "AllInventoryEntries.ActualQty",
         "AllInventoryEntries.BilledQty", "AllInventoryEntries.Rate",
         "AllInventoryEntries.Amount", "AllInventoryEntries.IsDeemedPositive",

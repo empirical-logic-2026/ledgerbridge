@@ -124,8 +124,13 @@ class TallyConnector:
         "voucher_type": mapping.STANDARD_VOUCHER_TYPES,
     }
 
-    def __init__(self, client: TallyClient, educational: str = "auto") -> None:
+    def __init__(
+        self, client: TallyClient, educational: str = "auto", udf_fields: tuple[str, ...] = ()
+    ) -> None:
         self.client = client
+        # The voucher request, with the connection's user-defined fields (find-field paths;
+        # envelopes.with_udfs refuses anything else).
+        self.vouchers = envelopes.with_udfs(envelopes.VOUCHERS, udf_fields)
         self._names: dict[str, str] = {}  # company GUID -> name Tally accepted last
         self._prefixes: set[str] = set()  # undeclared XML prefixes met (names only)
         # Educational mode (reliable balances on the 1st, 2nd and 31st only): "yes", "no",
@@ -151,6 +156,7 @@ class TallyConnector:
                 transport=transport,
             ),
             educational=str(config.get("educational") or "auto"),
+            udf_fields=tuple(config.get("udf_fields") or ()),
         )
 
     @staticmethod
@@ -305,11 +311,11 @@ class TallyConnector:
         date (an old voucher can be altered today). Otherwise month by month."""
         since = _marker(markers or {}, envelopes.VOUCHERS.object_type)
         if since is not None and period is None:
-            body = self._export(entity, envelopes.VOUCHERS, since_alter_id=since)
-            yield from parser.parse_records(body, envelopes.VOUCHERS, entity.key)
+            body = self._export(entity, self.vouchers, since_alter_id=since)
+            yield from parser.parse_records(body, self.vouchers, entity.key)
             return
         for body in self.voucher_bodies(entity, period):
-            yield from parser.parse_records(body, envelopes.VOUCHERS, entity.key)
+            yield from parser.parse_records(body, self.vouchers, entity.key)
 
     def voucher_periods(self, entity: SourceEntity, period: Period | None = None) -> list[Period]:
         if period is not None:
@@ -325,7 +331,7 @@ class TallyConnector:
     def voucher_bodies(self, entity: SourceEntity, period: Period | None = None) -> Iterator[bytes]:
         """Raw voucher export responses, one per calendar month."""
         for month in self.voucher_periods(entity, period):
-            yield self._export(entity, envelopes.VOUCHERS, period=(month.start, month.end))
+            yield self._export(entity, self.vouchers, period=(month.start, month.end))
 
     def voucher_elements(
         self, entity: SourceEntity, period: Period | None = None
@@ -357,7 +363,7 @@ class TallyConnector:
     ) -> list[SourceRecord]:
         if chunk.object_type == envelopes.COMPANIES.object_type:
             return self._company_record(entity, timeout)
-        spec = envelopes.SPEC_BY_OBJECT_TYPE[chunk.object_type]
+        spec = self._spec(chunk.object_type)
         period = (chunk.period.start, chunk.period.end) if chunk.period else None
         body = self._export(
             entity,
@@ -368,6 +374,12 @@ class TallyConnector:
             balances_period=_period_for(spec, entity),
         )
         return list(parser.parse_records(body, spec, entity.key, period))
+
+    def _spec(self, object_type: str) -> envelopes.CollectionSpec:
+        """The request for a type: the voucher request with this connection's fields."""
+        if object_type == envelopes.VOUCHERS.object_type:
+            return self.vouchers
+        return envelopes.SPEC_BY_OBJECT_TYPE[object_type]
 
     def chunk_keys(
         self, entity: SourceEntity, chunk: Chunk, timeout: float | None = None

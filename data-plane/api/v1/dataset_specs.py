@@ -178,8 +178,16 @@ def _voucher_lines() -> Dataset:
                 _named("ledger_group", "Ledger group", A.AccountGroup.id, A.AccountGroup.name),
                 _named("party", "Party", A.Party.id, A.Party.name),
                 _text("reference", "Reference", v.reference_number),
-                _text("instrument_number", "Cheque / transfer no.", vl.instrument_number),
-                _text("transaction_reference", "UTR", vl.transaction_reference),
+                _text("instrument_number", "Cheque / instrument no.", vl.instrument_number),
+                _text("utr", "UTR", vl.utr),
+                _named(
+                    "transaction_type",
+                    "Bank transaction type",
+                    vl.transaction_type,
+                    vl.transaction_type,
+                ),
+                _text("bank_recon_status", "Bank reconciliation", vl.bank_recon_status),
+                _text("tally_bank_entry_id", "Tally bank entry ID", vl.tally_bank_entry_id),
             ]
         ),  # fmt: skip
         measures=_by_key(

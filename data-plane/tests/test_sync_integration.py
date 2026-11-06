@@ -87,6 +87,9 @@ def _cleanup(session: Session) -> None:
     session.execute(delete(A.LineDimension).where(A.LineDimension.dimension_value_id.in_(values)))
     session.execute(delete(A.DimensionValue).where(A.DimensionValue.entity_id.in_(entity_ids)))
     session.execute(delete(A.SourceField).where(A.SourceField.entity_id.in_(entity_ids)))
+    # A recording with currency masters (rules/data-completion) leaves their rows and rates.
+    for model in (A.ExchangeRate, A.CurrencySource):
+        session.execute(delete(model).where(model.entity_id.in_(entity_ids)))
     session.execute(delete(A.EntitySource).where(A.EntitySource.connection_id == connection.id))
     session.execute(delete(A.Entity).where(A.Entity.id.in_(entity_ids)))
     session.execute(delete(RawRecord).where(RawRecord.connection_id == connection.id))

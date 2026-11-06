@@ -257,8 +257,9 @@ def test_seed_reproduces_tallys_figures() -> None:
     # Less the alias voucher's 21; the direct expense (300 out) and income (120 in); the
     # netting advances (1,240 out net).
     assert balances["Cash"] == (Decimal("25984"), "Dr")
-    # The invoices post (+1,500, +2,000, debit note -250, CC-3 +600), the notes don't.
-    assert balances["Purchases"] == (Decimal("16850"), "Dr")
+    # The invoices post (+1,500, +2,000, debit note -250, CC-3 +600, BILL-2 +120 and the
+    # invoice against PO-1 +120, 2026-11-06), the notes and the purchase order don't.
+    assert balances["Purchases"] == (Decimal("17090"), "Dr")
     assert balances["Security Deposit"] == (Decimal("12000"), "Dr")
 
 

@@ -32,11 +32,16 @@ from collections import Counter
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
-from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
 
 from connectors.tally import envelopes, parser
 from connectors.tally.client import TallyClient
+from connectors.tally.find_field import (  # noqa: F401 - whole_collection_request: tests
+    connector_list_paths,
+    list_paths,
+    whole_collection_request,
+    whole_vouchers,
+)
 from core.config import get_settings
 from devtools.tally_seed.seed import SeedRefusedError, check_guards
 
@@ -44,7 +49,6 @@ COMPANY = "LedgerBridge Test Co"
 DEFAULT_OUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "tally" / "full-export"
 GZIP_ABOVE = 2_000_000  # bytes: a larger file is stored gzip-compressed
 TO_DATE = date(2027, 3, 31)  # a 31st: a date Educational mode allows
-MAX_ROUNDS = 5  # voucher fetches while new sub-lists keep appearing
 
 
 def _static(company: str, extra: str = "") -> str:
@@ -78,62 +82,6 @@ def daybook_request(company: str, start: date, end: date) -> str:
     return data_request("Day Book", company, f"{_dates(start, end)}<EXPLODEFLAG>Yes</EXPLODEFLAG>")
 
 
-def whole_collection_request(
-    tally_type: str,
-    company: str,
-    period: tuple[date, date] | None = None,
-    lists: Sequence[str] = (),
-) -> str:
-    """A collection of one Tally type (only types the connector already uses), each object
-    whole (NATIVEMETHOD *) with every field of the `lists` (dotted paths, e.g.
-    ALLLEDGERENTRIES.BANKALLOCATIONS). `period` (inclusive, its end a day Educational mode
-    allows) limits objects by $Date."""
-    name = "LBFull"
-    extra = filters = formula = ""
-    if period is not None:
-        extra = _dates(*period)
-        filters = "<FILTER>LBFullPeriod</FILTER>"
-        formula = (
-            '<SYSTEM TYPE="Formulae" NAME="LBFullPeriod">'
-            "$Date &gt;= ##SVFromDate AND $Date &lt;= ##SVToDate</SYSTEM>"
-        )
-    fetch = f"<FETCH>{', '.join(f'{path}.*' for path in lists)}</FETCH>" if lists else ""
-    return (
-        "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>"
-        f"<TYPE>Collection</TYPE><ID>{name}</ID></HEADER><BODY><DESC>{_static(company, extra)}"
-        f'<TDL><TDLMESSAGE><COLLECTION NAME="{name}" ISMODIFY="No"><TYPE>{tally_type}</TYPE>'
-        f"<NATIVEMETHOD>*</NATIVEMETHOD>{fetch}{filters}</COLLECTION>{formula}"
-        "</TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>"
-    )
-
-
-def list_paths(body: bytes, tag: str = "VOUCHER") -> set[str]:
-    """Every sub-list of the objects, as a dotted path (ALLLEDGERENTRIES.BANKALLOCATIONS)."""
-    found: set[str] = set()
-
-    def walk(node: ET.Element, prefix: str) -> None:
-        for child in node:
-            if child.tag.endswith(".LIST"):
-                path = f"{prefix}.{child.tag[:-5]}" if prefix else child.tag[:-5]
-                found.add(path)
-                walk(child, path)
-
-    for element in parser.parse_response(body).iter(tag):
-        if len(element):
-            walk(element, "")
-    return found
-
-
-def connector_list_paths() -> set[str]:
-    """The sub-lists the connector's voucher fetch names (upper case, dotted)."""
-    return {
-        ".".join(parts[:i]).upper()
-        for field in envelopes.VOUCHERS.fetch
-        if len(parts := field.split(".")) > 1
-        for i in range(1, len(parts))
-    }
-
-
 def object_counts(body: bytes) -> dict[str, int]:
     """How many objects of each type: the children of TALLYMESSAGE (Tally's own exports)
     or of COLLECTION (collection exports)."""
@@ -156,6 +104,12 @@ def loaded_company(client: TallyClient, company: str) -> date:
     return books_from
 
 
+def _has_control_characters(body: bytes) -> bool:
+    """Tally writes its own markers as control characters (e.g. U+0004, U+0005): such a file
+    is kept exact, compressed (the repository's text files may not hold them)."""
+    return any(b < 32 and b not in (9, 10, 13) for b in body)
+
+
 class Recording:
     """Writes each answer as it arrives (a later failure keeps what came before)."""
 
@@ -166,7 +120,7 @@ class Recording:
 
     def save(self, name: str, body: bytes) -> None:
         self.counts[name] = object_counts(body)
-        compress = len(body) > GZIP_ABOVE
+        compress = len(body) > GZIP_ABOVE or _has_control_characters(body)
         path = self.out / (f"{name}.gz" if compress else name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(gzip.compress(body, mtime=0) if compress else body)
@@ -182,15 +136,9 @@ def record(client: TallyClient, company: str, out: Path) -> Recording:
     daybook = client.post(daybook_request(company, *period))
     rec.save("daybook.xml", daybook)
 
-    lists = list_paths(daybook) | connector_list_paths()
-    rounds = 0
-    while True:
-        rounds += 1
-        vouchers = client.post(whole_collection_request("Voucher", company, period, sorted(lists)))
-        new = list_paths(vouchers) - lists
-        if not new or rounds == MAX_ROUNDS:
-            break
-        lists |= new
+    vouchers, lists, rounds = whole_vouchers(
+        client.post, company, period, list_paths(daybook) | connector_list_paths()
+    )
     rec.save("vouchers.xml", vouchers)
     facts = {
         "company": company,
