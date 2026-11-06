@@ -1,5 +1,5 @@
 // Amounts and dates the way the dashboard shows them (docs/design/dashboard.md Section 0):
-// rupees in Indian grouping (₹16,20,000.00), short in lakhs and crores (₹62.4 L, ₹4.82 Cr),
+// rupees in Indian grouping (₹16,20,000.00), or in lakhs (₹12.35 L; the Amounts setting),
 // dates DD-MMM-YYYY. The API sends amounts as decimal strings; they are handled as whole
 // numbers of 1/10,000 rupee (BigInt), never as floating-point numbers, so nothing is lost
 // to rounding. Only charts get plain numbers (`toLakhs`), for drawing.
@@ -7,7 +7,6 @@
 const SCALE = 4 // the API's amounts have 4 decimal places (DECIMAL(20,4))
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const LAKH = 10n ** 5n
-const CRORE = 10n ** 7n
 
 /** "-1234.5" -> -12345000n (in 1/10,000). Throws on anything that isn't a decimal number. */
 export function toScaled(amount: string): bigint {
@@ -47,22 +46,13 @@ export function formatExact(amount: string): string {
   return `${sign}₹${withDecimals(paise < 0n ? -paise : paise, 2)}`
 }
 
-/** Short: "₹4.82 Cr" (2 decimals), "₹62.4 L" (1 decimal), below a lakh "₹45,300" (F-FMT-001). */
-export function formatCompact(amount: string): string {
+/** In lakhs, every amount: "₹12.35 L", "₹482.00 L" (₹4.82 crore), "₹0.45 L", "-₹1.20 L"
+ *  (2 decimals, Indian grouping; the Amounts setting's Lakhs, F-FMT-001). */
+export function formatLakhs(amount: string): string {
   const scaled = toScaled(amount)
-  const rupees = divideRounded(scaled, 10n ** BigInt(SCALE))
-  const size = rupees < 0n ? -rupees : rupees
-  const sign = scaled < 0n ? '-' : ''
-  const unscale = 10n ** BigInt(SCALE)
-  if (size >= CRORE) {
-    const hundredths = divideRounded(scaled < 0n ? -scaled : scaled, (CRORE * unscale) / 100n)
-    return `${sign}₹${withDecimals(hundredths, 2)} Cr`
-  }
-  if (size >= LAKH) {
-    const tenths = divideRounded(scaled < 0n ? -scaled : scaled, (LAKH * unscale) / 10n)
-    return `${sign}₹${withDecimals(tenths, 1)} L`
-  }
-  return `${rupees < 0n ? '-' : ''}₹${indianGrouping(size.toString())}`
+  const size = scaled < 0n ? -scaled : scaled
+  const hundredths = divideRounded(size, (LAKH * 10n ** BigInt(SCALE)) / 100n)
+  return `${scaled < 0n && hundredths > 0n ? '-' : ''}₹${withDecimals(hundredths, 2)} L`
 }
 
 /** For charts only: the amount in lakhs as a number (drawing, never sums or display; F-FMT-003). */

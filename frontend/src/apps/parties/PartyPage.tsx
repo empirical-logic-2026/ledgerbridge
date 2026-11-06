@@ -80,7 +80,7 @@ function invoiceColumns(kind: PartyKind, names: Map<number, string>, combined: b
       render: (i) => <InvoiceStatus invoice={i} kind={kind} />,
       groupable: true,
     },
-    { key: 'meaning', label: 'Meaning', kind: 'text', value: (i) => paymentStatusInfo(i.payment_status ?? i.status, kind).meaning },
+    { key: 'meaning', label: 'Meaning', kind: 'text', value: (i) => paymentStatusInfo(i.payment_status ?? i.status, kind).meaning, wrap: true },
     { key: 'narration', label: 'Narration', kind: 'text', value: (i) => i.narration, hidden: true },
   ]
 }
@@ -138,7 +138,7 @@ function billColumns(kind: PartyKind, names: Map<number, string>, combined: bool
       },
       groupable: true,
     },
-    { key: 'meaning', label: 'Meaning', kind: 'text', value: (b) => billStatusInfo(b, kind).meaning },
+    { key: 'meaning', label: 'Meaning', kind: 'text', value: (b) => billStatusInfo(b, kind).meaning, wrap: true },
     {
       key: 'overdue',
       label: 'Overdue by',

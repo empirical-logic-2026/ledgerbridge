@@ -5,11 +5,12 @@
 // working-capital days). Figures: core/balance_sheet.py (GET /api/v1/reports/balance-sheet);
 // formulas F-BS-005, F-BS-006, F-RAT-001 to F-RAT-007.
 
-import { Alert, Skeleton, Tooltip, Typography } from 'antd'
+import { Money } from '../../components/Money.tsx'
+import { Alert, Skeleton, Typography } from 'antd'
 import type { BalanceSheetReport, Company, RatioOut, SheetLineOut } from '../../api/types.ts'
 import { Explained } from '../../components/Explained.tsx'
 import { RatioTiles, type Tile } from '../../components/RatioTiles.tsx'
-import { formatChange, formatCompact, formatDate, formatExact, toScaled } from '../../format.ts'
+import { formatChange, formatDate } from '../../format.ts'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import { againstOf } from '../../selection.ts'
 
@@ -34,14 +35,8 @@ const HIGHER_IS_BETTER: Record<string, boolean> = {
   working_capital_days: false,
 }
 
-function Amount({ value }: { value: string | null | undefined }) {
-  if (value === null || value === undefined) return <span>—</span>
-  return (
-    <Tooltip title={formatExact(value)}>
-      <span className={toScaled(value) < 0n ? 'negative' : undefined}>{formatCompact(value)}</span>
-    </Tooltip>
-  )
-}
+/** An amount as the Amounts setting shows it (components/Money.tsx). */
+const Amount = Money
 
 function Change({ pct }: { pct: string | null | undefined }) {
   return pct ? <span className="muted">{formatChange(pct)}</span> : <span className="muted">—</span>

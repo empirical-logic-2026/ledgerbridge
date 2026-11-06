@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from connectors.base import SourceBalances, SourceControls, SourceStatements
@@ -48,6 +48,7 @@ from core.models.system import Connection, ValidationIssue, ValidationRun
 from core.names import NORMALISED, NameIndex, close_match, differences
 from core.problems import title
 from core.statement_differences import Summary
+from core.stock import stock_moving
 
 ZERO = Decimal(0)
 PROFIT_NATURES = ("income", "expense")
@@ -198,13 +199,6 @@ class ValidationReport:
     @property
     def failed_by_code(self) -> Counter[str]:
         return Counter(f.check_code for f in self.findings if f.severity == "error")
-
-
-def counted_godown():  # noqa: ANN201 - a SQL condition
-    """Inventory lines whose godown counts in stock balances: no godown, or one that isn't
-    "our stock with a third party" (a job worker's location; ADR-031). Needs an outer join
-    of `godowns` on the line's godown."""
-    return or_(A.Godown.id.is_(None), A.Godown.holding != "ours_with_third_party")
 
 
 @dataclass
@@ -885,19 +879,17 @@ class Validator:
         if theirs is None or isinstance(theirs, Exception):
             self._unavailable("stock_quantities", theirs)
             return
+        # The lines that move stock: the same rule as the dashboard's (core/stock.py).
         movements = (
-            select(A.InventoryLine.item_id, func.sum(A.InventoryLine.stock_quantity).label("moved"))
-            .join(A.Voucher, A.Voucher.id == A.InventoryLine.voucher_id)
-            .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
-            .outerjoin(A.Godown, A.Godown.id == A.InventoryLine.godown_id)
+            stock_moving(
+                select(
+                    A.InventoryLine.item_id,
+                    func.sum(A.InventoryLine.stock_quantity).label("moved"),
+                )
+            )
             .where(
                 A.InventoryLine.entity_id == self.entity.id,
                 A.InventoryLine.voucher_date <= self.as_of,
-                A.Voucher.is_deleted.is_(False),
-                A.Voucher.is_cancelled.is_(False),
-                A.Voucher.is_optional.is_(False),
-                A.VoucherType.moves_stock.is_(True),  # orders and memorandum don't
-                counted_godown(),  # not at a job worker's location
             )
             .group_by(A.InventoryLine.item_id)
             .subquery()

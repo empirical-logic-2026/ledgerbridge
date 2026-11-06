@@ -6,7 +6,8 @@
 import { Button, Checkbox, Dropdown, Input, Tooltip } from 'antd'
 import { explain } from '../help/glossary.ts'
 import { useState } from 'react'
-import { formatDate, formatExact, toScaled } from '../format.ts'
+import { formatDate } from '../format.ts'
+import { Money } from '../components/Money.tsx'
 import { download } from './download.ts'
 import {
   defaultState,
@@ -43,7 +44,7 @@ function Value<R>({ column, value, row }: { column: ExplorerColumn<R>; value: Ce
   let shown: React.ReactNode = String(value)
   if (column.kind === 'amount') {
     const text = String(value)
-    shown = <span className={toScaled(text) < 0n ? 'negative' : undefined}>{formatExact(text)}</span>
+    shown = <Money value={text} />
   } else if (column.kind === 'date') {
     shown = formatDate(String(value))
   } else if (column.kind === 'count') {
@@ -52,6 +53,12 @@ function Value<R>({ column, value, row }: { column: ExplorerColumn<R>; value: Ce
   if (row !== undefined && column.render) shown = column.render(row)
   const to = row !== undefined ? column.link?.(row) : undefined
   return to ? <a href={to}>{shown}</a> : <>{shown}</>
+}
+
+/** "num" for amounts and counts, "wrap" for long text. */
+function cellClass<R>(column: ExplorerColumn<R>): string | undefined {
+  if (numeric(column.kind)) return 'num'
+  return column.wrap ? 'wrap' : undefined
 }
 
 function numeric(kind: string): boolean {
@@ -118,7 +125,7 @@ export function ExplorerTable<R>(props: Props<R>) {
       {shown.map((c, i) => {
         const Cell = i === 0 ? 'th' : 'td'
         return (
-          <Cell key={c.key} scope={i === 0 ? 'row' : undefined} className={numeric(c.kind) ? 'num' : undefined}>
+          <Cell key={c.key} scope={i === 0 ? 'row' : undefined} className={cellClass(c)}>
             <Value column={c} value={c.value(r)} row={r} />
           </Cell>
         )
@@ -133,7 +140,7 @@ export function ExplorerTable<R>(props: Props<R>) {
             {label}
           </th>
         ) : (
-          <td key={c.key} className={numeric(c.kind) ? 'num' : undefined}>
+          <td key={c.key} className={cellClass(c)}>
             {c.key in sums ? <Value column={c} value={sums[c.key]} /> : null}
           </td>
         ),
@@ -200,7 +207,7 @@ export function ExplorerTable<R>(props: Props<R>) {
                 <th
                   key={c.key}
                   scope="col"
-                  className={numeric(c.kind) ? 'num' : undefined}
+                  className={cellClass(c)}
                   aria-sort={state.sortKey === c.key ? (state.descending ? 'descending' : 'ascending') : undefined}
                 >
                   <Tooltip title={[c.help ?? explain(c.label), 'Click to sort.'].filter(Boolean).join(' ')}>

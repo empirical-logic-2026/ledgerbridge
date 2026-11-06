@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.44 (Draft) |
-| Date | 2026-11-05 |
+| Version | 0.45 (Draft) |
+| Date | 2026-11-06 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
 This document describes the database inside each **client deployment**. The control plane has its own small database (users, clients, licences), described in `docs/architecture.md` Section 3.
@@ -536,10 +536,11 @@ Figures the source calculates itself and no voucher holds, stored with the date 
 
 #### `ledgerbridge_accounting.stock_values`
 
-`id, entity_id, connection_id, origin, as_of DATE, scope ENUM('total','stock_group','godown'), scope_name VARCHAR(255) ('' for total), opening_value DECIMAL(20,4) NULL, closing_value DECIMAL(20,4) NULL, integrated BOOL NULL (total rows), read_at, created_at, updated_at`. Unique `(entity_id, as_of, scope, scope_name)`; a later read for the same date replaces the date's rows.
+`id, entity_id, connection_id, origin, as_of DATE, scope ENUM('total','stock_group','godown','item') ('item' since migration 0029), scope_name VARCHAR(255) ('' for total), opening_value DECIMAL(20,4) NULL, closing_value DECIMAL(20,4) NULL, integrated BOOL NULL (total rows), read_at, created_at, updated_at`. Unique `(entity_id, as_of, scope, scope_name)`; a later read for the same date replaces the date's rows.
 
 - `total`: the stock the source's own Profit and Loss uses for the period from the books' beginning to `as_of` (Tally: its export's *Opening Stock* and *Less: Closing Stock* lines). With accounts integrated with inventory that is the items' value; without, the stock ledgers' balances (recorded on the test company, 2026-10-22).
 - `stock_group`, `godown`: the opening and closing value the source gives each (Tally: `OPENINGVALUE`, `CLOSINGVALUE` of the StockGroup and Godown collections); a job worker's godown has none.
+- `item` (migration 0029): the same for each stock item, by name (Tally: the StockItem collection's `OPENINGVALUE`, `CLOSINGVALUE`, the request already sent for the items' total). The dashboard's Stock page shows them (`core/stock.py`); filled by the next `./dev.ps1 statements`.
 - Canonical sign (stock is a debit). Written by validation (as-of date and year ends; checked against the value stored before, LB-VAL-023) and `./dev.ps1 statements` (every month end and year end).
 
 ## 5. `ledgerbridge_system`
@@ -857,6 +858,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.4 | M1: sign convention confirmed (7.1); rules for reading voucher postings and the Educational-mode date limitation (7.2). |
 | 2026-10-09 | 0.5 | M2: databases renamed to `ledgerbridge_source`, `ledgerbridge_accounting`, `ledgerbridge_reporting`, `ledgerbridge_system` (ADR-016); grants tightened (`app_rw` DML only, `ai_ro` reporting only, `migrator` for DDL); implementation status per migration; Section 8 rule 7 (voucher child rows replaced as a whole in one transaction); Section 9 implementation rules for M2. |
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
+| 2026-11-06 | 0.45 | `stock_values.scope` `item`: each stock item's own value at the statement dates (migration 0029; the Stock page). |
 | 2026-11-05 | 0.44 | RPT-017 / ADR-051: append-only observed voucher versions, posting snapshots, ambiguity-aware comparison rows and deletion detection timestamps (migration 0028); nullable `vouchers.source_altered_at` stores Tally `UPDATEDDATETIME` without timezone conversion (migration 0027). |
 | 2026-11-05 | 0.43 | `cost_categories`; `cost_centres.cost_category_id`, `line_cost_allocations.cost_category_id`; `voucher_lines.instrument_number`, `transaction_reference`; `v_cost_allocations` (migration 0026). |
 | 2026-10-31 | 0.41 | `entity_sources.source_checked_at`, `source_loaded`, `source_checked_by` (migration 0025, the dashboard's company chips). |

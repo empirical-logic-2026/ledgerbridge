@@ -979,7 +979,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `connection_id` | BIGINT UNSIGNED | no | FK | The connection the row came from. |
 | `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
 | `as_of` | DATE | no | UK | As of. |
-| `scope` | ENUM('total','stock_group','godown') | no | UK | total (what the source's profit uses), stock_group or godown. |
+| `scope` | ENUM('total','stock_group','godown','item') | no | UK | total (what the source's profit uses), stock_group, godown or item. |
 | `scope_name` | VARCHAR(255) | no | UK | Scope name. |
 | `opening_value` | NUMERIC(20, 4) | yes |  | Opening value. |
 | `closing_value` | NUMERIC(20, 4) | yes |  | Closing value. |

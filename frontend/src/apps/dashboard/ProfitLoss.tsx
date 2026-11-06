@@ -7,6 +7,7 @@
 import { Alert, Button, Checkbox, Dropdown, Skeleton, Tooltip, Typography } from 'antd'
 import { Explained } from '../../components/Explained.tsx'
 import type { Company, StatementReport } from '../../api/types.ts'
+import { useAmountFormat } from '../../amountFormat.ts'
 import { formatExact, toScaled } from '../../format.ts'
 import { companyDisplayName } from '../../companyDisplayName.ts'
 import { download } from '../../reporting/download.ts'
@@ -68,7 +69,8 @@ function Help({ sourceName }: { sourceName: string }) {
 
 function Table({ report, options }: { report: StatementReport; options: ReportOptions }) {
   const columns = shownColumns(report, options)
-  const unit = unitFor(report)
+  const { format } = useAmountFormat()
+  const unit = unitFor(format)
   return (
     <div className="report-table-wrap">
       <table className="report-table">
@@ -95,7 +97,7 @@ function Table({ report, options }: { report: StatementReport; options: ReportOp
                 if (c.kind === 'amount') {
                   return (
                     <td key={c.key} className={negative ? 'num negative' : 'num'}>
-                      <Tooltip title={formatExact(value)}>{formatCell(value, unit)}</Tooltip>
+                      {unit === 'lakh' ? <Tooltip title={formatExact(value)}>{formatCell(value, unit)}</Tooltip> : formatCell(value, unit)}
                     </td>
                   )
                 }
@@ -115,7 +117,7 @@ function Table({ report, options }: { report: StatementReport; options: ReportOp
         </tbody>
       </table>
       <p className="report-note">
-        Amounts in {unit === 'lakh' ? '₹ lakh' : '₹'}; hover over an amount for the exact figure. Click-through to ledgers comes with the Balance Sheet
+        Amounts in {unit === 'lakh' ? '₹ lakh; hover over an amount for the exact figure' : '₹'} (the Amounts setting in the top bar). Click-through to ledgers comes with the Balance Sheet
         and Trial Balance.
       </p>
     </div>

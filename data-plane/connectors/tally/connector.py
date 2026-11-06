@@ -642,6 +642,8 @@ class TallyConnector:
         stock = [
             *self._stock_figures(entity, envelopes.STOCK_GROUP_VALUES, "stock_group", period),
             *self._stock_figures(entity, envelopes.GODOWN_VALUES, "godown", period),
+            # Each item's own value (the Stock page); the same request as _item_values.
+            *self._stock_figures(entity, envelopes.STOCK_VALUES, "item", period),
         ]
         integrated = self._integrated(entity)
         return SourceStatements(
@@ -743,8 +745,8 @@ class TallyConnector:
         scope: str,
         period: tuple[date, date],
     ) -> list[StockFigure]:
-        """The stock value Tally gives each stock group or godown (canonical sign); groups
-        or godowns it gives no value for are left out."""
+        """The stock value Tally gives each stock group, godown or item (canonical sign);
+        those it gives no value for are left out."""
         figures = []
         for element in self._export_objects(entity, spec, balances_period=period):
             opening = element.findtext("OPENINGVALUE")

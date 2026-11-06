@@ -1,11 +1,12 @@
 // The dark top bar (docs/design/dashboard.md Section 0.4, ADR-050): the company logo and the
 // product name, the module tabs (a module shows once it has a built page), and on the right the
 // period toggles (MTD, QTD, YTD, FY, Custom: months or dates in a panel), the financial year,
-// what to compare with (the previous period, last year or nothing: RPT-016, F-CMP-002) and
-// light or dark mode.
+// what to compare with (the previous period, last year or nothing: RPT-016, F-CMP-002), how
+// amounts are shown (in lakhs or in full: F-FMT-001, F-FMT-002) and light or dark mode.
 
 import { Button, Input, Popover, Select, Tooltip } from 'antd'
 import { useState } from 'react'
+import { useAmountFormat, type AmountFormat } from '../amountFormat.ts'
 import type { FinancialYear } from '../api/types.ts'
 import logo from '../assets/company-logo-wide.png'
 import { formatDate, formatMonth, parseDisplayDate } from '../format.ts'
@@ -100,6 +101,20 @@ function PeriodToggles({ selection, years, year, period, onChange }: Pick<Props,
   )
 }
 
+const AMOUNT_OPTIONS: { value: AmountFormat; label: string }[] = [
+  { value: 'lakhs', label: 'Amounts in lakhs' },
+  { value: 'full', label: 'Full amounts' },
+]
+
+/** Lakhs ("₹12.35 L", the exact amount on hover) or full amounts, everywhere. */
+function AmountsSelect() {
+  const { format, setFormat } = useAmountFormat()
+  return (
+    <Select aria-label="Amounts" size="small" className="top-select" value={format} popupMatchSelectWidth={false}
+      options={AMOUNT_OPTIONS} onChange={setFormat} />
+  )
+}
+
 export function TopBar(props: Props) {
   const modules = builtNav()
   return (
@@ -124,6 +139,7 @@ export function TopBar(props: Props) {
         {props.years.length > 0 && (
           <PeriodToggles selection={props.selection} years={props.years} year={props.year} period={props.period} onChange={props.onChange} />
         )}
+        <AmountsSelect />
         <Tooltip title={props.mode === 'dark' ? 'Light mode' : 'Dark mode'}>
           <Button type="text" className="on-dark" aria-label={props.mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             icon={props.mode === 'dark' ? <SunIcon /> : <MoonIcon />} onClick={() => props.onMode(props.mode === 'dark' ? 'light' : 'dark')} />

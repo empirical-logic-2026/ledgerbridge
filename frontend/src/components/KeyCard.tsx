@@ -11,7 +11,8 @@ import { Tooltip } from 'antd'
 import type { EChartsOption } from 'echarts'
 import { EChart } from './EChart.tsx'
 import { Explained } from './Explained.tsx'
-import { formatChange, formatCompact, formatExact, toScaled } from '../format.ts'
+import { formatAmount, useAmountFormat, type AmountFormat } from '../amountFormat.ts'
+import { formatChange, formatExact, toScaled } from '../format.ts'
 
 export type Tone = 'up-good' | 'up-neutral'
 
@@ -37,11 +38,11 @@ interface Props {
   sparkColour?: string
 }
 
-function shown(value: string, unit: Props['unit']): string {
+function shown(value: string, unit: Props['unit'], format: AmountFormat): string {
   if (unit === 'count') return Number(value).toLocaleString('en-IN')
   if (unit === 'days') return `${Number(value).toLocaleString('en-IN')} days`
   if (unit === 'percent') return `${value}%`
-  return formatCompact(value)
+  return formatAmount(value, format)
 }
 
 function capitalised(text: string): string {
@@ -64,13 +65,14 @@ function sparkline(values: (number | null)[], colour: string): EChartsOption {
 }
 
 export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', against, note, alert, missing, to, accent, spark, sparkColour, help }: Props) {
+  const { format } = useAmountFormat()
   const value = figure.value
   const change = figure.change_pct
   let changeNode: React.ReactNode = null
   if (change) {
     const up = toScaled(change) >= 0n
     const css = tone === 'up-good' ? (up ? 'change good' : 'change bad') : up ? 'change neutral' : 'change good'
-    const last = figure.before ? `${capitalised(against ?? 'before')}: ${unit === 'amount' ? formatExact(figure.before) : shown(figure.before, unit)}` : undefined
+    const last = figure.before ? `${capitalised(against ?? 'before')}: ${unit === 'amount' ? formatExact(figure.before) : shown(figure.before, unit, format)}` : undefined
     changeNode = (
       <Tooltip title={last}>
         <span className={css}>{changeText(change, unit)} vs {against ?? 'before'}</span>
@@ -79,7 +81,7 @@ export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', agai
   } else if (against) {
     changeNode = <span className="card-small-note">Nothing to compare with in the {against}</span>
   }
-  const text = value === null ? '—' : shown(value, unit)
+  const text = value === null ? '—' : shown(value, unit, format)
   return (
     <section className={accent ? 'card card-small kpi-card' : 'card card-small'} aria-label={label} style={accent ? { borderTopColor: accent } : undefined}>
       {to ? (
@@ -94,7 +96,7 @@ export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', agai
       <span className={alert && value !== null && toScaled(value) > 0n ? 'card-small-value negative' : 'card-small-value'}>
         {value === null ? (
           <Tooltip title={missing}>{text}</Tooltip>
-        ) : unit === 'amount' ? (
+        ) : unit === 'amount' && format === 'lakhs' ? (
           <Tooltip title={formatExact(value)}>{text}</Tooltip>
         ) : (
           text

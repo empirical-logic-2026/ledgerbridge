@@ -3,6 +3,7 @@
 // and the CSV of exactly the table on screen. Pure functions: tested in reportTable.test.ts.
 
 import type { LineOut, StatementReport } from '../api/types.ts'
+import type { AmountFormat } from '../amountFormat.ts'
 import { indianGrouping, toScaled } from '../format.ts'
 
 export type View = 'company' | 'month' | 'quarter'
@@ -90,31 +91,22 @@ export function cellValue(line: LineOut, column: ShownColumn): string | null {
 
 export type Unit = 'rupees' | 'lakh'
 
-/** ₹ lakh when the largest amount shown is at least ₹10 lakh, else rupees. */
-export function unitFor(report: StatementReport): Unit {
-  const largest = report.lines
-    .flatMap((l) => Object.values(l.values))
-    .reduce((max, v) => {
-      if (v === null) return max
-      const size = toScaled(v) < 0n ? -toScaled(v) : toScaled(v)
-      return size > max ? size : max
-    }, 0n)
-  return largest >= 10n ** 6n * 10n ** 4n ? 'lakh' : 'rupees'
+/** The Amounts setting's unit for a statement table: ₹ lakh, or rupees in full (F-FMT-001,
+ *  F-FMT-002). */
+export function unitFor(format: AmountFormat): Unit {
+  return format === 'full' ? 'rupees' : 'lakh'
 }
 
-/** An amount in the table: "3,412.6" in lakh (one decimal) or "33,100" in rupees. */
+/** An amount in the table: "3,412.60" in lakh or "33,100.00" in rupees (2 decimals, rounded
+ *  half away from zero). */
 export function formatCell(value: string, unit: Unit): string {
   const scaled = toScaled(value)
   const negative = scaled < 0n
   const size = negative ? -scaled : scaled
-  let text: string
-  if (unit === 'lakh') {
-    const tenths = (size + 5n * 10n ** 7n) / 10n ** 8n // 1 lakh = 10^5 rupees = 10^9 units; tenths
-    text = `${indianGrouping((tenths / 10n).toString())}.${tenths % 10n}`
-  } else {
-    text = indianGrouping(((size + 5000n) / 10000n).toString())
-  }
-  return negative ? `-${text}` : text
+  const step = unit === 'lakh' ? 10n ** 7n : 10n ** 2n // 1/100 lakh, or a paisa, in 1/10,000
+  const hundredths = (size + step / 2n) / step
+  const text = `${indianGrouping((hundredths / 100n).toString())}.${(hundredths % 100n).toString().padStart(2, '0')}`
+  return negative && hundredths > 0n ? `-${text}` : text
 }
 
 /** The table on screen as CSV: the same lines and columns, exact amounts in rupees with two

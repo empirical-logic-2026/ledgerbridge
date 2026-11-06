@@ -58,7 +58,7 @@ function columns(kind: PartyKind, query: PanelProps['query']): ExplorerColumn<Ag
         return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
       },
     },
-    { key: 'meaning', label: 'Meaning', kind: 'text', value: (r) => partyPaymentStatusInfo(r.payment_status ?? r.status, r.balance, kind).meaning },
+    { key: 'meaning', label: 'Meaning', kind: 'text', value: (r) => partyPaymentStatusInfo(r.payment_status ?? r.status, r.balance, kind).meaning, wrap: true },
   ]
 }
 

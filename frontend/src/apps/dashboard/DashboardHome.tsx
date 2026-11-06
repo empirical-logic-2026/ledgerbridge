@@ -7,14 +7,15 @@
 // Short amounts (₹4.82 Cr), the exact amount on hover; "—" with the reason where a figure
 // needs a stored statement that isn't there. Everything opens the page behind it.
 
-import { Alert, Skeleton, Tooltip, Typography } from 'antd'
+import { Money } from '../../components/Money.tsx'
+import { Alert, Skeleton, Typography } from 'antd'
 import type { Home, SummaryLine, TopCustomerOut } from '../../api/types.ts'
 import { Donut } from '../../components/Donut.tsx'
 import { EChart } from '../../components/EChart.tsx'
 import { Explained } from '../../components/Explained.tsx'
 import { KeyCard } from '../../components/KeyCard.tsx'
 import { StatusPill } from '../../components/StatusPill.tsx'
-import { formatChange, formatCompact, formatDate, formatExact, toLakhs, toScaled } from '../../format.ts'
+import { formatChange, formatDate, toLakhs, toScaled } from '../../format.ts'
 import { type Query } from '../../router.ts'
 import { againstOf } from '../../selection.ts'
 import { builtHref } from '../../shell/nav.ts'
@@ -33,14 +34,8 @@ interface Props {
 
 const OTHERS = 'Others'
 
-function Amount({ value }: { value: string | null | undefined }) {
-  if (value === null || value === undefined) return <span>—</span>
-  return (
-    <Tooltip title={formatExact(value)}>
-      <span className={toScaled(value) < 0n ? 'negative' : undefined}>{formatCompact(value)}</span>
-    </Tooltip>
-  )
-}
+/** An amount as the Amounts setting shows it (components/Money.tsx). */
+const Amount = Money
 
 function KeyFigures({ home, query, colours }: { home: Home; query: Query; colours: Tokens }) {
   const pl = home.profit_loss
@@ -132,6 +127,7 @@ function Summary({ home, query }: { home: Home; query: Query }) {
           </a>
         )}
       </div>
+      <div className="report-table-wrap">
       <table className="report-table compact" aria-label="Profit & Loss against last year">
         <thead>
           <tr>
@@ -154,6 +150,7 @@ function Summary({ home, query }: { home: Home; query: Query }) {
           ))}
         </tbody>
       </table>
+      </div>
       {home.summary_reason && <p className="card-note">No figures for last year: {home.summary_reason}.</p>}
     </section>
   )
@@ -192,6 +189,7 @@ function TopCustomers({ home, query }: { home: Home; query: Query }) {
             />
           )}
           {topCustomers.length ? (
+            <div className="report-table-wrap">
             <table className="report-table compact" aria-label="Top customers by net sales">
               <thead>
                 <tr>
@@ -209,7 +207,7 @@ function TopCustomers({ home, query }: { home: Home; query: Query }) {
                   const status = partyPaymentStatusInfo(c.payment_status ?? c.status, c.balance, 'customers')
                   return (
                     <tr key={c.party_id}>
-                      <th>{to ? <a href={to}>{c.name}</a> : c.name}</th>
+                      <th className="wrap">{to ? <a href={to}>{c.name}</a> : c.name}</th>
                       <td className="num">
                         <Amount value={c.net_sales} />
                       </td>
@@ -220,12 +218,13 @@ function TopCustomers({ home, query }: { home: Home; query: Query }) {
                       <td>
                         <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
                       </td>
-                      <td>{status.meaning}</td>
+                      <td className="wrap">{status.meaning}</td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
+            </div>
           ) : malformedCount > 0 ? null : (
             <Typography.Text type="secondary">No sales to customers in this period.</Typography.Text>
           )}

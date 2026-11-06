@@ -153,7 +153,7 @@ class StatementLine:
 @dataclass(frozen=True)
 class StockFigure:
     """The source's stock value for a scope: "total" (what its profit uses), or one
-    "stock_group" or "godown" by name. Canonical sign (stock is a debit)."""
+    "stock_group", "godown" or "item" by name. Canonical sign (stock is a debit)."""
 
     scope: str
     name: str

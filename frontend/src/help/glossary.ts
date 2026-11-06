@@ -47,6 +47,23 @@ export const GLOSSARY: Record<string, Explanation> = {
   Allocated: { text: 'The parts of voucher lines allocated to the cost centre, with the line\'s sign (debits positive); its own allocations only, not the ones under it.', formula: 'Σ allocation amounts', id: 'F-CC-001' },
   Allocations: { text: 'How many allocations were made to the cost centre in the period.', formula: 'Count of allocations', id: 'F-CC-003' },
 
+  // --- stock ---
+  'Stock value': { text: 'The source\'s own value of all stock (its valuation method) at the last stored date within the period.', id: 'F-STK-007' },
+  'Stock items': { text: 'How many stock items the companies have, by name.' },
+  'Items with negative stock': { text: 'Items whose closing quantity is below zero: more went out than came in. Worth checking in the source.', id: 'F-STK-004' },
+  'Opening qty': { text: 'The quantity at the period\'s start: the item\'s opening plus every movement before that day.', id: 'F-STK-001' },
+  'Inward qty': { text: 'The quantity that came in during the period (purchases, receipts, production, transfers in).', id: 'F-STK-002' },
+  'Outward qty': { text: 'The quantity that went out during the period (sales, deliveries, consumption, transfers out).', id: 'F-STK-003' },
+  'Closing qty': { text: 'The quantity at the period\'s end, proven against the source\'s at each validation.', formula: 'Opening + Inward − Outward', id: 'F-STK-004' },
+  'Closing quantity': { text: 'The quantity at the period\'s end, proven against the source\'s at each validation.', formula: 'Opening + Inward − Outward', id: 'F-STK-004' },
+  'Balance qty': { text: 'The quantity after this movement.', id: 'F-STK-004' },
+  Quantity: { text: 'The quantity this voucher moved: in positive, out negative.', id: 'F-STK-002' },
+  Value: { text: 'The source\'s own closing value of the stock (its valuation method) at the last stored date within the period.', id: 'F-STK-005' },
+  Rate: { text: 'The value per unit of the closing quantity.', formula: 'Value ÷ Closing quantity', id: 'F-STK-006' },
+  'Voucher value': { text: 'The line\'s amount on the voucher (what it was bought or sold for), not the stock valuation.', id: 'F-STK-008' },
+  'Stock group': { text: 'The stock group the item sits in.' },
+  Godown: { text: 'The location the stock moved in or out of.' },
+
   // --- profit and loss ---
   Revenue: { text: `Net sales from the stored Profit & Loss. ${STATEMENT}`, id: 'F-PL-001' },
   'Gross profit': { text: `Net sales and direct incomes less cost of sales. ${STATEMENT}`, formula: 'Net sales + direct incomes − cost of sales', id: 'F-PL-003' },
