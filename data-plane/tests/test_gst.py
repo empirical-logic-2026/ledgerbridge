@@ -131,7 +131,8 @@ def test_the_companys_tax_units() -> None:
 
 
 def test_tax_units_are_a_master_after_the_cost_centres() -> None:
-    assert envelopes.MASTER_SPECS[-1] is envelopes.TAX_UNITS
+    specs = envelopes.MASTER_SPECS
+    assert specs.index(envelopes.TAX_UNITS) > specs.index(envelopes.COST_CENTRES)
     assert envelopes.TAX_UNITS.object_type == "tax_unit"
     assert not envelopes.denied_in(envelopes.TAX_UNITS.fetch)
     assert not envelopes.denied_in(envelopes.VOUCHERS.fetch)

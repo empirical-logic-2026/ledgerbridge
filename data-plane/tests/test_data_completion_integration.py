@@ -411,3 +411,36 @@ def test_part_6_settings_and_order_are_stored(synced: int) -> None:
         assert branch.number_series == "Branch"
         reversing = session.get_one(A.Voucher, _voucher_id(session, synced, "REV-JNL-1"))
         assert (reversing.active_to, reversing.has_cash_flow) == (date(2026, 10, 1), False)
+
+
+# --- part 7: other masters -----------------------------------------------------------------
+
+
+def test_part_7_budgets_categories_prices_and_reorder_levels(synced: int) -> None:
+    with Session(get_engine()) as session:
+        gizmo = session.scalars(
+            select(A.Item).where(A.Item.entity_id == synced, A.Item.name == "Gizmo")
+        ).one()
+        category = session.get_one(A.StockCategory, gizmo.stock_category_id)
+        assert category.name == "Electronics"
+        assert (gizmo.reorder_level, gizmo.min_order_quantity) == (Decimal(10), Decimal(5))
+        prices = session.execute(
+            select(A.ItemPrice.price_level, A.ItemPrice.applicable_from, A.ItemPrice.rate).where(
+                A.ItemPrice.item_id == gizmo.id
+            )
+        ).all()
+        assert [tuple(p) for p in prices] == [("Wholesale", date(2025, 4, 1), Decimal(35))]
+        budget = session.scalars(
+            select(A.SourceBudget).where(A.SourceBudget.entity_id == synced)
+        ).one()
+        assert (budget.name, budget.use_actuals) == ("FY27 Plan", True)
+        lines = session.execute(
+            select(A.Ledger.name, A.SourceBudgetLine.basis, A.SourceBudgetLine.amount)
+            .join(A.Ledger, A.Ledger.id == A.SourceBudgetLine.ledger_id)
+            .where(A.SourceBudgetLine.budget_id == budget.id)
+            .order_by(A.SourceBudgetLine.id)
+        ).all()
+        assert [tuple(x) for x in lines] == [
+            ("Electricity", "net_transactions", Decimal(60000)),
+            ("Courier Charges", "net_transactions", Decimal(12000)),
+        ]

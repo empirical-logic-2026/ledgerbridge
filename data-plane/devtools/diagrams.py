@@ -66,7 +66,8 @@ AREAS = (
         "Masters: parties, items, units, godowns, cost centres, voucher types, dimensions "
         "(ledgerbridge_accounting)",
         ("parties", "items", "item_opening_batches", "item_groups", "units", "godowns",
-         "cost_categories", "cost_centres", "tax_units",
+         "cost_categories", "cost_centres", "tax_units", "stock_categories", "item_prices",
+         "source_budgets", "source_budget_lines",
          "voucher_types", "voucher_number_series", "dimensions", "dimension_values"),
         ("entities",),
     ),

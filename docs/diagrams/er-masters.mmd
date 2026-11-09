@@ -22,6 +22,7 @@ erDiagram
         varchar name
         varchar code
         bigint unit_id FK "to units"
+        bigint stock_category_id FK "to stock_categories"
         varchar source_key UK
         bool is_deleted
         json extra
@@ -100,6 +101,40 @@ erDiagram
         bigint connection_id FK, UK "to connections"
         bigint import_batch_id FK "to import_batches"
     }
+    stock_categories {
+        bigint id PK
+        bigint entity_id FK "to entities"
+        bigint parent_id FK "to stock_categories"
+        varchar name
+        varchar source_key UK
+        bool is_deleted
+        json extra
+        bigint connection_id FK, UK "to connections"
+        bigint import_batch_id FK "to import_batches"
+    }
+    item_prices {
+        bigint id PK
+        bigint entity_id FK "to entities"
+        bigint item_id FK "to items"
+    }
+    source_budgets {
+        bigint id PK
+        bigint entity_id FK "to entities"
+        bigint parent_id FK "to source_budgets"
+        varchar name
+        varchar source_key UK
+        bool is_deleted
+        json extra
+        bigint connection_id FK, UK "to connections"
+        bigint import_batch_id FK "to import_batches"
+    }
+    source_budget_lines {
+        bigint id PK
+        bigint budget_id FK "to source_budgets"
+        bigint entity_id FK "to entities"
+        bigint ledger_id FK "to ledgers"
+        decimal amount
+    }
     voucher_types {
         bigint id PK
         bigint entity_id FK "to entities"
@@ -139,6 +174,7 @@ erDiagram
     entities ||--o{ items : "entity_id"
     item_groups |o--o{ items : "item_group_id"
     units |o--o{ items : "unit_id"
+    stock_categories |o--o{ items : "stock_category_id"
     entities ||--o{ item_opening_batches : "entity_id"
     items ||--o{ item_opening_batches : "item_id"
     godowns |o--o{ item_opening_batches : "godown_id"
@@ -152,6 +188,14 @@ erDiagram
     cost_centres |o--o{ cost_centres : "parent_id"
     cost_categories |o--o{ cost_centres : "cost_category_id"
     entities ||--o{ tax_units : "entity_id"
+    entities ||--o{ stock_categories : "entity_id"
+    stock_categories |o--o{ stock_categories : "parent_id"
+    entities ||--o{ item_prices : "entity_id"
+    items ||--o{ item_prices : "item_id"
+    entities ||--o{ source_budgets : "entity_id"
+    source_budgets |o--o{ source_budgets : "parent_id"
+    source_budgets ||--o{ source_budget_lines : "budget_id"
+    entities ||--o{ source_budget_lines : "entity_id"
     entities ||--o{ voucher_types : "entity_id"
     entities ||--o{ voucher_number_series : "entity_id"
     voucher_types ||--o{ voucher_number_series : "voucher_type_id"

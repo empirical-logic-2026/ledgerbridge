@@ -30,6 +30,8 @@ from core import utr
 from core.canonical import (
     NO_STANDARD_ACCOUNT,
     CanonicalBill,
+    CanonicalBudget,
+    CanonicalBudgetLine,
     CanonicalCompany,
     CanonicalCostAllocation,
     CanonicalCostCategory,
@@ -41,6 +43,7 @@ from core.canonical import (
     CanonicalInventoryLine,
     CanonicalItem,
     CanonicalItemGroup,
+    CanonicalItemPrice,
     CanonicalLedger,
     CanonicalLine,
     CanonicalNumberSeries,
@@ -51,6 +54,7 @@ from core.canonical import (
     CanonicalParty,
     CanonicalRate,
     CanonicalRecord,
+    CanonicalStockCategory,
     CanonicalTaxUnit,
     CanonicalUnit,
     CanonicalVoucher,
@@ -556,6 +560,77 @@ def stock_item(element: ET.Element, key: str) -> CanonicalItem:
         opening_value=_amount(element, "OPENINGVALUE"),
         opening_batches=opening_batches(element),
         **_item_gst(element),
+        category_name=_parent_like(element, "CATEGORY"),
+        reorder_level=_quantity_or_none(element, "REORDERBASE"),
+        min_order_quantity=_quantity_or_none(element, "MINIMUMORDERBASE"),
+        prices=item_prices(element),
+    )
+
+
+def _parent_like(element: ET.Element, tag: str) -> str | None:
+    """A master reference that can be Tally's "Primary" or "Not Applicable" (none)."""
+    name = _value(element, tag)
+    return None if name is None or _is_primary(name) else name
+
+
+def _quantity_or_none(element: ET.Element | None, tag: str) -> Decimal | None:
+    """A quantity field (" 10 Nos") in the item's base units; None when empty."""
+    text = text_of(element, tag) if element is not None else None
+    return quantity(text)[0] if text else None
+
+
+def item_prices(element: ET.Element) -> tuple[CanonicalItemPrice, ...]:
+    """A stock item's price list: each price level's rates from a date, per quantity
+    range. Tally lists an empty price list for an item without one."""
+    prices = []
+    for listed in element.findall("FULLPRICELIST.LIST"):
+        level = _value(listed, "PRICELEVEL")
+        if level is None:
+            continue
+        for slab in listed.findall("PRICELEVELLIST.LIST"):
+            rate = _rate(text_of(slab, "RATE"))
+            discount = _rate(text_of(slab, "DISCOUNT"))
+            prices.append(
+                CanonicalItemPrice(
+                    price_level=level,
+                    applicable_from=parser.tally_date(text_of(listed, "DATE")),
+                    rate=rate,
+                    from_quantity=_quantity_or_none(slab, "STARTINGFROM"),
+                    to_quantity=_quantity_or_none(slab, "ENDINGAT"),
+                    discount_pct=discount or None,
+                )
+            )
+    return tuple(prices)
+
+
+def budget(element: ET.Element, key: str) -> CanonicalBudget:
+    """A budget and its ledger lines, period by period. ISTRANSACTION Yes: a budget on the
+    ledger's net transactions in the period; No: on its closing balance."""
+    lines = []
+    for period in element.findall("BUDGETPERIODS.LIST"):
+        start = parser.tally_date(text_of(period, "STARTINGFROM"))
+        end = parser.tally_date(text_of(period, "ENDINGAT"))
+        for allocation in period.findall("ACCOUNTINGALLOCATIONS.LIST"):
+            ledger = text_of(allocation, "NAME")
+            if not ledger:
+                continue
+            lines.append(
+                CanonicalBudgetLine(
+                    ledger_name=ledger,
+                    period_from=start,
+                    period_to=end,
+                    basis="net_transactions"
+                    if _flag(allocation, "ISTRANSACTION")
+                    else "closing_balance",
+                    amount=tally_amount(text_of(allocation, "AMOUNT")) or Decimal(0),
+                )
+            )
+    return CanonicalBudget(
+        source_key=key,
+        name=_name(element),
+        parent_name=_parent(element),
+        use_actuals=_optional_flag(element, "USEACTUALS"),
+        lines=tuple(lines),
     )
 
 
@@ -1166,7 +1241,19 @@ USED_FIELDS: dict[str, frozenset[str]] = {
         "GSTDETAILS.LIST/STATEWISEDETAILS.LIST/RATEDETAILS.LIST/GSTRATEDUTYHEAD",
         "GSTDETAILS.LIST/STATEWISEDETAILS.LIST/RATEDETAILS.LIST/GSTRATE",
         "HSNDETAILS.LIST/APPLICABLEFROM", "HSNDETAILS.LIST/HSNCODE",
-        "HSNDETAILS.LIST/HSNCLASSIFICATIONNAME",
+        "HSNDETAILS.LIST/HSNCLASSIFICATIONNAME", "CATEGORY", "REORDERBASE", "MINIMUMORDERBASE",
+        "FULLPRICELIST.LIST/DATE", "FULLPRICELIST.LIST/PRICELEVEL",
+        "FULLPRICELIST.LIST/PRICELEVELLIST.LIST/RATE",
+        "FULLPRICELIST.LIST/PRICELEVELLIST.LIST/STARTINGFROM",
+        "FULLPRICELIST.LIST/PRICELEVELLIST.LIST/ENDINGAT",
+        "FULLPRICELIST.LIST/PRICELEVELLIST.LIST/DISCOUNT",
+    )),
+    "stock_category": frozenset(_MASTER),
+    "budget": frozenset((
+        *_MASTER, "USEACTUALS", "BUDGETPERIODS.LIST/STARTINGFROM", "BUDGETPERIODS.LIST/ENDINGAT",
+        "BUDGETPERIODS.LIST/ACCOUNTINGALLOCATIONS.LIST/NAME",
+        "BUDGETPERIODS.LIST/ACCOUNTINGALLOCATIONS.LIST/ISTRANSACTION",
+        "BUDGETPERIODS.LIST/ACCOUNTINGALLOCATIONS.LIST/AMOUNT",
     )),
     "tax_unit": frozenset((
         *_MASTER, "USEDFOR", "ISPRIMARYUNIT", "STATENAME", "GSTREGNUMBER",
@@ -1282,6 +1369,10 @@ def _records(record: SourceRecord, element: ET.Element) -> list[CanonicalRecord]
             return [opening_bills(element, key)]
         case "tax_unit":
             return [tax_unit(element, key)]
+        case "stock_category":
+            return [CanonicalStockCategory(key, _name(element), _parent(element))]
+        case "budget":
+            return [budget(element, key)]
         case "cost_centre":
             return [
                 CanonicalCostCentre(

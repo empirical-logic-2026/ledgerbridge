@@ -110,6 +110,11 @@ STOCK_ITEMS = CollectionSpec(
         "GSTDETAILS.STATEWISEDETAILS.RATEDETAILS.GSTRATEDUTYHEAD",
         "GSTDETAILS.STATEWISEDETAILS.RATEDETAILS.GSTRATE",
         "HSNDETAILS.APPLICABLEFROM", "HSNDETAILS.HSNCODE", "HSNDETAILS.HSNCLASSIFICATIONNAME",
+        # Category, reorder and minimum order levels, price list (part 7).
+        "CATEGORY", "REORDERBASE", "MINIMUMORDERBASE",
+        "FULLPRICELIST.DATE", "FULLPRICELIST.PRICELEVEL", "FULLPRICELIST.PRICELEVELLIST.RATE",
+        "FULLPRICELIST.PRICELEVELLIST.STARTINGFROM", "FULLPRICELIST.PRICELEVELLIST.ENDINGAT",
+        "FULLPRICELIST.PRICELEVELLIST.DISCOUNT",
     ),
 )  # fmt: skip
 # ISEXTERNAL: "our stock with a third party" (a job worker's location; Tally leaves its stock
@@ -371,6 +376,22 @@ TAX_UNITS = CollectionSpec(
     ),
 )  # fmt: skip
 
+# Stock categories and budgets (part 7; type names as Tally's own masters export writes them,
+# recorded on the test company 2026-11-06). Budgets: their ledger lines only (the group and
+# cost centre lists were empty there: their fields aren't known).
+STOCK_CATEGORIES = CollectionSpec(
+    "LBStockCategories", "StockCategory", "STOCKCATEGORY", "stock_category", (*_KEYS, "PARENT")
+)
+BUDGETS = CollectionSpec(
+    "LBBudgets", "Budget", "BUDGET", "budget",
+    (
+        *_KEYS, "PARENT", "USEACTUALS", "BUDGETPERIODS.STARTINGFROM", "BUDGETPERIODS.ENDINGAT",
+        "BUDGETPERIODS.ACCOUNTINGALLOCATIONS.NAME",
+        "BUDGETPERIODS.ACCOUNTINGALLOCATIONS.ISTRANSACTION",
+        "BUDGETPERIODS.ACCOUNTINGALLOCATIONS.AMOUNT",
+    ),
+)  # fmt: skip
+
 # Masters in the order they must be transformed (each may refer to the ones before it).
 MASTER_SPECS = (
     CURRENCIES,
@@ -381,10 +402,12 @@ MASTER_SPECS = (
     UNITS,
     STOCK_GROUPS,
     GODOWNS,
+    STOCK_CATEGORIES,
     STOCK_ITEMS,
     COST_CATEGORIES,
     COST_CENTRES,
     TAX_UNITS,
+    BUDGETS,
 )
 ALL_SPECS = (COMPANIES, *MASTER_SPECS, VOUCHERS)
 SPEC_BY_OBJECT_TYPE = {spec.object_type: spec for spec in ALL_SPECS}

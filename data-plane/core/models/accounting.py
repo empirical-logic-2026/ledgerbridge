@@ -389,6 +389,73 @@ class ItemGroup(SourceTrackingMixin, TimestampMixin, Base):
     name: Mapped[str] = name_column()
 
 
+class StockCategory(SourceTrackingMixin, TimestampMixin, Base):
+    """A stock category: a second way of grouping stock items, across their groups (Tally:
+    Stock Category; migration 0036)."""
+
+    __tablename__ = "stock_categories"
+    __table_args__ = src_table_args("stock_categories", ACCOUNTING)
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    parent_id: Mapped[int | None] = mapped_column(Id, _fk("stock_categories"), nullable=True)
+    name: Mapped[str] = name_column()
+
+
+class SourceBudget(SourceTrackingMixin, TimestampMixin, Base):
+    """A budget kept in the source (Tally: Budget; migration 0036). Kept apart from our own
+    budgets (schema.md 4.7, proposed for M7b) so that design isn't pre-empted."""
+
+    __tablename__ = "source_budgets"
+    __table_args__ = src_table_args("source_budgets", ACCOUNTING)
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    parent_id: Mapped[int | None] = mapped_column(Id, _fk("source_budgets"), nullable=True)
+    name: Mapped[str] = name_column()
+    use_actuals: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+class SourceBudgetLine(TimestampMixin, Base):
+    """A ledger's budget for a period in a source budget (migration 0036): on its net
+    transactions or its closing balance, the amount as the source writes it. Replaced as a
+    whole with each read of the budget."""
+
+    __tablename__ = "source_budget_lines"
+    __table_args__ = _A
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    budget_id: Mapped[int] = mapped_column(
+        Id, _fk("source_budgets", ondelete="CASCADE"), index=True
+    )
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    ledger_id: Mapped[int | None] = mapped_column(Id, _fk("ledgers"), nullable=True)
+    ledger_name: Mapped[str] = mapped_column(String(255))
+    period_from: Mapped[date | None] = mapped_column(nullable=True)
+    period_to: Mapped[date | None] = mapped_column(nullable=True)
+    basis: Mapped[str] = mapped_column(String(32))  # net_transactions / closing_balance
+    amount: Mapped[Decimal] = mapped_column(Money)
+
+
+class ItemPrice(TimestampMixin, Base):
+    """A price in a stock item's price list (Tally: FULLPRICELIST; migration 0036): for a
+    price level, from a date, for a quantity range, with its discount. Replaced as a whole
+    with each read of the item."""
+
+    __tablename__ = "item_prices"
+    __table_args__ = _A
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    item_id: Mapped[int] = mapped_column(Id, _fk("items", ondelete="CASCADE"), index=True)
+    price_level: Mapped[str] = mapped_column(String(255))
+    applicable_from: Mapped[date | None] = mapped_column(nullable=True)
+    rate: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
+    from_quantity: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
+    to_quantity: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
+    discount_pct: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
+
+
 class Unit(SourceTrackingMixin, TimestampMixin, Base):
     __tablename__ = "units"
     __table_args__ = src_table_args("units", ACCOUNTING)
@@ -418,6 +485,13 @@ class Item(SourceTrackingMixin, TimestampMixin, Base):
     # 0034); `hsn_code` and `gst_rate` (the integrated rate) are filled from then too.
     gst_taxability: Mapped[str | None] = mapped_column(String(32), nullable=True)
     gst_classification: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Its stock category, reorder level and minimum order quantity (base units; migration
+    # 0036).
+    stock_category_id: Mapped[int | None] = mapped_column(
+        Id, _fk("stock_categories"), nullable=True
+    )
+    reorder_level: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
+    min_order_quantity: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
 
 
 GODOWN_HOLDINGS = ("own", "ours_with_third_party", "third_party_with_us")
