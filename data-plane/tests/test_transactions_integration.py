@@ -96,7 +96,8 @@ def test_particulars_are_the_other_side_and_the_line_details_are_on_their_lines(
     neft = next(r for r in _of(rows, transfer) if r["cheque"])
     assert neft["cheque"] == "NEFT-2026-0902" and neft["transaction_type"] == "e-Fund Transfer"
     # Tally's own id for the entry: kept apart, never shown as the UTR.
-    assert neft["tally_bank_entry_id"] == "UTR20260902000017" and neft["utr"] is None
+    assert neft["tally_bank_entry_id"] == "UTR20260902000017"
+    assert not {"utr", "utr_source"} & set(neft)  # stored, never returned
 
 
 def test_the_period_limits_the_rows(client: TestClient, synced: int) -> None:

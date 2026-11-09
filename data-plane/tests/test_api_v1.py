@@ -214,7 +214,7 @@ def test_the_catalogue_lists_only_allow_listed_keys(client_without_db: TestClien
     lines = catalogue["voucher_lines"]
     assert {d["key"] for d in lines["dimensions"]} == set(LINES.dimensions)
     assert {m["key"] for m in lines["measures"]} == {"debit", "credit", "net", "voucher_count"}
-    bank = {"instrument_number", "utr", "transaction_type", "tally_bank_entry_id"}
+    bank = {"instrument_number", "transaction_type", "tally_bank_entry_id"}
     assert {"reference", *bank} <= set(LINES.dimensions)
     assert "cost_centre" in {f["key"] for f in lines["filters"]}
     allocations = catalogue["cost_allocations"]

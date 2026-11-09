@@ -3,7 +3,8 @@
 // the supplier's invoice number), the party, the line's ledger, the voucher's other ledgers
 // (particulars), debit and credit, narration, the line's bills and cost centres, the order
 // numbers (the orders the voucher is made against), the party's GSTIN, and the bank line's cheque
-// number and UTR (only a value that looks like one), with its other bank details hidden. Rows: core/transactions.py (GET /api/v1/transactions).
+// number, with its other bank details hidden. The UTR is never shown (the API doesn't return it).
+// Rows: core/transactions.py (GET /api/v1/transactions).
 
 import { Alert, Skeleton, Typography } from 'antd'
 import type { Company, TransactionOut, TransactionsOut } from '../../api/types.ts'
@@ -19,12 +20,6 @@ interface Props extends PanelProps {
   page: TransactionsOut | undefined
   loading: boolean
   error: Error | null
-}
-
-const UTR_SOURCES: Record<string, string> = {
-  bank_field: "From the bank line's details",
-  udf: 'From a user-defined field',
-  narration: 'Found in the narration',
 }
 
 function columns(page: TransactionsOut, companies: Company[], query: Query): ExplorerColumn<TransactionOut>[] {
@@ -53,18 +48,10 @@ function columns(page: TransactionsOut, companies: Company[], query: Query): Exp
     { key: 'order', label: 'Order Number', kind: 'text', value: (r) => r.order_number ?? null, help: 'The sales or purchase orders the voucher is made against (PO / SO numbers): those the voucher names, else those its stock lines are against.' },
     { key: 'gstin', label: 'GSTIN', kind: 'text', value: (r) => r.gstin ?? null, help: "The party's GST identification number, from its ledger." },
     { key: 'cheque', label: 'Cheque Number', kind: 'text', value: (r) => r.cheque ?? null, help: "A bank line's cheque or instrument number." },
-    {
-      key: 'utr',
-      label: 'UTR',
-      kind: 'text',
-      value: (r) => r.utr ?? null,
-      render: (r) => (r.utr ? <span title={UTR_SOURCES[r.utr_source ?? ''] ?? ''}>{r.utr}</span> : <span className="muted">—</span>),
-      help: "The bank's unique transaction reference: only a value that looks like one (NEFT/RTGS, IMPS/UPI, or written after \"UTR\"). Hover a value for where it was found.",
-    },
     { key: 'transaction_type', label: 'Bank transaction type', kind: 'text', value: (r) => r.transaction_type ?? null, groupable: true, hidden: true, help: 'Cheque, e-Fund Transfer and so on, as the source records the bank line.' },
     { key: 'instrument_date', label: 'Instrument date', kind: 'date', value: (r) => r.instrument_date ?? null, hidden: true, help: "The cheque's or transfer's own date." },
     { key: 'bank_cleared_date', label: 'Bank cleared date', kind: 'date', value: (r) => r.bank_cleared_date ?? null, hidden: true, help: 'The date the bank cleared it (bank reconciliation); empty while not reconciled.' },
-    { key: 'tally_bank_entry_id', label: 'Tally bank entry ID', kind: 'text', value: (r) => r.tally_bank_entry_id ?? null, hidden: true, help: "The source's own id for the bank entry (a code Tally generates): not a UTR." },
+    { key: 'tally_bank_entry_id', label: 'Tally bank entry ID', kind: 'text', value: (r) => r.tally_bank_entry_id ?? null, hidden: true, help: "The source's own id for the bank entry (a code Tally generates), not the bank's reference." },
     { key: 'gst_registration', label: 'GST registration', kind: 'text', value: (r) => r.gst_registration ?? null, groupable: true, hidden: true, help: "The company's own GST registration (tax unit) the voucher is under." },
     { key: 'place_of_supply', label: 'Place of supply', kind: 'text', value: (r) => r.place_of_supply ?? null, groupable: true, hidden: true, help: 'The state of supply on the voucher (decides CGST + SGST or IGST).' },
     { key: 'party_gst_registration_type', label: 'Party GST type', kind: 'text', value: (r) => r.party_gst_registration_type ?? null, groupable: true, hidden: true, help: "The party's GST registration type: Regular, Composition, Unregistered and so on." },
@@ -87,6 +74,10 @@ function help(sourceName: string) {
       </p>
       <p>
         Group by voucher type, party, ledger, cost centre or month with Group by; choose columns with Columns; the CSV export has the exact amounts.
+      </p>
+      <p>
+        <strong>Cheque Number</strong> is the bank line's cheque or instrument number. The bank transaction type, instrument date and bank
+        cleared date are hidden columns (Columns). The bank's UTR isn't shown here or in the CSV export.
       </p>
       <p>
         <strong>To compare with {sourceName}:</strong> Display More Reports → Day Book for the same dates (detailed), or a ledger's Ledger Vouchers
