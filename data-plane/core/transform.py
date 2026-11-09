@@ -205,14 +205,44 @@ def link_orders(session: Session, entity_id: int) -> int:
     sales (purchase) order whose lines carry that order number, for a sales-side
     (purchase-side) voucher. Run after every write of vouchers, so an order fetched after
     its invoices is linked too. Returns how many were linked."""
-    pending = session.execute(
-        select(A.VoucherOrder.id, A.VoucherOrder.order_number, A.VoucherType.base_type)
+    pending = unlinked_orders(session, entity_id)
+    if not pending:
+        return 0
+    orders = stored_orders(session, entity_id)
+    linked = 0
+    for row_id, _voucher_id, number, base in pending:
+        found = orders_named(orders, number, base)
+        if len(found) == 1:  # one order with that number: never guess between two
+            session.execute(
+                update(A.VoucherOrder).where(A.VoucherOrder.id == row_id)
+                .values(order_voucher_id=found.pop())
+            )  # fmt: skip
+            linked += 1
+    return linked
+
+
+def unlinked_orders(
+    session: Session, entity_id: int, live_only: bool = False
+) -> list[tuple[int, int, str, str]]:
+    """The entity's order references not linked to an order voucher: (row id, voucher id,
+    order number, the voucher's base type); `live_only`: of vouchers not deleted."""
+    query = (
+        select(
+            A.VoucherOrder.id, A.VoucherOrder.voucher_id, A.VoucherOrder.order_number,
+            A.VoucherType.base_type,
+        )
         .join(A.Voucher, A.Voucher.id == A.VoucherOrder.voucher_id)
         .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
         .where(A.VoucherOrder.entity_id == entity_id, A.VoucherOrder.order_voucher_id.is_(None))
-    ).all()
-    if not pending:
-        return 0
+    )  # fmt: skip
+    if live_only:
+        query = query.where(A.Voucher.is_deleted.is_(False))
+    return [(int(r), int(v), n, b) for r, v, n, b in session.execute(query)]
+
+
+def stored_orders(session: Session, entity_id: int) -> dict[tuple[str, str], set[int]]:
+    """The entity's stored order vouchers by (order type, order number): those whose stock
+    lines carry the number."""
     orders: dict[tuple[str, str], set[int]] = defaultdict(set)
     for standard, number, voucher_id in session.execute(
         select(A.VoucherType.standard_type, A.InventoryLine.order_number, A.Voucher.id)
@@ -225,22 +255,19 @@ def link_orders(session: Session, entity_id: int) -> int:
             A.VoucherType.standard_type.in_(set(ORDER_TYPE_BY_BASE.values())),
         )
     ):
-        orders[(standard, number)].add(voucher_id)
-    linked = 0
-    for row_id, number, base in pending:
-        kinds = (
-            [ORDER_TYPE_BY_BASE[base]]
-            if base in ORDER_TYPE_BY_BASE
-            else ["Sales Order", "Purchase Order"]
-        )
-        found = set().union(*(orders.get((kind, number), set()) for kind in kinds))
-        if len(found) == 1:  # one order with that number: never guess between two
-            session.execute(
-                update(A.VoucherOrder).where(A.VoucherOrder.id == row_id)
-                .values(order_voucher_id=found.pop())
-            )  # fmt: skip
-            linked += 1
-    return linked
+        orders[(standard, number)].add(int(voucher_id))
+    return orders
+
+
+def orders_named(orders: dict[tuple[str, str], set[int]], number: str, base: str) -> set[int]:
+    """The stored orders a voucher of this base type can be made against with this number:
+    sales orders for the sales side, purchase orders for the purchase side, else either."""
+    kinds = (
+        [ORDER_TYPE_BY_BASE[base]]
+        if base in ORDER_TYPE_BY_BASE
+        else ["Sales Order", "Purchase Order"]
+    )
+    return set().union(*(orders.get((kind, number), set()) for kind in kinds))
 
 
 def _slug(name: str) -> str:

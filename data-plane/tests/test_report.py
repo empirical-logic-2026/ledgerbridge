@@ -15,6 +15,7 @@ from connectors.tally.connector import TallyConnector
 from core.models import accounting as A  # noqa: N812
 from core.models import system as S  # noqa: N812
 from core.problems import BY_CODE, PROBLEMS, for_error, for_key, title
+from core.validation import ORDER_NOT_FOUND_CAUSES
 from devtools import error_catalogue
 from tests.conftest import COMPANY
 from workers import style
@@ -22,12 +23,14 @@ from workers.entities import Labels
 from workers.report import (
     ATTENTION,
     FAILED,
+    NOT_RECORDED,
     OK,
     OK_WARNINGS,
     HealthReport,
     Occurrence,
     Section,
     build,
+    by_cause,
     cause_line,
     next_step,
     ordered,
@@ -144,6 +147,69 @@ def test_verdicts_and_the_next_step_for_open_items() -> None:
         "nothing to run: open item ADR-043, find the forex revaluation rule (rulebook 16.8)"
     )
     assert next_step([open_difference, interrupted], "pilot") == r".\dev.ps1 sync -Env pilot"
+
+
+def test_warnings_about_the_sources_own_data_need_no_action() -> None:
+    """Pilot 2026-11-09: opening bills for a different total (LB-VAL-041) and orders not
+    found (LB-VAL-043) are the source's data, with nothing to run: OK WITH WARNINGS, and no
+    next step of their own."""
+    bills, orders = _occ("LB-VAL-041", 55), _occ("LB-VAL-043", 174)
+    assert BY_CODE["LB-VAL-041"].source_data and BY_CODE["LB-VAL-043"].source_data
+    assert verdict([bills, orders]) == OK_WARNINGS
+    assert next_step([bills, orders], "pilot") is None
+    interrupted = _occ("LB-SYNC-010", 1)
+    assert verdict([bills, orders, interrupted]) == ATTENTION
+    assert next_step([bills, interrupted], "pilot") == r".\dev.ps1 sync -Env pilot"
+    open_difference = _occ("LB-VAL-026", 2)
+    assert next_step([orders, open_difference], "pilot").startswith("nothing to run: open item")
+    text = render_text(
+        HealthReport("pilot", datetime(2026, 11, 9), [Section("X", occurrences=[bills])])
+    )
+    assert "Overall: OK WITH WARNINGS" in text and "Next step:" not in text.split("==")[0]
+    catalogue = error_catalogue.render()
+    assert "nothing to run (the source's own data)" in catalogue
+
+
+OLD_MESSAGE = "A voucher names an order that isn't stored."  # before causes were recorded
+
+
+def test_orders_not_found_are_counted_by_cause(db: Session) -> None:
+    """Each finding's message says its cause (core.validation.ORDER_NOT_FOUND_CAUSES); the
+    report counts them, every cause shown, and an older run's findings as not recorded."""
+    run = S.ValidationRun(
+        entity_id=1, as_of=date(2026, 11, 2), started_at=datetime(2026, 11, 9), status="passed"
+    )
+    db.add(run)
+    db.flush()
+    messages = [ORDER_NOT_FOUND_CAUSES["not_stored"][0]] * 3 + [
+        ORDER_NOT_FOUND_CAUSES["ambiguous"][0]
+    ]
+    for n, message in enumerate(messages):
+        db.add(
+            S.ValidationIssue(
+                validation_run_id=run.id, check_code="order_not_found", severity="warning",
+                object_type="voucher", object_id=str(n), message=message,
+                created_at=datetime(2026, 11, 9),
+            )
+        )  # fmt: skip
+    db.flush()
+    assert by_cause(db, run.id, "order_not_found") == (
+        "by cause: 3 order number not stored, 1 more than one order with that number, "
+        "0 order failed to convert"
+    )
+    assert by_cause(db, run.id, "opening_bills_differ") == ""
+    lines = validation_lines(db, run, "entity 1 (company 1)")
+    assert "  WARNING Orders not found [order_not_found, LB-VAL-043]: 4 (first result)" in lines
+    assert "    by cause: 3 order number not stored, " in "\n".join(lines)
+    db.add(
+        S.ValidationIssue(
+            validation_run_id=run.id, check_code="order_not_found", severity="warning",
+            object_type="voucher", object_id="9", message=OLD_MESSAGE,
+            created_at=datetime(2026, 11, 9),
+        )
+    )  # fmt: skip
+    db.flush()
+    assert by_cause(db, run.id, "order_not_found").endswith(f", 1 {NOT_RECORDED}")
 
 
 @pytest.mark.parametrize(

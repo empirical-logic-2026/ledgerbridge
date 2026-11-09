@@ -52,13 +52,15 @@ from core.problems import (
     title,
 )
 from core.transform import FOREIGN_UNREAD
+from core.validation import ORDER_NOT_FOUND_CAUSES
 from workers.entities import Labels
 from workers.failures import failure_breakdown, format_group, warning_breakdown
 from workers.fields import catalogue_counts
 from workers.runs import FINISHED
 from workers.sync import DELETION_CHECK, TRANSFORM, entity_ids_for, last_run, running_run
 
-# OK; OK WITH WARNINGS (only warnings waiting on an open item: nothing to run); ACTION NEEDED
+# OK; OK WITH WARNINGS (only warnings waiting on an open item or describing the source's own
+# data: nothing to run); ACTION NEEDED
 # (a warning with something to run, e.g. an interrupted sync); FAILED (an error). Only FAILED
 # makes `report` and `validate` exit 1.
 OK, OK_WARNINGS, ATTENTION, FAILED = "OK", "OK WITH WARNINGS", "ACTION NEEDED", "FAILED"
@@ -95,6 +97,7 @@ class Occurrence:
     previous: int | None = None
     comparable: bool = True
     note: str = ""
+    causes: str = ""  # e.g. "by cause: 3 order number not stored, ..."
 
     @property
     def active(self) -> bool:
@@ -107,6 +110,8 @@ class Occurrence:
         text = f"{self.where}: {self.count:,}"
         if self.problem.key.endswith("_mismatch") or self.previous is not None:
             text += f" ({trend(self.count, self.previous, self.comparable)})"
+        if self.causes:
+            text += f"; {self.causes}"
         return text
 
 
@@ -128,7 +133,7 @@ def verdict(occurrences: Iterable[Occurrence]) -> str:
     if any(p.severity == ERROR for p in active):
         return FAILED
     warnings = [p for p in active if p.severity == WARNING]
-    if any(not p.open_item for p in warnings):
+    if any(not (p.open_item or p.source_data) for p in warnings):
         return ATTENTION
     return OK_WARNINGS if warnings else OK
 
@@ -205,11 +210,14 @@ def _work_rank(code: str) -> int:
 def next_step(occurrences: list[Occurrence], env: str) -> str | None:
     """The first problem's command: unfinished work (a running job, a full sync to resume,
     records waiting) before anything else, then root causes before their consequences.
-    Problems waiting on an open item come last, named, since nothing can be run for them."""
+    Problems waiting on an open item come last, named, since nothing can be run for them;
+    those describing the source's own data have no step."""
     waiting = None
     for group in ordered(occurrences):
         p = group[0].problem
         if p.severity == INFO and p.code not in WORK_FIRST:
+            continue
+        if p.source_data:
             continue
         if p.open_item:
             waiting = waiting or p
@@ -231,6 +239,27 @@ def _counts(session: Session, run_id: int) -> Counter[str]:
             ).all()
         )
     )
+
+
+# Checks whose findings say their cause in the message: counted by cause (no values).
+CAUSES = {"order_not_found": ORDER_NOT_FOUND_CAUSES}
+NOT_RECORDED = "cause not recorded (validated before causes were)"
+
+
+def by_cause(session: Session, run_id: int, key: str) -> str:
+    """`by cause: 160 order number not stored, 14 more than one order with that number, 0
+    order failed to convert` for a check in CAUSES; every cause shown, 0 included."""
+    if key not in CAUSES:
+        return ""
+    labels = {message: label for message, label in CAUSES[key].values()}
+    counts: Counter[str] = Counter({label: 0 for label in labels.values()})
+    for message, count in session.execute(
+        select(ValidationIssue.message, func.count())
+        .where(ValidationIssue.validation_run_id == run_id, ValidationIssue.check_code == key)
+        .group_by(ValidationIssue.message)
+    ):
+        counts[labels.get(message, NOT_RECORDED)] += count
+    return "by cause: " + ", ".join(f"{n:,} {label}" for label, n in counts.items())
 
 
 def previous_run(session: Session, run: ValidationRun) -> ValidationRun | None:
@@ -270,7 +299,8 @@ def validation_occurrences(session: Session, run: ValidationRun, where: str) -> 
             continue
         previous = None if before is None else before.get(key, 0)
         comparable = same_kind or key not in CONTROL_KEYS
-        out.append(Occurrence(problem, where, count, previous, comparable))
+        causes = by_cause(session, run.id, key) if count else ""
+        out.append(Occurrence(problem, where, count, previous, comparable, causes=causes))
     return out
 
 
@@ -304,6 +334,8 @@ def validation_lines(
             mark = "WARNING " if p.severity == WARNING else ""
             change = trend(o.count, o.previous, o.comparable)
             out.append(f"{indent}  {mark}{p.label()}: {o.count:,} ({change})")
+            if o.causes:
+                out.append(f"{indent}    {o.causes}")
     return out
 
 
