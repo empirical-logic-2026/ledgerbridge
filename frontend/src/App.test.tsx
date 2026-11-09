@@ -1418,10 +1418,10 @@ describe('the transactions', () => {
     expect(document.querySelector('.header-crumbs')).toHaveTextContent('Books/Transactions')
   })
 
-  it('explains the order number, which is not read from the source yet', async () => {
+  it('explains where the order number comes from', async () => {
     renderApp('#/books/transactions')
     const table = await screen.findByRole('table', { name: 'Transactions' })
     fireEvent.mouseEnter(within(table).getByText('Order Number'))
-    expect(await screen.findByText(/not read from the source yet/)).toBeInTheDocument()
+    expect(await screen.findByText(/orders the voucher is made against/)).toBeInTheDocument()
   })
 })

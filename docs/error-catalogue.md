@@ -85,6 +85,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-040](#lb-val-040-opening-bills) | Opening bills | `opening_bills_mismatch` | Error |
 | [LB-VAL-041](#lb-val-041-opening-bills-dont-add-up-to-the-opening) | Opening bills don't add up to the opening | `opening_bills_differ` | Warning |
 | [LB-VAL-042](#lb-val-042-item-openings-by-godown-dont-add-up) | Item openings by godown don't add up | `item_openings_differ` | Error |
+| [LB-VAL-043](#lb-val-043-orders-not-found) | Orders not found | `order_not_found` | Warning |
 | [LB-VAL-036](#lb-val-036-voucher-type-names-written-differently) | Voucher type names written differently | `voucher_type_names_differ` | Note |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
@@ -1422,6 +1423,28 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Sync again; if they still differ, sync full.
 
 **Next step:** `.\dev.ps1 sync -Env <env>`
+
+### LB-VAL-043: Orders not found
+
+`order_not_found` | Warning
+
+**What it means:** Some invoices, delivery or receipt notes name a sales or purchase order that isn't stored (no order voucher of that kind with that number, or more than one).
+
+**Common causes:**
+
+- The order is from before the books' beginning, or was deleted in the source.
+- Two orders with the same number: the link isn't guessed.
+- The order failed to convert.
+
+**How to investigate:**
+
+- The report's -Details lists the vouchers by id (no numbers or names).
+
+**How to fix:**
+
+- Nothing to fix for orders from before the books; otherwise sync again.
+
+**Next step:** `.\dev.ps1 report -Details -Env <env>`
 
 ### LB-VAL-036: Voucher type names written differently
 

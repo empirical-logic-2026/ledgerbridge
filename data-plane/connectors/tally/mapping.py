@@ -45,6 +45,7 @@ from core.canonical import (
     CanonicalOpeningBatch,
     CanonicalOpeningBill,
     CanonicalOpeningBills,
+    CanonicalOrderRef,
     CanonicalParty,
     CanonicalRate,
     CanonicalRecord,
@@ -712,9 +713,12 @@ def _with_item_allocations(voucher: ET.Element, lines: list[CanonicalLine]) -> l
     return found
 
 
-def _inventory(entry: ET.Element, inward: bool | None = None) -> CanonicalInventoryLine | None:
+def _inventory(
+    entry: ET.Element, inward: bool | None = None, on: date | None = None
+) -> CanonicalInventoryLine | None:
     """One inventory entry. `inward` is given for stock journal entries (in: produced or
-    received; out: consumed or sent), otherwise ISDEEMEDPOSITIVE decides."""
+    received; out: consumed or sent), otherwise ISDEEMEDPOSITIVE decides. `on` is the
+    voucher's date (an order due "in 30 Days" counts from it)."""
     item = text_of(entry, "STOCKITEMNAME")
     if not item:
         return None
@@ -733,8 +737,40 @@ def _inventory(entry: ET.Element, inward: bool | None = None) -> CanonicalInvent
         godown_name=text_of(batch, "GODOWNNAME") if batch is not None else None,
         batch_name=text_of(batch, "BATCHNAME") if batch is not None else None,
         counterpart_godown_name=_batch_counterpart(batch),
+        order_number=_order_number(batch),
+        order_due_date=_order_due(batch, on),
         discount_pct=discount if discount else None,
     )
+
+
+def _order_number(batch: ET.Element | None) -> str | None:
+    """The order a batch allocation belongs to (ORDERNO; Tally writes "Not Applicable" when
+    there is none)."""
+    number = text_of(batch, "ORDERNO") if batch is not None else None
+    return None if number in (None, "", NOT_APPLICABLE) else number
+
+
+def _order_due(batch: ET.Element | None, on: date | None) -> date | None:
+    """The order's due date: a date ("31-Oct-26") or days after the voucher's date."""
+    if batch is None or _order_number(batch) is None:
+        return None
+    return due_date(on, text_of(batch, "ORDERDUEDATE"))
+
+
+def order_refs(element: ET.Element) -> tuple[CanonicalOrderRef, ...]:
+    """The orders a voucher is made against: its INVOICEORDERLIST (number and order date),
+    and BASICORDERREF when it names one not listed. Each number once."""
+    refs: dict[str, CanonicalOrderRef] = {}
+    for listed in element.findall("INVOICEORDERLIST.LIST"):
+        number = text_of(listed, "BASICPURCHASEORDERNO")
+        if number and number != NOT_APPLICABLE and number not in refs:
+            refs[number] = CanonicalOrderRef(
+                number, parser.tally_date(text_of(listed, "BASICORDERDATE"))
+            )
+    basic = text_of(element, "BASICORDERREF")
+    if basic and basic != NOT_APPLICABLE and basic not in refs:
+        refs[basic] = CanonicalOrderRef(basic)
+    return tuple(refs.values())
 
 
 def _batch_counterpart(batch: ET.Element | None) -> str | None:
@@ -790,12 +826,14 @@ def _is_inward(entry: ET.Element, inward: bool | None) -> bool:
     return _flag(entry, "ISDEEMEDPOSITIVE") if inward is None else inward
 
 
-def _inventory_lines(entry: ET.Element, inward: bool | None) -> list[CanonicalInventoryLine]:
+def _inventory_lines(
+    entry: ET.Element, inward: bool | None, on: date | None = None
+) -> list[CanonicalInventoryLine]:
     """An inventory entry as lines: one per batch allocation when its stock sits in more
     than one godown (each with its own quantity, amount and tracking), so stock is known
     per godown; otherwise one line. Tally keeps the stock at each batch's godown; a
     batch's destination godown (Material In/Out) doesn't move stock in Tally's balances."""
-    line = _inventory(entry, inward)
+    line = _inventory(entry, inward, on)
     if line is None:
         return []
     batches = entry.findall("BATCHALLOCATIONS.LIST")
@@ -823,6 +861,8 @@ def _inventory_lines(entry: ET.Element, inward: bool | None) -> list[CanonicalIn
                 godown_name=text_of(batch, "GODOWNNAME"),
                 batch_name=text_of(batch, "BATCHNAME"),
                 counterpart_godown_name=_batch_counterpart(batch),
+                order_number=_order_number(batch),
+                order_due_date=_order_due(batch, on),
                 tracked_quantity=signed if _tracking(batch) else Decimal(0),
             )
         )
@@ -881,10 +921,15 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
         ),
         inventory=tuple(
             _with_transfers(
-                [line for e, inward in inventory_entries for line in _inventory_lines(e, inward)],
+                [
+                    line
+                    for e, inward in inventory_entries
+                    for line in _inventory_lines(e, inward, voucher_date)
+                ],
                 text_of(element, "DESTINATIONGODOWN"),
             )
         ),
+        orders=order_refs(element),
         reference_number=text_of(element, "REFERENCE"),
         reference_date=parser.tally_date(text_of(element, "REFERENCEDATE")),
         source_altered_at=parser.tally_datetime(text_of(element, "UPDATEDDATETIME")),
@@ -919,7 +964,8 @@ _INVENTORY_ENTRY = (
     "STOCKITEMNAME", "ACTUALQTY", "BILLEDQTY", "RATE", "AMOUNT", "ISDEEMEDPOSITIVE",
     "DISCOUNT", "BATCHALLOCATIONS.LIST/GODOWNNAME", "BATCHALLOCATIONS.LIST/BATCHNAME",
     "BATCHALLOCATIONS.LIST/TRACKINGNUMBER", "BATCHALLOCATIONS.LIST/ACTUALQTY",
-    "BATCHALLOCATIONS.LIST/DESTINATIONGODOWNNAME",
+    "BATCHALLOCATIONS.LIST/DESTINATIONGODOWNNAME", "BATCHALLOCATIONS.LIST/ORDERNO",
+    "BATCHALLOCATIONS.LIST/ORDERDUEDATE",
     *(f"ACCOUNTINGALLOCATIONS.LIST/{path}" for path in _LEDGER_ENTRY),
 )  # fmt: skip
 # Paths (below the object; list levels included) each object type's mapping reads.
@@ -961,7 +1007,8 @@ USED_FIELDS: dict[str, frozenset[str]] = {
         *_IDENTITY, "DATE", "EFFECTIVEDATE", "UPDATEDDATETIME", "VOUCHERTYPENAME",
         "VOUCHERNUMBER", "REFERENCE", "REFERENCEDATE",
         "PARTYLEDGERNAME", "NARRATION", "ISCANCELLED", "ISOPTIONAL", "ISPOSTDATED",
-        "DESTINATIONGODOWN",
+        "DESTINATIONGODOWN", "BASICORDERREF", "INVOICEORDERLIST.LIST/BASICPURCHASEORDERNO",
+        "INVOICEORDERLIST.LIST/BASICORDERDATE",
         *(f"{lst}/{path}" for lst in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST")
           for path in _LEDGER_ENTRY),
         *(f"{lst}/{path}" for lst in (

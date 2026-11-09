@@ -167,6 +167,9 @@ VOUCHERS = CollectionSpec(
         "ISCANCELLED", "ISOPTIONAL", "ISPOSTDATED", "ISDELETED", "ISINVOICE",
         # A stock journal's receiving godown (data completion, part 3).
         "DESTINATIONGODOWN",
+        # The orders an invoice is made against (data completion, part 4).
+        "BASICORDERREF",
+        "InvoiceOrderList.BasicPurchaseOrderNo", "InvoiceOrderList.BasicOrderDate",
         "AllLedgerEntries.LedgerName", "AllLedgerEntries.Amount",
         "AllLedgerEntries.IsDeemedPositive", "AllLedgerEntries.IsPartyLedger",
         "AllLedgerEntries.BillAllocations.Name", "AllLedgerEntries.BillAllocations.BillType",
@@ -199,6 +202,9 @@ VOUCHERS = CollectionSpec(
         "AllInventoryEntries.BatchAllocations.BatchName",
         # Where a batch goes (Material Out to a job worker's godown).
         "AllInventoryEntries.BatchAllocations.DestinationGodownName",
+        # The order a line belongs to or is against, and its due date ("31-Oct-26").
+        "AllInventoryEntries.BatchAllocations.OrderNo",
+        "AllInventoryEntries.BatchAllocations.OrderDueDate",
         # A tracking number ties an invoice line to a delivery or receipt note: the note
         # moves the stock, the invoice line doesn't (mapping._tracked).
         "AllInventoryEntries.BatchAllocations.TrackingNumber",

@@ -751,6 +751,29 @@ class InventoryLine(TimestampMixin, Base):
     # an incoming line's came from (a transfer between godowns, a job worker's godown).
     # Migration 0032.
     counterpart_godown_id: Mapped[int | None] = mapped_column(Id, _fk("godowns"), nullable=True)
+    # The sales or purchase order the line belongs to (on the order) or is against (on an
+    # invoice or note), and when the order is due. Migration 0033.
+    order_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    order_due_date: Mapped[date | None] = mapped_column(nullable=True)
+
+
+class VoucherOrder(TimestampMixin, Base):
+    """An order a voucher (an invoice, a delivery or receipt note) is made against
+    (migration 0033): its number and date as the voucher names them, and the order voucher
+    when one with that number is stored (sales orders for sales-side vouchers, purchase
+    orders for purchase-side ones). Replaced with the voucher's other child rows."""
+
+    __tablename__ = "voucher_orders"
+    __table_args__ = _A
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    voucher_id: Mapped[int] = mapped_column(Id, _fk("vouchers", ondelete="CASCADE"), index=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    order_number: Mapped[str] = mapped_column(String(255))
+    order_date: Mapped[date | None] = mapped_column(nullable=True)
+    order_voucher_id: Mapped[int | None] = mapped_column(
+        Id, _fk("vouchers", ondelete="SET NULL"), nullable=True
+    )
 
 
 class TaxLine(TimestampMixin, Base):

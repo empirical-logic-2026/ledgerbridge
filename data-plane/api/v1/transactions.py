@@ -37,7 +37,7 @@ class TransactionOut(BaseModel):
     narration: str | None
     bills: str | None
     cost_centres: str | None
-    order_number: str | None = None  # not fetched from the source yet: always empty
+    order_number: str | None  # the sales or purchase orders the voucher is made against
     cheque: str | None  # a bank line's cheque or instrument number
     utr: str | None  # only a value that looks like a bank's UTR
     utr_source: str | None  # where it was found: bank_field, udf or narration
@@ -78,7 +78,8 @@ def list_transactions(
                 reference=r.reference, party_id=r.party_id, party=r.party, gstin=r.gstin,
                 ledger_id=r.ledger_id, ledger=r.ledger, particulars=r.particulars,
                 debit=r.debit, credit=r.credit, narration=r.narration, bills=r.bills,
-                cost_centres=r.cost_centres, cheque=r.cheque, utr=r.utr,
+                cost_centres=r.cost_centres, order_number=r.order_number, cheque=r.cheque,
+                utr=r.utr,
                 utr_source=r.utr_source, transaction_type=r.transaction_type,
                 instrument_date=r.instrument_date, bank_cleared_date=r.bank_cleared_date,
                 tally_bank_entry_id=r.tally_bank_entry_id,

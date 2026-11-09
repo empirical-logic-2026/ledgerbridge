@@ -455,6 +455,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-09 | 0.53 | Data completion part 4: orders (`VoucherOrder`, migration 0033, `core/transform.py` `link_orders`), the Transactions page's Order Number (`core/transactions.py` `_orders`); `tests/test_orders.py`. |
 | 2026-11-09 | 0.52 | Data completion part 3: item openings by godown and batch (`ItemOpeningBatch`, migration 0032) and the other godown of a move (`inventory_lines.counterpart_godown_id`); `tests/test_stock_by_godown.py`. |
 | 2026-11-06 | 0.51 | Data completion part 2: opening bills (`core/models/accounting.py` `OpeningBill`, migration 0031, `core/parties.py` `opening_bill_rows`), `tests/test_bill_dates.py`. |
 | 2026-11-06 | 0.50 | Data completion part 1: `core/utr.py`, `connectors/tally/find_field.py` (`./dev.ps1 find-field`), `voucher_lists.txt`, the never-fetched list (`envelopes.DENIED`), `tests/fixtures/tally/rules/data-completion/`, `tests/test_bank_details.py`, `tests/test_utr.py`. |

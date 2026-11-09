@@ -174,6 +174,58 @@ class _Prepared:
     extra: Any
     lines: list[_PreparedLine]
     inventory: list[dict[str, Any]]
+    orders: list[dict[str, Any]]
+
+
+# The order type a voucher's base type is made against.
+ORDER_TYPE_BY_BASE = {
+    "sales": "Sales Order", "credit_note": "Sales Order", "delivery_note": "Sales Order",
+    "purchase": "Purchase Order", "debit_note": "Purchase Order",
+    "receipt_note": "Purchase Order",
+}  # fmt: skip
+
+
+def link_orders(session: Session, entity_id: int) -> int:
+    """Links the entity's order references not linked yet to their order voucher: a stored
+    sales (purchase) order whose lines carry that order number, for a sales-side
+    (purchase-side) voucher. Run after every write of vouchers, so an order fetched after
+    its invoices is linked too. Returns how many were linked."""
+    pending = session.execute(
+        select(A.VoucherOrder.id, A.VoucherOrder.order_number, A.VoucherType.base_type)
+        .join(A.Voucher, A.Voucher.id == A.VoucherOrder.voucher_id)
+        .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
+        .where(A.VoucherOrder.entity_id == entity_id, A.VoucherOrder.order_voucher_id.is_(None))
+    ).all()
+    if not pending:
+        return 0
+    orders: dict[tuple[str, str], set[int]] = defaultdict(set)
+    for standard, number, voucher_id in session.execute(
+        select(A.VoucherType.standard_type, A.InventoryLine.order_number, A.Voucher.id)
+        .join(A.Voucher, A.Voucher.id == A.InventoryLine.voucher_id)
+        .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
+        .where(
+            A.InventoryLine.entity_id == entity_id,
+            A.InventoryLine.order_number.is_not(None),
+            A.Voucher.is_deleted.is_(False),
+            A.VoucherType.standard_type.in_(set(ORDER_TYPE_BY_BASE.values())),
+        )
+    ):
+        orders[(standard, number)].add(voucher_id)
+    linked = 0
+    for row_id, number, base in pending:
+        kinds = (
+            [ORDER_TYPE_BY_BASE[base]]
+            if base in ORDER_TYPE_BY_BASE
+            else ["Sales Order", "Purchase Order"]
+        )
+        found = set().union(*(orders.get((kind, number), set()) for kind in kinds))
+        if len(found) == 1:  # one order with that number: never guess between two
+            session.execute(
+                update(A.VoucherOrder).where(A.VoucherOrder.id == row_id)
+                .values(order_voucher_id=found.pop())
+            )  # fmt: skip
+            linked += 1
+    return linked
 
 
 def _slug(name: str) -> str:
@@ -1528,6 +1580,7 @@ class Transformer:
         latest = {p.header["source_key"]: p for p in prepared}
         self._delete_children([voucher_ids[key] for key in latest])
         self._insert_children(latest, voucher_ids)
+        link_orders(self.session, self.entity_id)
         return [p.item for p in prepared]
 
     def _voucher_refs(self, item: _Raw, v: CanonicalVoucher) -> _Refs:
@@ -1583,16 +1636,19 @@ class Transformer:
         ids = [voucher_ids[key] for key in latest]
         now = utcnow()
         stamp = {"created_at": now, "updated_at": now}
-        line_rows, inventory_rows = [], []
+        line_rows, inventory_rows, order_rows = [], [], []
         for key, p in latest.items():
             vid = voucher_ids[key]
             base = {"voucher_id": vid, "entity_id": self.entity_id, **stamp}
             line_rows += [{**base, **line.row} for line in p.lines]
             inventory_rows += [{**base, **row} for row in p.inventory]
+            order_rows += [{**base, **row} for row in p.orders]
         if line_rows:
             self.session.execute(insert(A.VoucherLine), line_rows)
         if inventory_rows:
             self.session.execute(insert(A.InventoryLine), inventory_rows)
+        if order_rows:
+            self.session.execute(insert(A.VoucherOrder), order_rows)
 
         line_ids = {
             (vid, no): lid
@@ -1726,9 +1782,15 @@ class Transformer:
                     "discount_pct": inv.discount_pct,
                     "batch_name": inv.batch_name,
                     "counterpart_godown_id": refs.godowns.get(inv.counterpart_godown_name or ""),
+                    "order_number": inv.order_number,
+                    "order_due_date": inv.order_due_date,
                 },
             )
             for no, inv in enumerate(v.inventory, start=1)
+        ]
+        orders = [
+            fit(A.VoucherOrder, no, {"order_number": ref.number, "order_date": ref.order_date})
+            for no, ref in enumerate(v.orders, start=1)
         ]
         party = refs.party
         header, kept = _fit(
@@ -1751,7 +1813,7 @@ class Transformer:
             },
         )
         header = _with_extra({**self._src(item, v), **header}, v.extra, {**kept, **unfit})
-        return _Prepared(item, header, v.extra, lines, inventory)
+        return _Prepared(item, header, v.extra, lines, inventory, orders)
 
     # --- promoted fields (dimensions) ---------------------------------------------------
 
@@ -1791,7 +1853,7 @@ class Transformer:
                 .where(model.voucher_line_id.in_(line_ids))
                 .execution_options(synchronize_session=False)
             )
-        for model in (A.TaxLine, A.InventoryLine, A.VoucherLine):
+        for model in (A.TaxLine, A.InventoryLine, A.VoucherOrder, A.VoucherLine):
             self.session.execute(
                 delete(model)
                 .where(model.voucher_id.in_(voucher_ids))
