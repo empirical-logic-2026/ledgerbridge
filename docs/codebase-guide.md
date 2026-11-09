@@ -199,7 +199,7 @@ ledgerbridge/
 | `alerts.py` | Raises and resolves alerts when syncs or checks fail. |
 | `errors.py` | Writes errors briefly and safely, never with SQL statements or values from the books. |
 | `dates.py` | Which dates a source answers reliably (Tally's Educational mode: the 1st, 2nd and 31st), and how validation moves its dates to them. |
-| `problems.py` | Every error and warning the system reports, with its plain name, stable code (LB-SYNC, LB-TRF, LB-VAL, LB-CON, LB-SYS), meaning, causes, how to investigate and fix it, and the next command. All output and the error catalogue come from it. |
+| `problems.py` | Every error and warning the system reports, with its plain name, stable code (LB-SYNC, LB-TRF, LB-VAL, LB-CON, LB-SYS), meaning, causes, how to investigate and fix it, and the next command (or none: an open item, or the source's own data). All output and the error catalogue come from it. |
 
 **`workers/`: commands and background jobs.**
 
@@ -217,7 +217,7 @@ ledgerbridge/
 | `failures.py` | Groups the reasons records failed, for `summary`, without values. |
 | `fields.py` | The catalogue of extra fields (e.g. Tally custom fields) and turning one into a reporting dimension. |
 | `references.py` | The `transform explain` diagnostic: why names didn't resolve, in counts and kinds only. |
-| `report.py` | The health report (`./dev.ps1 report`): overall verdict, sections, problems with meaning, likely cause and next step; and the validation layout every command shares, compared with the previous run. Counts and codes only. |
+| `report.py` | The health report (`./dev.ps1 report`): overall verdict, sections, problems with meaning, likely cause and next step; and the validation layout every command shares, compared with the previous run (orders not found split by cause). Counts and codes only. |
 | `style.py` | Colours status words (green, yellow, red) when `dev.ps1` says the terminal supports it; plain text otherwise. |
 | `currencies.py` | `./dev.ps1 validate currencies`: each company's ledgers by their own currency, which hold foreign amounts, and the ledgers the source revalues that aren't marked foreign (counts and ISO codes). |
 | `monthly_sales.py` | `./dev.ps1 validate monthly-sales`: the proof per company, from the database only, printed as counts and dates. |
@@ -455,6 +455,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-09 | 0.58 | `core/problems.py`: `Problem.source_data` (warnings about the source's own data leave the verdict at OK WITH WARNINGS); `core/transform.py` `stored_orders`, `orders_named`, `unlinked_orders` shared by `link_orders` and validation; `workers/report.py` `by_cause`. |
 | 2026-11-09 | 0.57 | The UTR is no longer shown in the dashboard: `core/transactions.py`, `core/registers.py`, `api/v1/dataset_specs.py` don't read it; `tests/test_utr_not_exposed.py`. |
 | 2026-11-09 | 0.56 | Data completion part 7: other masters (`StockCategory`, `ItemPrice`, `SourceBudget`, `SourceBudgetLine`, migration 0036; `envelopes.STOCK_CATEGORIES`, `envelopes.BUDGETS`); `tests/test_other_masters.py`. |
 | 2026-11-09 | 0.55 | Data completion part 6: settings and order (`VoucherNumberSeries`, migration 0035; `core/statements.py` orders primary groups by sort position); `tests/test_settings_and_order.py`. |

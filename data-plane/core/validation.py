@@ -49,6 +49,7 @@ from core.names import NORMALISED, NameIndex, close_match, differences
 from core.problems import title
 from core.statement_differences import Summary
 from core.stock import stock_moving
+from core.transform import orders_named, stored_orders, unlinked_orders
 
 ZERO = Decimal(0)
 PROFIT_NATURES = ("income", "expense")
@@ -76,6 +77,23 @@ ALWAYS_CHECKED = (
     "voucher_unbalanced", "opening_difference", "tb_unbalanced", "cost_allocation_exceeds_line",
     "opening_bills_differ", "item_openings_differ", "order_not_found",
 )  # fmt: skip
+# Why an order wasn't found (order_not_found): the finding's message, then the cause as the
+# report shows it. The messages are stable: the report counts findings by them.
+ORDER_NOT_FOUND_CAUSES = {
+    "not_stored": (
+        "A voucher names an order number no stored order of that kind has.",
+        "order number not stored",
+    ),
+    "ambiguous": (
+        "A voucher names an order number more than one stored order has.",
+        "more than one order with that number",
+    ),
+    "failed": (
+        "A voucher names an order that isn't stored, while some of the company's vouchers "
+        "failed to convert: it may be one of them.",
+        "order failed to convert",
+    ),
+}
 CLOSING_READ = ("closing_unavailable", "closing_not_supported")
 CLOSING_COMPARED = (
     *CLOSING_READ, "closing_mismatch", "profit_carrier_mismatch", "ledger_missing",
@@ -1191,16 +1209,30 @@ class Validator:
     def _orders_found(self) -> None:
         """Every order a voucher is made against is stored (its order voucher found by
         number; core.transform.link_orders). Not finding one is a warning: the order can be
-        from before the books' beginning, or have been deleted in the source."""
-        rows = self.session.execute(
-            select(A.VoucherOrder.voucher_id, A.VoucherOrder.order_voucher_id)
+        from before the books' beginning, or have been deleted in the source. Each finding
+        says why (ORDER_NOT_FOUND_CAUSES): more than one order has the number, or none does
+        (while some of the company's vouchers failed to convert, it may be one of them)."""
+        linked = self.session.scalar(
+            select(func.count())
+            .select_from(A.VoucherOrder)
             .join(A.Voucher, A.Voucher.id == A.VoucherOrder.voucher_id)
-            .where(A.VoucherOrder.entity_id == self.entity.id, A.Voucher.is_deleted.is_(False))
-        ).all()
-        for voucher_id, order_voucher_id in rows:
-            if order_voucher_id is not None:
-                self.passed += 1
-                continue
+            .where(
+                A.VoucherOrder.entity_id == self.entity.id,
+                A.Voucher.is_deleted.is_(False),
+                A.VoucherOrder.order_voucher_id.is_not(None),
+            )
+        )
+        self.passed += linked or 0
+        unlinked = unlinked_orders(self.session, self.entity.id, live_only=True)
+        if not unlinked:
+            return
+        orders = stored_orders(self.session, self.entity.id)
+        failed = self._failed_records("voucher")
+        for _row_id, voucher_id, number, base in unlinked:
+            if len(orders_named(orders, number, base)) > 1:
+                cause = "ambiguous"
+            else:
+                cause = "failed" if failed else "not_stored"
             self._fail(
                 Finding(
                     "order_not_found",
@@ -1209,19 +1241,35 @@ class Validator:
                     str(voucher_id),
                     None,
                     None,
-                    "A voucher names an order that isn't stored.",
+                    ORDER_NOT_FOUND_CAUSES[cause][0],
                 )
             )
 
-    def _root_cause(self) -> RootCause:
-        """Failed raw records of this entity and the failures likely caused by them."""
-        cause = RootCause()
+    def _failed_record_conditions(self) -> list:
+        """This entity's raw records that failed to transform (of this connection, if set)."""
         keys = select(A.EntitySource.source_entity_key).where(
             A.EntitySource.entity_id == self.entity.id
         )
         conditions = [RawRecord.source_entity_key.in_(keys), RawRecord.process_status == "failed"]
         if self.connection_id is not None:
             conditions.append(RawRecord.connection_id == self.connection_id)
+        return conditions
+
+    def _failed_records(self, object_type: str) -> int:
+        """How many of this entity's raw records of one kind failed to transform."""
+        return (
+            self.session.scalar(
+                select(func.count()).where(
+                    *self._failed_record_conditions(), RawRecord.object_type == object_type
+                )
+            )
+            or 0
+        )
+
+    def _root_cause(self) -> RootCause:
+        """Failed raw records of this entity and the failures likely caused by them."""
+        cause = RootCause()
+        conditions = self._failed_record_conditions()
         for object_type, count in self.session.execute(
             select(RawRecord.object_type, func.count())
             .where(*conditions)

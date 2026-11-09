@@ -1397,9 +1397,9 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **How to fix:**
 
-- Correct the opening bills or the opening balance in the source, then sync.
+- Nothing to run here. If wanted, correct the opening bills or the opening balance in the source, then sync.
 
-**Next step:** `.\dev.ps1 report -Details -Env <env>`
+**Next step:** nothing to run (the source's own data); to see the records: `.\dev.ps1 report -Details -Env <env>`.
 
 ### LB-VAL-042: Item openings by godown don't add up
 
@@ -1432,19 +1432,19 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 
 **Common causes:**
 
-- The order is from before the books' beginning, or was deleted in the source.
-- Two orders with the same number: the link isn't guessed.
-- The order failed to convert.
+- Order number not stored: the order is from before the books' beginning, or was deleted in the source.
+- More than one order with that number: the link isn't guessed.
+- Order failed to convert: shown when some of the company's vouchers failed to convert (it may be one of them).
 
 **How to investigate:**
 
-- The report's -Details lists the vouchers by id (no numbers or names).
+- The report gives the count by cause; -Details lists the vouchers by id (no numbers or names).
 
 **How to fix:**
 
-- Nothing to fix for orders from before the books; otherwise sync again.
+- Nothing to run for orders not stored or with a shared number (the source's data). If vouchers failed to convert, fix those first (sync again).
 
-**Next step:** `.\dev.ps1 report -Details -Env <env>`
+**Next step:** nothing to run (the source's own data); to see the records: `.\dev.ps1 report -Details -Env <env>`.
 
 ### LB-VAL-036: Voucher type names written differently
 

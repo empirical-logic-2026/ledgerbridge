@@ -18,7 +18,7 @@ from connectors.tally.fixtures import FixtureTransport
 from core.db import get_engine
 from core.models import accounting as A  # noqa: N812
 from core.transform import link_orders
-from core.validation import Validator
+from core.validation import ORDER_NOT_FOUND_CAUSES, Validator
 from tests.conftest import FIXTURES
 from tests.test_migrations_integration import _config
 from tests.test_sync_integration import CONNECTION, _cleanup
@@ -326,7 +326,70 @@ def test_part_4_an_order_not_stored_is_a_warning(synced: int) -> None:
         report = Validator(session, synced, date(2026, 10, 31)).run(None)
         (found,) = [f for f in report.findings if f.check_code == "order_not_found"]
         assert (found.object_type, found.object_id) == ("voucher", str(invoice))
+        assert found.message == ORDER_NOT_FOUND_CAUSES["not_stored"][0]
         session.rollback()
+        purchase_type = session.scalar(
+            select(A.Voucher.voucher_type_id).where(
+                A.Voucher.id == _voucher_id(session, synced, "ORD-2")
+            )
+        )
+    _set_orders(synced, {"order_number": "SO-1"}, purchase_type, "PO-1")  # validation commits
+
+
+def _set_orders(entity_id: int, invoice: dict, order_type: int, order_lines: str) -> None:
+    """Sets the invoice's order reference, and the purchase order's (ORD-2) voucher type and
+    line order numbers, committed (validation may commit), then links orders again."""
+    with Session(get_engine()) as session:
+        purchase_order = _voucher_id(session, entity_id, "ORD-2")
+        session.execute(
+            update(A.Voucher).where(A.Voucher.id == purchase_order)
+            .values(voucher_type_id=order_type)
+        )  # fmt: skip
+        session.execute(
+            update(A.InventoryLine).where(A.InventoryLine.voucher_id == purchase_order)
+            .values(order_number=order_lines)
+        )  # fmt: skip
+        session.execute(
+            update(A.VoucherOrder)
+            .where(A.VoucherOrder.voucher_id == _voucher_id(session, entity_id, "ORD-1-INV"))
+            .values(order_voucher_id=None, **invoice)
+        )
+        link_orders(session, entity_id)
+        session.commit()
+
+
+def _order_findings(entity_id: int) -> dict[str, str]:
+    """The order_not_found findings of a validation: voucher id -> message."""
+    with Session(get_engine()) as session:
+        report = Validator(session, entity_id, date(2026, 10, 31)).run(None)
+        session.rollback()
+    return {f.object_id: f.message for f in report.findings if f.check_code == "order_not_found"}
+
+
+def test_part_4_why_an_order_wasnt_found(synced: int, monkeypatch: pytest.MonkeyPatch) -> None:
+    """LB-VAL-043 by cause: two stored sales orders with the invoice's order number (never
+    guessed between), and a missing order while vouchers failed to convert. Everything
+    changed is put back."""
+    with Session(get_engine()) as session:
+        invoice = str(_voucher_id(session, synced, "ORD-1-INV"))
+        sales_type, purchase_type = (
+            session.scalar(
+                select(A.Voucher.voucher_type_id).where(
+                    A.Voucher.id == _voucher_id(session, synced, marker)
+                )
+            )
+            for marker in ("ORD-1", "ORD-2")
+        )
+    try:
+        # The purchase order becomes a second sales order SO-1.
+        _set_orders(synced, {"order_number": "SO-1"}, sales_type, "SO-1")
+        assert _order_findings(synced)[invoice] == ORDER_NOT_FOUND_CAUSES["ambiguous"][0]
+        _set_orders(synced, {"order_number": "SO-404"}, purchase_type, "PO-1")
+        monkeypatch.setattr(Validator, "_failed_records", lambda self, kind: 1)
+        assert _order_findings(synced)[invoice] == ORDER_NOT_FOUND_CAUSES["failed"][0]
+    finally:
+        _set_orders(synced, {"order_number": "SO-1"}, purchase_type, "PO-1")
+    assert invoice not in _order_findings(synced)  # linked again
 
 
 # --- part 5: GST details -----------------------------------------------------------------

@@ -44,6 +44,10 @@ class Problem:
     # to find). Such a warning leaves the verdict at OK WITH WARNINGS, and the next step
     # names the item instead of a command (unless another problem has one).
     open_item: str = ""
+    # Set when it describes the source's own data, which the source allows (e.g. opening
+    # bills for a different total): nothing to run here. Such a warning also leaves the
+    # verdict at OK WITH WARNINGS; the report's -Details lists the records by id.
+    source_data: bool = False
 
     def label(self) -> str:
         """`Balances at year ends [year_end_mismatch, LB-VAL-006]`."""
@@ -947,8 +951,12 @@ PROBLEMS: tuple[Problem, ...] = (
         "receivables and payables ageing.",
         ("Opening bills entered for a different total than the ledger's opening balance.",),
         ("The report's -Details lists the ledgers by id (no names or amounts).",),
-        ("Correct the opening bills or the opening balance in the source, then sync.",),
+        (
+            "Nothing to run here. If wanted, correct the opening bills or the opening balance "
+            "in the source, then sync.",
+        ),
         ".\\dev.ps1 report -Details -Env {env}",
+        source_data=True,
     ),
     _p(
         "LB-VAL-042",
@@ -976,13 +984,22 @@ PROBLEMS: tuple[Problem, ...] = (
         "Some invoices, delivery or receipt notes name a sales or purchase order that isn't "
         "stored (no order voucher of that kind with that number, or more than one).",
         (
-            "The order is from before the books' beginning, or was deleted in the source.",
-            "Two orders with the same number: the link isn't guessed.",
-            "The order failed to convert.",
+            "Order number not stored: the order is from before the books' beginning, or "
+            "was deleted in the source.",
+            "More than one order with that number: the link isn't guessed.",
+            "Order failed to convert: shown when some of the company's vouchers failed to "
+            "convert (it may be one of them).",
         ),
-        ("The report's -Details lists the vouchers by id (no numbers or names).",),
-        ("Nothing to fix for orders from before the books; otherwise sync again.",),
+        (
+            "The report gives the count by cause; -Details lists the vouchers by id (no "
+            "numbers or names).",
+        ),
+        (
+            "Nothing to run for orders not stored or with a shared number (the source's "
+            "data). If vouchers failed to convert, fix those first (sync again).",
+        ),
         ".\\dev.ps1 report -Details -Env {env}",
+        source_data=True,
     ),
     _p(
         "LB-VAL-036",
