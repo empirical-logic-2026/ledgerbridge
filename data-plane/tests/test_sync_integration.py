@@ -60,8 +60,17 @@ def _cleanup(session: Session) -> None:
         session.execute(delete(model).where(model.voucher_id.in_(vouchers)))
     session.execute(delete(A.Voucher).where(A.Voucher.connection_id == connection.id))
     session.execute(delete(A.Item).where(A.Item.connection_id == connection.id))
+    # Source budget lines name ledgers: before the ledgers go.
+    session.execute(delete(A.SourceBudgetLine).where(A.SourceBudgetLine.entity_id.in_(entity_ids)))
     # Self-referencing tables: clear parent links before deleting the rows.
-    for model in (A.ItemGroup, A.Godown, A.CostCentre, A.AccountGroup):
+    for model in (
+        A.ItemGroup,
+        A.Godown,
+        A.CostCentre,
+        A.AccountGroup,
+        A.StockCategory,
+        A.SourceBudget,
+    ):
         session.execute(
             model.__table__.update()
             .where(model.connection_id == connection.id)
@@ -78,6 +87,8 @@ def _cleanup(session: Session) -> None:
         A.CostCategory,
         A.AccountGroup,
         A.TaxUnit,
+        A.StockCategory,
+        A.SourceBudget,
     ):
         session.execute(delete(model).where(model.connection_id == connection.id))
     runs = select(S.ValidationRun.id).where(S.ValidationRun.entity_id.in_(entity_ids))

@@ -182,6 +182,52 @@ class CanonicalUnit:
 
 
 @dataclass(frozen=True)
+class CanonicalStockCategory:
+    """A stock category: a second way of grouping stock items, across their groups."""
+
+    source_key: str
+    name: str
+    parent_name: str | None
+    extra: Mapping[str, Any] | None = _extra()
+
+
+@dataclass(frozen=True)
+class CanonicalItemPrice:
+    """A price in a stock item's price list: for a price level, from a date, for a quantity
+    range (both ends None: any quantity), with its discount."""
+
+    price_level: str
+    applicable_from: date | None
+    rate: Decimal | None
+    from_quantity: Decimal | None = None
+    to_quantity: Decimal | None = None
+    discount_pct: Decimal | None = None
+
+
+@dataclass(frozen=True)
+class CanonicalBudgetLine:
+    """A ledger's budget for a period: on its net transactions or its closing balance."""
+
+    ledger_name: str
+    period_from: date | None
+    period_to: date | None
+    basis: str  # net_transactions / closing_balance
+    amount: Decimal  # as the source writes it (see schema.md: source_budget_lines)
+
+
+@dataclass(frozen=True)
+class CanonicalBudget:
+    """A budget kept in the source (Tally: Budget), with its lines, all of them."""
+
+    source_key: str
+    name: str
+    parent_name: str | None
+    use_actuals: bool | None = None
+    lines: tuple[CanonicalBudgetLine, ...] = ()
+    extra: Mapping[str, Any] | None = _extra()
+
+
+@dataclass(frozen=True)
 class CanonicalItemGroup:
     source_key: str
     name: str
@@ -217,6 +263,12 @@ class CanonicalItem:
     gst_rate: Decimal | None = None
     gst_taxability: str | None = None
     gst_classification: str | None = None
+    # Its stock category, reorder level and minimum order quantity (base units), and its
+    # price list, all of it (replacing the one stored).
+    category_name: str | None = None
+    reorder_level: Decimal | None = None
+    min_order_quantity: Decimal | None = None
+    prices: tuple[CanonicalItemPrice, ...] = ()
     extra: Mapping[str, Any] | None = _extra()
 
 
@@ -425,5 +477,7 @@ CanonicalRecord = (
     | CanonicalCostCentre
     | CanonicalOpeningBills
     | CanonicalTaxUnit
+    | CanonicalStockCategory
+    | CanonicalBudget
     | CanonicalVoucher
 )

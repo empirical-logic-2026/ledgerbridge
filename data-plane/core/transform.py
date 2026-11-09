@@ -52,6 +52,7 @@ from connectors.base import Connector, SourceRecord
 from core import fx, voucher_history
 from core.canonical import (
     NO_STANDARD_ACCOUNT,
+    CanonicalBudget,
     CanonicalCompany,
     CanonicalCostCategory,
     CanonicalCostCentre,
@@ -63,6 +64,7 @@ from core.canonical import (
     CanonicalLedger,
     CanonicalOpeningBills,
     CanonicalRecord,
+    CanonicalStockCategory,
     CanonicalTaxUnit,
     CanonicalUnit,
     CanonicalVoucher,
@@ -93,6 +95,8 @@ MODELS_BY_KIND: dict[type, tuple[type, ...]] = {
     CanonicalCostCategory: (A.CostCategory,),
     CanonicalCostCentre: (A.CostCentre,),
     CanonicalTaxUnit: (A.TaxUnit,),
+    CanonicalStockCategory: (A.StockCategory,),
+    CanonicalBudget: (A.SourceBudget,),
     CanonicalVoucher: (A.Voucher,),
 }
 # Every table whose rows are soft-deleted when their source object is deleted.
@@ -809,10 +813,12 @@ class Transformer:
             (CanonicalUnit, self._units),
             (CanonicalItemGroup, self._item_groups),
             (CanonicalGodown, self._godowns),
+            (CanonicalStockCategory, self._stock_categories),
             (CanonicalItem, self._items),
             (CanonicalCostCategory, self._cost_categories),
             (CanonicalCostCentre, self._cost_centres),
             (CanonicalTaxUnit, self._tax_units),
+            (CanonicalBudget, self._budgets),
             (CanonicalVoucher, self._vouchers),
         ):
             items = by_kind.pop(kind, [])
@@ -1511,9 +1517,53 @@ class Transformer:
         )
         return done
 
+    def _stock_categories(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
+        done = self._simple(
+            items, CanonicalStockCategory, A.StockCategory, lambda r: {"name": r.name}, result,
+            "stock_category",
+        )  # fmt: skip
+        self._link_parents(
+            A.StockCategory, [(r.source_key, r.parent_name) for i in done for r in i.records]
+        )
+        return done
+
+    def _budgets(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
+        """Source budgets, their parents, and their lines (replacing the ones stored); a
+        line's ledger by name (kept by name when not found)."""
+        done = self._simple(
+            items, CanonicalBudget, A.SourceBudget,
+            lambda r: {"name": r.name, "use_actuals": r.use_actuals}, result, "budget",
+        )  # fmt: skip
+        records = [r for i in done for r in i.records if isinstance(r, CanonicalBudget)]
+        self._link_parents(A.SourceBudget, [(r.source_key, r.parent_name) for r in records])
+        ids = self.upsert.ids(A.SourceBudget, [r.source_key for r in records])
+        ledgers = self._by_name(A.Ledger)
+        now = utcnow()
+        rows = [
+            {
+                "budget_id": ids[record.source_key], "entity_id": self.entity_id,
+                "ledger_id": ledgers.get(line.ledger_name), "ledger_name": line.ledger_name[:255],
+                "period_from": line.period_from, "period_to": line.period_to,
+                "basis": line.basis, "amount": line.amount, "created_at": now, "updated_at": now,
+            }
+            for record in records
+            if record.source_key in ids
+            for line in record.lines
+        ]  # fmt: skip
+        if ids:
+            self.session.execute(
+                delete(A.SourceBudgetLine).where(
+                    A.SourceBudgetLine.budget_id.in_(list(ids.values()))
+                )
+            )
+        if rows:
+            self.session.execute(insert(A.SourceBudgetLine), rows)
+        return done
+
     def _items(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         groups = self._by_name(A.ItemGroup)
         units = self._by_name(A.Unit, "symbol")
+        categories = self._by_name(A.StockCategory)
         written = self._simple(
             items,
             CanonicalItem,
@@ -1528,12 +1578,39 @@ class Transformer:
                 "gst_rate": r.gst_rate,
                 "gst_taxability": r.gst_taxability,
                 "gst_classification": r.gst_classification,
+                "stock_category_id": categories.get(r.category_name) if r.category_name else None,
+                "reorder_level": r.reorder_level,
+                "min_order_quantity": r.min_order_quantity,
             },
             result,
             "stock_item",
         )
         self._opening_batches(written)
+        self._item_prices(written)
         return written
+
+    def _item_prices(self, written: list[_Raw]) -> None:
+        """Each written item's price list, replacing the one stored."""
+        records = [r for i in written for r in i.records if isinstance(r, CanonicalItem)]
+        ids = self.upsert.ids(A.Item, [r.source_key for r in records])
+        if not ids:
+            return
+        now = utcnow()
+        rows = [
+            {
+                "entity_id": self.entity_id, "item_id": ids[record.source_key],
+                "price_level": price.price_level[:255],
+                "applicable_from": price.applicable_from, "rate": price.rate,
+                "from_quantity": price.from_quantity, "to_quantity": price.to_quantity,
+                "discount_pct": price.discount_pct, "created_at": now, "updated_at": now,
+            }
+            for record in records
+            if record.source_key in ids
+            for price in record.prices
+        ]  # fmt: skip
+        self.session.execute(delete(A.ItemPrice).where(A.ItemPrice.item_id.in_(list(ids.values()))))
+        if rows:
+            self.session.execute(insert(A.ItemPrice), rows)
 
     def _opening_batches(self, written: list[_Raw]) -> None:
         """Each written item's opening by godown and batch, replacing the one stored. A

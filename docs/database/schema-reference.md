@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-66 tables, 785 columns.
+70 tables, 839 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -13,7 +13,7 @@ Every database, table and column of the client-hosted data plane (MySQL 8), gene
 | Database | What it holds | Tables |
 | --- | --- | --- |
 | `ledgerbridge_source` | Raw layer: every record exactly as the source sent it (ADR-005). Written only by connectors through the sync; the transform reads it. | 1 |
-| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 39 |
+| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 43 |
 | `ledgerbridge_reporting` | Semantic layer for reports and AI (M6): views and aggregate tables. Empty until M6; the only database the AI user can read (AI-003). | 1 |
 | `ledgerbridge_system` | Running the platform: connections, sync runs and progress, validation, alerts, users, roles, audit and AI logs, configuration. | 25 |
 
@@ -138,7 +138,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `base_currency_code` → `currencies.code`.
 
-**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `item_opening_batches`, `items`, `ledgers`, `line_gst_rates`, `opening_bills`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `tax_units`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_number_series`, `voucher_orders`, `voucher_types`, `voucher_versions`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `item_opening_batches`, `item_prices`, `items`, `ledgers`, `line_gst_rates`, `opening_bills`, `parties`, `source_budget_lines`, `source_budgets`, `source_fields`, `statement_lines`, `stock_categories`, `stock_values`, `tax_units`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_number_series`, `voucher_orders`, `voucher_types`, `voucher_versions`, `vouchers`.
 
 ### `ledgerbridge_accounting.entity_sources`
 
@@ -387,7 +387,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `group_id` → `account_groups.id`; `party_id` → `parties.id`; `standard_account_id` → `standard_accounts.id`; `currency_code` → `currencies.code`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `fx_revaluation_snapshots`, `opening_bills`, `voucher_lines`, `voucher_version_lines`.
+**Referred to by:** `fx_revaluation_snapshots`, `opening_bills`, `source_budget_lines`, `voucher_lines`, `voucher_version_lines`.
 
 ## `ledgerbridge_accounting`: masters
 
@@ -449,6 +449,9 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `opening_value` | NUMERIC(20, 4) | no |  | Opening value. |
 | `gst_taxability` | VARCHAR(32) | yes |  | Gst taxability. |
 | `gst_classification` | VARCHAR(255) | yes |  | Gst classification. |
+| `stock_category_id` | BIGINT UNSIGNED | yes | FK | Refers to `stock_categories`. |
+| `reorder_level` | NUMERIC(20, 6) | yes |  | Reorder level. |
+| `min_order_quantity` | NUMERIC(20, 6) | yes |  | Min order quantity. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
 | `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
 | `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
@@ -462,9 +465,9 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Keys and indexes:** unique (connection_id, source_key); index `ix_items_raw_record` (raw_record_id).
 
-**Refers to:** `entity_id` → `entities.id`; `item_group_id` → `item_groups.id`; `unit_id` → `units.id`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
+**Refers to:** `entity_id` → `entities.id`; `item_group_id` → `item_groups.id`; `unit_id` → `units.id`; `stock_category_id` → `stock_categories.id`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `inventory_lines`, `item_opening_batches`.
+**Referred to by:** `inventory_lines`, `item_opening_batches`, `item_prices`.
 
 ### `ledgerbridge_accounting.item_opening_batches`
 
@@ -668,6 +671,113 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 **Keys and indexes:** unique (connection_id, source_key); index `ix_tax_units_raw_record` (raw_record_id).
 
 **Refers to:** `entity_id` → `entities.id`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
+
+### `ledgerbridge_accounting.stock_categories`
+
+**Purpose:** Stock categories: a second way of grouping stock items, across their groups.
+
+**Filled by:** Transform, from the source's stock categories.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `parent_id` | BIGINT UNSIGNED | yes | FK | The parent row in the same table (a tree). |
+| `name` | VARCHAR(255) | no |  | Name as the source keeps it. |
+| `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
+| `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
+| `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
+| `raw_record_id` | BIGINT UNSIGNED | yes |  | The raw record it was transformed from. |
+| `is_deleted` | BOOL | no |  | Deleted in the source (soft delete; kept for history). |
+| `extra` | JSON | yes |  | Source fields with no column, as JSON (ADR-025). |
+| `connection_id` | BIGINT UNSIGNED | no | FK, UK | The connection the row came from. |
+| `import_batch_id` | BIGINT UNSIGNED | yes | FK | The import it came from, for imported data. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** unique (connection_id, source_key); index `ix_stock_categories_raw_record` (raw_record_id).
+
+**Refers to:** `entity_id` → `entities.id`; `parent_id` → `stock_categories.id`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
+
+**Referred to by:** `items`, `stock_categories`.
+
+### `ledgerbridge_accounting.item_prices`
+
+**Purpose:** A stock item's price list: price level, from date, quantity range, rate and discount.
+
+**Filled by:** Transform, with the stock item; replaced as a whole per item.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `item_id` | BIGINT UNSIGNED | no | FK | Refers to `items`. |
+| `price_level` | VARCHAR(255) | no |  | Price level. |
+| `applicable_from` | DATE | yes |  | Applicable from. |
+| `rate` | NUMERIC(20, 6) | yes |  | Rate. |
+| `from_quantity` | NUMERIC(20, 6) | yes |  | From quantity. |
+| `to_quantity` | NUMERIC(20, 6) | yes |  | To quantity. |
+| `discount_pct` | NUMERIC(20, 6) | yes |  | Discount pct. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** index `ix_ledgerbridge_accounting_item_prices_item_id` (item_id).
+
+**Refers to:** `entity_id` → `entities.id`; `item_id` → `items.id`, on delete cascade.
+
+### `ledgerbridge_accounting.source_budgets`
+
+**Purpose:** Budgets kept in the source (apart from our own budgets, M7b).
+
+**Filled by:** Transform, from the source's budgets.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `parent_id` | BIGINT UNSIGNED | yes | FK | The parent row in the same table (a tree). |
+| `name` | VARCHAR(255) | no |  | Name as the source keeps it. |
+| `use_actuals` | BOOL | yes |  | Use actuals. |
+| `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
+| `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
+| `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
+| `raw_record_id` | BIGINT UNSIGNED | yes |  | The raw record it was transformed from. |
+| `is_deleted` | BOOL | no |  | Deleted in the source (soft delete; kept for history). |
+| `extra` | JSON | yes |  | Source fields with no column, as JSON (ADR-025). |
+| `connection_id` | BIGINT UNSIGNED | no | FK, UK | The connection the row came from. |
+| `import_batch_id` | BIGINT UNSIGNED | yes | FK | The import it came from, for imported data. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** unique (connection_id, source_key); index `ix_source_budgets_raw_record` (raw_record_id).
+
+**Refers to:** `entity_id` → `entities.id`; `parent_id` → `source_budgets.id`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
+
+**Referred to by:** `source_budget_lines`, `source_budgets`.
+
+### `ledgerbridge_accounting.source_budget_lines`
+
+**Purpose:** A source budget's ledger lines: period, basis (net transactions or closing balance) and amount as the source writes it.
+
+**Filled by:** Transform, with the budget; replaced as a whole per budget.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `budget_id` | BIGINT UNSIGNED | no | FK | Refers to `source_budgets`. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `ledger_id` | BIGINT UNSIGNED | yes | FK | Refers to `ledgers`. |
+| `ledger_name` | VARCHAR(255) | no |  | Ledger name. |
+| `period_from` | DATE | yes |  | Period from. |
+| `period_to` | DATE | yes |  | Period to. |
+| `basis` | VARCHAR(32) | no |  | net_transactions / closing_balance |
+| `amount` | NUMERIC(20, 4) | no |  | Amount in the base currency, canonical sign (debit +, credit −). |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** index `ix_ledgerbridge_accounting_source_budget_lines_budget_id` (budget_id).
+
+**Refers to:** `budget_id` → `source_budgets.id`, on delete cascade; `entity_id` → `entities.id`; `ledger_id` → `ledgers.id`.
 
 ### `ledgerbridge_accounting.voucher_types`
 
@@ -1292,7 +1402,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `source_id` → `sources.id`; `agent_id` → `agents.id`.
 
-**Referred to by:** `account_groups`, `alerts`, `cost_categories`, `cost_centres`, `currency_sources`, `entity_sources`, `file_layouts`, `fx_revaluation_snapshots`, `godowns`, `import_batches`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `stock_values`, `sync_checkpoints`, `sync_logs`, `sync_markers`, `sync_runs`, `sync_slow_periods`, `sync_unverified_ranges`, `tax_units`, `units`, `voucher_types`, `voucher_versions`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `cost_categories`, `cost_centres`, `currency_sources`, `entity_sources`, `file_layouts`, `fx_revaluation_snapshots`, `godowns`, `import_batches`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `source_budgets`, `stock_categories`, `stock_values`, `sync_checkpoints`, `sync_logs`, `sync_markers`, `sync_runs`, `sync_slow_periods`, `sync_unverified_ranges`, `tax_units`, `units`, `voucher_types`, `voucher_versions`, `vouchers`.
 
 ### `ledgerbridge_system.sync_markers`
 
@@ -1442,7 +1552,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `connection_id` → `connections.id`.
 
-**Referred to by:** `account_groups`, `cost_categories`, `cost_centres`, `currency_sources`, `godowns`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `tax_units`, `units`, `validation_runs`, `voucher_types`, `vouchers`.
+**Referred to by:** `account_groups`, `cost_categories`, `cost_centres`, `currency_sources`, `godowns`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `source_budgets`, `stock_categories`, `tax_units`, `units`, `validation_runs`, `voucher_types`, `vouchers`.
 
 ### `ledgerbridge_system.file_layouts`
 

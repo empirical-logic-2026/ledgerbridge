@@ -65,6 +65,8 @@ _MASTER_TABLES: dict[str, type[SourceTrackingMixin]] = {
     "cost_category": A.CostCategory,
     "cost_centre": A.CostCentre,
     "tax_unit": A.TaxUnit,
+    "stock_category": A.StockCategory,
+    "budget": A.SourceBudget,
 }
 
 

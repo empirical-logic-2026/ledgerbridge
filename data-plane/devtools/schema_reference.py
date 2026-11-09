@@ -150,6 +150,17 @@ TABLES: dict[str, tuple[str, str]] = {
     "voucher_orders": ("The sales or purchase orders a voucher (an invoice, a delivery or "
                        "receipt note) is made against, with the order voucher when found.",
                        "Transform, with the voucher; linked to the order by number."),
+    "stock_categories": ("Stock categories: a second way of grouping stock items, across "
+                         "their groups.",
+                         "Transform, from the source's stock categories."),
+    "item_prices": ("A stock item's price list: price level, from date, quantity range, rate "
+                    "and discount.",
+                    "Transform, with the stock item; replaced as a whole per item."),
+    "source_budgets": ("Budgets kept in the source (apart from our own budgets, M7b).",
+                       "Transform, from the source's budgets."),
+    "source_budget_lines": ("A source budget's ledger lines: period, basis (net transactions "
+                            "or closing balance) and amount as the source writes it.",
+                            "Transform, with the budget; replaced as a whole per budget."),
     "voucher_number_series": ("A voucher type's numbering series (e.g. Default, a branch's "
                               "own): method, beginning number, width.",
                               "Transform, with the voucher type; replaced as a whole per "
