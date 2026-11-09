@@ -405,7 +405,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `credit_limit` | NUMERIC(20, 4) | yes |  | Credit limit. |
 | `email` | VARCHAR(255) | yes |  | E-mail address. |
 | `phone` | VARCHAR(255) | yes |  | Phone. |
-| `gst_registration_type` | VARCHAR(32) | yes |  | Gst registration type. |
+| `gst_registration_type` | VARCHAR(32) | yes |  | Regular, Composition, Unregistered, Consumer, ... (Tally: the latest `LEDGSTREGDETAILS.LIST` by `APPLICABLEFROM`). Migration `0034`. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
 | `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
 | `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
@@ -768,11 +768,11 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `is_cancelled` | BOOL | no |  | Whether cancelled. |
 | `is_optional` | BOOL | no |  | Tally optional/memo vouchers, excluded from books. |
 | `is_post_dated` | BOOL | no |  | The source marks it post-dated; it counts from its date. |
-| `gst_registration` | VARCHAR(255) | yes |  | Gst registration. |
-| `place_of_supply` | VARCHAR(64) | yes |  | Place of supply. |
+| `gst_registration` | VARCHAR(255) | yes |  | The company's GST registration (tax unit name) the voucher is under (`GSTREGISTRATION`). Migration `0034`. |
+| `place_of_supply` | VARCHAR(64) | yes |  | `PLACEOFSUPPLY`. Migration `0034`. |
 | `irn` | VARCHAR(128) | yes |  | Irn. |
 | `irn_ack_number` | VARCHAR(64) | yes |  | Irn ack number. |
-| `irn_date` | DATE | yes |  | Irn date. |
+| `irn_date` | DATE | yes |  | The e-invoice's acknowledgement date (`IRNACKDATE`). Migration `0034`. |
 | `eway_bill_number` | VARCHAR(64) | yes |  | Eway bill number. |
 | `eway_bill_date` | DATE | yes |  | Eway bill date. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
