@@ -165,6 +165,18 @@ class CanonicalItemGroup:
 
 
 @dataclass(frozen=True)
+class CanonicalOpeningBatch:
+    """Part of a stock item's opening: its quantity, rate and value at one godown and batch
+    (canonical sign: stock on hand is a positive value)."""
+
+    godown_name: str | None
+    batch_name: str | None
+    quantity: Decimal
+    rate: Decimal | None
+    value: Decimal
+
+
+@dataclass(frozen=True)
 class CanonicalItem:
     source_key: str
     name: str
@@ -172,6 +184,8 @@ class CanonicalItem:
     unit_name: str | None
     opening_qty: Decimal = Decimal(0)
     opening_value: Decimal = Decimal(0)
+    # The opening by godown and batch, all of it (replacing the one stored).
+    opening_batches: tuple[CanonicalOpeningBatch, ...] = ()
     extra: Mapping[str, Any] | None = _extra()
 
 
@@ -281,6 +295,9 @@ class CanonicalInventoryLine:
     rate: Decimal | None = None
     godown_name: str | None = None
     batch_name: str | None = None
+    # The other godown of a move between godowns: where an outgoing line's stock goes,
+    # where an incoming line's came from (a transfer, or a job worker's godown).
+    counterpart_godown_name: str | None = None
     discount_pct: Decimal | None = None
     # The part of the quantity tied to another voucher that moves the stock (Tally: a
     # tracking number to a delivery or receipt note), signed like quantity. On vouchers

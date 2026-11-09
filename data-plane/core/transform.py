@@ -1390,7 +1390,7 @@ class Transformer:
     def _items(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         groups = self._by_name(A.ItemGroup)
         units = self._by_name(A.Unit, "symbol")
-        return self._simple(
+        written = self._simple(
             items,
             CanonicalItem,
             A.Item,
@@ -1404,6 +1404,43 @@ class Transformer:
             result,
             "stock_item",
         )
+        self._opening_batches(written)
+        return written
+
+    def _opening_batches(self, written: list[_Raw]) -> None:
+        """Each written item's opening by godown and batch, replacing the one stored. A
+        godown not stored leaves the row without one (its quantity still counts)."""
+        records = [r for i in written for r in i.records if isinstance(r, CanonicalItem)]
+        if not records:
+            return
+        ids = dict(
+            self.session.execute(
+                select(A.Item.source_key, A.Item.id).where(
+                    A.Item.connection_id == self.connection_id,
+                    A.Item.entity_id == self.entity_id,
+                    A.Item.source_key.in_([r.source_key for r in records]),
+                )
+            ).all()
+        )
+        godowns = self._by_name(A.Godown)
+        now = utcnow()
+        rows = [
+            {
+                "entity_id": self.entity_id, "item_id": ids[record.source_key],
+                "godown_id": godowns.get(batch.godown_name) if batch.godown_name else None,
+                "batch_name": (batch.batch_name or None) and batch.batch_name[:255],
+                "quantity": batch.quantity, "rate": batch.rate, "value": batch.value,
+                "created_at": now, "updated_at": now,
+            }
+            for record in records
+            if record.source_key in ids
+            for batch in record.opening_batches
+        ]  # fmt: skip
+        self.session.execute(
+            delete(A.ItemOpeningBatch).where(A.ItemOpeningBatch.item_id.in_(list(ids.values())))
+        )
+        if rows:
+            self.session.execute(insert(A.ItemOpeningBatch), rows)
 
     # --- vouchers ---------------------------------------------------------------------
 
@@ -1520,11 +1557,10 @@ class Transformer:
             if a.category
         }
         line_godowns = {
-            inv.godown_name: self._ref(
-                item, godowns, inv.godown_name, "voucher -> godown", required=False
-            )
+            name: self._ref(item, godowns, name, "voucher -> godown", required=False)
             for inv in v.inventory
-            if inv.godown_name
+            for name in (inv.godown_name, inv.counterpart_godown_name)
+            if name
         }
         line_units = {
             inv.unit_name: self._ref(item, units, inv.unit_name, "voucher -> unit", required=False)
@@ -1689,6 +1725,7 @@ class Transformer:
                     "amount": inv.amount,
                     "discount_pct": inv.discount_pct,
                     "batch_name": inv.batch_name,
+                    "counterpart_godown_id": refs.godowns.get(inv.counterpart_godown_name or ""),
                 },
             )
             for no, inv in enumerate(v.inventory, start=1)

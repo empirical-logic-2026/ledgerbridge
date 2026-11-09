@@ -600,6 +600,24 @@ class BillAllocation(TimestampMixin, Base):
     amount: Mapped[Decimal] = mapped_column(Money)
 
 
+class ItemOpeningBatch(TimestampMixin, Base):
+    """A stock item's opening at one godown and batch (migration 0032): the parts of
+    `items.opening_qty` and `opening_value`, as at the books' beginning. Replaced as a whole
+    with each read of the item."""
+
+    __tablename__ = "item_opening_batches"
+    __table_args__ = _A
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    item_id: Mapped[int] = mapped_column(Id, _fk("items", ondelete="CASCADE"), index=True)
+    godown_id: Mapped[int | None] = mapped_column(Id, _fk("godowns"), nullable=True)
+    batch_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    quantity: Mapped[Decimal] = mapped_column(Rate)
+    rate: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
+    value: Mapped[Decimal] = mapped_column(Money)
+
+
 class OpeningBill(TimestampMixin, Base):
     """A bill of a ledger's opening balance (its bill-wise opening; migration 0031): the
     bills from before the books' beginning, for ageing. Replaced as a whole with each read of
@@ -729,6 +747,10 @@ class InventoryLine(TimestampMixin, Base):
     amount: Mapped[Decimal] = mapped_column(Money)
     discount_pct: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
     batch_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The other godown of a move between godowns: where an outgoing line's stock goes, where
+    # an incoming line's came from (a transfer between godowns, a job worker's godown).
+    # Migration 0032.
+    counterpart_godown_id: Mapped[int | None] = mapped_column(Id, _fk("godowns"), nullable=True)
 
 
 class TaxLine(TimestampMixin, Base):
