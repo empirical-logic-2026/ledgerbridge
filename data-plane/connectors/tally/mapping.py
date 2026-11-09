@@ -37,6 +37,7 @@ from core.canonical import (
     CanonicalCurrency,
     CanonicalGodown,
     CanonicalGroup,
+    CanonicalGstRate,
     CanonicalInventoryLine,
     CanonicalItem,
     CanonicalItemGroup,
@@ -49,6 +50,7 @@ from core.canonical import (
     CanonicalParty,
     CanonicalRate,
     CanonicalRecord,
+    CanonicalTaxUnit,
     CanonicalUnit,
     CanonicalVoucher,
     CanonicalVoucherType,
@@ -386,6 +388,10 @@ def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalReco
             credit_limit=abs(credit_limit) if credit_limit else None,
             email=text_of(element, "EMAIL"),
             phone=text_of(element, "LEDGERMOBILE") or text_of(element, "LEDGERPHONE"),
+            gst_registration_type=_value(
+                _latest(element, "LEDGSTREGDETAILS.LIST", "APPLICABLEFROM"),
+                "GSTREGISTRATIONTYPE",
+            ),
         ),
         default_standard_account_code=STANDARD_ACCOUNT_BY_TAX_TYPE.get(
             text_of(element, "TAXTYPE") or ""
@@ -508,6 +514,87 @@ def stock_item(element: ET.Element, key: str) -> CanonicalItem:
         opening_qty=opening_qty,
         opening_value=_amount(element, "OPENINGVALUE"),
         opening_batches=opening_batches(element),
+        **_item_gst(element),
+    )
+
+
+def _value(element: ET.Element | None, tag: str) -> str | None:
+    """A field's text, None for none or Tally's "Not Applicable"."""
+    text = text_of(element, tag) if element is not None else None
+    return None if text in (None, NOT_APPLICABLE) else text
+
+
+def _latest(element: ET.Element, list_tag: str, date_tag: str) -> ET.Element | None:
+    """Of a dated list (e.g. a ledger's GST registrations), the entry applying from the
+    latest date; the last one listed among equal dates."""
+    entries = element.findall(list_tag)
+    if not entries:
+        return None
+    return max(
+        enumerate(entries),
+        key=lambda pair: (parser.tally_date(text_of(pair[1], date_tag)) or date.min, pair[0]),
+    )[1]
+
+
+def _gst_rate_of(rates: dict[str, Decimal]) -> Decimal | None:
+    """The integrated GST rate: IGST, else CGST plus SGST/UTGST."""
+    if rates.get("IGST"):
+        return rates["IGST"]
+    halves = [rates.get("CGST"), rates.get("SGST/UTGST")]
+    return sum((h for h in halves if h), Decimal(0)) or None
+
+
+def _item_gst(element: ET.Element) -> dict[str, Any]:
+    """A stock item's GST details as they apply from the latest date: HSN/SAC (its HSN
+    details, else its GST details), taxability, classification and rate (the details for
+    any state, else the first state listed)."""
+    gst = _latest(element, "GSTDETAILS.LIST", "APPLICABLEFROM")
+    hsn = _latest(element, "HSNDETAILS.LIST", "APPLICABLEFROM")
+    states = gst.findall("STATEWISEDETAILS.LIST") if gst is not None else []
+    state = next(
+        (s for s in states if (text_of(s, "STATENAME") or "").strip(" \x04") == "Any"),
+        states[0] if states else None,
+    )
+    rates = {
+        head: _rate(text_of(r, "GSTRATE")) or Decimal(0)
+        for r in (state.findall("RATEDETAILS.LIST") if state is not None else [])
+        if (head := text_of(r, "GSTRATEDUTYHEAD"))
+    }
+    return {
+        "hsn_code": _value(hsn, "HSNCODE") or _value(gst, "HSNCODE"),
+        "gst_rate": _gst_rate_of(rates),
+        "gst_taxability": _value(gst, "TAXABILITY"),
+        "gst_classification": _value(hsn, "HSNCLASSIFICATIONNAME"),
+    }
+
+
+def line_gst_rates(entry: ET.Element) -> tuple[CanonicalGstRate, ...]:
+    """A ledger or item line's GST rate per duty head (RATEDETAILS). Tally lists every head
+    with a rate of 0 when the line takes its rate from the item or ledger (the test
+    company's invoices, 2026-11-06): a line whose heads are all 0 has none of its own."""
+    rates = [
+        CanonicalGstRate(head, _rate(text_of(r, "GSTRATE")) or Decimal(0))
+        for r in entry.findall("RATEDETAILS.LIST")
+        if (head := text_of(r, "GSTRATEDUTYHEAD"))
+    ]
+    return tuple(rates) if any(r.rate for r in rates) else ()
+
+
+def tax_unit(element: ET.Element, key: str) -> CanonicalTaxUnit:
+    """A tax unit: its registration details as they apply from the latest date."""
+    details = _latest(element, "GSTREGISTRATIONDETAILS.LIST", "FROMDATE")
+    return CanonicalTaxUnit(
+        source_key=key,
+        name=_name(element).strip(),  # as vouchers name it (Tally can lead it with a space)
+        gstin=_value(element, "GSTREGNUMBER"),
+        state=_value(element, "STATENAME") or _value(details, "STATE"),
+        registration_type=_value(details, "REGISTRATIONTYPE")
+        or _value(element, "GSTREGISTRATIONTYPE"),
+        registered_from=parser.tally_date(text_of(details, "FROMDATE"))
+        if details is not None
+        else None,
+        used_for=_value(element, "USEDFOR"),
+        is_primary=_flag(element, "ISPRIMARYUNIT"),
     )
 
 
@@ -620,6 +707,7 @@ def _line(entry: ET.Element) -> CanonicalLine:
         utr=line_utr,
         utr_source=source,
         has_bank_details=bool(banks),
+        gst_rates=line_gst_rates(entry),
     )
 
 
@@ -739,6 +827,7 @@ def _inventory(
         counterpart_godown_name=_batch_counterpart(batch),
         order_number=_order_number(batch),
         order_due_date=_order_due(batch, on),
+        gst_rates=line_gst_rates(entry),
         discount_pct=discount if discount else None,
     )
 
@@ -939,7 +1028,27 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
         is_cancelled=_flag(element, "ISCANCELLED"),
         is_optional=_flag(element, "ISOPTIONAL"),
         is_post_dated=_flag(element, "ISPOSTDATED"),
+        **_voucher_gst(element),
     )
+
+
+def _voucher_gst(element: ET.Element) -> dict[str, Any]:
+    """A voucher's GST details: the company's registration it is under, the place of
+    supply, the e-invoice and the (first) e-way bill."""
+    eway = next(
+        (e for e in element.findall("EWAYBILLDETAILS.LIST") if text_of(e, "BILLNUMBER")), None
+    )
+    return {
+        "gst_registration": _value(element, "GSTREGISTRATION"),
+        "place_of_supply": _value(element, "PLACEOFSUPPLY"),
+        "irn": _value(element, "IRN"),
+        "irn_ack_number": _value(element, "IRNACKNO"),
+        "irn_date": parser.tally_date(text_of(element, "IRNACKDATE")),
+        "eway_bill_number": _value(eway, "BILLNUMBER"),
+        "eway_bill_date": parser.tally_date(text_of(eway, "BILLDATE"))
+        if eway is not None
+        else None,
+    }
 
 
 # --- fields the mapping doesn't use (ADR-025) ---------------------------------------------
@@ -959,11 +1068,13 @@ _LEDGER_ENTRY = (
     "BANKALLOCATIONS.LIST/INSTRUMENTNUMBER", "BANKALLOCATIONS.LIST/UNIQUEREFERENCENUMBER",
     "BANKALLOCATIONS.LIST/TRANSACTIONTYPE", "BANKALLOCATIONS.LIST/INSTRUMENTDATE",
     "BANKALLOCATIONS.LIST/BANKERSDATE", "BANKALLOCATIONS.LIST/BANKRECONSTATUS",
+    "RATEDETAILS.LIST/GSTRATEDUTYHEAD", "RATEDETAILS.LIST/GSTRATE",
 )  # fmt: skip
 _INVENTORY_ENTRY = (
     "STOCKITEMNAME", "ACTUALQTY", "BILLEDQTY", "RATE", "AMOUNT", "ISDEEMEDPOSITIVE",
     "DISCOUNT", "BATCHALLOCATIONS.LIST/GODOWNNAME", "BATCHALLOCATIONS.LIST/BATCHNAME",
     "BATCHALLOCATIONS.LIST/TRACKINGNUMBER", "BATCHALLOCATIONS.LIST/ACTUALQTY",
+    "RATEDETAILS.LIST/GSTRATEDUTYHEAD", "RATEDETAILS.LIST/GSTRATE",
     "BATCHALLOCATIONS.LIST/DESTINATIONGODOWNNAME", "BATCHALLOCATIONS.LIST/ORDERNO",
     "BATCHALLOCATIONS.LIST/ORDERDUEDATE",
     *(f"ACCOUNTINGALLOCATIONS.LIST/{path}" for path in _LEDGER_ENTRY),
@@ -980,6 +1091,7 @@ USED_FIELDS: dict[str, frozenset[str]] = {
         "GSTDUTYHEAD", "PARTYGSTIN", "LEDGSTREGDETAILS.LIST/GSTIN", "INCOMETAXNUMBER",
         "LEDSTATENAME", "LEDMAILINGDETAILS.LIST/STATE", "COUNTRYNAME", "EMAIL",
         "LEDGERPHONE", "LEDGERMOBILE", "BILLCREDITPERIOD", "CREDITLIMIT", "CURRENCYNAME",
+        "LEDGSTREGDETAILS.LIST/GSTREGISTRATIONTYPE", "LEDGSTREGDETAILS.LIST/APPLICABLEFROM",
     )),
     # Read whole (`native`): only the fields kept are listed; the rest stays in the raw
     # record without being catalogued (a currency master has dozens of internal fields).
@@ -995,7 +1107,18 @@ USED_FIELDS: dict[str, frozenset[str]] = {
         *_MASTER, "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE",
         "BATCHALLOCATIONS.LIST/GODOWNNAME", "BATCHALLOCATIONS.LIST/BATCHNAME",
         "BATCHALLOCATIONS.LIST/OPENINGBALANCE", "BATCHALLOCATIONS.LIST/OPENINGRATE",
-        "BATCHALLOCATIONS.LIST/OPENINGVALUE",
+        "BATCHALLOCATIONS.LIST/OPENINGVALUE", "GSTDETAILS.LIST/APPLICABLEFROM",
+        "GSTDETAILS.LIST/HSNCODE", "GSTDETAILS.LIST/TAXABILITY",
+        "GSTDETAILS.LIST/STATEWISEDETAILS.LIST/STATENAME",
+        "GSTDETAILS.LIST/STATEWISEDETAILS.LIST/RATEDETAILS.LIST/GSTRATEDUTYHEAD",
+        "GSTDETAILS.LIST/STATEWISEDETAILS.LIST/RATEDETAILS.LIST/GSTRATE",
+        "HSNDETAILS.LIST/APPLICABLEFROM", "HSNDETAILS.LIST/HSNCODE",
+        "HSNDETAILS.LIST/HSNCLASSIFICATIONNAME",
+    )),
+    "tax_unit": frozenset((
+        *_MASTER, "USEDFOR", "ISPRIMARYUNIT", "STATENAME", "GSTREGNUMBER",
+        "GSTREGISTRATIONTYPE", "GSTREGISTRATIONDETAILS.LIST/FROMDATE",
+        "GSTREGISTRATIONDETAILS.LIST/REGISTRATIONTYPE", "GSTREGISTRATIONDETAILS.LIST/STATE",
     )),
     "cost_category": frozenset(_IDENTITY),
     "ledger_opening_bills": frozenset((
@@ -1008,7 +1131,9 @@ USED_FIELDS: dict[str, frozenset[str]] = {
         "VOUCHERNUMBER", "REFERENCE", "REFERENCEDATE",
         "PARTYLEDGERNAME", "NARRATION", "ISCANCELLED", "ISOPTIONAL", "ISPOSTDATED",
         "DESTINATIONGODOWN", "BASICORDERREF", "INVOICEORDERLIST.LIST/BASICPURCHASEORDERNO",
-        "INVOICEORDERLIST.LIST/BASICORDERDATE",
+        "INVOICEORDERLIST.LIST/BASICORDERDATE", "GSTREGISTRATION", "PLACEOFSUPPLY", "IRN",
+        "IRNACKNO", "IRNACKDATE", "EWAYBILLDETAILS.LIST/BILLNUMBER",
+        "EWAYBILLDETAILS.LIST/BILLDATE",
         *(f"{lst}/{path}" for lst in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST")
           for path in _LEDGER_ENTRY),
         *(f"{lst}/{path}" for lst in (
@@ -1102,6 +1227,8 @@ def _records(record: SourceRecord, element: ET.Element) -> list[CanonicalRecord]
             return [CanonicalCostCategory(key, _name(element))]
         case "ledger_opening_bills":
             return [opening_bills(element, key)]
+        case "tax_unit":
+            return [tax_unit(element, key)]
         case "cost_centre":
             return [
                 CanonicalCostCentre(

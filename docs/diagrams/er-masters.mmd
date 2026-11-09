@@ -90,6 +90,16 @@ erDiagram
         bigint connection_id FK, UK "to connections"
         bigint import_batch_id FK "to import_batches"
     }
+    tax_units {
+        bigint id PK
+        bigint entity_id FK "to entities"
+        varchar name
+        varchar source_key UK
+        bool is_deleted
+        json extra
+        bigint connection_id FK, UK "to connections"
+        bigint import_batch_id FK "to import_batches"
+    }
     voucher_types {
         bigint id PK
         bigint entity_id FK "to entities"
@@ -135,6 +145,7 @@ erDiagram
     entities ||--o{ cost_centres : "entity_id"
     cost_centres |o--o{ cost_centres : "parent_id"
     cost_categories |o--o{ cost_centres : "cost_category_id"
+    entities ||--o{ tax_units : "entity_id"
     entities ||--o{ voucher_types : "entity_id"
     dimensions ||--o{ dimension_values : "dimension_id"
     entities |o--o{ dimension_values : "entity_id"

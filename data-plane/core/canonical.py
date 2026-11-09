@@ -73,6 +73,7 @@ class CanonicalParty:
     credit_limit: Decimal | None = None
     email: str | None = None
     phone: str | None = None
+    gst_registration_type: str | None = None  # Regular, Composition, Unregistered, ...
 
 
 @dataclass(frozen=True)
@@ -186,6 +187,12 @@ class CanonicalItem:
     opening_value: Decimal = Decimal(0)
     # The opening by godown and batch, all of it (replacing the one stored).
     opening_batches: tuple[CanonicalOpeningBatch, ...] = ()
+    # GST: the HSN/SAC code, the integrated rate (IGST, or CGST + SGST), taxability
+    # (Taxable, Exempt, Nil Rated, ...) and the HSN classification the item uses.
+    hsn_code: str | None = None
+    gst_rate: Decimal | None = None
+    gst_taxability: str | None = None
+    gst_classification: str | None = None
     extra: Mapping[str, Any] | None = _extra()
 
 
@@ -198,6 +205,29 @@ class CanonicalGodown:
     # source leaves it out of stock balances); third_party_with_us (counted by the source).
     holding: str = "own"
     extra: Mapping[str, Any] | None = _extra()
+
+
+@dataclass(frozen=True)
+class CanonicalTaxUnit:
+    """A tax registration of the company (Tally: Tax Unit), e.g. one GSTIN per state."""
+
+    source_key: str
+    name: str
+    gstin: str | None = None
+    state: str | None = None
+    registration_type: str | None = None
+    registered_from: date | None = None
+    used_for: str | None = None  # GST, TDS, ...
+    is_primary: bool = False
+    extra: Mapping[str, Any] | None = _extra()
+
+
+@dataclass(frozen=True)
+class CanonicalGstRate:
+    """A GST rate on a voucher line, per duty head (CGST, SGST/UTGST, IGST, Cess, ...)."""
+
+    duty_head: str
+    rate: Decimal
 
 
 @dataclass(frozen=True)
@@ -284,6 +314,7 @@ class CanonicalLine:
     utr: str | None = None
     utr_source: str | None = None  # bank_field, udf or narration
     has_bank_details: bool = False
+    gst_rates: tuple[CanonicalGstRate, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -302,6 +333,7 @@ class CanonicalInventoryLine:
     # invoice, delivery or receipt note), and when the order is due.
     order_number: str | None = None
     order_due_date: date | None = None
+    gst_rates: tuple[CanonicalGstRate, ...] = ()
     discount_pct: Decimal | None = None
     # The part of the quantity tied to another voucher that moves the stock (Tally: a
     # tracking number to a delivery or receipt note), signed like quantity. On vouchers
@@ -338,6 +370,15 @@ class CanonicalVoucher:
     is_cancelled: bool = False
     is_optional: bool = False
     is_post_dated: bool = False
+    # GST: the company's registration (tax unit) the voucher is under, the place of supply,
+    # the e-invoice (IRN, its acknowledgement number and date) and the e-way bill.
+    gst_registration: str | None = None
+    place_of_supply: str | None = None
+    irn: str | None = None
+    irn_ack_number: str | None = None
+    irn_date: date | None = None
+    eway_bill_number: str | None = None
+    eway_bill_date: date | None = None
     extra: Mapping[str, Any] | None = _extra()
 
 
@@ -354,5 +395,6 @@ CanonicalRecord = (
     | CanonicalCostCategory
     | CanonicalCostCentre
     | CanonicalOpeningBills
+    | CanonicalTaxUnit
     | CanonicalVoucher
 )

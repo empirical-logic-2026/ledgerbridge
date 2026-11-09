@@ -48,6 +48,13 @@ erDiagram
         bigint entity_id FK "to entities"
         bigint order_voucher_id FK "to vouchers"
     }
+    line_gst_rates {
+        bigint id PK
+        bigint voucher_id FK "to vouchers"
+        bigint entity_id FK "to entities"
+        bigint voucher_line_id FK "to voucher_lines"
+        bigint inventory_line_id FK "to inventory_lines"
+    }
     line_cost_allocations {
         bigint id PK
         bigint voucher_line_id FK "to voucher_lines"
@@ -154,6 +161,10 @@ erDiagram
     vouchers ||--o{ voucher_orders : "voucher_id"
     entities ||--o{ voucher_orders : "entity_id"
     vouchers |o--o{ voucher_orders : "order_voucher_id"
+    vouchers ||--o{ line_gst_rates : "voucher_id"
+    entities ||--o{ line_gst_rates : "entity_id"
+    voucher_lines |o--o{ line_gst_rates : "voucher_line_id"
+    inventory_lines |o--o{ line_gst_rates : "inventory_line_id"
     voucher_lines ||--o{ line_cost_allocations : "voucher_line_id"
     cost_categories |o--o{ line_cost_allocations : "cost_category_id"
     cost_centres ||--o{ line_cost_allocations : "cost_centre_id"

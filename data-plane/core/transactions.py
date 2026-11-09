@@ -13,6 +13,9 @@ line's bills, cost centres and bank instrument. Source-independent: read from th
   line's its Credit (shown positive).
 - **Order number:** the orders the voucher is made against (`voucher_orders`), else the
   orders its stock lines are against (`inventory_lines.order_number`); each once.
+- **GST:** the voucher's registration (tax unit), place of supply, e-invoice and e-way bill,
+  the party's registration type, and the line's own GST rates per duty head, when it has any
+  (otherwise the rate is the item's or ledger's: not shown here).
 """
 
 from collections import defaultdict
@@ -59,6 +62,14 @@ class TransactionRow:
     instrument_date: date | None
     bank_cleared_date: date | None
     tally_bank_entry_id: str | None  # the source's own id for the bank entry, never a UTR
+    gst_registration: str | None = None  # the company's tax unit the voucher is under
+    place_of_supply: str | None = None
+    party_gst_registration_type: str | None = None
+    gst_rates: str | None = None  # the line's own, e.g. "CGST 9%, SGST/UTGST 9%"
+    irn: str | None = None
+    irn_date: date | None = None
+    eway_bill_number: str | None = None
+    eway_bill_date: date | None = None
 
 
 @dataclass
@@ -84,6 +95,9 @@ def _lines(session: Session, companies: list[int], period: Period):  # noqa: ANN
             A.VoucherLine.instrument_number, A.VoucherLine.utr, A.VoucherLine.utr_source,
             A.VoucherLine.transaction_type, A.VoucherLine.instrument_date,
             A.VoucherLine.bank_cleared_date, A.VoucherLine.tally_bank_entry_id,
+            A.Voucher.gst_registration, A.Voucher.place_of_supply,
+            party.gst_registration_type, A.Voucher.irn, A.Voucher.irn_date,
+            A.Voucher.eway_bill_number, A.Voucher.eway_bill_date,
         )
         .join(A.Voucher, A.Voucher.id == A.VoucherLine.voucher_id)
         .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
@@ -141,6 +155,19 @@ def _bills(chunk: list[int]):  # noqa: ANN202
     )
 
 
+def _line_gst_rates(session: Session, line_ids: list[int]) -> dict[int, list[str]]:
+    """Each line's own GST rates as "<head> <rate>%" (e.g. "CGST 9%"), in the source's order."""
+    found: dict[int, list[str]] = defaultdict(list)
+    for chunk in _chunks(line_ids):
+        for line_id, head, rate in session.execute(
+            select(A.LineGstRate.voucher_line_id, A.LineGstRate.duty_head, A.LineGstRate.rate)
+            .where(A.LineGstRate.voucher_line_id.in_(chunk))
+            .order_by(A.LineGstRate.voucher_line_id, A.LineGstRate.id)
+        ):
+            found[int(line_id)].append(f"{head} {Decimal(rate).normalize():f}%")
+    return found
+
+
 def _cost_centres(chunk: list[int]):  # noqa: ANN202
     return (
         select(A.LineCostAllocation.voucher_line_id, A.CostCentre.name)
@@ -190,10 +217,12 @@ def transactions(session: Session, companies: list[int], period: Period) -> Tran
     bills = _per_line(session, line_ids, _bills)
     centres = _per_line(session, line_ids, _cost_centres)
     orders = _orders(session, sorted({int(r[3]) for r in found}))
+    rates = _line_gst_rates(session, line_ids)
     rows = []
     for (line_id, entity, on, vid, vtype, number, reference, party_id, party, gstin, ledger_id,
          ledger, amount, narration, cheque, utr, utr_source, transaction_type, instrument_date,
-         cleared, tally_id) in found:  # fmt: skip
+         cleared, tally_id, registration, supply, party_type, irn, irn_date, eway,
+         eway_date) in found:  # fmt: skip
         amount = Decimal(amount)
         rows.append(
             TransactionRow(
@@ -210,6 +239,9 @@ def transactions(session: Session, companies: list[int], period: Period) -> Tran
                 cheque=cheque, utr=utr, utr_source=utr_source,
                 transaction_type=transaction_type, instrument_date=instrument_date,
                 bank_cleared_date=cleared, tally_bank_entry_id=tally_id,
+                gst_registration=registration, place_of_supply=supply,
+                party_gst_registration_type=party_type, gst_rates=_joined(rates[int(line_id)]),
+                irn=irn, irn_date=irn_date, eway_bill_number=eway, eway_bill_date=eway_date,
             )
         )  # fmt: skip
     return TransactionPage(rows, truncated)

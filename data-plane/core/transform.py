@@ -63,6 +63,7 @@ from core.canonical import (
     CanonicalLedger,
     CanonicalOpeningBills,
     CanonicalRecord,
+    CanonicalTaxUnit,
     CanonicalUnit,
     CanonicalVoucher,
     CanonicalVoucherType,
@@ -91,6 +92,7 @@ MODELS_BY_KIND: dict[type, tuple[type, ...]] = {
     CanonicalItem: (A.Item,),
     CanonicalCostCategory: (A.CostCategory,),
     CanonicalCostCentre: (A.CostCentre,),
+    CanonicalTaxUnit: (A.TaxUnit,),
     CanonicalVoucher: (A.Voucher,),
 }
 # Every table whose rows are soft-deleted when their source object is deleted.
@@ -163,6 +165,7 @@ class _PreparedLine:
     bills: list[dict[str, Any]]
     allocations: list[dict[str, Any]]
     tax: dict[str, Any] | None
+    gst_rates: list[dict[str, Any]]
 
 
 @dataclass
@@ -175,6 +178,14 @@ class _Prepared:
     lines: list[_PreparedLine]
     inventory: list[dict[str, Any]]
     orders: list[dict[str, Any]]
+    inventory_rates: list[list[dict[str, Any]]]  # per inventory line, in order
+
+
+def _gst_rate_rows(
+    fit: Callable[..., dict[str, Any]], no: int, rates: tuple
+) -> list[dict[str, Any]]:
+    """A line's GST rates per duty head as rows (without their line and voucher ids)."""
+    return [fit(A.LineGstRate, no, {"duty_head": r.duty_head, "rate": r.rate}) for r in rates]
 
 
 # The order type a voucher's base type is made against.
@@ -801,6 +812,7 @@ class Transformer:
             (CanonicalItem, self._items),
             (CanonicalCostCategory, self._cost_categories),
             (CanonicalCostCentre, self._cost_centres),
+            (CanonicalTaxUnit, self._tax_units),
             (CanonicalVoucher, self._vouchers),
         ):
             items = by_kind.pop(kind, [])
@@ -1201,6 +1213,7 @@ class Transformer:
                         "credit_limit": p.credit_limit if p else None,
                         "email": p.email if p else None,
                         "phone": p.phone if p else None,
+                        "gst_registration_type": p.gst_registration_type if p else None,
                     },
                     result,
                 )
@@ -1420,6 +1433,20 @@ class Transformer:
             "cost_category",
         )  # fmt: skip
 
+    def _tax_units(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
+        return self._simple(
+            items,
+            CanonicalTaxUnit,
+            A.TaxUnit,
+            lambda r: {
+                "name": r.name, "gstin": r.gstin, "state": r.state,
+                "registration_type": r.registration_type, "registered_from": r.registered_from,
+                "used_for": r.used_for, "is_primary": r.is_primary,
+            },
+            result,
+            "tax_unit",
+        )  # fmt: skip
+
     def _cost_centres(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         categories = self._by_name(A.CostCategory)
         done = self._simple(
@@ -1452,6 +1479,10 @@ class Transformer:
                 "unit_id": units.get(r.unit_name) if r.unit_name else None,
                 "opening_qty": r.opening_qty,
                 "opening_value": r.opening_value,
+                "hsn_code": r.hsn_code,
+                "gst_rate": r.gst_rate,
+                "gst_taxability": r.gst_taxability,
+                "gst_classification": r.gst_classification,
             },
             result,
             "stock_item",
@@ -1658,12 +1689,29 @@ class Transformer:
                 )
             )
         }
-        bills, allocations, taxes, dimensions = [], [], [], []
+        inventory_ids = (
+            {
+                (vid, no): iid
+                for iid, vid, no in self.session.execute(
+                    select(
+                        A.InventoryLine.id, A.InventoryLine.voucher_id, A.InventoryLine.line_no
+                    ).where(A.InventoryLine.voucher_id.in_(ids))
+                )
+            }
+            if any(rates for p in latest.values() for rates in p.inventory_rates)
+            else {}
+        )
+        bills, allocations, taxes, dimensions, gst_rates = [], [], [], [], []
         for key, p in latest.items():
             vid = voucher_ids[key]
             values = self._dimension_values(p.extra)
+            base = {"voucher_id": vid, "entity_id": self.entity_id, **stamp}
+            for row, rates in zip(p.inventory, p.inventory_rates, strict=True):
+                inventory_line_id = inventory_ids.get((vid, row["line_no"]))
+                gst_rates += [{**base, "inventory_line_id": inventory_line_id, **r} for r in rates]
             for line in p.lines:
                 line_id = line_ids[(vid, line.row["line_no"])]
+                gst_rates += [{**base, "voucher_line_id": line_id, **r} for r in line.gst_rates]
                 bills += [{"voucher_line_id": line_id, **row, **stamp} for row in line.bills]
                 allocations += [
                     {"voucher_line_id": line_id, **row, **stamp} for row in line.allocations
@@ -1681,6 +1729,7 @@ class Transformer:
             (A.LineCostAllocation, allocations),
             (A.TaxLine, taxes),
             (A.LineDimension, dimensions),
+            (A.LineGstRate, gst_rates),
         ):
             if rows:
                 self.session.execute(insert(model), rows)
@@ -1759,6 +1808,7 @@ class Transformer:
                     tax=fit(A.TaxLine, no, {"tax_type": tax_type, "tax_amount": line.amount})
                     if tax_type
                     else None,
+                    gst_rates=_gst_rate_rows(fit, no, line.gst_rates),
                 )
             )
         inventory = [
@@ -1792,6 +1842,9 @@ class Transformer:
             fit(A.VoucherOrder, no, {"order_number": ref.number, "order_date": ref.order_date})
             for no, ref in enumerate(v.orders, start=1)
         ]
+        inventory_rates = [
+            _gst_rate_rows(fit, no, inv.gst_rates) for no, inv in enumerate(v.inventory, start=1)
+        ]
         party = refs.party
         header, kept = _fit(
             item,
@@ -1810,10 +1863,17 @@ class Transformer:
                 "is_cancelled": v.is_cancelled,
                 "is_optional": v.is_optional,
                 "is_post_dated": v.is_post_dated,
+                "gst_registration": v.gst_registration,
+                "place_of_supply": v.place_of_supply,
+                "irn": v.irn,
+                "irn_ack_number": v.irn_ack_number,
+                "irn_date": v.irn_date,
+                "eway_bill_number": v.eway_bill_number,
+                "eway_bill_date": v.eway_bill_date,
             },
         )
         header = _with_extra({**self._src(item, v), **header}, v.extra, {**kept, **unfit})
-        return _Prepared(item, header, v.extra, lines, inventory, orders)
+        return _Prepared(item, header, v.extra, lines, inventory, orders, inventory_rates)
 
     # --- promoted fields (dimensions) ---------------------------------------------------
 
@@ -1853,7 +1913,7 @@ class Transformer:
                 .where(model.voucher_line_id.in_(line_ids))
                 .execution_options(synchronize_session=False)
             )
-        for model in (A.TaxLine, A.InventoryLine, A.VoucherOrder, A.VoucherLine):
+        for model in (A.TaxLine, A.LineGstRate, A.InventoryLine, A.VoucherOrder, A.VoucherLine):
             self.session.execute(
                 delete(model)
                 .where(model.voucher_id.in_(voucher_ids))

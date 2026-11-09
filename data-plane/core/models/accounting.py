@@ -319,6 +319,8 @@ class Party(SourceTrackingMixin, TimestampMixin, Base):
     credit_limit: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Regular, Composition, Unregistered, Consumer, ... (migration 0034).
+    gst_registration_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class VoucherType(SourceTrackingMixin, TimestampMixin, Base):
@@ -379,6 +381,10 @@ class Item(SourceTrackingMixin, TimestampMixin, Base):
     gst_rate: Mapped[Decimal | None] = mapped_column(Rate, nullable=True)
     opening_qty: Mapped[Decimal] = mapped_column(Rate, default=0, server_default="0")
     opening_value: Mapped[Decimal] = mapped_column(Money, default=0, server_default="0")
+    # GST taxability (Taxable, Exempt, Nil Rated, ...) and HSN classification (migration
+    # 0034); `hsn_code` and `gst_rate` (the integrated rate) are filled from then too.
+    gst_taxability: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    gst_classification: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 GODOWN_HOLDINGS = ("own", "ours_with_third_party", "third_party_with_us")
@@ -409,6 +415,24 @@ class CostCategory(SourceTrackingMixin, TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
     entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
     name: Mapped[str] = name_column()
+
+
+class TaxUnit(SourceTrackingMixin, TimestampMixin, Base):
+    """A tax registration of the company (Tally: Tax Unit; migration 0034): e.g. its GSTIN
+    in a state, with the registration type and the date it applies from."""
+
+    __tablename__ = "tax_units"
+    __table_args__ = src_table_args("tax_units", ACCOUNTING)
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    name: Mapped[str] = name_column()
+    gstin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    registration_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    registered_from: Mapped[date | None] = mapped_column(nullable=True)
+    used_for: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    is_primary: Mapped[bool] = flag()
 
 
 class CostCentre(SourceTrackingMixin, TimestampMixin, Base):
@@ -521,6 +545,15 @@ class Voucher(SourceTrackingMixin, TimestampMixin, Base):
     is_cancelled: Mapped[bool] = flag()
     is_optional: Mapped[bool] = flag()
     is_post_dated: Mapped[bool] = flag()
+    # GST (migration 0034): the company's registration (tax unit) the voucher is under, the
+    # place of supply, the e-invoice (IRN, acknowledgement number and date), the e-way bill.
+    gst_registration: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    place_of_supply: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    irn: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    irn_ack_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    irn_date: Mapped[date | None] = mapped_column(nullable=True)
+    eway_bill_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    eway_bill_date: Mapped[date | None] = mapped_column(nullable=True)
 
 
 class VoucherLine(TimestampMixin, Base):
@@ -755,6 +788,27 @@ class InventoryLine(TimestampMixin, Base):
     # invoice or note), and when the order is due. Migration 0033.
     order_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
     order_due_date: Mapped[date | None] = mapped_column(nullable=True)
+
+
+class LineGstRate(TimestampMixin, Base):
+    """A GST rate per duty head on a voucher's ledger line or inventory line (Tally:
+    RATEDETAILS; migration 0034), when the line carries its own (not every head 0).
+    Replaced with the voucher's other child rows."""
+
+    __tablename__ = "line_gst_rates"
+    __table_args__ = _A
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    voucher_id: Mapped[int] = mapped_column(Id, _fk("vouchers", ondelete="CASCADE"), index=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    voucher_line_id: Mapped[int | None] = mapped_column(
+        Id, _fk("voucher_lines", ondelete="CASCADE"), nullable=True
+    )
+    inventory_line_id: Mapped[int | None] = mapped_column(
+        Id, _fk("inventory_lines", ondelete="CASCADE"), nullable=True
+    )
+    duty_head: Mapped[str] = mapped_column(String(32))
+    rate: Mapped[Decimal] = mapped_column(Rate)
 
 
 class VoucherOrder(TimestampMixin, Base):

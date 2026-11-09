@@ -88,7 +88,10 @@ def test_status_comes_from_the_connector() -> None:
     assert inventory.status("STOCKITEM", "BATCHALLOCATIONS.LIST/OPENINGVALUE") == "column"
     assert inventory.status("VOUCHER", "DESTINATIONGODOWN") == "column"
     assert inventory.status("CURRENCY", "DECIMALSYMBOL") == "extra"  # read whole
-    assert inventory.status("TAXUNIT", "NAME") == "not fetched"
+    assert inventory.status("TAXUNIT", "GSTREGNUMBER") == "column"
+    assert inventory.status("TAXUNIT", "GSTR1PERIODICITY") == "not fetched"
+    assert inventory.status("VOUCHER", "EWAYBILLDETAILS.LIST/BILLNUMBER") == "column"
+    assert inventory.status("VOUCHER", "EWAYBILLDETAILS.LIST/CONSIGNEENAME") == "not fetched"
 
 
 def test_the_recording_is_complete() -> None:

@@ -65,6 +65,14 @@ function columns(page: TransactionsOut, companies: Company[], query: Query): Exp
     { key: 'instrument_date', label: 'Instrument date', kind: 'date', value: (r) => r.instrument_date ?? null, hidden: true, help: "The cheque's or transfer's own date." },
     { key: 'bank_cleared_date', label: 'Bank cleared date', kind: 'date', value: (r) => r.bank_cleared_date ?? null, hidden: true, help: 'The date the bank cleared it (bank reconciliation); empty while not reconciled.' },
     { key: 'tally_bank_entry_id', label: 'Tally bank entry ID', kind: 'text', value: (r) => r.tally_bank_entry_id ?? null, hidden: true, help: "The source's own id for the bank entry (a code Tally generates): not a UTR." },
+    { key: 'gst_registration', label: 'GST registration', kind: 'text', value: (r) => r.gst_registration ?? null, groupable: true, hidden: true, help: "The company's own GST registration (tax unit) the voucher is under." },
+    { key: 'place_of_supply', label: 'Place of supply', kind: 'text', value: (r) => r.place_of_supply ?? null, groupable: true, hidden: true, help: 'The state of supply on the voucher (decides CGST + SGST or IGST).' },
+    { key: 'party_gst_registration_type', label: 'Party GST type', kind: 'text', value: (r) => r.party_gst_registration_type ?? null, groupable: true, hidden: true, help: "The party's GST registration type: Regular, Composition, Unregistered and so on." },
+    { key: 'gst_rates', label: 'GST rate', kind: 'text', value: (r) => r.gst_rates ?? null, hidden: true, help: "The line's own GST rates per duty head; empty when the line takes its rate from the item or ledger." },
+    { key: 'irn', label: 'IRN', kind: 'text', value: (r) => r.irn ?? null, hidden: true, help: "The e-invoice's invoice reference number." },
+    { key: 'irn_date', label: 'IRN date', kind: 'date', value: (r) => r.irn_date ?? null, hidden: true, help: 'The date the e-invoice was acknowledged.' },
+    { key: 'eway_bill_number', label: 'E-way bill number', kind: 'text', value: (r) => r.eway_bill_number ?? null, hidden: true },
+    { key: 'eway_bill_date', label: 'E-way bill date', kind: 'date', value: (r) => r.eway_bill_date ?? null, hidden: true },
     { key: 'company', label: 'Company', kind: 'text', value: (r) => names.get(r.company) ?? `Company ${r.company}`, groupable: true, hidden: !page.combined },
   ]
 }
