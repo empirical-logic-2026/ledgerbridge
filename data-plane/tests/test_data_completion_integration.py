@@ -10,7 +10,7 @@ from decimal import Decimal
 import pytest
 from alembic import command
 from fastapi.testclient import TestClient
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, aliased
 
 from connectors.tally.connector import TallyConnector
@@ -306,3 +306,70 @@ def test_part_4_an_order_not_stored_is_a_warning(synced: int) -> None:
         (found,) = [f for f in report.findings if f.check_code == "order_not_found"]
         assert (found.object_type, found.object_id) == ("voucher", str(invoice))
         session.rollback()
+
+
+# --- part 5: GST details -----------------------------------------------------------------
+
+
+def test_part_5_gst_details_are_stored(synced: int) -> None:
+    with Session(get_engine()) as session:
+        invoice = session.get_one(A.Voucher, _voucher_id(session, synced, "BILL-1"))
+        assert (invoice.gst_registration, invoice.place_of_supply) == ("Registration", "Karnataka")
+        assert (invoice.irn_ack_number, invoice.irn_date) == ("112610012345678", date(2026, 10, 1))
+        assert (invoice.eway_bill_number, invoice.eway_bill_date) == (
+            "331001234567",
+            date(2026, 10, 1),
+        )
+        types = dict(
+            session.execute(
+                select(A.Party.name, A.Party.gst_registration_type).where(
+                    A.Party.entity_id == synced,
+                    A.Party.name.in_(("Customer Theta GST", "Vendor Iota GST")),
+                )
+            ).all()
+        )
+        assert types == {"Customer Theta GST": "Regular", "Vendor Iota GST": "Composition"}
+        gizmo = session.scalars(
+            select(A.Item).where(A.Item.entity_id == synced, A.Item.name == "Gizmo")
+        ).one()
+        assert (gizmo.hsn_code, gizmo.gst_rate, gizmo.gst_taxability) == (
+            "8471",
+            Decimal(18),
+            "Taxable",
+        )
+        units = session.execute(
+            select(A.TaxUnit.name, A.TaxUnit.used_for, A.TaxUnit.registration_type)
+            .where(A.TaxUnit.entity_id == synced)
+            .order_by(A.TaxUnit.name)
+        ).all()
+        assert [tuple(u) for u in units] == [
+            ("Default Tax Unit", None, None),
+            ("Registration", "GST", "Regular"),
+        ]
+        # The recorded invoices take their rates from the items: no line rates of their own.
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(A.LineGstRate)
+                .where(A.LineGstRate.entity_id == synced)
+            )
+            == 0
+        )
+
+
+def test_part_5_the_transactions_page_and_gst_dataset(client: TestClient, synced: int) -> None:
+    response = client.get("/api/v1/transactions", params={"month": ["2026-10"]})
+    assert response.status_code == 200, response.text
+    rows = [r for r in response.json()["rows"] if r["bills"] == "INV-T1"]
+    assert rows and all(r["place_of_supply"] == "Karnataka" for r in rows)
+    assert {r["eway_bill_number"] for r in rows} == {"331001234567"}
+    assert {r["party_gst_registration_type"] for r in rows} == {"Regular"}
+    grouped = client.get(
+        "/api/v1/datasets/gst",
+        params={"group_by": "tax_head", "measure": ["credit"], "date_from": "2026-10-01",
+                "date_to": "2026-10-31"},
+    )  # fmt: skip
+    assert grouped.status_code == 200, grouped.text
+    body = grouped.json()
+    assert Decimal(body["total"]["credit"]) > 0
+    assert "CGST" in str(body["rows"]) and "SGST" in str(body["rows"])

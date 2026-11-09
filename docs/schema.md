@@ -280,6 +280,7 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 | credit_days | INT NULL | Used for ageing and overdue flags. |
 | credit_limit | DECIMAL(20,4) NULL | |
 | email, phone | VARCHAR(255) NULL | **Sensitive.** `phone` was 32 until migration `0010` (Tally fields may hold several numbers). |
+| gst_registration_type | VARCHAR(32) NULL | Regular, Composition, Unregistered, Consumer, ... (Tally: the latest `LEDGSTREGDETAILS.LIST` by `APPLICABLEFROM`). Migration `0034`. |
 
 #### Other masters [SRC]
 
@@ -287,7 +288,8 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 | --- | --- |
 | `ledgerbridge_accounting.voucher_types` | `entity_id, name, moves_stock BOOLEAN (false for orders and memorandum: their inventory lines don't move stock; migration 0012), standard_type VARCHAR(64) NULL (the source's predefined type it derives from, e.g. Tally's "Sales Order"; from a fixed list of the source's names only), base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory` |
 | `ledgerbridge_accounting.item_groups` | `entity_id, parent_id, name` |
-| `ledgerbridge_accounting.items` | `entity_id, item_group_id, name, code VARCHAR(255), unit_id, hsn_code VARCHAR(32), gst_rate, opening_qty, opening_value` |
+| `ledgerbridge_accounting.items` | `entity_id, item_group_id, name, code VARCHAR(255), unit_id, hsn_code VARCHAR(32), gst_rate, opening_qty, opening_value, gst_taxability VARCHAR(32) NULL, gst_classification VARCHAR(255) NULL` (GST from migration 0034: the HSN/SAC code, the integrated rate (IGST, else CGST + SGST), taxability and HSN classification as they apply from the latest date) |
+| `ledgerbridge_accounting.tax_units` | `entity_id, name, gstin VARCHAR(32) NULL, state VARCHAR(64) NULL, registration_type VARCHAR(32) NULL, registered_from DATE NULL, used_for VARCHAR(32) NULL, is_primary BOOLEAN` (the company's tax registrations, Tally: Tax Unit; migration 0034) |
 | `ledgerbridge_accounting.units` | `entity_id, symbol VARCHAR(255), name, decimal_places` |
 | `ledgerbridge_accounting.godowns` | `entity_id, parent_id, name, holding ENUM(own, ours_with_third_party, third_party_with_us) DEFAULT own` (whose stock it holds: a job worker's location, "our stock with third party", is left out of stock balances; migration 0015) |
 | `ledgerbridge_accounting.cost_categories` | `entity_id, name` (Tally's cost categories; migration 0026) |
@@ -334,6 +336,11 @@ User-defined reporting dimensions beyond the built-in ones (entity, branch, cost
 | is_cancelled | BOOLEAN | |
 | is_optional | BOOLEAN | Tally optional/memo vouchers, excluded from books. |
 | is_post_dated | BOOLEAN | |
+| gst_registration | VARCHAR(255) NULL | The company's GST registration (tax unit name) the voucher is under (`GSTREGISTRATION`). Migration `0034`. |
+| place_of_supply | VARCHAR(64) NULL | `PLACEOFSUPPLY`. Migration `0034`. |
+| irn, irn_ack_number | VARCHAR(128) / VARCHAR(64) NULL | The e-invoice's reference number and acknowledgement number (`IRN`, `IRNACKNO`). Migration `0034`. |
+| irn_date | DATE NULL | The e-invoice's acknowledgement date (`IRNACKDATE`). Migration `0034`. |
+| eway_bill_number, eway_bill_date | VARCHAR(64) / DATE NULL | The first e-way bill (`EWAYBILLDETAILS.LIST/BILLNUMBER`, `BILLDATE`); the e-way bill's consignor and consignee details are not fetched. Migration `0034`. |
 
 Indexes: `(entity_id, voucher_date)`, `(entity_id, voucher_type_id, voucher_date)`, `(party_id, voucher_date)`.
 
@@ -374,6 +381,7 @@ Indexes: `(entity_id, ledger_id, voucher_date)`, `(voucher_id)`.
 | `ledgerbridge_accounting.inventory_lines` | `id, voucher_id, entity_id, voucher_date, line_no, item_id, godown_id, quantity (signed: in +, out −), stock_quantity (what the line moves in stock: the quantity, less the part tracked to a delivery or receipt note on a voucher that posts to the books; migration 0014), unit_id, rate, amount, discount_pct, batch_name, counterpart_godown_id NULL FK (migration 0032: the other godown of a move between godowns: where an outgoing line's stock goes, where an incoming line's came from), order_number NULL, order_due_date NULL (migration 0033: the order the line belongs to or is against, and when it is due)` | Inventory entries |
 | `ledgerbridge_accounting.item_opening_batches` | `id, entity_id, item_id FK (ON DELETE CASCADE, indexed), godown_id NULL, batch_name NULL, quantity, rate NULL, value` + timestamps | A stock item's opening by godown and batch (the item's `BATCHALLOCATIONS.LIST`, fetched for a period from the books' beginning); replaced as a whole with each read of the item; they add up to `items.opening_qty` and `opening_value` (validation LB-VAL-042). Migration 0032 |
 | `ledgerbridge_accounting.voucher_orders` | `id, voucher_id FK (ON DELETE CASCADE, indexed), entity_id, order_number, order_date NULL, order_voucher_id NULL FK vouchers (ON DELETE SET NULL)` + timestamps | The orders a voucher (an invoice, a delivery or receipt note) is made against: `INVOICEORDERLIST.LIST` (`BASICPURCHASEORDERNO`, `BASICORDERDATE`) and `BASICORDERREF`; replaced with the voucher's other child rows. `order_voucher_id` is the stored order (a Sales Order for sales, credit notes and delivery notes; a Purchase Order for purchases, debit notes and receipt notes) whose lines carry that number, set after every write of vouchers (`core.transform.link_orders`); left empty when none or more than one is found (validation LB-VAL-043). Migration 0033 |
+| `ledgerbridge_accounting.line_gst_rates` | `id, voucher_id FK (ON DELETE CASCADE, indexed), entity_id, voucher_line_id NULL FK, inventory_line_id NULL FK, duty_head VARCHAR(32), rate` + timestamps | A ledger or inventory line's GST rate per duty head (`RATEDETAILS.LIST`: `GSTRATEDUTYHEAD`, `GSTRATE`), only when the line carries its own: Tally lists every head at 0 when the line takes its rate from the item or ledger (test company, 2026-11-06), and those are not stored. Replaced with the voucher's other child rows. Migration 0034 |
 | `ledgerbridge_accounting.tax_lines` | `id, voucher_id, voucher_line_id NULL, tax_type ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other'), rate, taxable_amount, tax_amount, hsn_code` | GST / TDS details |
 
 #### Voucher alteration history (RPT-017, ADR-051)
@@ -754,6 +762,7 @@ All amounts: canonical = −(Tally amount). Masters are referred to by name with
 | Inventory entries | `STOCKITEMNAME`, `ACTUALQTY` (number and unit), `RATE`, `AMOUNT`, `DISCOUNT`, first batch allocation's `GODOWNNAME`, `BATCHNAME`, from `ALLINVENTORYENTRIES.LIST` (or `INVENTORYENTRIES.LIST`), and for stock and manufacturing journals from `INVENTORYENTRIESIN.LIST` (produced or received: positive) and `INVENTORYENTRIESOUT.LIST` (consumed or sent: negative). Otherwise quantity is positive when `ISDEEMEDPOSITIVE=Yes` (inward) and negative otherwise. Inventory lines of vouchers whose type doesn't move stock (orders, memorandum) don't count in stock (`voucher_types.moves_stock`). The other godown of a move (`counterpart_godown_id`): the batch's `DESTINATIONGODOWNNAME` (a job worker's godown: where Material Out sends the stock, where Material In brings it back from); for a transfer in a stock journal (an item leaving a godown and arriving at the voucher's `DESTINATIONGODOWN`), the destination on the lines leaving and the godown left on the line arriving. A manufacturing journal's destination (where the product goes) isn't put on the components. |
 | Stock item openings | The item's `BATCHALLOCATIONS.LIST` (`GODOWNNAME`, `BATCHNAME`, `OPENINGBALANCE`, `OPENINGRATE`, `OPENINGVALUE`) → `item_opening_batches`; an allocation with no quantity and no value (Tally lists one for an item without an opening) is skipped. |
 | Orders | A batch allocation's `ORDERNO` (Tally writes *Not Applicable* when none) and `ORDERDUEDATE` (a date such as "31-Oct-26", or days after the voucher's date) → `inventory_lines.order_number`, `order_due_date`, on the order and on the invoices against it; the voucher's `INVOICEORDERLIST.LIST` and `BASICORDERREF` → `voucher_orders`. |
+| GST | Voucher: `GSTREGISTRATION`, `PLACEOFSUPPLY`, `IRN`, `IRNACKNO`, `IRNACKDATE`, `EWAYBILLDETAILS.LIST` (`BILLNUMBER`, `BILLDATE`) → `vouchers`; ledger and inventory lines' `RATEDETAILS.LIST` → `line_gst_rates`. Stock item: the latest `GSTDETAILS.LIST` (`HSNCODE`, `TAXABILITY`, `STATEWISEDETAILS.LIST/RATEDETAILS.LIST`: the state *Any*, else the first) and `HSNDETAILS.LIST` (`HSNCODE`, `HSNCLASSIFICATIONNAME`) → `items`. Ledger: the latest `LEDGSTREGDETAILS.LIST/GSTREGISTRATIONTYPE` → `parties`. Tax unit (collection type `TaxUnit`): `GSTREGNUMBER`, `STATENAME`, `USEDFOR`, `ISPRIMARYUNIT`, the latest `GSTREGISTRATIONDETAILS.LIST` (`REGISTRATIONTYPE`, `FROMDATE`, `STATE`) → `tax_units`. |
 | Tax lines | Every voucher line posted to a ledger with a `tax_type` → `tax_lines` (`tax_amount` = the line amount). |
 
 **Standard-account mapping** (approved for M3), by Tally reserved group; user sub-groups and ledgers inherit from the nearest ancestor that has one:
@@ -872,6 +881,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
 | 2026-11-06 | 0.45 | `stock_values.scope` `item`: each stock item's own value at the statement dates (migration 0029; the Stock page). |
 | 2026-11-05 | 0.44 | RPT-017 / ADR-051: append-only observed voucher versions, posting snapshots, ambiguity-aware comparison rows and deletion detection timestamps (migration 0028); nullable `vouchers.source_altered_at` stores Tally `UPDATEDDATETIME` without timezone conversion (migration 0027). |
+| 2026-11-09 | 0.50 | GST details (migration 0034): `vouchers` GST columns, `parties.gst_registration_type`, `items.gst_taxability`, `gst_classification`, `line_gst_rates`, `tax_units`. |
 | 2026-11-09 | 0.49 | `voucher_orders`, `inventory_lines.order_number`, `order_due_date` (migration 0033). |
 | 2026-11-09 | 0.48 | `item_opening_batches`, `inventory_lines.counterpart_godown_id` (migration 0032). |
 | 2026-11-06 | 0.47 | `opening_bills` (migration 0031); `bill_allocations.bill_date` and `due_date` filled (BILLDATE, BILLCREDITPERIOD). |

@@ -67,6 +67,8 @@ LEDGERS = CollectionSpec(
         "TAXTYPE", "GSTDUTYHEAD", "PARTYGSTIN", "LEDGSTREGDETAILS.GSTIN", "INCOMETAXNUMBER",
         "LEDSTATENAME", "LEDMAILINGDETAILS.STATE", "COUNTRYNAME", "EMAIL", "LEDGERPHONE",
         "LEDGERMOBILE", "BILLCREDITPERIOD", "CREDITLIMIT",
+        # The party's GST registration type, by the date it applies from (part 5).
+        "LEDGSTREGDETAILS.GSTREGISTRATIONTYPE", "LEDGSTREGDETAILS.APPLICABLEFROM",
     ),
 )  # fmt: skip
 VOUCHER_TYPES = CollectionSpec(
@@ -93,6 +95,12 @@ STOCK_ITEMS = CollectionSpec(
         "BATCHALLOCATIONS.GODOWNNAME", "BATCHALLOCATIONS.BATCHNAME",
         "BATCHALLOCATIONS.OPENINGBALANCE", "BATCHALLOCATIONS.OPENINGRATE",
         "BATCHALLOCATIONS.OPENINGVALUE",
+        # GST: HSN/SAC, taxability and rates by the date they apply from (part 5).
+        "GSTDETAILS.APPLICABLEFROM", "GSTDETAILS.HSNCODE", "GSTDETAILS.TAXABILITY",
+        "GSTDETAILS.STATEWISEDETAILS.STATENAME",
+        "GSTDETAILS.STATEWISEDETAILS.RATEDETAILS.GSTRATEDUTYHEAD",
+        "GSTDETAILS.STATEWISEDETAILS.RATEDETAILS.GSTRATE",
+        "HSNDETAILS.APPLICABLEFROM", "HSNDETAILS.HSNCODE", "HSNDETAILS.HSNCLASSIFICATIONNAME",
     ),
 )  # fmt: skip
 # ISEXTERNAL: "our stock with a third party" (a job worker's location; Tally leaves its stock
@@ -170,6 +178,14 @@ VOUCHERS = CollectionSpec(
         # The orders an invoice is made against (data completion, part 4).
         "BASICORDERREF",
         "InvoiceOrderList.BasicPurchaseOrderNo", "InvoiceOrderList.BasicOrderDate",
+        # GST (part 5): the company's registration, place of supply, e-invoice and e-way
+        # bill (its number and date only: no consignor or consignee details), and the rate
+        # per duty head on ledger and item lines.
+        "GSTREGISTRATION", "PLACEOFSUPPLY", "IRN", "IRNACKNO", "IRNACKDATE",
+        "EWayBillDetails.BillNumber", "EWayBillDetails.BillDate",
+        "AllLedgerEntries.RateDetails.GSTRateDutyHead", "AllLedgerEntries.RateDetails.GSTRate",
+        "AllInventoryEntries.RateDetails.GSTRateDutyHead",
+        "AllInventoryEntries.RateDetails.GSTRate",
         "AllLedgerEntries.LedgerName", "AllLedgerEntries.Amount",
         "AllLedgerEntries.IsDeemedPositive", "AllLedgerEntries.IsPartyLedger",
         "AllLedgerEntries.BillAllocations.Name", "AllLedgerEntries.BillAllocations.BillType",
@@ -333,6 +349,17 @@ LEDGER_VOUCHERS = replace(
 # (connector._period_for).
 OPENING_SPECS = frozenset(("LBLedgers", "LBStockItems", "LBLedgerOpeningBills"))
 
+# The company's tax registrations (Tally: Tax Unit; the type name as Tally's own masters
+# export writes it, recorded on the test company 2026-11-06).
+TAX_UNITS = CollectionSpec(
+    "LBTaxUnits", "TaxUnit", "TAXUNIT", "tax_unit",
+    (
+        *_KEYS, "USEDFOR", "ISPRIMARYUNIT", "STATENAME", "GSTREGNUMBER", "GSTREGISTRATIONTYPE",
+        "GSTREGISTRATIONDETAILS.FROMDATE", "GSTREGISTRATIONDETAILS.REGISTRATIONTYPE",
+        "GSTREGISTRATIONDETAILS.STATE",
+    ),
+)  # fmt: skip
+
 # Masters in the order they must be transformed (each may refer to the ones before it).
 MASTER_SPECS = (
     CURRENCIES,
@@ -346,6 +373,7 @@ MASTER_SPECS = (
     STOCK_ITEMS,
     COST_CATEGORIES,
     COST_CENTRES,
+    TAX_UNITS,
 )
 ALL_SPECS = (COMPANIES, *MASTER_SPECS, VOUCHERS)
 SPEC_BY_OBJECT_TYPE = {spec.object_type: spec for spec in ALL_SPECS}

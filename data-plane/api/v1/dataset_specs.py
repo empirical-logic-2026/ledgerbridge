@@ -7,6 +7,9 @@ expression here. No SQL text and no column names ever come from a request (ADR-0
   not deleted), the same lines the statements and the monthly sales views add up.
 - **vouchers**: one row per voucher with effective lines; its amount is the total of its
   debit lines.
+- **cost_allocations**: one row per cost-centre allocation.
+- **gst**: one row per effective line posted to a GST ledger, with the voucher's and the
+  party's GST details.
 
 Dimensions have an id (what filters and grouping use) and a label (what is shown). Time
 dimensions follow each company's financial year (`entities.fy_start_month`). Measures have
@@ -354,8 +357,98 @@ def _cost_allocations() -> Dataset:
     )
 
 
+GST_HEADS = ("cgst", "sgst", "igst", "cess")
+
+
+def _gst() -> Dataset:
+    """One row per effective line posted to a GST ledger (tax_lines: CGST, SGST, IGST, cess),
+    with the voucher's GST details (registration, place of supply, e-invoice, e-way bill) and
+    the party's GSTIN and registration type (data completion, part 5)."""
+    t, vl, v = A.TaxLine, A.VoucherLine, A.Voucher
+    source = (
+        t.__table__.join(vl.__table__, vl.id == t.voucher_line_id)
+        .join(v.__table__, v.id == vl.voucher_id)
+        .join(A.Entity.__table__, A.Entity.id == vl.entity_id)
+        .join(A.VoucherType.__table__, A.VoucherType.id == v.voucher_type_id)
+        .join(A.Ledger.__table__, A.Ledger.id == vl.ledger_id)
+        .outerjoin(A.Party.__table__, A.Party.id == v.party_id)
+    )
+    debit = case((vl.amount > 0, vl.amount), else_=0)
+    credit = case((vl.amount < 0, -vl.amount), else_=0)
+    upper_head = func.upper(t.tax_type)
+    return Dataset(
+        key="gst",
+        label="GST lines",
+        source=source,
+        base_conditions=(
+            vl.is_effective.is_(True),
+            v.is_deleted.is_(False),
+            t.tax_type.in_(GST_HEADS),
+        ),
+        company_id=vl.entity_id,
+        dimensions=_by_key(
+            [
+                _named(
+                    "company",
+                    "Company",
+                    A.Entity.id,
+                    display_company_name_expression(A.Entity.name),
+                ),
+                *_time_dimensions(vl.voucher_date),
+                _named("voucher_type", "Voucher type", A.VoucherType.id, A.VoucherType.name),
+                Dimension(
+                    "voucher_number", "Voucher number", v.id, v.voucher_number, groupable=False
+                ),
+                _named("tax_head", "Tax head", t.tax_type, upper_head),
+                _named("ledger", "Tax ledger", A.Ledger.id, A.Ledger.name),
+                _named("party", "Party", A.Party.id, A.Party.name),
+                _named("gstin", "Party GSTIN", A.Party.gstin, A.Party.gstin),
+                _named(
+                    "party_gst_type",
+                    "Party GST type",
+                    A.Party.gst_registration_type,
+                    A.Party.gst_registration_type,
+                ),
+                _named("place_of_supply", "Place of supply", v.place_of_supply, v.place_of_supply),
+                _named(
+                    "gst_registration", "GST registration", v.gst_registration, v.gst_registration
+                ),
+                _text("reference", "Reference", v.reference_number),
+                _text("irn", "IRN", v.irn),
+                _text("eway_bill_number", "E-way bill number", v.eway_bill_number),
+            ]
+        ),  # fmt: skip
+        measures=_by_key(
+            [
+                Measure("debit", "Debit (input)", debit, func.sum(debit)),
+                Measure("credit", "Credit (output)", credit, func.sum(credit)),
+                Measure("net", "Net (Dr - Cr)", vl.amount, func.sum(vl.amount)),
+                Measure(
+                    "voucher_count",
+                    "Vouchers",
+                    literal(1),
+                    func.count(distinct(v.id)),
+                    is_count=True,
+                ),
+            ]
+        ),  # fmt: skip
+        filters=_by_key(
+            [
+                *_date_filters(vl.voucher_date),
+                Filter("company", "Company", "ids", _ids(vl.entity_id)),
+                Filter("voucher_type", "Voucher type", "ids", _ids(v.voucher_type_id)),
+                Filter("ledger", "Tax ledger", "ids", _ids(vl.ledger_id)),
+                Filter("party", "Party", "ids", _ids(v.party_id)),
+            ]
+        ),  # fmt: skip
+        default_columns=("date", "voucher_number", "voucher_type", "party", "tax_head"),
+        default_measures=("debit", "credit"),
+        default_order=(vl.voucher_date, v.voucher_number, vl.id),
+    )
+
+
 DATASETS: dict[str, Dataset] = {
-    d.key: d for d in (_voucher_lines(), _vouchers(), _cost_allocations())
+    d.key: d for d in (_voucher_lines(), _vouchers(), _cost_allocations(), _gst())
 }
 
 

@@ -45,6 +45,14 @@ class TransactionOut(BaseModel):
     instrument_date: date | None
     bank_cleared_date: date | None  # the bank's date (bank reconciliation)
     tally_bank_entry_id: str | None  # the source's own id for the bank entry, not a UTR
+    gst_registration: str | None  # the company's GST registration (tax unit) used
+    place_of_supply: str | None
+    party_gst_registration_type: str | None  # Regular, Composition, Unregistered, ...
+    gst_rates: str | None  # the line's own rates per duty head, e.g. "CGST 9%, SGST/UTGST 9%"
+    irn: str | None  # the e-invoice's reference number
+    irn_date: date | None
+    eway_bill_number: str | None
+    eway_bill_date: date | None
 
 
 class TransactionsOut(BaseModel):
@@ -83,6 +91,10 @@ def list_transactions(
                 utr_source=r.utr_source, transaction_type=r.transaction_type,
                 instrument_date=r.instrument_date, bank_cleared_date=r.bank_cleared_date,
                 tally_bank_entry_id=r.tally_bank_entry_id,
+                gst_registration=r.gst_registration, place_of_supply=r.place_of_supply,
+                party_gst_registration_type=r.party_gst_registration_type,
+                gst_rates=r.gst_rates, irn=r.irn, irn_date=r.irn_date,
+                eway_bill_number=r.eway_bill_number, eway_bill_date=r.eway_bill_date,
             )
             for r in page.rows
         ],

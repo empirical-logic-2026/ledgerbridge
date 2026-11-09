@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-63 tables, 726 columns.
+65 tables, 764 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -13,7 +13,7 @@ Every database, table and column of the client-hosted data plane (MySQL 8), gene
 | Database | What it holds | Tables |
 | --- | --- | --- |
 | `ledgerbridge_source` | Raw layer: every record exactly as the source sent it (ADR-005). Written only by connectors through the sync; the transform reads it. | 1 |
-| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 36 |
+| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 38 |
 | `ledgerbridge_reporting` | Semantic layer for reports and AI (M6): views and aggregate tables. Empty until M6; the only database the AI user can read (AI-003). | 1 |
 | `ledgerbridge_system` | Running the platform: connections, sync runs and progress, validation, alerts, users, roles, audit and AI logs, configuration. | 25 |
 
@@ -135,7 +135,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `base_currency_code` → `currencies.code`.
 
-**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `item_opening_batches`, `items`, `ledgers`, `opening_bills`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_orders`, `voucher_types`, `voucher_versions`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `item_opening_batches`, `items`, `ledgers`, `line_gst_rates`, `opening_bills`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `tax_units`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_orders`, `voucher_types`, `voucher_versions`, `vouchers`.
 
 ### `ledgerbridge_accounting.entity_sources`
 
@@ -405,6 +405,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `credit_limit` | NUMERIC(20, 4) | yes |  | Credit limit. |
 | `email` | VARCHAR(255) | yes |  | E-mail address. |
 | `phone` | VARCHAR(255) | yes |  | Phone. |
+| `gst_registration_type` | VARCHAR(32) | yes |  | Regular, Composition, Unregistered, Consumer, ... (Tally: the latest `LEDGSTREGDETAILS.LIST` by `APPLICABLEFROM`). Migration `0034`. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
 | `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
 | `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
@@ -440,6 +441,8 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `gst_rate` | NUMERIC(20, 6) | yes |  | Gst rate. |
 | `opening_qty` | NUMERIC(20, 6) | no |  | Opening qty. |
 | `opening_value` | NUMERIC(20, 4) | no |  | Opening value. |
+| `gst_taxability` | VARCHAR(32) | yes |  | Gst taxability. |
+| `gst_classification` | VARCHAR(255) | yes |  | Gst classification. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
 | `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
 | `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
@@ -628,6 +631,38 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Referred to by:** `cost_centres`, `line_cost_allocations`.
 
+### `ledgerbridge_accounting.tax_units`
+
+**Purpose:** The company's tax registrations (GSTIN, state, registration type, from date).
+
+**Filled by:** Transform, from the source's tax units.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `name` | VARCHAR(255) | no |  | Name as the source keeps it. |
+| `gstin` | VARCHAR(32) | yes |  | GST registration number. |
+| `state` | VARCHAR(64) | yes |  | State. |
+| `registration_type` | VARCHAR(32) | yes |  | Registration type. |
+| `registered_from` | DATE | yes |  | Registered from. |
+| `used_for` | VARCHAR(32) | yes |  | Used for. |
+| `is_primary` | BOOL | no |  | Whether primary. |
+| `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
+| `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
+| `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
+| `raw_record_id` | BIGINT UNSIGNED | yes |  | The raw record it was transformed from. |
+| `is_deleted` | BOOL | no |  | Deleted in the source (soft delete; kept for history). |
+| `extra` | JSON | yes |  | Source fields with no column, as JSON (ADR-025). |
+| `connection_id` | BIGINT UNSIGNED | no | FK, UK | The connection the row came from. |
+| `import_batch_id` | BIGINT UNSIGNED | yes | FK | The import it came from, for imported data. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** unique (connection_id, source_key); index `ix_tax_units_raw_record` (raw_record_id).
+
+**Refers to:** `entity_id` → `entities.id`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
+
 ### `ledgerbridge_accounting.voucher_types`
 
 **Purpose:** The source's voucher types and the standard type each derives from; whether its vouchers post to the books and move stock.
@@ -733,6 +768,13 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `is_cancelled` | BOOL | no |  | Whether cancelled. |
 | `is_optional` | BOOL | no |  | Tally optional/memo vouchers, excluded from books. |
 | `is_post_dated` | BOOL | no |  | The source marks it post-dated; it counts from its date. |
+| `gst_registration` | VARCHAR(255) | yes |  | The company's GST registration (tax unit name) the voucher is under (`GSTREGISTRATION`). Migration `0034`. |
+| `place_of_supply` | VARCHAR(64) | yes |  | `PLACEOFSUPPLY`. Migration `0034`. |
+| `irn` | VARCHAR(128) | yes |  | Irn. |
+| `irn_ack_number` | VARCHAR(64) | yes |  | Irn ack number. |
+| `irn_date` | DATE | yes |  | The e-invoice's acknowledgement date (`IRNACKDATE`). Migration `0034`. |
+| `eway_bill_number` | VARCHAR(64) | yes |  | Eway bill number. |
+| `eway_bill_date` | DATE | yes |  | Eway bill date. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
 | `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
 | `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
@@ -748,7 +790,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `branch_id` → `branches.id`; `voucher_type_id` → `voucher_types.id`; `party_id` → `parties.id`; `currency_code` → `currencies.code`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `inventory_lines`, `tax_lines`, `voucher_lines`, `voucher_orders`, `voucher_versions`.
+**Referred to by:** `inventory_lines`, `line_gst_rates`, `tax_lines`, `voucher_lines`, `voucher_orders`, `voucher_versions`.
 
 ### `ledgerbridge_accounting.voucher_lines`
 
@@ -785,7 +827,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `voucher_id` → `vouchers.id`, on delete cascade; `entity_id` → `entities.id`; `ledger_id` → `ledgers.id`.
 
-**Referred to by:** `bill_allocations`, `line_cost_allocations`, `line_dimensions`, `tax_lines`.
+**Referred to by:** `bill_allocations`, `line_cost_allocations`, `line_dimensions`, `line_gst_rates`, `tax_lines`.
 
 ### `ledgerbridge_accounting.bill_allocations`
 
@@ -852,6 +894,28 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `voucher_id` → `vouchers.id`, on delete cascade; `entity_id` → `entities.id`; `order_voucher_id` → `vouchers.id`, on delete set null.
 
+### `ledgerbridge_accounting.line_gst_rates`
+
+**Purpose:** A ledger or inventory line's GST rate per duty head (CGST, SGST/UTGST, IGST, Cess, ...), when the line carries its own.
+
+**Filled by:** Transform, with the voucher.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `voucher_id` | BIGINT UNSIGNED | no | FK | Refers to `vouchers`. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `voucher_line_id` | BIGINT UNSIGNED | yes | FK | Refers to `voucher_lines`. |
+| `inventory_line_id` | BIGINT UNSIGNED | yes | FK | Refers to `inventory_lines`. |
+| `duty_head` | VARCHAR(32) | no |  | Duty head. |
+| `rate` | NUMERIC(20, 6) | no |  | Rate. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** index `ix_ledgerbridge_accounting_line_gst_rates_voucher_id` (voucher_id).
+
+**Refers to:** `voucher_id` → `vouchers.id`, on delete cascade; `entity_id` → `entities.id`; `voucher_line_id` → `voucher_lines.id`, on delete cascade; `inventory_line_id` → `inventory_lines.id`, on delete cascade.
+
 ### `ledgerbridge_accounting.line_cost_allocations`
 
 **Purpose:** Cost centre allocations of a line.
@@ -914,6 +978,8 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
 
 **Refers to:** `voucher_id` → `vouchers.id`, on delete cascade; `entity_id` → `entities.id`; `item_id` → `items.id`; `godown_id` → `godowns.id`; `unit_id` → `units.id`; `counterpart_godown_id` → `godowns.id`.
+
+**Referred to by:** `line_gst_rates`.
 
 ### `ledgerbridge_accounting.tax_lines`
 
@@ -1192,7 +1258,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `source_id` → `sources.id`; `agent_id` → `agents.id`.
 
-**Referred to by:** `account_groups`, `alerts`, `cost_categories`, `cost_centres`, `currency_sources`, `entity_sources`, `file_layouts`, `fx_revaluation_snapshots`, `godowns`, `import_batches`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `stock_values`, `sync_checkpoints`, `sync_logs`, `sync_markers`, `sync_runs`, `sync_slow_periods`, `sync_unverified_ranges`, `units`, `voucher_types`, `voucher_versions`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `cost_categories`, `cost_centres`, `currency_sources`, `entity_sources`, `file_layouts`, `fx_revaluation_snapshots`, `godowns`, `import_batches`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `stock_values`, `sync_checkpoints`, `sync_logs`, `sync_markers`, `sync_runs`, `sync_slow_periods`, `sync_unverified_ranges`, `tax_units`, `units`, `voucher_types`, `voucher_versions`, `vouchers`.
 
 ### `ledgerbridge_system.sync_markers`
 
@@ -1342,7 +1408,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `connection_id` → `connections.id`.
 
-**Referred to by:** `account_groups`, `cost_categories`, `cost_centres`, `currency_sources`, `godowns`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `units`, `validation_runs`, `voucher_types`, `vouchers`.
+**Referred to by:** `account_groups`, `cost_categories`, `cost_centres`, `currency_sources`, `godowns`, `item_groups`, `items`, `ledgers`, `parties`, `raw_records`, `tax_units`, `units`, `validation_runs`, `voucher_types`, `vouchers`.
 
 ### `ledgerbridge_system.file_layouts`
 

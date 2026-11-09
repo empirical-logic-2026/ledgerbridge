@@ -66,7 +66,7 @@ AREAS = (
         "Masters: parties, items, units, godowns, cost centres, voucher types, dimensions "
         "(ledgerbridge_accounting)",
         ("parties", "items", "item_opening_batches", "item_groups", "units", "godowns",
-         "cost_categories", "cost_centres",
+         "cost_categories", "cost_centres", "tax_units",
          "voucher_types", "dimensions", "dimension_values"),
         ("entities",),
     ),
@@ -74,7 +74,7 @@ AREAS = (
         "er-transactions",
         "Transactions: vouchers, child tables and observed history (ledgerbridge_accounting)",
         ("vouchers", "voucher_lines", "bill_allocations", "opening_bills", "voucher_orders",
-         "line_cost_allocations",
+         "line_gst_rates", "line_cost_allocations",
          "line_dimensions", "inventory_lines", "tax_lines", "voucher_versions",
          "voucher_version_lines", "voucher_ledger_changes"),
         ("entities", "voucher_types", "ledgers", "parties", "items", "godowns", "units",

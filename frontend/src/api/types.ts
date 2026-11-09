@@ -788,6 +788,14 @@ export interface TransactionOut {
   instrument_date: string | null
   bank_cleared_date: string | null
   tally_bank_entry_id: string | null
+  gst_registration: string | null
+  place_of_supply: string | null
+  party_gst_registration_type: string | null
+  gst_rates: string | null
+  irn: string | null
+  irn_date: string | null
+  eway_bill_number: string | null
+  eway_bill_date: string | null
 }
 
 export interface TransactionsOut {

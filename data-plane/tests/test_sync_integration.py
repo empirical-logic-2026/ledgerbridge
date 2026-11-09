@@ -77,6 +77,7 @@ def _cleanup(session: Session) -> None:
         A.CostCentre,
         A.CostCategory,
         A.AccountGroup,
+        A.TaxUnit,
     ):
         session.execute(delete(model).where(model.connection_id == connection.id))
     runs = select(S.ValidationRun.id).where(S.ValidationRun.entity_id.in_(entity_ids))

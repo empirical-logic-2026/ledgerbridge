@@ -1356,7 +1356,9 @@ const line = (id: number, ledger: string, debit: string | null, credit: string |
   line_id: id, company: 3, date: '2026-09-01', voucher_id: 31, voucher_type: 'Payment', voucher_number: 'CC-2', reference: null,
   party_id: null, party: null, gstin: null, ledger_id: 100 + id, ledger, particulars: null, debit, credit,
   narration: 'Electricity for September', bills: null, cost_centres: null, order_number: null, cheque: null, utr: null,
-  utr_source: null, transaction_type: null, instrument_date: null, bank_cleared_date: null, tally_bank_entry_id: null, ...extra,
+  utr_source: null, transaction_type: null, instrument_date: null, bank_cleared_date: null, tally_bank_entry_id: null,
+  gst_registration: null, place_of_supply: null, party_gst_registration_type: null, gst_rates: null, irn: null, irn_date: null,
+  eway_bill_number: null, eway_bill_date: null, ...extra,
 })
 
 const transactionsFound: TransactionsOut = {
