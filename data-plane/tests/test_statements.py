@@ -20,8 +20,10 @@ from connectors.tally.fixtures import FixtureTransport
 from core import statements
 from core.models import accounting as A  # noqa: N812
 from core.models import system as S  # noqa: N812
+from core.models.reporting import StatementLine as LineRow
 from tests.conftest import COMPANY
 from tests.stock_replay import FOLDER, LAYOUT, NETTING, YEAR_END, replay
+from tests.test_settings_and_order import TALLY_ORDER, group_positions
 from workers.extract import get_or_create_connection
 from workers.sync import run_sync
 
@@ -681,3 +683,32 @@ def test_without_stock_cost_of_sales_follows_the_sources_layout(
         x for x in without.lines if statements.match_key(x.label) != "cost of sales"
     )))  # fmt: skip
     assert ("profit_loss", "Cost of Sales :") not in plain  # no block where the source has none
+
+
+@pytest.mark.parametrize("case", ["integrated", "not_integrated"])
+@pytest.mark.parametrize("as_of", DATES)
+def test_ordered_as_tally_lists_its_groups_the_statements_still_match(
+    db: Session, books: S.Connection, case: str, as_of: date
+) -> None:
+    """Data completion part 6: with Tally's sort positions on the groups (as recorded on the
+    seeded test company), our lines follow Tally's Trial Balance order and every statement
+    still matches Tally's at every recorded date (lines are compared by label, not place)."""
+    positions = group_positions()
+    for group in db.scalars(select(A.AccountGroup)):
+        group.sort_position = positions.get(group.name)
+    db.commit()
+    entity_id = db.scalars(select(A.Entity)).one().id
+    result = statements.refresh(db, entity_id, books.id, "live", _source(case, as_of))
+    assert [(d.statement, d.key, str(d.ours), str(d.source)) for d in result.differences] == []
+    assert result.compared > 15
+    labels = db.scalars(
+        select(LineRow.label)
+        .where(
+            LineRow.entity_id == entity_id, LineRow.as_of == as_of, LineRow.figures == "ours",
+            LineRow.statement == "trial_balance", LineRow.level == "main",
+        )
+        .order_by(LineRow.line_no)
+    ).all()  # fmt: skip
+    listed = [label for label in labels if label in TALLY_ORDER]
+    assert len(listed) > 5
+    assert listed == sorted(listed, key=TALLY_ORDER.index)

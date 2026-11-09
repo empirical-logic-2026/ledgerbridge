@@ -150,6 +150,10 @@ TABLES: dict[str, tuple[str, str]] = {
     "voucher_orders": ("The sales or purchase orders a voucher (an invoice, a delivery or "
                        "receipt note) is made against, with the order voucher when found.",
                        "Transform, with the voucher; linked to the order by number."),
+    "voucher_number_series": ("A voucher type's numbering series (e.g. Default, a branch's "
+                              "own): method, beginning number, width.",
+                              "Transform, with the voucher type; replaced as a whole per "
+                              "type."),
     "line_gst_rates": ("A ledger or inventory line's GST rate per duty head (CGST, SGST/UTGST, "
                        "IGST, Cess, ...), when the line carries its own.",
                        "Transform, with the voucher."),

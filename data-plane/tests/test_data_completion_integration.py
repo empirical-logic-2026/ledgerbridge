@@ -373,3 +373,41 @@ def test_part_5_the_transactions_page_and_gst_dataset(client: TestClient, synced
     body = grouped.json()
     assert Decimal(body["total"]["credit"]) > 0
     assert "CGST" in str(body["rows"]) and "SGST" in str(body["rows"])
+
+
+# --- part 6: settings and order --------------------------------------------------------------
+
+
+def test_part_6_settings_and_order_are_stored(synced: int) -> None:
+    with Session(get_engine()) as session:
+        entity = session.get_one(A.Entity, synced)
+        assert (entity.is_integrated, entity.is_fifo, entity.audited_upto) == (
+            True,
+            True,
+            date(2027, 1, 1),
+        )
+        positions = dict(
+            session.execute(
+                select(A.AccountGroup.name, A.AccountGroup.sort_position).where(
+                    A.AccountGroup.entity_id == synced, A.AccountGroup.is_primary.is_(True)
+                )
+            ).all()
+        )
+        assert (positions["Capital Account"], positions["Indirect Expenses"]) == (10, 280)
+        stock = session.scalar(
+            select(func.count()).where(
+                A.Ledger.entity_id == synced, A.Ledger.affects_stock.is_(True)
+            )
+        )
+        assert stock == 5
+        series = session.scalars(
+            select(A.VoucherNumberSeries.name)
+            .join(A.VoucherType, A.VoucherType.id == A.VoucherNumberSeries.voucher_type_id)
+            .where(A.VoucherType.entity_id == synced, A.VoucherType.name == "Seed Sales")
+            .order_by(A.VoucherNumberSeries.id)
+        ).all()
+        assert series == ["Default", "Branch"]
+        branch = session.get_one(A.Voucher, _voucher_id(session, synced, "SER-1"))
+        assert branch.number_series == "Branch"
+        reversing = session.get_one(A.Voucher, _voucher_id(session, synced, "REV-JNL-1"))
+        assert (reversing.active_to, reversing.has_cash_flow) == (date(2026, 10, 1), False)

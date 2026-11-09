@@ -112,6 +112,12 @@ erDiagram
         bigint connection_id FK, UK "to connections"
         bigint import_batch_id FK "to import_batches"
     }
+    voucher_number_series {
+        bigint id PK
+        bigint entity_id FK "to entities"
+        bigint voucher_type_id FK "to voucher_types"
+        varchar name
+    }
     dimensions {
         bigint id PK
         varchar code UK
@@ -147,6 +153,8 @@ erDiagram
     cost_categories |o--o{ cost_centres : "cost_category_id"
     entities ||--o{ tax_units : "entity_id"
     entities ||--o{ voucher_types : "entity_id"
+    entities ||--o{ voucher_number_series : "entity_id"
+    voucher_types ||--o{ voucher_number_series : "voucher_type_id"
     dimensions ||--o{ dimension_values : "dimension_id"
     entities |o--o{ dimension_values : "entity_id"
     dimension_values |o--o{ dimension_values : "parent_id"

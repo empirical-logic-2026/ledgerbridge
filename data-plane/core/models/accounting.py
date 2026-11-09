@@ -80,6 +80,11 @@ class Entity(TimestampMixin, Base):
     # On hold (SYN-007): skipped by sync, validation and statements unless named, left out of
     # the report's verdict and hidden from dashboards; set with `./dev.ps1 on-hold`.
     is_on_hold: Mapped[bool] = flag()
+    # The source's settings (migration 0035; NULL: not read): accounts integrated with
+    # inventory, stock valued FIFO, the books audited up to a date.
+    is_integrated: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    is_fifo: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    audited_upto: Mapped[date | None] = mapped_column(nullable=True)
     extra: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)  # ADR-025
 
 
@@ -239,6 +244,9 @@ class AccountGroup(SourceTrackingMixin, TimestampMixin, Base):
     standard_account_id: Mapped[int | None] = mapped_column(
         Id, _fk("standard_accounts"), nullable=True
     )
+    # Where the source lists it among its siblings (Tally SORTPOSITION; migration 0035):
+    # the statements order primary groups by it, as the source does.
+    sort_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Ledger(SourceTrackingMixin, TimestampMixin, Base):
@@ -288,6 +296,10 @@ class Ledger(SourceTrackingMixin, TimestampMixin, Base):
     opening_balance_fc: Mapped[Decimal | None] = mapped_column(Money, nullable=True)
     is_bill_wise: Mapped[bool] = flag()
     is_cost_centre_applicable: Mapped[bool] = flag()
+    # Where the source lists it (Tally SORTPOSITION) and whether it affects stock (Tally
+    # AFFECTSSTOCK); migration 0035, NULL: not read.
+    sort_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    affects_stock: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     gstin: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Set for tax ledgers (e.g. CGST payable); lines posted to them become tax_lines (M3).
     tax_type: Mapped[str | None] = mapped_column(
@@ -344,6 +356,27 @@ class VoucherType(SourceTrackingMixin, TimestampMixin, Base):
     standard_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Whether its vouchers' inventory lines move stock (orders and memorandum don't).
     moves_stock: Mapped[bool] = flag(True)
+
+
+class VoucherNumberSeries(TimestampMixin, Base):
+    """A voucher type's numbering series (Tally: VOUCHERNUMBERSERIES.LIST; migration 0035),
+    e.g. "Default" and a branch's own. Replaced as a whole with each read of the type."""
+
+    __tablename__ = "voucher_number_series"
+    __table_args__ = _A
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    voucher_type_id: Mapped[int] = mapped_column(
+        Id, _fk("voucher_types", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    numbering_method: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    numbering_sub_method: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    beginning_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prefill_zero: Mapped[bool] = flag()
+    prevent_duplicates: Mapped[bool] = flag()
 
 
 class ItemGroup(SourceTrackingMixin, TimestampMixin, Base):
@@ -554,6 +587,11 @@ class Voucher(SourceTrackingMixin, TimestampMixin, Base):
     irn_date: Mapped[date | None] = mapped_column(nullable=True)
     eway_bill_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     eway_bill_date: Mapped[date | None] = mapped_column(nullable=True)
+    # Migration 0035: the numbering series it is numbered in, the last day a reversing
+    # journal applies (Tally ACTIVETO), and whether it affects cash flow (HASCASHFLOW).
+    number_series: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    active_to: Mapped[date | None] = mapped_column(nullable=True)
+    has_cash_flow: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class VoucherLine(TimestampMixin, Base):

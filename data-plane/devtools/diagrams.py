@@ -67,7 +67,7 @@ AREAS = (
         "(ledgerbridge_accounting)",
         ("parties", "items", "item_opening_batches", "item_groups", "units", "godowns",
          "cost_categories", "cost_centres", "tax_units",
-         "voucher_types", "dimensions", "dimension_values"),
+         "voucher_types", "voucher_number_series", "dimensions", "dimension_values"),
         ("entities",),
     ),
     Area(
