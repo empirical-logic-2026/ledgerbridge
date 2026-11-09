@@ -780,7 +780,7 @@ export interface TransactionOut {
   narration: string | null
   bills: string | null
   cost_centres: string | null
-  order_number?: string | null
+  order_number: string | null
   cheque: string | null
   utr: string | null
   utr_source: string | null

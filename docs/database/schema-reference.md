@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-62 tables, 716 columns.
+63 tables, 726 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -13,7 +13,7 @@ Every database, table and column of the client-hosted data plane (MySQL 8), gene
 | Database | What it holds | Tables |
 | --- | --- | --- |
 | `ledgerbridge_source` | Raw layer: every record exactly as the source sent it (ADR-005). Written only by connectors through the sync; the transform reads it. | 1 |
-| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 35 |
+| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 36 |
 | `ledgerbridge_reporting` | Semantic layer for reports and AI (M6): views and aggregate tables. Empty until M6; the only database the AI user can read (AI-003). | 1 |
 | `ledgerbridge_system` | Running the platform: connections, sync runs and progress, validation, alerts, users, roles, audit and AI logs, configuration. | 25 |
 
@@ -135,7 +135,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `base_currency_code` → `currencies.code`.
 
-**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `item_opening_batches`, `items`, `ledgers`, `opening_bills`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_types`, `voucher_versions`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `item_opening_batches`, `items`, `ledgers`, `opening_bills`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_orders`, `voucher_types`, `voucher_versions`, `vouchers`.
 
 ### `ledgerbridge_accounting.entity_sources`
 
@@ -748,7 +748,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `branch_id` → `branches.id`; `voucher_type_id` → `voucher_types.id`; `party_id` → `parties.id`; `currency_code` → `currencies.code`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `inventory_lines`, `tax_lines`, `voucher_lines`, `voucher_versions`.
+**Referred to by:** `inventory_lines`, `tax_lines`, `voucher_lines`, `voucher_orders`, `voucher_versions`.
 
 ### `ledgerbridge_accounting.voucher_lines`
 
@@ -831,6 +831,27 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `ledger_id` → `ledgers.id`, on delete cascade; `party_id` → `parties.id`.
 
+### `ledgerbridge_accounting.voucher_orders`
+
+**Purpose:** The sales or purchase orders a voucher (an invoice, a delivery or receipt note) is made against, with the order voucher when found.
+
+**Filled by:** Transform, with the voucher; linked to the order by number.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `voucher_id` | BIGINT UNSIGNED | no | FK | Refers to `vouchers`. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `order_number` | VARCHAR(255) | no |  | Order number. |
+| `order_date` | DATE | yes |  | Order date. |
+| `order_voucher_id` | BIGINT UNSIGNED | yes | FK | Refers to `vouchers`. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** index `ix_ledgerbridge_accounting_voucher_orders_voucher_id` (voucher_id).
+
+**Refers to:** `voucher_id` → `vouchers.id`, on delete cascade; `entity_id` → `entities.id`; `order_voucher_id` → `vouchers.id`, on delete set null.
+
 ### `ledgerbridge_accounting.line_cost_allocations`
 
 **Purpose:** Cost centre allocations of a line.
@@ -866,7 +887,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 ### `ledgerbridge_accounting.inventory_lines`
 
-**Purpose:** Stock movements of a voucher (in +, out −) by item, godown and batch; `stock_quantity` is what moves stock (tracked lines move nothing); `counterpart_godown_id` is the other godown of a move between godowns.
+**Purpose:** Stock movements of a voucher (in +, out −) by item, godown and batch; `stock_quantity` is what moves stock (tracked lines move nothing); `counterpart_godown_id` is the other godown of a move between godowns; `order_number` the order a line belongs to or is against.
 
 **Filled by:** Transform, with the voucher.
 
@@ -887,6 +908,8 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `discount_pct` | NUMERIC(20, 6) | yes |  | Discount pct. |
 | `batch_name` | VARCHAR(255) | yes |  | Batch name. |
 | `counterpart_godown_id` | BIGINT UNSIGNED | yes | FK | Refers to `godowns`. |
+| `order_number` | VARCHAR(255) | yes |  | Order number. |
+| `order_due_date` | DATE | yes |  | Order due date. |
 | `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
 | `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
 

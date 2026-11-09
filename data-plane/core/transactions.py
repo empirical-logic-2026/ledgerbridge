@@ -11,6 +11,8 @@ line's bills, cost centres and bank instrument. Source-independent: read from th
   when none is on the other side. Each ledger once, in the voucher's order.
 - **Amounts:** canonical sign, debit positive: a debit line's amount is its Debit, a credit
   line's its Credit (shown positive).
+- **Order number:** the orders the voucher is made against (`voucher_orders`), else the
+  orders its stock lines are against (`inventory_lines.order_number`); each once.
 """
 
 from collections import defaultdict
@@ -49,6 +51,7 @@ class TransactionRow:
     narration: str | None
     bills: str | None
     cost_centres: str | None
+    order_number: str | None  # the sales or purchase orders the voucher is made against
     cheque: str | None  # a bank line's cheque or instrument number
     utr: str | None  # only a value that looks like a UTR (core/utr.py)
     utr_source: str | None  # bank_field, udf or narration
@@ -147,6 +150,32 @@ def _cost_centres(chunk: list[int]):  # noqa: ANN202
     )
 
 
+def _orders(session: Session, voucher_ids: list[int]) -> dict[int, str]:
+    """Each voucher's order numbers: the orders it names (its order list), else the orders
+    its stock lines are against."""
+    named: dict[int, list[str]] = defaultdict(list)
+    on_lines: dict[int, list[str]] = defaultdict(list)
+    for chunk in _chunks(voucher_ids):
+        for vid, number in session.execute(
+            select(A.VoucherOrder.voucher_id, A.VoucherOrder.order_number)
+            .where(A.VoucherOrder.voucher_id.in_(chunk))
+            .order_by(A.VoucherOrder.voucher_id, A.VoucherOrder.id)
+        ):
+            named[int(vid)].append(number)
+        for vid, number in session.execute(
+            select(A.InventoryLine.voucher_id, A.InventoryLine.order_number)
+            .where(A.InventoryLine.voucher_id.in_(chunk), A.InventoryLine.order_number.is_not(None))
+            .order_by(A.InventoryLine.voucher_id, A.InventoryLine.line_no)
+        ):
+            on_lines[int(vid)].append(number)
+    found = {}
+    for vid in voucher_ids:
+        joined = _joined(named.get(vid) or on_lines.get(vid) or [])
+        if joined:
+            found[vid] = joined
+    return found
+
+
 def _chunks(ids: list[int], size: int = 1_000) -> list[list[int]]:
     return [ids[i : i + size] for i in range(0, len(ids), size)]
 
@@ -160,6 +189,7 @@ def transactions(session: Session, companies: list[int], period: Period) -> Tran
     line_ids = [int(r[0]) for r in found]
     bills = _per_line(session, line_ids, _bills)
     centres = _per_line(session, line_ids, _cost_centres)
+    orders = _orders(session, sorted({int(r[3]) for r in found}))
     rows = []
     for (line_id, entity, on, vid, vtype, number, reference, party_id, party, gstin, ledger_id,
          ledger, amount, narration, cheque, utr, utr_source, transaction_type, instrument_date,
@@ -176,6 +206,7 @@ def transactions(session: Session, companies: list[int], period: Period) -> Tran
                 credit=-amount if amount < 0 else None,
                 narration=narration, bills=_joined(bills[int(line_id)]),
                 cost_centres=_joined(centres[int(line_id)]),
+                order_number=orders.get(int(vid)),
                 cheque=cheque, utr=utr, utr_source=utr_source,
                 transaction_type=transaction_type, instrument_date=instrument_date,
                 bank_cleared_date=cleared, tally_bank_entry_id=tally_id,

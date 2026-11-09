@@ -298,11 +298,23 @@ class CanonicalInventoryLine:
     # The other godown of a move between godowns: where an outgoing line's stock goes,
     # where an incoming line's came from (a transfer, or a job worker's godown).
     counterpart_godown_name: str | None = None
+    # The sales or purchase order the line belongs to (on the order) or is against (on an
+    # invoice, delivery or receipt note), and when the order is due.
+    order_number: str | None = None
+    order_due_date: date | None = None
     discount_pct: Decimal | None = None
     # The part of the quantity tied to another voucher that moves the stock (Tally: a
     # tracking number to a delivery or receipt note), signed like quantity. On vouchers
     # that post to the books it doesn't move stock (core.transform: stock_quantity).
     tracked_quantity: Decimal = Decimal(0)
+
+
+@dataclass(frozen=True)
+class CanonicalOrderRef:
+    """An order a voucher (an invoice, a delivery or receipt note) is made against."""
+
+    number: str
+    order_date: date | None = None
 
 
 @dataclass(frozen=True)
@@ -313,6 +325,7 @@ class CanonicalVoucher:
     voucher_date: date
     lines: tuple[CanonicalLine, ...]
     inventory: tuple[CanonicalInventoryLine, ...] = ()
+    orders: tuple[CanonicalOrderRef, ...] = ()
     reference_number: str | None = None
     reference_date: date | None = None
     source_altered_at: datetime | None = None

@@ -969,6 +969,22 @@ PROBLEMS: tuple[Problem, ...] = (
         _FAILED,
     ),
     _p(
+        "LB-VAL-043",
+        "order_not_found",
+        "Orders not found",
+        WARNING,
+        "Some invoices, delivery or receipt notes name a sales or purchase order that isn't "
+        "stored (no order voucher of that kind with that number, or more than one).",
+        (
+            "The order is from before the books' beginning, or was deleted in the source.",
+            "Two orders with the same number: the link isn't guessed.",
+            "The order failed to convert.",
+        ),
+        ("The report's -Details lists the vouchers by id (no numbers or names).",),
+        ("Nothing to fix for orders from before the books; otherwise sync again.",),
+        ".\\dev.ps1 report -Details -Env {env}",
+    ),
+    _p(
         "LB-VAL-036",
         "voucher_type_names_differ",
         "Voucher type names written differently",

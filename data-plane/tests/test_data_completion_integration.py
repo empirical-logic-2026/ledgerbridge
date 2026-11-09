@@ -10,13 +10,14 @@ from decimal import Decimal
 import pytest
 from alembic import command
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, aliased
 
 from connectors.tally.connector import TallyConnector
 from connectors.tally.fixtures import FixtureTransport
 from core.db import get_engine
 from core.models import accounting as A  # noqa: N812
+from core.transform import link_orders
 from core.validation import Validator
 from tests.conftest import FIXTURES
 from tests.test_migrations_integration import _config
@@ -239,4 +240,69 @@ def test_part_3_item_openings_add_up(synced: int) -> None:
         report = Validator(session, synced, date(2026, 10, 31)).run(None)
         (found,) = [f for f in report.findings if f.check_code == "item_openings_differ"]
         assert (found.object_type, found.object_id) == ("item", str(batch.item_id))
+        session.rollback()
+
+
+# --- part 4: orders --------------------------------------------------------------------------
+
+
+def _voucher_id(session: Session, entity_id: int, marker: str) -> int:
+    found = session.scalar(
+        select(A.Voucher.id).where(
+            A.Voucher.entity_id == entity_id, A.Voucher.narration.like(f"%[lb-seed:{marker}]%")
+        )
+    )
+    assert found is not None, marker
+    return found
+
+
+def test_part_4_invoices_are_linked_to_their_orders(synced: int) -> None:
+    with Session(get_engine()) as session:
+        for invoice, order, number in (
+            ("ORD-1-INV", "ORD-1", "SO-1"),
+            ("ORD-2-INV", "ORD-2", "PO-1"),
+        ):
+            rows = session.execute(
+                select(A.VoucherOrder.order_number, A.VoucherOrder.order_date,
+                       A.VoucherOrder.order_voucher_id)
+                .where(A.VoucherOrder.voucher_id == _voucher_id(session, synced, invoice))
+            ).all()  # fmt: skip
+            assert [tuple(r) for r in rows] == [
+                (number, date(2026, 10, 1), _voucher_id(session, synced, order))
+            ]
+            due = session.scalars(
+                select(A.InventoryLine.order_due_date).where(
+                    A.InventoryLine.voucher_id == _voucher_id(session, synced, order)
+                )
+            ).all()
+            assert set(due) == {date(2026, 10, 31)}
+
+
+def test_part_4_the_transactions_page_shows_the_order_number(
+    client: TestClient, synced: int
+) -> None:
+    response = client.get("/api/v1/transactions", params={"month": ["2026-10"]})
+    assert response.status_code == 200, response.text
+    rows = response.json()["rows"]
+    by_bill = {r["bills"]: r["order_number"] for r in rows if r["bills"] in ("INV-T2", "PI-I3")}
+    assert by_bill == {"INV-T2": "SO-1", "PI-I3": "PO-1"}
+    # Orders themselves don't post to the books: they aren't on the page.
+    assert not any(r["voucher_type"].endswith("Order") for r in rows)
+
+
+def test_part_4_an_order_not_stored_is_a_warning(synced: int) -> None:
+    """LB-VAL-043: database only (nothing is committed)."""
+    with Session(get_engine()) as session:
+        report = Validator(session, synced, date(2026, 10, 31)).run(None)
+        assert "order_not_found" not in {f.check_code for f in report.findings}
+        invoice = _voucher_id(session, synced, "ORD-1-INV")
+        session.execute(
+            update(A.VoucherOrder)
+            .where(A.VoucherOrder.voucher_id == invoice)
+            .values(order_number="SO-404", order_voucher_id=None)
+        )
+        assert link_orders(session, synced) == 0  # no order SO-404
+        report = Validator(session, synced, date(2026, 10, 31)).run(None)
+        (found,) = [f for f in report.findings if f.check_code == "order_not_found"]
+        assert (found.object_type, found.object_id) == ("voucher", str(invoice))
         session.rollback()

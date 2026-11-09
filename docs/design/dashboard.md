@@ -136,6 +136,13 @@ A party is known by its **name** across the selected companies (as the facets ar
 
 Every table: a filter (any part of a text or date cell), **Columns**, **Group by** (subtotals per group), sorting by any header, **saved views** (in this browser until login, M5) and **Export CSV** of exactly what is shown (exact rupees, subtotals and total; text guarded against formulas). Long lists show the first rows and "Show more".
 
+### Planned after the data-completion re-fetch (requested 2026-11-09)
+
+Built once the full re-fetch after data completion part 7 has filled the new stock columns, one PR:
+
+- **Stock page, "by godown" view:** quantity and value per item, godown and batch at the period's end (the openings by godown and batch, `item_opening_batches`, plus the inventory lines' movements per godown). Stock at a job worker's godown (`godowns.holding` = `ours_with_third_party`, which Tally leaves out of its stock balances) is shown in a section of its own, apart from the stock on hand; third-party stock held with us likewise. The totals match the Stock page's own figures for the stock Tally counts.
+- **Table explorer, an inventory dataset:** one row per inventory line (date, voucher type and number, item, godown, batch, the other godown of a move, order number and due date, quantity, rate, amount), grouped and filtered like the voucher-line dataset (`api/v1/dataset_specs.py`).
+
 ## 0.3 Everything clickable, and one detail page per entity
 
 **Everything clickable, all the way down.** Every figure, row, name and chart point opens a deeper page, with breadcrumbs back: for example Dashboard → Profit & Loss → a group → a ledger → its vouchers → a voucher → its lines. A chart point opens the same figure's register (screen 7: a month opens that month's sales register).
@@ -448,6 +455,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-09 | 0.16 | Planned after the data-completion re-fetch: the Stock page's "by godown" view (job workers' stock apart) and an inventory dataset in the table explorer. Opening bills are now stored and counted in ageing (data completion part 2). |
 | 2026-11-04 | 0.15 | Shared status labels and adjacent meanings across payment, validation and source-loaded tables; bill-wise payment states avoid treating advances as overdue. P&L and Balance Sheet display the active date range, with the Balance Sheet as-of clarification. |
 | 2026-11-04 | 0.14 | Voucher and voucher-line transaction exports include Tally's optional `UPDATEDDATETIME` as Entry Altered Date; the source timezone is unspecified, so the timestamp is preserved without UTC conversion. |
 | 2026-11-02 | 0.13 | Deployment-local company display labels, preserving stored names and IDs; monthly net sales by company using the validated sales definition. |

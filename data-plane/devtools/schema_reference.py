@@ -144,8 +144,12 @@ TABLES: dict[str, tuple[str, str]] = {
                       "ledger."),
     "inventory_lines": ("Stock movements of a voucher (in +, out −) by item, godown and batch; "
                         "`stock_quantity` is what moves stock (tracked lines move nothing); "
-                        "`counterpart_godown_id` is the other godown of a move between godowns.",
+                        "`counterpart_godown_id` is the other godown of a move between godowns; "
+                        "`order_number` the order a line belongs to or is against.",
                         "Transform, with the voucher."),
+    "voucher_orders": ("The sales or purchase orders a voucher (an invoice, a delivery or "
+                       "receipt note) is made against, with the order voucher when found.",
+                       "Transform, with the voucher; linked to the order by number."),
     "tax_lines": ("Tax amounts of a voucher (GST, TDS, ...) from lines posted to tax ledgers.",
                   "Transform, with the voucher."),
     "sources": ("Registered connector types (e.g. `tally`).", "Seeded on first use."),

@@ -2,7 +2,7 @@
 // and period chosen, in the table explorer: date, voucher type and number, the reference (e.g.
 // the supplier's invoice number), the party, the line's ledger, the voucher's other ledgers
 // (particulars), debit and credit, narration, the line's bills and cost centres, the order
-// number (not fetched from the source yet), the party's GSTIN, and the bank line's cheque
+// numbers (the orders the voucher is made against), the party's GSTIN, and the bank line's cheque
 // number and UTR (only a value that looks like one), with its other bank details hidden. Rows: core/transactions.py (GET /api/v1/transactions).
 
 import { Alert, Skeleton, Typography } from 'antd'
@@ -50,7 +50,7 @@ function columns(page: TransactionsOut, companies: Company[], query: Query): Exp
     { key: 'narration', label: 'Narration', kind: 'text', value: (r) => r.narration ?? null, wrap: true },
     { key: 'bills', label: 'Bill Number', kind: 'text', value: (r) => r.bills ?? null, help: "The bill references this line is allocated to (new or against a bill)." },
     { key: 'cost_centres', label: 'Cost Centre', kind: 'text', value: (r) => r.cost_centres ?? null, groupable: true, help: 'The cost centres this line is allocated to.' },
-    { key: 'order', label: 'Order Number', kind: 'text', value: (r) => r.order_number ?? null, help: 'The sales or purchase order (PO / SO number): not read from the source yet, so empty for now.' },
+    { key: 'order', label: 'Order Number', kind: 'text', value: (r) => r.order_number ?? null, help: 'The sales or purchase orders the voucher is made against (PO / SO numbers): those the voucher names, else those its stock lines are against.' },
     { key: 'gstin', label: 'GSTIN', kind: 'text', value: (r) => r.gstin ?? null, help: "The party's GST identification number, from its ledger." },
     { key: 'cheque', label: 'Cheque Number', kind: 'text', value: (r) => r.cheque ?? null, help: "A bank line's cheque or instrument number." },
     {

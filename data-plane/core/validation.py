@@ -74,7 +74,7 @@ CONSEQUENCES = (
 # comparison ran.
 ALWAYS_CHECKED = (
     "voucher_unbalanced", "opening_difference", "tb_unbalanced", "cost_allocation_exceeds_line",
-    "opening_bills_differ", "item_openings_differ",
+    "opening_bills_differ", "item_openings_differ", "order_not_found",
 )  # fmt: skip
 CLOSING_READ = ("closing_unavailable", "closing_not_supported")
 CLOSING_COMPARED = (
@@ -309,6 +309,7 @@ class Validator:
         self._allocations_within_lines()
         self._opening_bills_add_up()
         self._item_openings_add_up()
+        self._orders_found()
         self._closing(ledgers, source)
         self._cover(CLOSING_COMPARED if _read(source) else CLOSING_READ)
         if controls is not None:
@@ -1184,6 +1185,31 @@ class Validator:
                     Decimal(batch_qty) if qty_differs else Decimal(batch_value),
                     f"A stock item's openings by godown and batch don't add up to its opening "
                     f"{what}.",
+                )
+            )
+
+    def _orders_found(self) -> None:
+        """Every order a voucher is made against is stored (its order voucher found by
+        number; core.transform.link_orders). Not finding one is a warning: the order can be
+        from before the books' beginning, or have been deleted in the source."""
+        rows = self.session.execute(
+            select(A.VoucherOrder.voucher_id, A.VoucherOrder.order_voucher_id)
+            .join(A.Voucher, A.Voucher.id == A.VoucherOrder.voucher_id)
+            .where(A.VoucherOrder.entity_id == self.entity.id, A.Voucher.is_deleted.is_(False))
+        ).all()
+        for voucher_id, order_voucher_id in rows:
+            if order_voucher_id is not None:
+                self.passed += 1
+                continue
+            self._fail(
+                Finding(
+                    "order_not_found",
+                    "warning",
+                    "voucher",
+                    str(voucher_id),
+                    None,
+                    None,
+                    "A voucher names an order that isn't stored.",
                 )
             )
 
