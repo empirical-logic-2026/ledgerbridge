@@ -38,7 +38,6 @@ export const GLOSSARY: Record<string, Explanation> = {
   Particulars: { text: 'The voucher\'s first ledger (for an invoice, the party), as the Day Book shows it.' },
   Reference: { text: 'The voucher\'s reference as entered in the source, e.g. the supplier\'s own invoice number.' },
   'Cheque / transfer no.': { text: 'The instrument number on the voucher\'s bank line: a cheque number or a transfer\'s number.' },
-  UTR: { text: 'The unique transaction reference the bank gave an electronic transfer (NEFT, RTGS, IMPS), from the bank line.' },
 
   // --- cost centres ---
   'Cost centre': { text: 'Where a cost or income is tracked (a branch, project or department), by name across the companies.' },

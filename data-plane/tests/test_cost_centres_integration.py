@@ -306,7 +306,7 @@ def test_the_explorer_filters_by_cost_centre_and_shows_the_instruments(
     assert {r["reference"] for r in register if r["reference"]} >= {"SUP-INV-4471"}
     payments = _get(
         client, "/api/v1/datasets/voucher_lines", date_from="2026-09-01", date_to="2026-09-30",
-        column=["voucher_number", "instrument_number", "tally_bank_entry_id", "utr"],
+        column=["voucher_number", "instrument_number", "tally_bank_entry_id"],
         measure="credit", page_size=500,
     )["rows"]  # fmt: skip
     ids = {r["keys"]["tally_bank_entry_id"]["label"] for r in payments}

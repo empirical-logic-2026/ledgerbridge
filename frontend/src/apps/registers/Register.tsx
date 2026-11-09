@@ -58,7 +58,6 @@ function registerColumns(side: Side, names: Map<number, string>, combined: boole
     { key: 'narration', label: 'Narration', kind: 'text', value: (r) => r.narration },
     { key: 'reference', label: 'Reference', kind: 'text', value: (r) => r.reference ?? null, hidden: true },
     { key: 'instrument', label: 'Cheque / transfer no.', kind: 'text', value: (r) => r.instrument_number ?? null, hidden: true },
-    { key: 'utr', label: 'UTR', kind: 'text', value: (r) => r.utr ?? null, hidden: true },
     { key: 'party', label: words.party === 'customer' ? 'Customer' : 'Vendor', kind: 'text', value: (r) => r.party, link: (r) => partyHref(side, r, query), groupable: true, hidden: true },
     { key: 'value', label: words.value, kind: 'amount', value: (r) => r.side_value, hidden: true },
     { key: 'company', label: 'Company', kind: 'text', value: (r) => names.get(r.company) ?? `Company ${r.company}`, groupable: true, hidden: !combined },

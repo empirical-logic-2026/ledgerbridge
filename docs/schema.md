@@ -373,8 +373,8 @@ The double-entry lines. For every voucher, `SUM(amount) = 0` (VAL-001).
 | amount_fc | DECIMAL(20,4) NULL | Foreign-currency amount (Tally: the part before `@` of `-$100.00 @ Rs82.00/$ = -Rs8200.00`); its rate is `amount / amount_fc`. NULL in the base currency. |
 | is_party_line | BOOLEAN | |
 | instrument_number | VARCHAR(255) NULL | A bank line's cheque or instrument number (Tally `BANKALLOCATIONS.INSTRUMENTNUMBER`; several joined with "; "). Migration `0026`. |
-| utr | VARCHAR(255) NULL | The UTR: only a value that looks like one (NEFT/RTGS `[A-Z]{4}[NR]` + 10 to 17 characters, IMPS/UPI 12 digits, or labelled "UTR"; `core/utr.py`), from the bank allocation's reference fields, a user-defined field, else the voucher's narration. Was `transaction_reference` (which held Tally's own code) until migration `0030`. |
-| utr_source | VARCHAR(16) NULL | Where the UTR was found: `bank_field`, `udf` or `narration`. Migration `0030`. |
+| utr | VARCHAR(255) NULL | The UTR: only a value that looks like one (NEFT/RTGS `[A-Z]{4}[NR]` + 10 to 17 characters, IMPS/UPI 12 digits, or labelled "UTR"; `core/utr.py`), from the bank allocation's reference fields, a user-defined field, else the voucher's narration. Was `transaction_reference` (which held Tally's own code) until migration `0030`. Stored only: no `/api/v1` response, page or CSV export shows it. |
+| utr_source | VARCHAR(16) NULL | Where the UTR was found: `bank_field`, `udf` or `narration`. Migration `0030`. Stored only, like `utr`. |
 | tally_bank_entry_id | VARCHAR(255) NULL | The source's own id for the bank entry (Tally `UNIQUEREFERENCENUMBER`, a code it generates); never a UTR. Migration `0030`. |
 | transaction_type | VARCHAR(64) NULL | Cheque, e-Fund Transfer, ... (Tally `TRANSACTIONTYPE`). Migration `0030`. |
 | instrument_date | DATE NULL | The instrument's own date (`INSTRUMENTDATE`). Migration `0030`. |
@@ -896,6 +896,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
 | 2026-11-06 | 0.45 | `stock_values.scope` `item`: each stock item's own value at the statement dates (migration 0029; the Stock page). |
 | 2026-11-05 | 0.44 | RPT-017 / ADR-051: append-only observed voucher versions, posting snapshots, ambiguity-aware comparison rows and deletion detection timestamps (migration 0028); nullable `vouchers.source_altered_at` stores Tally `UPDATEDDATETIME` without timezone conversion (migration 0027). |
+| 2026-11-09 | 0.53 | `voucher_lines.utr` and `utr_source` stored only: not shown in the dashboard (no `/api/v1` response or CSV export). No migration. |
 | 2026-11-09 | 0.52 | Other masters (migration 0036): `stock_categories`, `items.stock_category_id`, `reorder_level`, `min_order_quantity`, `item_prices`, `source_budgets`, `source_budget_lines`. |
 | 2026-11-09 | 0.51 | Settings and order (migration 0035): `sort_position` on groups and ledgers (the statements' group order), `ledgers.affects_stock`, `entities.is_integrated`, `is_fifo`, `audited_upto`, `vouchers.number_series`, `active_to`, `has_cash_flow`, `voucher_number_series`. |
 | 2026-11-09 | 0.50 | GST details (migration 0034): `vouchers` GST columns, `parties.gst_registration_type`, `items.gst_taxability`, `gst_classification`, `line_gst_rates`, `tax_units`. |

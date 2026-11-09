@@ -182,7 +182,6 @@ def _voucher_lines() -> Dataset:
                 _named("party", "Party", A.Party.id, A.Party.name),
                 _text("reference", "Reference", v.reference_number),
                 _text("instrument_number", "Cheque / instrument no.", vl.instrument_number),
-                _text("utr", "UTR", vl.utr),
                 _named(
                     "transaction_type",
                     "Bank transaction type",

@@ -957,9 +957,9 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `is_party_line` | BOOL | no |  | Whether party line. |
 | `is_effective` | BOOL | no |  | Counts in the books: not cancelled, optional or deleted, and of a type that posts. |
 | `instrument_number` | VARCHAR(255) | yes |  | A bank line's cheque or instrument number (Tally `BANKALLOCATIONS.INSTRUMENTNUMBER`; several joined with "; "). Migration `0026`. |
-| `utr` | VARCHAR(255) | yes |  | The UTR: only a value that looks like one (NEFT/RTGS `[A-Z]{4}[NR]` + 10 to 17 characters, IMPS/UPI 12 digits, or labelled "UTR"; `core/utr.py`), from the bank allocation's reference fields, a user-defined field, else the voucher's narration. Was `transaction_reference` (which held Tally's own code) until migration `0030`. |
+| `utr` | VARCHAR(255) | yes |  | The UTR: only a value that looks like one (NEFT/RTGS `[A-Z]{4}[NR]` + 10 to 17 characters, IMPS/UPI 12 digits, or labelled "UTR"; `core/utr.py`), from the bank allocation's reference fields, a user-defined field, else the voucher's narration. Was `transaction_reference` (which held Tally's own code) until migration `0030`. Stored only: no `/api/v1` response, page or CSV export shows it. |
 | `tally_bank_entry_id` | VARCHAR(255) | yes |  | The source's own id for the bank entry (Tally `UNIQUEREFERENCENUMBER`, a code it generates); never a UTR. Migration `0030`. |
-| `utr_source` | VARCHAR(16) | yes |  | Where the UTR was found: `bank_field`, `udf` or `narration`. Migration `0030`. |
+| `utr_source` | VARCHAR(16) | yes |  | Where the UTR was found: `bank_field`, `udf` or `narration`. Migration `0030`. Stored only, like `utr`. |
 | `transaction_type` | VARCHAR(64) | yes |  | Cheque, e-Fund Transfer, ... (Tally `TRANSACTIONTYPE`). Migration `0030`. |
 | `instrument_date` | DATE | yes |  | The instrument's own date (`INSTRUMENTDATE`). Migration `0030`. |
 | `bank_cleared_date` | DATE | yes |  | The date the bank cleared it, bank reconciliation (`BANKERSDATE`). Migration `0030`. |

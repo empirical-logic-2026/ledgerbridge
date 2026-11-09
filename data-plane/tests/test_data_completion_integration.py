@@ -97,19 +97,40 @@ def test_part_1_bank_details_and_the_utr_are_stored(synced: int) -> None:
         assert (imps.utr, imps.utr_source) == ("629012345678", "bank_field")
 
 
-def test_part_1_the_transactions_page_shows_cheque_and_utr_apart(
+def _without_narrations(rows: list[dict]) -> str:
+    """Every field of the rows but the narration, as one text."""
+    return repr([{k: v for k, v in r.items() if k != "narration"} for r in rows])
+
+
+def test_part_1_the_dashboard_shows_the_cheque_never_the_utr(
     client: TestClient, synced: int
 ) -> None:
-    response = client.get("/api/v1/transactions", params={"month": ["2026-10"]})
+    """The UTRs stored above are in no /api/v1 response or CSV export: the Transactions
+    page, the registers and the explorer (its CSV has the columns shown). A narration is
+    shown as entered in the source, so a UTR typed into it (BANK-3) stays in that text only."""
+    october = {"month": ["2026-10"]}
+    response = client.get("/api/v1/transactions", params=october)
     assert response.status_code == 200, response.text
     rows = response.json()["rows"]
-    utrs = {r["utr"]: r["utr_source"] for r in rows if r["utr"]}
-    assert utrs == {"HDFCN52026100112345": "narration", "629012345678": "bank_field"}
-    cheques = {r["cheque"] for r in rows if r["cheque"]}
-    assert {"000777", "NEFT", "IMPS"} <= cheques
-    assert all(
-        r["tally_bank_entry_id"] is None or r["tally_bank_entry_id"] != r["utr"] for r in rows
-    )
+    assert {"000777", "NEFT", "IMPS"} <= {r["cheque"] for r in rows if r["cheque"]}
+    assert not {"utr", "utr_source"} & {key for r in rows for key in r}
+    texts = [_without_narrations(rows)]
+    for side in ("sales", "purchases"):
+        register = client.get(f"/api/v1/registers/{side}", params=october)
+        assert register.status_code == 200, register.text
+        texts.append(_without_narrations(register.json()["rows"]))
+    explorer = {
+        "date_from": "2026-10-01",
+        "date_to": "2026-10-31",
+        "column": ["voucher_number", "instrument_number"],
+    }
+    csv = client.get("/api/v1/datasets/voucher_lines/csv", params=explorer)
+    assert csv.status_code == 200 and "000777" in csv.text
+    texts.append(csv.text)
+    refused = client.get("/api/v1/datasets/voucher_lines", params={"column": "utr"})
+    assert refused.status_code == 422
+    for utr in ("HDFCN52026100112345", "629012345678"):
+        assert all(utr not in text for text in texts), utr
 
 
 # --- part 2: bill dates, due dates, opening bills ---------------------------------------------
