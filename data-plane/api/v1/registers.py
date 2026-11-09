@@ -45,7 +45,6 @@ class RegisterRowOut(BaseModel):
     narration: str | None
     reference: str | None = None  # the voucher's reference, e.g. a supplier's invoice number
     instrument_number: str | None = None  # a bank line's cheque or transfer number
-    utr: str | None = None  # a bank line's UTR
 
 
 class RegisterOut(BaseModel):
@@ -103,5 +102,4 @@ def row_out(r: RegisterRow, side: Side) -> RegisterRowOut:
         narration=r.narration,
         reference=r.reference,
         instrument_number=r.instrument_number,
-        utr=r.utr,
     )

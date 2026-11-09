@@ -13,7 +13,8 @@ debit or credit, and narration. Source-independent.
   register's total of it is the gross plus returns of the monthly sales views.
 
 - **Reference and instrument:** the voucher's reference (e.g. a supplier's invoice number) and
-  its bank lines' cheque or transfer number and UTR.
+  its bank lines' cheque or transfer number. The UTR stays in the database, never in a
+  register (it isn't shown in the dashboard).
 
 At most `limit` vouchers, the earliest first; `truncated` says when there were more.
 """
@@ -50,7 +51,6 @@ class RegisterRow:
     narration: str | None
     reference: str | None = None
     instrument_number: str | None = None  # a bank line's cheque or transfer number
-    utr: str | None = None  # a bank line's UTR
 
 
 @dataclass
@@ -76,7 +76,7 @@ def register(
             A.VoucherType.base_type, A.Voucher.voucher_number, A.Ledger.id, A.Ledger.name,
             A.Voucher.party_id, A.Party.name, first.c.amount,
             func.coalesce(values.c.value, 0), A.Voucher.narration, A.Voucher.reference_number,
-            instruments.c.instrument_number, instruments.c.utr,
+            instruments.c.instrument_number,
         )
         .join(first, first.c.voucher_id == A.Voucher.id)
         .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
@@ -100,10 +100,10 @@ def register(
         RegisterRow(
             int(vid), int(entity), on, vtype, base, number, int(ledger), ledger_name,
             party_id, party, Decimal(amount), side.sign * Decimal(value), narration, reference,
-            instrument, utr,
+            instrument,
         )
         for vid, entity, on, vtype, base, number, ledger, ledger_name, party_id, party, amount,
-        value, narration, reference, instrument, utr in session.execute(query)
+        value, narration, reference, instrument in session.execute(query)
     ]  # fmt: skip
     return Register(rows[:limit], len(rows) > limit)
 
@@ -122,17 +122,16 @@ def _first_entries(companies: list[int], period: Period):  # noqa: ANN202
 
 
 def _instruments(companies: list[int], period: Period):  # noqa: ANN202
-    """Each voucher's bank instrument and UTR (from its lines that have one)."""
+    """Each voucher's bank instrument (from its lines that have one)."""
     query = (
         select(
             A.VoucherLine.voucher_id,
             func.max(A.VoucherLine.instrument_number).label("instrument_number"),
-            func.max(A.VoucherLine.utr).label("utr"),
         )
         .where(
             A.VoucherLine.entity_id.in_(companies),
             A.VoucherLine.is_effective.is_(True),
-            A.VoucherLine.instrument_number.is_not(None) | A.VoucherLine.utr.is_not(None),
+            A.VoucherLine.instrument_number.is_not(None),
         )
         .group_by(A.VoucherLine.voucher_id)
     )

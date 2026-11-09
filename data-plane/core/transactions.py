@@ -16,6 +16,9 @@ line's bills, cost centres and bank instrument. Source-independent: read from th
 - **GST:** the voucher's registration (tax unit), place of supply, e-invoice and e-way bill,
   the party's registration type, and the line's own GST rates per duty head, when it has any
   (otherwise the rate is the item's or ledger's: not shown here).
+- **No UTR:** the line's UTR and where it was found stay in the database
+  (`voucher_lines.utr`, `utr_source`) but are never read here, so no page or export
+  shows them.
 """
 
 from collections import defaultdict
@@ -56,8 +59,6 @@ class TransactionRow:
     cost_centres: str | None
     order_number: str | None  # the sales or purchase orders the voucher is made against
     cheque: str | None  # a bank line's cheque or instrument number
-    utr: str | None  # only a value that looks like a UTR (core/utr.py)
-    utr_source: str | None  # bank_field, udf or narration
     transaction_type: str | None
     instrument_date: date | None
     bank_cleared_date: date | None
@@ -92,8 +93,8 @@ def _lines(session: Session, companies: list[int], period: Period):  # noqa: ANN
             A.Voucher.id, A.VoucherType.name, A.Voucher.voucher_number,
             A.Voucher.reference_number, A.Voucher.party_id, party.name, party.gstin,
             A.VoucherLine.ledger_id, A.Ledger.name, A.VoucherLine.amount, A.Voucher.narration,
-            A.VoucherLine.instrument_number, A.VoucherLine.utr, A.VoucherLine.utr_source,
-            A.VoucherLine.transaction_type, A.VoucherLine.instrument_date,
+            A.VoucherLine.instrument_number, A.VoucherLine.transaction_type,
+            A.VoucherLine.instrument_date,
             A.VoucherLine.bank_cleared_date, A.VoucherLine.tally_bank_entry_id,
             A.Voucher.gst_registration, A.Voucher.place_of_supply,
             party.gst_registration_type, A.Voucher.irn, A.Voucher.irn_date,
@@ -220,7 +221,7 @@ def transactions(session: Session, companies: list[int], period: Period) -> Tran
     rates = _line_gst_rates(session, line_ids)
     rows = []
     for (line_id, entity, on, vid, vtype, number, reference, party_id, party, gstin, ledger_id,
-         ledger, amount, narration, cheque, utr, utr_source, transaction_type, instrument_date,
+         ledger, amount, narration, cheque, transaction_type, instrument_date,
          cleared, tally_id, registration, supply, party_type, irn, irn_date, eway,
          eway_date) in found:  # fmt: skip
         amount = Decimal(amount)
@@ -236,7 +237,7 @@ def transactions(session: Session, companies: list[int], period: Period) -> Tran
                 narration=narration, bills=_joined(bills[int(line_id)]),
                 cost_centres=_joined(centres[int(line_id)]),
                 order_number=orders.get(int(vid)),
-                cheque=cheque, utr=utr, utr_source=utr_source,
+                cheque=cheque,
                 transaction_type=transaction_type, instrument_date=instrument_date,
                 bank_cleared_date=cleared, tally_bank_entry_id=tally_id,
                 gst_registration=registration, place_of_supply=supply,

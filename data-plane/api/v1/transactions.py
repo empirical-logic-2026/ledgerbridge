@@ -1,7 +1,8 @@
 """`GET /api/v1/transactions`: the Transactions page (RPT-014), one row per ledger line, for
 any combination of the companies the caller may see (`company`, repeatable; default all,
 combined) and a period (`month`, repeatable, or `date_from` and `date_to`). How:
-core/transactions.py.
+core/transactions.py. The line's UTR is stored but never returned (not shown in the
+dashboard).
 """
 
 from datetime import date
@@ -39,8 +40,6 @@ class TransactionOut(BaseModel):
     cost_centres: str | None
     order_number: str | None  # the sales or purchase orders the voucher is made against
     cheque: str | None  # a bank line's cheque or instrument number
-    utr: str | None  # only a value that looks like a bank's UTR
-    utr_source: str | None  # where it was found: bank_field, udf or narration
     transaction_type: str | None  # Cheque, e-Fund Transfer, ...
     instrument_date: date | None
     bank_cleared_date: date | None  # the bank's date (bank reconciliation)
@@ -87,8 +86,7 @@ def list_transactions(
                 ledger_id=r.ledger_id, ledger=r.ledger, particulars=r.particulars,
                 debit=r.debit, credit=r.credit, narration=r.narration, bills=r.bills,
                 cost_centres=r.cost_centres, order_number=r.order_number, cheque=r.cheque,
-                utr=r.utr,
-                utr_source=r.utr_source, transaction_type=r.transaction_type,
+                transaction_type=r.transaction_type,
                 instrument_date=r.instrument_date, bank_cleared_date=r.bank_cleared_date,
                 tally_bank_entry_id=r.tally_bank_entry_id,
                 gst_registration=r.gst_registration, place_of_supply=r.place_of_supply,

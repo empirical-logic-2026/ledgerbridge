@@ -905,7 +905,6 @@ const row = (id: number, date: string, type: string, debit: string | null, credi
   narration: id === 1 ? 'First sale' : null,
   reference: id === 1 ? 'SUP-INV-4471' : null,
   instrument_number: id === 1 ? '000451' : null,
-  utr: id === 1 ? 'UTR20260902000017' : null,
 })
 const salesRegister: RegisterOut = {
   side: 'sales',
@@ -963,17 +962,16 @@ describe('the Sales and Purchase registers', () => {
     expect(within(table).queryByRole('link', { name: 'V-1' })).toBeNull() // no voucher page yet
   })
 
-  it('offers the reference, cheque or transfer number and UTR as columns', async () => {
+  it('offers the reference and the cheque or transfer number as columns, never a UTR', async () => {
     renderApp('#/sales/register')
     const table = await screen.findByRole('table', { name: 'Sales register' })
     expect(within(table).queryByText('SUP-INV-4471')).toBeNull() // hidden until chosen
     fireEvent.click(screen.getByRole('button', { name: 'Columns ▾' }))
     fireEvent.click(await screen.findByLabelText('Reference'))
     fireEvent.click(await screen.findByLabelText('Cheque / transfer no.'))
-    fireEvent.click(await screen.findByLabelText('UTR'))
+    expect(screen.queryByLabelText('UTR')).toBeNull()
     expect(await within(table).findByText('SUP-INV-4471')).toBeInTheDocument()
     expect(within(table).getByText('000451')).toBeInTheDocument()
-    expect(within(table).getByText('UTR20260902000017')).toBeInTheDocument()
   })
 
   it('says when a register was cut short, and explains itself', async () => {
@@ -1355,8 +1353,8 @@ describe('the stock', () => {
 const line = (id: number, ledger: string, debit: string | null, credit: string | null, extra: object = {}) => ({
   line_id: id, company: 3, date: '2026-09-01', voucher_id: 31, voucher_type: 'Payment', voucher_number: 'CC-2', reference: null,
   party_id: null, party: null, gstin: null, ledger_id: 100 + id, ledger, particulars: null, debit, credit,
-  narration: 'Electricity for September', bills: null, cost_centres: null, order_number: null, cheque: null, utr: null,
-  utr_source: null, transaction_type: null, instrument_date: null, bank_cleared_date: null, tally_bank_entry_id: null,
+  narration: 'Electricity for September', bills: null, cost_centres: null, order_number: null, cheque: null,
+  transaction_type: null, instrument_date: null, bank_cleared_date: null, tally_bank_entry_id: null,
   gst_registration: null, place_of_supply: null, party_gst_registration_type: null, gst_rates: null, irn: null, irn_date: null,
   eway_bill_number: null, eway_bill_date: null, ...extra,
 })
@@ -1368,7 +1366,7 @@ const transactionsFound: TransactionsOut = {
   rows: [
     line(1, 'Electricity', '4000', null, { particulars: 'HDFC Bank', cost_centres: 'Head Office, Project Alpha' }),
     line(2, 'HDFC Bank', null, '4000', {
-      particulars: 'Electricity', cheque: '000451', utr: 'HDFCN52026100112345', utr_source: 'narration', transaction_type: 'Cheque',
+      particulars: 'Electricity', cheque: '000451', transaction_type: 'Cheque',
       tally_bank_entry_id: '7GJ2K9QX4M1Z8P3T',
     }),
     line(3, 'Vendor Three', null, '600', {
@@ -1395,22 +1393,24 @@ describe('the transactions', () => {
     expect((await screen.findByRole('link', { name: 'Books' })).getAttribute('href')).toMatch(/^#\/books\/transactions/)
   })
 
-  it('lists every ledger line with its columns, in order, the UTR apart from the cheque', async () => {
+  it('lists every ledger line with its columns, in order, the cheque but never a UTR', async () => {
     fullAmounts()
     renderApp('#/books/transactions')
     const table = await screen.findByRole('table', { name: 'Transactions' })
     const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent)
     expect(headers).toEqual([
       'Date', 'Voucher Type', 'Voucher Number', 'Reference Number', 'Party Name', 'Ledger Name', 'Particulars', 'Debit', 'Credit',
-      'Narration', 'Bill Number', 'Cost Centre', 'Order Number', 'GSTIN', 'Cheque Number', 'UTR',
+      'Narration', 'Bill Number', 'Cost Centre', 'Order Number', 'GSTIN', 'Cheque Number',
     ])
     const expense = within(table).getByText('Head Office, Project Alpha').closest('tr') as HTMLElement
     expect(expense).toHaveTextContent('Electricity')
     expect(expense).toHaveTextContent('HDFC Bank')
     expect(expense).toHaveTextContent('₹4,000.00')
     expect(within(table).getByText('000451')).toBeInTheDocument()
-    expect(within(table).getByText('HDFCN52026100112345')).toHaveAttribute('title', 'Found in the narration')
-    expect(within(table).queryByText('7GJ2K9QX4M1Z8P3T')).toBeNull() // Tally's own id: a hidden column, never the UTR
+    expect(within(table).queryByText('7GJ2K9QX4M1Z8P3T')).toBeNull() // Tally's own id: a hidden column
+    fireEvent.click(screen.getByRole('button', { name: 'Columns ▾' }))
+    expect(await screen.findByLabelText('Cheque Number')).toBeInTheDocument()
+    expect(screen.queryByLabelText('UTR')).toBeNull() // the UTR is stored, never shown
     const invoice = within(table).getAllByText('SUP-INV-4471')[0].closest('tr') as HTMLElement // the vendor's line
     expect(invoice).toHaveTextContent('Vendor Three')
     expect(invoice).toHaveTextContent('29ABCDE1234F1Z5')
