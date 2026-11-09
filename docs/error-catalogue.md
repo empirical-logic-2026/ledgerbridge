@@ -84,6 +84,7 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 | [LB-VAL-039](#lb-val-039-source-cost-centre-totals-couldnt-be-read) | Source cost centre totals couldn't be read | `cost_centre_totals_unavailable` | Error |
 | [LB-VAL-040](#lb-val-040-opening-bills) | Opening bills | `opening_bills_mismatch` | Error |
 | [LB-VAL-041](#lb-val-041-opening-bills-dont-add-up-to-the-opening) | Opening bills don't add up to the opening | `opening_bills_differ` | Warning |
+| [LB-VAL-042](#lb-val-042-item-openings-by-godown-dont-add-up) | Item openings by godown don't add up | `item_openings_differ` | Error |
 | [LB-VAL-036](#lb-val-036-voucher-type-names-written-differently) | Voucher type names written differently | `voucher_type_names_differ` | Note |
 | [LB-CON-001](#lb-con-001-no-connection-yet) | No connection yet | `no_connection` | Warning |
 | [LB-CON-002](#lb-con-002-scheduled-syncs-paused) | Scheduled syncs paused | `connection_paused` | Note |
@@ -1398,6 +1399,29 @@ codes and labels such as `entity 3 (company 1)`: never names, values or amounts.
 - Correct the opening bills or the opening balance in the source, then sync.
 
 **Next step:** `.\dev.ps1 report -Details -Env <env>`
+
+### LB-VAL-042: Item openings by godown don't add up
+
+`item_openings_differ` | Error
+
+**What it means:** Some stock items' openings by godown and batch don't add up to the item's opening quantity or value. The source keeps them equal, so part of an opening is missing here.
+
+**Usually a consequence of:** LB-TRF-001, LB-VAL-007, LB-SYNC-002, LB-SYNC-010, LB-TRF-002.
+
+**Common causes:**
+
+- The item was stored before its openings by godown were fetched, or changed in the source since (sync again).
+- A godown or batch allocation the mapping didn't read.
+
+**How to investigate:**
+
+- The report's -Details lists the items by id (no names or amounts).
+
+**How to fix:**
+
+- Sync again; if they still differ, sync full.
+
+**Next step:** `.\dev.ps1 sync -Env <env>`
 
 ### LB-VAL-036: Voucher type names written differently
 

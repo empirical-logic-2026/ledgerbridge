@@ -87,8 +87,14 @@ STOCK_ITEMS = CollectionSpec(
     "StockItem",
     "STOCKITEM",
     "stock_item",
-    (*_KEYS, "PARENT", "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE", "OPENINGRATE"),
-)
+    (
+        *_KEYS, "PARENT", "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE", "OPENINGRATE",
+        # The opening by godown and batch (data completion, part 3).
+        "BATCHALLOCATIONS.GODOWNNAME", "BATCHALLOCATIONS.BATCHNAME",
+        "BATCHALLOCATIONS.OPENINGBALANCE", "BATCHALLOCATIONS.OPENINGRATE",
+        "BATCHALLOCATIONS.OPENINGVALUE",
+    ),
+)  # fmt: skip
 # ISEXTERNAL: "our stock with a third party" (a job worker's location; Tally leaves its stock
 # out of every stock balance); ISINTERNAL: "third-party stock with us" (counted by Tally).
 GODOWNS = CollectionSpec(
@@ -159,6 +165,8 @@ VOUCHERS = CollectionSpec(
         "VOUCHERTYPENAME",
         "VOUCHERNUMBER", "REFERENCE", "REFERENCEDATE", "PARTYLEDGERNAME", "NARRATION",
         "ISCANCELLED", "ISOPTIONAL", "ISPOSTDATED", "ISDELETED", "ISINVOICE",
+        # A stock journal's receiving godown (data completion, part 3).
+        "DESTINATIONGODOWN",
         "AllLedgerEntries.LedgerName", "AllLedgerEntries.Amount",
         "AllLedgerEntries.IsDeemedPositive", "AllLedgerEntries.IsPartyLedger",
         "AllLedgerEntries.BillAllocations.Name", "AllLedgerEntries.BillAllocations.BillType",
@@ -189,6 +197,8 @@ VOUCHERS = CollectionSpec(
         "AllInventoryEntries.Discount",
         "AllInventoryEntries.BatchAllocations.GodownName",
         "AllInventoryEntries.BatchAllocations.BatchName",
+        # Where a batch goes (Material Out to a job worker's godown).
+        "AllInventoryEntries.BatchAllocations.DestinationGodownName",
         # A tracking number ties an invoice line to a delivery or receipt note: the note
         # moves the stock, the invoice line doesn't (mapping._tracked).
         "AllInventoryEntries.BatchAllocations.TrackingNumber",
@@ -205,6 +215,7 @@ VOUCHERS = CollectionSpec(
         *(f"InventoryEntries{side}.{field}" for side in ("In", "Out") for field in (
             "StockItemName", "ActualQty", "BilledQty", "Rate", "Amount", "IsDeemedPositive",
             "BatchAllocations.GodownName", "BatchAllocations.BatchName",
+            "BatchAllocations.DestinationGodownName",
         )),
     ),
 )  # fmt: skip

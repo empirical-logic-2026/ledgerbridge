@@ -28,6 +28,13 @@ erDiagram
         bigint connection_id FK, UK "to connections"
         bigint import_batch_id FK "to import_batches"
     }
+    item_opening_batches {
+        bigint id PK
+        bigint entity_id FK "to entities"
+        bigint item_id FK "to items"
+        bigint godown_id FK "to godowns"
+        decimal quantity
+    }
     item_groups {
         bigint id PK
         bigint entity_id FK "to entities"
@@ -116,6 +123,9 @@ erDiagram
     entities ||--o{ items : "entity_id"
     item_groups |o--o{ items : "item_group_id"
     units |o--o{ items : "unit_id"
+    entities ||--o{ item_opening_batches : "entity_id"
+    items ||--o{ item_opening_batches : "item_id"
+    godowns |o--o{ item_opening_batches : "godown_id"
     entities ||--o{ item_groups : "entity_id"
     item_groups |o--o{ item_groups : "parent_id"
     entities ||--o{ units : "entity_id"

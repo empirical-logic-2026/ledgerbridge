@@ -11,7 +11,7 @@ import pytest
 from alembic import command
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from connectors.tally.connector import TallyConnector
 from connectors.tally.fixtures import FixtureTransport
@@ -183,4 +183,60 @@ def test_part_2_opening_bills_add_up_to_the_openings(synced: int) -> None:
         report = Validator(session, synced, date(2026, 10, 31)).run(None)
         (found,) = [f for f in report.findings if f.check_code == "opening_bills_differ"]
         assert (found.object_type, found.object_id) == ("ledger", str(bill.ledger_id))
+        session.rollback()
+
+
+# --- part 3: stock by godown and batch -----------------------------------------------------
+
+
+def test_part_3_item_openings_are_stored_by_godown_and_batch(synced: int) -> None:
+    with Session(get_engine()) as session:
+        rows = session.execute(
+            select(A.Item.name, A.Godown.name, A.ItemOpeningBatch.batch_name,
+                   A.ItemOpeningBatch.quantity, A.ItemOpeningBatch.value)
+            .join(A.Item, A.Item.id == A.ItemOpeningBatch.item_id)
+            .join(A.Godown, A.Godown.id == A.ItemOpeningBatch.godown_id)
+            .where(A.ItemOpeningBatch.entity_id == synced, A.Item.name.in_(("Gizmo", "Gizmo Pro")))
+            .order_by(A.Item.name, A.ItemOpeningBatch.id)
+        ).all()  # fmt: skip
+        assert [tuple(r) for r in rows] == [
+            ("Gizmo", "Main Location", "Primary Batch", Decimal(20), Decimal(400)),
+            ("Gizmo", "Branch Store", "Primary Batch", Decimal(10), Decimal(200)),
+            ("Gizmo Pro", "Main Location", "Batch A", Decimal(8), Decimal(240)),
+            ("Gizmo Pro", "Branch Store", "Batch B", Decimal(4), Decimal(120)),
+        ]
+
+
+def test_part_3_moves_between_godowns_keep_the_other_godown(synced: int) -> None:
+    counterpart = aliased(A.Godown)
+    with Session(get_engine()) as session:
+        rows = session.execute(
+            select(A.Godown.name, A.InventoryLine.quantity, counterpart.name)
+            .join(A.Voucher, A.Voucher.id == A.InventoryLine.voucher_id)
+            .join(A.Godown, A.Godown.id == A.InventoryLine.godown_id)
+            .join(counterpart, counterpart.id == A.InventoryLine.counterpart_godown_id)
+            .where(A.Voucher.entity_id == synced)
+            .order_by(A.InventoryLine.voucher_date, A.InventoryLine.quantity)
+        ).all()
+        assert [tuple(r) for r in rows] == [
+            ("Main Location", Decimal(-80), "Job Worker Alpha"),  # MAT-OUT-1: sent
+            ("Main Location", Decimal(10), "Job Worker Alpha"),  # MAT-IN-2: returned
+            ("Main Location", Decimal(-5), "Branch Store"),  # STK-1: leaves
+            ("Branch Store", Decimal(5), "Main Location"),  # STK-1: arrives
+        ]
+
+
+def test_part_3_item_openings_add_up(synced: int) -> None:
+    """LB-VAL-042: database only, so it runs in every validation (nothing is committed)."""
+    with Session(get_engine()) as session:
+        report = Validator(session, synced, date(2026, 10, 31)).run(None)
+        assert "item_openings_differ" not in {f.check_code for f in report.findings}
+        batch = session.scalars(
+            select(A.ItemOpeningBatch).where(A.ItemOpeningBatch.entity_id == synced).limit(1)
+        ).one()
+        batch.quantity += 1
+        session.flush()
+        report = Validator(session, synced, date(2026, 10, 31)).run(None)
+        (found,) = [f for f in report.findings if f.check_code == "item_openings_differ"]
+        assert (found.object_type, found.object_id) == ("item", str(batch.item_id))
         session.rollback()

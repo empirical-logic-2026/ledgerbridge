@@ -74,7 +74,7 @@ CONSEQUENCES = (
 # comparison ran.
 ALWAYS_CHECKED = (
     "voucher_unbalanced", "opening_difference", "tb_unbalanced", "cost_allocation_exceeds_line",
-    "opening_bills_differ",
+    "opening_bills_differ", "item_openings_differ",
 )  # fmt: skip
 CLOSING_READ = ("closing_unavailable", "closing_not_supported")
 CLOSING_COMPARED = (
@@ -308,6 +308,7 @@ class Validator:
         self._trial_balance(report.opening_difference)
         self._allocations_within_lines()
         self._opening_bills_add_up()
+        self._item_openings_add_up()
         self._closing(ledgers, source)
         self._cover(CLOSING_COMPARED if _read(source) else CLOSING_READ)
         if controls is not None:
@@ -1150,6 +1151,39 @@ class Validator:
                     Decimal(opening or 0),
                     Decimal(total),
                     "A ledger's opening bills don't add up to its opening balance.",
+                )
+            )
+
+    def _item_openings_add_up(self) -> None:
+        """Each stock item's openings by godown and batch add up to its opening quantity and
+        value (the source keeps them equal: an item's opening is entered by godown and
+        batch). Only items with stored openings by godown are compared: data fetched before
+        they were (data completion, part 3) has none."""
+        for item_id, qty, value, batch_qty, batch_value in self.session.execute(
+            select(
+                A.Item.id, A.Item.opening_qty, A.Item.opening_value,
+                func.sum(A.ItemOpeningBatch.quantity), func.sum(A.ItemOpeningBatch.value),
+            )
+            .join(A.ItemOpeningBatch, A.ItemOpeningBatch.item_id == A.Item.id)
+            .where(A.Item.entity_id == self.entity.id, A.Item.is_deleted.is_(False))
+            .group_by(A.Item.id, A.Item.opening_qty, A.Item.opening_value)
+        ):  # fmt: skip
+            qty_differs = Decimal(qty or 0) != Decimal(batch_qty)
+            value_differs = abs(Decimal(value or 0) - Decimal(batch_value)) > self.tolerance
+            if not (qty_differs or value_differs):
+                self.passed += 1
+                continue
+            what = "quantity" if qty_differs else "value"
+            self._fail(
+                Finding(
+                    "item_openings_differ",
+                    "error",
+                    "item",
+                    str(item_id),
+                    Decimal(qty or 0) if qty_differs else Decimal(value or 0),
+                    Decimal(batch_qty) if qty_differs else Decimal(batch_value),
+                    f"A stock item's openings by godown and batch don't add up to its opening "
+                    f"{what}.",
                 )
             )
 

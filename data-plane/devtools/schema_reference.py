@@ -84,6 +84,9 @@ TABLES: dict[str, tuple[str, str]] = {
     "units": ("Units of measure.", "Transform, from unit masters."),
     "items": ("Stock items with their opening quantity and value.",
               "Transform, from stock item masters (as at the books' beginning)."),
+    "item_opening_batches": ("A stock item's opening by godown and batch: quantity, rate and "
+                             "value (they add up to the item's opening).",
+                             "Transform, with the stock item; replaced as a whole per item."),
     "godowns": ("Godowns (locations) and whose stock they hold (`holding`, ADR-031).",
                 "Transform, from godown masters."),
     "cost_categories": (
@@ -140,7 +143,8 @@ TABLES: dict[str, tuple[str, str]] = {
                       "Transform, from the ledgers' opening bills; replaced as a whole per "
                       "ledger."),
     "inventory_lines": ("Stock movements of a voucher (in +, out −) by item, godown and batch; "
-                        "`stock_quantity` is what moves stock (tracked lines move nothing).",
+                        "`stock_quantity` is what moves stock (tracked lines move nothing); "
+                        "`counterpart_godown_id` is the other godown of a move between godowns.",
                         "Transform, with the voucher."),
     "tax_lines": ("Tax amounts of a voucher (GST, TDS, ...) from lines posted to tax ledgers.",
                   "Transform, with the voucher."),

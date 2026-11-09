@@ -42,6 +42,7 @@ from core.canonical import (
     CanonicalItemGroup,
     CanonicalLedger,
     CanonicalLine,
+    CanonicalOpeningBatch,
     CanonicalOpeningBill,
     CanonicalOpeningBills,
     CanonicalParty,
@@ -505,7 +506,30 @@ def stock_item(element: ET.Element, key: str) -> CanonicalItem:
         unit_name=text_of(element, "BASEUNITS"),
         opening_qty=opening_qty,
         opening_value=_amount(element, "OPENINGVALUE"),
+        opening_batches=opening_batches(element),
     )
+
+
+def opening_batches(element: ET.Element) -> tuple[CanonicalOpeningBatch, ...]:
+    """A stock item's opening by godown and batch (its BATCHALLOCATIONS.LIST, read for a
+    period from the books' beginning). Tally lists an empty allocation for an item without
+    an opening: only allocations with a quantity or a value count."""
+    batches = []
+    for batch in element.findall("BATCHALLOCATIONS.LIST"):
+        qty, _ = quantity(text_of(batch, "OPENINGBALANCE"))
+        value = _amount(batch, "OPENINGVALUE")
+        if not qty and not value:
+            continue
+        batches.append(
+            CanonicalOpeningBatch(
+                godown_name=text_of(batch, "GODOWNNAME"),
+                batch_name=text_of(batch, "BATCHNAME"),
+                quantity=qty,
+                rate=_rate(text_of(batch, "OPENINGRATE")),
+                value=value,
+            )
+        )
+    return tuple(batches)
 
 
 # --- vouchers --------------------------------------------------------------------------
@@ -708,8 +732,45 @@ def _inventory(entry: ET.Element, inward: bool | None = None) -> CanonicalInvent
         rate=_rate(text_of(entry, "RATE")),
         godown_name=text_of(batch, "GODOWNNAME") if batch is not None else None,
         batch_name=text_of(batch, "BATCHNAME") if batch is not None else None,
+        counterpart_godown_name=_batch_counterpart(batch),
         discount_pct=discount if discount else None,
     )
+
+
+def _batch_counterpart(batch: ET.Element | None) -> str | None:
+    """A batch's DESTINATIONGODOWNNAME: the job worker's godown, where Material Out sends the
+    stock and Material In brings it back from (test company, 2026-11-06)."""
+    name = text_of(batch, "DESTINATIONGODOWNNAME") if batch is not None else None
+    return None if name in (None, "", NOT_APPLICABLE) else name
+
+
+def _with_transfers(
+    lines: list[CanonicalInventoryLine], destination: str | None
+) -> list[CanonicalInventoryLine]:
+    """A transfer between godowns (a stock journal with a DESTINATIONGODOWN): an item that
+    leaves a godown and arrives at the destination. Its outgoing lines get the destination
+    as their counterpart, and its incoming line at the destination the godown it left (when
+    it left one only). Other lines keep theirs: a manufacturing journal's destination is
+    where the product goes, not where the components consumed went."""
+    if destination in (None, "", NOT_APPLICABLE):
+        return lines
+    arriving = {x.item_name for x in lines if x.quantity > 0 and x.godown_name == destination}
+    left: dict[str, set[str | None]] = {}
+    for x in lines:
+        if x.quantity < 0 and x.item_name in arriving:
+            left.setdefault(x.item_name, set()).add(x.godown_name)
+    found = []
+    for x in lines:
+        if x.item_name not in left or x.counterpart_godown_name:
+            found.append(x)
+        elif x.quantity < 0:
+            found.append(replace(x, counterpart_godown_name=destination))
+        elif x.godown_name == destination and len(left[x.item_name]) == 1:
+            (origin,) = left[x.item_name]
+            found.append(replace(x, counterpart_godown_name=origin))
+        else:
+            found.append(x)
+    return found
 
 
 def _holding(godown: ET.Element) -> str:
@@ -761,6 +822,7 @@ def _inventory_lines(entry: ET.Element, inward: bool | None) -> list[CanonicalIn
                 amount=amount if text_of(batch, "AMOUNT") else line.amount * signed / line.quantity,
                 godown_name=text_of(batch, "GODOWNNAME"),
                 batch_name=text_of(batch, "BATCHNAME"),
+                counterpart_godown_name=_batch_counterpart(batch),
                 tracked_quantity=signed if _tracking(batch) else Decimal(0),
             )
         )
@@ -818,7 +880,10 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
             )
         ),
         inventory=tuple(
-            line for e, inward in inventory_entries for line in _inventory_lines(e, inward)
+            _with_transfers(
+                [line for e, inward in inventory_entries for line in _inventory_lines(e, inward)],
+                text_of(element, "DESTINATIONGODOWN"),
+            )
         ),
         reference_number=text_of(element, "REFERENCE"),
         reference_date=parser.tally_date(text_of(element, "REFERENCEDATE")),
@@ -854,6 +919,7 @@ _INVENTORY_ENTRY = (
     "STOCKITEMNAME", "ACTUALQTY", "BILLEDQTY", "RATE", "AMOUNT", "ISDEEMEDPOSITIVE",
     "DISCOUNT", "BATCHALLOCATIONS.LIST/GODOWNNAME", "BATCHALLOCATIONS.LIST/BATCHNAME",
     "BATCHALLOCATIONS.LIST/TRACKINGNUMBER", "BATCHALLOCATIONS.LIST/ACTUALQTY",
+    "BATCHALLOCATIONS.LIST/DESTINATIONGODOWNNAME",
     *(f"ACCOUNTINGALLOCATIONS.LIST/{path}" for path in _LEDGER_ENTRY),
 )  # fmt: skip
 # Paths (below the object; list levels included) each object type's mapping reads.
@@ -879,7 +945,12 @@ USED_FIELDS: dict[str, frozenset[str]] = {
     "unit": frozenset((*_IDENTITY, "ORIGINALNAME", "DECIMALPLACES")),
     "stock_group": frozenset(_MASTER),
     "godown": frozenset((*_MASTER, "ISEXTERNAL", "ISINTERNAL")),
-    "stock_item": frozenset((*_MASTER, "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE")),
+    "stock_item": frozenset((
+        *_MASTER, "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE",
+        "BATCHALLOCATIONS.LIST/GODOWNNAME", "BATCHALLOCATIONS.LIST/BATCHNAME",
+        "BATCHALLOCATIONS.LIST/OPENINGBALANCE", "BATCHALLOCATIONS.LIST/OPENINGRATE",
+        "BATCHALLOCATIONS.LIST/OPENINGVALUE",
+    )),
     "cost_category": frozenset(_IDENTITY),
     "ledger_opening_bills": frozenset((
         *_IDENTITY, "BILLALLOCATIONS.LIST/NAME", "BILLALLOCATIONS.LIST/OPENINGBALANCE",
@@ -890,6 +961,7 @@ USED_FIELDS: dict[str, frozenset[str]] = {
         *_IDENTITY, "DATE", "EFFECTIVEDATE", "UPDATEDDATETIME", "VOUCHERTYPENAME",
         "VOUCHERNUMBER", "REFERENCE", "REFERENCEDATE",
         "PARTYLEDGERNAME", "NARRATION", "ISCANCELLED", "ISOPTIONAL", "ISPOSTDATED",
+        "DESTINATIONGODOWN",
         *(f"{lst}/{path}" for lst in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST")
           for path in _LEDGER_ENTRY),
         *(f"{lst}/{path}" for lst in (

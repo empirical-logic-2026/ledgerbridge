@@ -951,6 +951,24 @@ PROBLEMS: tuple[Problem, ...] = (
         ".\\dev.ps1 report -Details -Env {env}",
     ),
     _p(
+        "LB-VAL-042",
+        "item_openings_differ",
+        "Item openings by godown don't add up",
+        ERROR,
+        "Some stock items' openings by godown and batch don't add up to the item's opening "
+        "quantity or value. The source keeps them equal, so part of an opening is missing "
+        "here.",
+        (
+            "The item was stored before its openings by godown were fetched, or changed in "
+            "the source since (sync again).",
+            "A godown or batch allocation the mapping didn't read.",
+        ),
+        ("The report's -Details lists the items by id (no names or amounts).",),
+        ("Sync again; if they still differ, sync full.",),
+        ".\\dev.ps1 sync -Env {env}",
+        _FAILED,
+    ),
+    _p(
         "LB-VAL-036",
         "voucher_type_names_differ",
         "Voucher type names written differently",
