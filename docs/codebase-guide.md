@@ -455,6 +455,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-09 | 0.55 | Data completion part 6: settings and order (`VoucherNumberSeries`, migration 0035; `core/statements.py` orders primary groups by sort position); `tests/test_settings_and_order.py`. |
 | 2026-11-09 | 0.54 | Data completion part 5: GST details (`TaxUnit`, `LineGstRate`, migration 0034, `envelopes.TAX_UNITS`), the Transactions page's hidden GST columns and the explorer's `gst` dataset (`api/v1/dataset_specs.py`); `tests/test_gst.py`. |
 | 2026-11-09 | 0.53 | Data completion part 4: orders (`VoucherOrder`, migration 0033, `core/transform.py` `link_orders`), the Transactions page's Order Number (`core/transactions.py` `_orders`); `tests/test_orders.py`. |
 | 2026-11-09 | 0.52 | Data completion part 3: item openings by godown and batch (`ItemOpeningBatch`, migration 0032) and the other godown of a move (`inventory_lines.counterpart_godown_id`); `tests/test_stock_by_godown.py`. |

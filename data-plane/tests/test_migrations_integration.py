@@ -58,11 +58,11 @@ def test_expected_table_counts() -> None:
     views aren't tables. `currency_sources` added in migration 0020 (ADR-046), `cost_categories`
     in 0026, the voucher history tables in 0028, `opening_bills` in 0031,
     `item_opening_batches` in 0032, `voucher_orders` in 0033, `line_gst_rates` and
-    `tax_units` in 0034."""
+    `tax_units` in 0034, `voucher_number_series` in 0035."""
     command.upgrade(_config(), "head")
     tables = _tables()
     count = {schema: sum(t.startswith(f"{schema}.") for t in tables) for schema in ALL}
-    assert count == {SOURCE: 1, ACCOUNTING: 38, REPORTING: 1, SYSTEM: 26}  # 25 + alembic_version
+    assert count == {SOURCE: 1, ACCOUNTING: 39, REPORTING: 1, SYSTEM: 26}  # 25 + alembic_version
     assert f"{ACCOUNTING}.bank_statement_lines" not in tables  # phase 2
 
 

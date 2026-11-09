@@ -896,6 +896,9 @@ class Transformer:
                     "base_currency_code": company.base_currency_code,
                     "fy_start_month": company.fy_start_month,
                     "books_from": company.books_from,
+                    "is_integrated": company.is_integrated,
+                    "is_fifo": company.is_fifo,
+                    "audited_upto": company.audited_upto,
                 },
             )
         except UnfitValueError as exc:
@@ -1114,6 +1117,7 @@ class Transformer:
             "affects_gross_profit": g.affects_gross_profit,
             "predefined_role": g.predefined_role,
             "standard_account_id": self._standard_id(info.standard_code if info else None),
+            "sort_position": g.sort_position,
         }
 
     def _groups(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
@@ -1187,6 +1191,8 @@ class Transformer:
                     "is_cost_centre_applicable": ledger.is_cost_centre_applicable,
                     "gstin": ledger.gstin,
                     "tax_type": ledger.tax_type,
+                    "sort_position": ledger.sort_position,
+                    "affects_stock": ledger.affects_stock,
                 },
                 result,
             )
@@ -1263,7 +1269,7 @@ class Transformer:
         }
 
     def _voucher_types(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
-        return self._simple(
+        written = self._simple(
             items,
             CanonicalVoucherType,
             A.VoucherType,
@@ -1271,6 +1277,45 @@ class Transformer:
             result,
             "voucher_type",
         )
+        self._number_series(written)
+        return written
+
+    def _number_series(self, written: list[_Raw]) -> None:
+        """Each written voucher type's numbering series, replacing the ones stored."""
+        records = [r for i in written for r in i.records if isinstance(r, CanonicalVoucherType)]
+        if not records:
+            return
+        ids = dict(
+            self.session.execute(
+                select(A.VoucherType.source_key, A.VoucherType.id).where(
+                    A.VoucherType.connection_id == self.connection_id,
+                    A.VoucherType.entity_id == self.entity_id,
+                    A.VoucherType.source_key.in_([r.source_key for r in records]),
+                )
+            ).all()
+        )
+        now = utcnow()
+        rows = [
+            {
+                "entity_id": self.entity_id, "voucher_type_id": ids[record.source_key],
+                "name": series.name[:255], "numbering_method": series.numbering_method,
+                "numbering_sub_method": series.numbering_sub_method,
+                "beginning_number": series.beginning_number, "width": series.width,
+                "prefill_zero": series.prefill_zero,
+                "prevent_duplicates": series.prevent_duplicates,
+                "created_at": now, "updated_at": now,
+            }
+            for record in records
+            if record.source_key in ids
+            for series in record.number_series
+        ]  # fmt: skip
+        self.session.execute(
+            delete(A.VoucherNumberSeries).where(
+                A.VoucherNumberSeries.voucher_type_id.in_(list(ids.values()))
+            )
+        )
+        if rows:
+            self.session.execute(insert(A.VoucherNumberSeries), rows)
 
     def _units(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:
         return self._simple(
@@ -1870,6 +1915,9 @@ class Transformer:
                 "irn_date": v.irn_date,
                 "eway_bill_number": v.eway_bill_number,
                 "eway_bill_date": v.eway_bill_date,
+                "number_series": v.number_series,
+                "active_to": v.active_to,
+                "has_cash_flow": v.has_cash_flow,
             },
         )
         header = _with_extra({**self._src(item, v), **header}, v.extra, {**kept, **unfit})

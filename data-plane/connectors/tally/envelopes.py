@@ -41,7 +41,7 @@ COMPANIES = CollectionSpec(
     "company",
     (
         "NAME", "GUID", "ALTERID", "BOOKSFROM", "STARTINGFROM", "ENDINGAT", "ISCOSTCENTRESON",
-        "ISINTEGRATED",
+        "ISINTEGRATED", "ISFIFOAPPLIED", "AUDITEDUPTO",
         "BASICCOMPANYFORMALNAME", "STATENAME", "COUNTRYNAME", "GSTREGISTRATIONNUMBER",
         "INCOMETAXNUMBER", "CURRENCYNAME",
     ),
@@ -51,7 +51,7 @@ GROUPS = CollectionSpec(
     "Group",
     "GROUP",
     "group",
-    (*_KEYS, "PARENT", "ISREVENUE", "ISDEEMEDPOSITIVE", "AFFECTSGROSSPROFIT"),
+    (*_KEYS, "PARENT", "ISREVENUE", "ISDEEMEDPOSITIVE", "AFFECTSGROSSPROFIT", "SORTPOSITION"),
 )
 # Currency masters (FX-001, FX-003): a handful per company, read whole (`native`) so their
 # rate lists (DAILYSTDRATES.LIST, DAILYBUYINGRATES.LIST, DAILYSELLINGRATES.LIST, exported
@@ -69,6 +69,8 @@ LEDGERS = CollectionSpec(
         "LEDGERMOBILE", "BILLCREDITPERIOD", "CREDITLIMIT",
         # The party's GST registration type, by the date it applies from (part 5).
         "LEDGSTREGDETAILS.GSTREGISTRATIONTYPE", "LEDGSTREGDETAILS.APPLICABLEFROM",
+        # Where Tally lists it, and whether it affects stock (part 6).
+        "SORTPOSITION", "AFFECTSSTOCK",
     ),
 )  # fmt: skip
 VOUCHER_TYPES = CollectionSpec(
@@ -76,8 +78,15 @@ VOUCHER_TYPES = CollectionSpec(
     "VoucherType",
     "VOUCHERTYPE",
     "voucher_type",
-    (*_KEYS, "PARENT", "AFFECTSSTOCK"),
-)
+    (
+        *_KEYS, "PARENT", "AFFECTSSTOCK",
+        # Its numbering series (part 6).
+        "VOUCHERNUMBERSERIES.NAME", "VOUCHERNUMBERSERIES.NUMBERINGMETHOD",
+        "VOUCHERNUMBERSERIES.NUMBERINGSUBMETHOD", "VOUCHERNUMBERSERIES.BEGINNINGNUMBER",
+        "VOUCHERNUMBERSERIES.WIDTHOFNUMBER", "VOUCHERNUMBERSERIES.PREFILLZERO",
+        "VOUCHERNUMBERSERIES.PREVENTDUPLICATES",
+    ),
+)  # fmt: skip
 UNITS = CollectionSpec(
     "LBUnits", "Unit", "UNIT", "unit", (*_KEYS, "ORIGINALNAME", "DECIMALPLACES", "ISSIMPLEUNIT")
 )
@@ -182,6 +191,8 @@ VOUCHERS = CollectionSpec(
         # bill (its number and date only: no consignor or consignee details), and the rate
         # per duty head on ledger and item lines.
         "GSTREGISTRATION", "PLACEOFSUPPLY", "IRN", "IRNACKNO", "IRNACKDATE",
+        # Its numbering series, a reversing journal's last day, cash flow (part 6).
+        "VOUCHERNUMBERSERIES", "ACTIVETO", "HASCASHFLOW",
         "EWayBillDetails.BillNumber", "EWayBillDetails.BillDate",
         "AllLedgerEntries.RateDetails.GSTRateDutyHead", "AllLedgerEntries.RateDetails.GSTRate",
         "AllInventoryEntries.RateDetails.GSTRateDutyHead",

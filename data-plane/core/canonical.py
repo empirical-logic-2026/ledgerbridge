@@ -38,6 +38,11 @@ class CanonicalCompany:
     gstin: str | None = None
     pan: str | None = None
     base_currency_code: str = "INR"
+    # Settings (None: not read): accounts integrated with inventory, stock valued FIFO, and
+    # the books audited up to a date.
+    is_integrated: bool | None = None
+    is_fifo: bool | None = None
+    audited_upto: date | None = None
     extra: Mapping[str, Any] | None = _extra()
 
 
@@ -59,6 +64,8 @@ class CanonicalGroup:
     # Other names the source may refer to it by (e.g. the reserved name of a Tally group the
     # user renamed): references resolve to it by these if no other group has them (ADR-027).
     aliases: tuple[str, ...] = ()
+    # Where the source lists it among its siblings (Tally SORTPOSITION; None: not read).
+    sort_position: int | None = None
     extra: Mapping[str, Any] | None = _extra()
 
 
@@ -102,6 +109,8 @@ class CanonicalLedger:
     # Assumptions the connector made for this record; reported in the sync output.
     warnings: tuple[str, ...] = ()
     aliases: tuple[str, ...] = ()  # other names references may use (ADR-027)
+    sort_position: int | None = None  # where the source lists it (Tally SORTPOSITION)
+    affects_stock: bool | None = None  # Tally AFFECTSSTOCK (None: not read)
     extra: Mapping[str, Any] | None = _extra()
 
 
@@ -145,7 +154,22 @@ class CanonicalVoucherType:
     standard_type: str | None = None
     # Whether its inventory entries move stock (orders don't); None: inherited.
     moves_stock: bool | None = True
+    # Its voucher numbering series, all of them (replacing the ones stored).
+    number_series: tuple["CanonicalNumberSeries", ...] = ()
     extra: Mapping[str, Any] | None = _extra()
+
+
+@dataclass(frozen=True)
+class CanonicalNumberSeries:
+    """A voucher type's numbering series (Tally: VOUCHERNUMBERSERIES.LIST), e.g. "Default"."""
+
+    name: str
+    numbering_method: str | None = None  # Automatic, Manual, ...
+    numbering_sub_method: str | None = None  # Auto Retain, Auto Renumber, ...
+    beginning_number: int | None = None
+    width: int | None = None
+    prefill_zero: bool = False
+    prevent_duplicates: bool = False
 
 
 @dataclass(frozen=True)
@@ -379,6 +403,11 @@ class CanonicalVoucher:
     irn_date: date | None = None
     eway_bill_number: str | None = None
     eway_bill_date: date | None = None
+    # The numbering series it is numbered in, the last day a reversing journal applies, and
+    # whether it affects cash flow (Tally HASCASHFLOW).
+    number_series: str | None = None
+    active_to: date | None = None
+    has_cash_flow: bool | None = None
     extra: Mapping[str, Any] | None = _extra()
 
 

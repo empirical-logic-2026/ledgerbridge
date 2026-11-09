@@ -40,7 +40,9 @@ ADR-040, decision 2026-10-22):
   period's profit (Current Period); on the liabilities side for a profit, the assets side
   for a loss.
 
-Lines are one per primary group (the group's current name), plus the source's own lines
+Lines are one per primary group (the group's current name; in the source's order, by its
+sort position, then by nature: only the order, lines are compared by label), plus the
+source's own lines
 (Cost of Sales with Opening Stock, purchases, Closing Stock and then the other expenses
 that affect gross profit, e.g. Direct Expenses; Profit & Loss A/c; Unadjusted Forex
 Gain/Loss). Direct Incomes stay a line of their own (recorded on the test company,
@@ -114,6 +116,7 @@ class _Group:
     nature: str | None
     affects_gross_profit: bool
     standard_code: str | None
+    sort_position: int | None = None  # where the source lists it (None: not read)
 
 
 @dataclass
@@ -146,24 +149,25 @@ def _books(
 ) -> tuple[list[_Ledger], dict[int, _Group]]:
     """Every ledger's balance as of the date (opening + effective lines), with the primary
     group it rolls up to; and the primary groups."""
+    rows = session.execute(
+        select(
+            A.AccountGroup.id,
+            A.AccountGroup.parent_id,
+            A.AccountGroup.name,
+            A.AccountGroup.nature,
+            A.AccountGroup.affects_gross_profit,
+            A.StandardAccount.code,
+            A.AccountGroup.source_key,
+            A.AccountGroup.sort_position,
+        )
+        .outerjoin(A.StandardAccount, A.StandardAccount.id == A.AccountGroup.standard_account_id)
+        .where(A.AccountGroup.entity_id == entity_id, A.AccountGroup.is_deleted.is_(False))
+    ).all()
     groups = {
         gid: (parent, name, nature, gross, code, key)
-        for gid, parent, name, nature, gross, code, key in session.execute(
-            select(
-                A.AccountGroup.id,
-                A.AccountGroup.parent_id,
-                A.AccountGroup.name,
-                A.AccountGroup.nature,
-                A.AccountGroup.affects_gross_profit,
-                A.StandardAccount.code,
-                A.AccountGroup.source_key,
-            )
-            .outerjoin(
-                A.StandardAccount, A.StandardAccount.id == A.AccountGroup.standard_account_id
-            )
-            .where(A.AccountGroup.entity_id == entity_id, A.AccountGroup.is_deleted.is_(False))
-        )
+        for gid, parent, name, nature, gross, code, key, _ in rows
     }
+    positions = {gid: position for gid, *_, position in rows}
 
     def top(gid: int) -> int:
         seen = set()
@@ -218,7 +222,7 @@ def _books(
     ]
     tops = {ledger.top for ledger in ledgers}
     primary = {
-        gid: _Group(gid, name, nature, bool(gross), code)
+        gid: _Group(gid, name, nature, bool(gross), code, positions.get(gid))
         for gid, (_, name, nature, gross, code, _key) in groups.items()
         if gid in tops
     }
@@ -325,8 +329,20 @@ class Figures:
         return sum(self.forex(), ZERO)
 
     def ordered_groups(self, natures: tuple[str, ...]) -> list[_Group]:
+        """The primary groups of those natures in the source's order: by its sort position
+        (Tally's Trial Balance lists them so), then by nature and when they were stored.
+        Groups stored before positions were read keep the nature order. Only the order:
+        every line is compared by its label, never its place."""
         found = [g for g in self.groups.values() if g.nature in natures]
-        return sorted(found, key=lambda g: (NATURE_ORDER.get(g.nature or "", 9), g.id))
+        return sorted(found, key=_group_order)
+
+
+UNPOSITIONED = 1_000_000_000  # after every sort position the source gives
+
+
+def _group_order(group: _Group) -> tuple[int, int, int]:
+    position = group.sort_position if group.sort_position is not None else UNPOSITIONED
+    return (position, NATURE_ORDER.get(group.nature or "", 9), group.id)
 
 
 def figures(

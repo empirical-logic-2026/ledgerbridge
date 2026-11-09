@@ -158,6 +158,8 @@ erDiagram
 | books_from | DATE NULL | Company inception / books start (IMP-001). |
 | is_active | BOOLEAN | |
 | is_on_hold | BOOLEAN | On hold (SYN-007): sync, validation and statements skip it unless it is named, the health report lists it outside the overall verdict, dashboards hide it. Set with `./dev.ps1 on-hold` (audited; migration 0023). |
+| is_integrated, is_fifo | BOOLEAN NULL | The source's settings: accounts integrated with inventory (Tally `ISINTEGRATED`), stock valued FIFO (`ISFIFOAPPLIED`). NULL: not read. Migration `0035`. |
+| audited_upto | DATE NULL | The books audited up to this date (Tally `AUDITEDUPTO`). Migration `0035`. |
 | extra | JSON NULL | The company record's fields with no column (ADR-025). |
 
 #### `ledgerbridge_accounting.entity_sources`
@@ -235,6 +237,7 @@ Source group hierarchy (Tally groups), kept as-is per entity.
 | affects_gross_profit | BOOLEAN | Tally flag for P&L layout. |
 | predefined_role | VARCHAR(64) NULL | **Migration 0021 (RPT-013).** Which of the source's own predefined groups this is, renamed or not, in our vocabulary (Tally: RESERVEDNAME in lower case, words joined by `_`, e.g. `sales_accounts`); NULL for groups the user created. Filled by the transform: after migration 0021, `transform rebuild`. |
 | standard_account_id | BIGINT UNSIGNED NULL | Default mapping for ledgers under this group. |
+| sort_position | INT NULL | Where the source lists it among its siblings (Tally `SORTPOSITION`; its predefined primary groups 10 to 280, groups the user made 500). The statements order primary groups by it, then by nature, as the source's Trial Balance does; lines are compared by label, so the order never changes what matches. Migration `0035`. |
 
 #### `ledgerbridge_accounting.ledgers` [SRC]
 
@@ -258,6 +261,8 @@ Source group hierarchy (Tally groups), kept as-is per entity.
 | opening_balance_fc | DECIMAL(20,4) NULL | The opening's foreign part. |
 | is_bill_wise | BOOLEAN | |
 | is_cost_centre_applicable | BOOLEAN | |
+| sort_position | INT NULL | Where the source lists it (Tally `SORTPOSITION`; 1000 for every ledger by default: the source lists them by name). Migration `0035`. |
+| affects_stock | BOOLEAN NULL | Tally `AFFECTSSTOCK` (a purchase or sales ledger used with inventory). NULL: not read. Migration `0035`. |
 | gstin | VARCHAR(32) NULL | |
 | tax_type | ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other') NULL | Set for tax ledgers. Voucher lines posted to them become `tax_lines` (migration `0004`, M3). |
 
@@ -287,6 +292,7 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 | Table | Key columns |
 | --- | --- |
 | `ledgerbridge_accounting.voucher_types` | `entity_id, name, moves_stock BOOLEAN (false for orders and memorandum: their inventory lines don't move stock; migration 0012), standard_type VARCHAR(64) NULL (the source's predefined type it derives from, e.g. Tally's "Sales Order"; from a fixed list of the source's names only), base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory` |
+| `ledgerbridge_accounting.voucher_number_series` | `entity_id, voucher_type_id FK (ON DELETE CASCADE, indexed), name, numbering_method NULL, numbering_sub_method NULL, beginning_number NULL, width NULL, prefill_zero, prevent_duplicates` (a voucher type's numbering series, Tally `VOUCHERNUMBERSERIES.LIST`; replaced as a whole with each read of the type; migration 0035) |
 | `ledgerbridge_accounting.item_groups` | `entity_id, parent_id, name` |
 | `ledgerbridge_accounting.items` | `entity_id, item_group_id, name, code VARCHAR(255), unit_id, hsn_code VARCHAR(32), gst_rate, opening_qty, opening_value, gst_taxability VARCHAR(32) NULL, gst_classification VARCHAR(255) NULL` (GST from migration 0034: the HSN/SAC code, the integrated rate (IGST, else CGST + SGST), taxability and HSN classification as they apply from the latest date) |
 | `ledgerbridge_accounting.tax_units` | `entity_id, name, gstin VARCHAR(32) NULL, state VARCHAR(64) NULL, registration_type VARCHAR(32) NULL, registered_from DATE NULL, used_for VARCHAR(32) NULL, is_primary BOOLEAN` (the company's tax registrations, Tally: Tax Unit; migration 0034) |
@@ -341,6 +347,9 @@ User-defined reporting dimensions beyond the built-in ones (entity, branch, cost
 | irn, irn_ack_number | VARCHAR(128) / VARCHAR(64) NULL | The e-invoice's reference number and acknowledgement number (`IRN`, `IRNACKNO`). Migration `0034`. |
 | irn_date | DATE NULL | The e-invoice's acknowledgement date (`IRNACKDATE`). Migration `0034`. |
 | eway_bill_number, eway_bill_date | VARCHAR(64) / DATE NULL | The first e-way bill (`EWAYBILLDETAILS.LIST/BILLNUMBER`, `BILLDATE`); the e-way bill's consignor and consignee details are not fetched. Migration `0034`. |
+| number_series | VARCHAR(255) NULL | The numbering series it is numbered in (`VOUCHERNUMBERSERIES`, e.g. Default). Migration `0035`. |
+| active_to | DATE NULL | A reversing journal's last day (`ACTIVETO`). Migration `0035`. |
+| has_cash_flow | BOOLEAN NULL | Whether it affects cash flow (`HASCASHFLOW`). NULL: not read. Migration `0035`. |
 
 Indexes: `(entity_id, voucher_date)`, `(entity_id, voucher_type_id, voucher_date)`, `(party_id, voucher_date)`.
 
@@ -763,6 +772,7 @@ All amounts: canonical = −(Tally amount). Masters are referred to by name with
 | Stock item openings | The item's `BATCHALLOCATIONS.LIST` (`GODOWNNAME`, `BATCHNAME`, `OPENINGBALANCE`, `OPENINGRATE`, `OPENINGVALUE`) → `item_opening_batches`; an allocation with no quantity and no value (Tally lists one for an item without an opening) is skipped. |
 | Orders | A batch allocation's `ORDERNO` (Tally writes *Not Applicable* when none) and `ORDERDUEDATE` (a date such as "31-Oct-26", or days after the voucher's date) → `inventory_lines.order_number`, `order_due_date`, on the order and on the invoices against it; the voucher's `INVOICEORDERLIST.LIST` and `BASICORDERREF` → `voucher_orders`. |
 | GST | Voucher: `GSTREGISTRATION`, `PLACEOFSUPPLY`, `IRN`, `IRNACKNO`, `IRNACKDATE`, `EWAYBILLDETAILS.LIST` (`BILLNUMBER`, `BILLDATE`) → `vouchers`; ledger and inventory lines' `RATEDETAILS.LIST` → `line_gst_rates`. Stock item: the latest `GSTDETAILS.LIST` (`HSNCODE`, `TAXABILITY`, `STATEWISEDETAILS.LIST/RATEDETAILS.LIST`: the state *Any*, else the first) and `HSNDETAILS.LIST` (`HSNCODE`, `HSNCLASSIFICATIONNAME`) → `items`. Ledger: the latest `LEDGSTREGDETAILS.LIST/GSTREGISTRATIONTYPE` → `parties`. Tax unit (collection type `TaxUnit`): `GSTREGNUMBER`, `STATENAME`, `USEDFOR`, `ISPRIMARYUNIT`, the latest `GSTREGISTRATIONDETAILS.LIST` (`REGISTRATIONTYPE`, `FROMDATE`, `STATE`) → `tax_units`. |
+| Settings and order | Company: `ISINTEGRATED`, `ISFIFOAPPLIED`, `AUDITEDUPTO` → `entities`. Group and ledger: `SORTPOSITION` → `sort_position`; ledger `AFFECTSSTOCK` → `affects_stock`. Voucher type: `VOUCHERNUMBERSERIES.LIST` → `voucher_number_series`. Voucher: `VOUCHERNUMBERSERIES`, `ACTIVETO`, `HASCASHFLOW` → `vouchers`. |
 | Tax lines | Every voucher line posted to a ledger with a `tax_type` → `tax_lines` (`tax_amount` = the line amount). |
 
 **Standard-account mapping** (approved for M3), by Tally reserved group; user sub-groups and ledgers inherit from the nearest ancestor that has one:
@@ -881,6 +891,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
 | 2026-11-06 | 0.45 | `stock_values.scope` `item`: each stock item's own value at the statement dates (migration 0029; the Stock page). |
 | 2026-11-05 | 0.44 | RPT-017 / ADR-051: append-only observed voucher versions, posting snapshots, ambiguity-aware comparison rows and deletion detection timestamps (migration 0028); nullable `vouchers.source_altered_at` stores Tally `UPDATEDDATETIME` without timezone conversion (migration 0027). |
+| 2026-11-09 | 0.51 | Settings and order (migration 0035): `sort_position` on groups and ledgers (the statements' group order), `ledgers.affects_stock`, `entities.is_integrated`, `is_fifo`, `audited_upto`, `vouchers.number_series`, `active_to`, `has_cash_flow`, `voucher_number_series`. |
 | 2026-11-09 | 0.50 | GST details (migration 0034): `vouchers` GST columns, `parties.gst_registration_type`, `items.gst_taxability`, `gst_classification`, `line_gst_rates`, `tax_units`. |
 | 2026-11-09 | 0.49 | `voucher_orders`, `inventory_lines.order_number`, `order_due_date` (migration 0033). |
 | 2026-11-09 | 0.48 | `item_opening_batches`, `inventory_lines.counterpart_godown_id` (migration 0032). |

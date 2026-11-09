@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-65 tables, 764 columns.
+66 tables, 785 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -13,7 +13,7 @@ Every database, table and column of the client-hosted data plane (MySQL 8), gene
 | Database | What it holds | Tables |
 | --- | --- | --- |
 | `ledgerbridge_source` | Raw layer: every record exactly as the source sent it (ADR-005). Written only by connectors through the sync; the transform reads it. | 1 |
-| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 38 |
+| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 39 |
 | `ledgerbridge_reporting` | Semantic layer for reports and AI (M6): views and aggregate tables. Empty until M6; the only database the AI user can read (AI-003). | 1 |
 | `ledgerbridge_system` | Running the platform: connections, sync runs and progress, validation, alerts, users, roles, audit and AI logs, configuration. | 25 |
 
@@ -127,6 +127,9 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `books_from` | DATE | yes |  | Company inception / books start (IMP-001). |
 | `is_active` | BOOL | no |  | Whether it is in use. |
 | `is_on_hold` | BOOL | no |  | On hold (SYN-007): sync, validation and statements skip it unless it is named, the health report lists it outside the overall verdict, dashboards hide it. Set with `./dev.ps1 on-hold` (audited; migration 0023). |
+| `is_integrated` | BOOL | yes |  | Whether integrated. |
+| `is_fifo` | BOOL | yes |  | Whether fifo. |
+| `audited_upto` | DATE | yes |  | The books audited up to this date (Tally `AUDITEDUPTO`). Migration `0035`. |
 | `extra` | JSON | yes |  | ADR-025 |
 | `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
 | `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
@@ -135,7 +138,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `base_currency_code` → `currencies.code`.
 
-**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `item_opening_batches`, `items`, `ledgers`, `line_gst_rates`, `opening_bills`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `tax_units`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_orders`, `voucher_types`, `voucher_versions`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `item_opening_batches`, `items`, `ledgers`, `line_gst_rates`, `opening_bills`, `parties`, `source_fields`, `statement_lines`, `stock_values`, `tax_units`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_number_series`, `voucher_orders`, `voucher_types`, `voucher_versions`, `vouchers`.
 
 ### `ledgerbridge_accounting.entity_sources`
 
@@ -321,6 +324,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `affects_gross_profit` | BOOL | no |  | Tally flag for P&L layout. |
 | `predefined_role` | VARCHAR(64) | yes |  | **Migration 0021 (RPT-013).** Which of the source's own predefined groups this is, renamed or not, in our vocabulary (Tally: RESERVEDNAME in lower case, words joined by `_`, e.g. `sales_accounts`); NULL for groups the user created. Filled by the transform: after migration 0021, `transform rebuild`. |
 | `standard_account_id` | BIGINT UNSIGNED | yes | FK | Default mapping for ledgers under this group. |
+| `sort_position` | INTEGER | yes |  | Where the source lists it among its siblings (Tally `SORTPOSITION`; its predefined primary groups 10 to 280, groups the user made 500). The statements order primary groups by it, then by nature, as the source's Trial Balance does; lines are compared by label, so the order never changes what matches. Migration `0035`. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
 | `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
 | `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
@@ -364,6 +368,8 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `opening_balance_fc` | NUMERIC(20, 4) | yes |  | The opening's foreign part. |
 | `is_bill_wise` | BOOL | no |  | Whether bill wise. |
 | `is_cost_centre_applicable` | BOOL | no |  | Whether cost centre applicable. |
+| `sort_position` | INTEGER | yes |  | Where the source lists it (Tally `SORTPOSITION`; 1000 for every ledger by default: the source lists them by name). Migration `0035`. |
+| `affects_stock` | BOOL | yes |  | Tally `AFFECTSSTOCK` (a purchase or sales ledger used with inventory). NULL: not read. Migration `0035`. |
 | `gstin` | VARCHAR(32) | yes |  | GST registration number. |
 | `tax_type` | ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other') | yes |  | cgst, sgst, igst, cess, tds, tcs, vat for tax ledgers. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
@@ -694,7 +700,32 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `vouchers`.
+**Referred to by:** `voucher_number_series`, `vouchers`.
+
+### `ledgerbridge_accounting.voucher_number_series`
+
+**Purpose:** A voucher type's numbering series (e.g. Default, a branch's own): method, beginning number, width.
+
+**Filled by:** Transform, with the voucher type; replaced as a whole per type.
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `voucher_type_id` | BIGINT UNSIGNED | no | FK | Refers to `voucher_types`. |
+| `name` | VARCHAR(255) | no |  | Name as the source keeps it. |
+| `numbering_method` | VARCHAR(64) | yes |  | Numbering method. |
+| `numbering_sub_method` | VARCHAR(64) | yes |  | Numbering sub method. |
+| `beginning_number` | INTEGER | yes |  | Beginning number. |
+| `width` | INTEGER | yes |  | Width. |
+| `prefill_zero` | BOOL | no |  | Prefill zero. |
+| `prevent_duplicates` | BOOL | no |  | Prevent duplicates. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** index `ix_ledgerbridge_accounting_voucher_number_series_voucher_type_id` (voucher_type_id).
+
+**Refers to:** `entity_id` → `entities.id`; `voucher_type_id` → `voucher_types.id`, on delete cascade.
 
 ### `ledgerbridge_accounting.dimensions`
 
@@ -775,6 +806,9 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `irn_date` | DATE | yes |  | The e-invoice's acknowledgement date (`IRNACKDATE`). Migration `0034`. |
 | `eway_bill_number` | VARCHAR(64) | yes |  | Eway bill number. |
 | `eway_bill_date` | DATE | yes |  | Eway bill date. |
+| `number_series` | VARCHAR(255) | yes |  | The numbering series it is numbered in (`VOUCHERNUMBERSERIES`, e.g. Default). Migration `0035`. |
+| `active_to` | DATE | yes |  | A reversing journal's last day (`ACTIVETO`). Migration `0035`. |
+| `has_cash_flow` | BOOL | yes |  | Whether it affects cash flow (`HASCASHFLOW`). NULL: not read. Migration `0035`. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
 | `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
 | `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |

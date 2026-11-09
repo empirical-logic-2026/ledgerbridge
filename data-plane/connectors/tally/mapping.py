@@ -43,6 +43,7 @@ from core.canonical import (
     CanonicalItemGroup,
     CanonicalLedger,
     CanonicalLine,
+    CanonicalNumberSeries,
     CanonicalOpeningBatch,
     CanonicalOpeningBill,
     CanonicalOpeningBills,
@@ -294,7 +295,22 @@ def company(element: ET.Element, key: str) -> CanonicalCompany:
         state_code=_state_code(text_of(element, "STATENAME")) or (gstin[:2] if gstin else None),
         gstin=gstin,
         pan=text_of(element, "INCOMETAXNUMBER"),
+        is_integrated=_optional_flag(element, "ISINTEGRATED"),
+        is_fifo=_optional_flag(element, "ISFIFOAPPLIED"),
+        audited_upto=parser.tally_date(text_of(element, "AUDITEDUPTO")),
     )
+
+
+def _optional_flag(element: ET.Element, tag: str) -> bool | None:
+    """A Yes/No field, None when the source didn't send it."""
+    text = text_of(element, tag)
+    return None if text is None else text == "Yes"
+
+
+def _whole(element: ET.Element | None, tag: str) -> int | None:
+    """A whole number field (" 500"), None when empty or not a number."""
+    text = text_of(element, tag) if element is not None else None
+    return int(text) if text and text.lstrip("-").isdigit() else None
 
 
 def group(element: ET.Element, key: str) -> CanonicalGroup:
@@ -324,6 +340,7 @@ def group(element: ET.Element, key: str) -> CanonicalGroup:
         party_type=PARTY_TYPE_BY_GROUP.get(reserved or ""),
         # A reserved group the user renamed is still known by its reserved name.
         aliases=_aliases(element, name, reserved),
+        sort_position=_whole(element, "SORTPOSITION"),
     )
 
 
@@ -398,6 +415,8 @@ def ledger(element: ET.Element, key: str, entity_key: str) -> list[CanonicalReco
         ),
         warnings=warnings,
         aliases=_aliases(element, name),
+        sort_position=_whole(element, "SORTPOSITION"),
+        affects_stock=_optional_flag(element, "AFFECTSSTOCK"),
     )
     return [_primary_group(entity_key), record] if parent == PRIMARY else [record]
 
@@ -471,6 +490,7 @@ def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
     standard = next(
         (n for n in (_reserved(element), parent, name) if n in STANDARD_VOUCHER_TYPES), None
     )
+    series = number_series(element)
     if standard is None and parent is not None:  # under a custom type: inherited
         return CanonicalVoucherType(
             source_key=key,
@@ -480,6 +500,7 @@ def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
             is_inventory=_flag(element, "AFFECTSSTOCK"),
             parent_name=parent,
             moves_stock=None,
+            number_series=series,
         )
     return CanonicalVoucherType(
         source_key=key,
@@ -490,7 +511,27 @@ def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
         parent_name=parent,
         standard_type=standard,
         moves_stock=standard not in NON_STOCK_VOUCHER_TYPES,
+        number_series=series,
     )
+
+
+def number_series(element: ET.Element) -> tuple[CanonicalNumberSeries, ...]:
+    """A voucher type's numbering series (each name once, as listed)."""
+    found: dict[str, CanonicalNumberSeries] = {}
+    for series in element.findall("VOUCHERNUMBERSERIES.LIST"):
+        name = text_of(series, "NAME")
+        if not name or name in found:
+            continue
+        found[name] = CanonicalNumberSeries(
+            name=name,
+            numbering_method=_value(series, "NUMBERINGMETHOD"),
+            numbering_sub_method=_value(series, "NUMBERINGSUBMETHOD"),
+            beginning_number=_whole(series, "BEGINNINGNUMBER"),
+            width=_whole(series, "WIDTHOFNUMBER"),
+            prefill_zero=_flag(series, "PREFILLZERO"),
+            prevent_duplicates=_flag(series, "PREVENTDUPLICATES"),
+        )
+    return tuple(found.values())
 
 
 def unit(element: ET.Element, key: str) -> CanonicalUnit:
@@ -1029,6 +1070,9 @@ def voucher(element: ET.Element, key: str) -> CanonicalVoucher:
         is_optional=_flag(element, "ISOPTIONAL"),
         is_post_dated=_flag(element, "ISPOSTDATED"),
         **_voucher_gst(element),
+        number_series=_value(element, "VOUCHERNUMBERSERIES"),
+        active_to=parser.tally_date(text_of(element, "ACTIVETO")),
+        has_cash_flow=_optional_flag(element, "HASCASHFLOW"),
     )
 
 
@@ -1083,15 +1127,19 @@ _INVENTORY_ENTRY = (
 USED_FIELDS: dict[str, frozenset[str]] = {
     "company": frozenset((
         *_IDENTITY, "BOOKSFROM", "STARTINGFROM", "BASICCOMPANYFORMALNAME", "STATENAME",
-        "GSTREGISTRATIONNUMBER", "INCOMETAXNUMBER",
+        "GSTREGISTRATIONNUMBER", "INCOMETAXNUMBER", "ISINTEGRATED", "ISFIFOAPPLIED",
+        "AUDITEDUPTO",
     )),
-    "group": frozenset((*_MASTER, "ISREVENUE", "ISDEEMEDPOSITIVE", "AFFECTSGROSSPROFIT")),
+    "group": frozenset((
+        *_MASTER, "ISREVENUE", "ISDEEMEDPOSITIVE", "AFFECTSGROSSPROFIT", "SORTPOSITION",
+    )),
     "ledger": frozenset((
         *_MASTER, "OPENINGBALANCE", "ISBILLWISEON", "ISCOSTCENTRESON", "TAXTYPE",
         "GSTDUTYHEAD", "PARTYGSTIN", "LEDGSTREGDETAILS.LIST/GSTIN", "INCOMETAXNUMBER",
         "LEDSTATENAME", "LEDMAILINGDETAILS.LIST/STATE", "COUNTRYNAME", "EMAIL",
         "LEDGERPHONE", "LEDGERMOBILE", "BILLCREDITPERIOD", "CREDITLIMIT", "CURRENCYNAME",
         "LEDGSTREGDETAILS.LIST/GSTREGISTRATIONTYPE", "LEDGSTREGDETAILS.LIST/APPLICABLEFROM",
+        "SORTPOSITION", "AFFECTSSTOCK",
     )),
     # Read whole (`native`): only the fields kept are listed; the rest stays in the raw
     # record without being catalogued (a currency master has dozens of internal fields).
@@ -1099,7 +1147,12 @@ USED_FIELDS: dict[str, frozenset[str]] = {
         *_MASTER, "ORIGINALNAME", "EXPANDEDSYMBOL", "ISOCURRENCYCODE", "MAILINGNAME",
         "DECIMALPLACES",
     )),
-    "voucher_type": frozenset((*_MASTER, "AFFECTSSTOCK")),
+    "voucher_type": frozenset((
+        *_MASTER, "AFFECTSSTOCK", "VOUCHERNUMBERSERIES.LIST/NAME",
+        "VOUCHERNUMBERSERIES.LIST/NUMBERINGMETHOD", "VOUCHERNUMBERSERIES.LIST/NUMBERINGSUBMETHOD",
+        "VOUCHERNUMBERSERIES.LIST/BEGINNINGNUMBER", "VOUCHERNUMBERSERIES.LIST/WIDTHOFNUMBER",
+        "VOUCHERNUMBERSERIES.LIST/PREFILLZERO", "VOUCHERNUMBERSERIES.LIST/PREVENTDUPLICATES",
+    )),
     "unit": frozenset((*_IDENTITY, "ORIGINALNAME", "DECIMALPLACES")),
     "stock_group": frozenset(_MASTER),
     "godown": frozenset((*_MASTER, "ISEXTERNAL", "ISINTERNAL")),
@@ -1133,7 +1186,7 @@ USED_FIELDS: dict[str, frozenset[str]] = {
         "DESTINATIONGODOWN", "BASICORDERREF", "INVOICEORDERLIST.LIST/BASICPURCHASEORDERNO",
         "INVOICEORDERLIST.LIST/BASICORDERDATE", "GSTREGISTRATION", "PLACEOFSUPPLY", "IRN",
         "IRNACKNO", "IRNACKDATE", "EWAYBILLDETAILS.LIST/BILLNUMBER",
-        "EWAYBILLDETAILS.LIST/BILLDATE",
+        "EWAYBILLDETAILS.LIST/BILLDATE", "VOUCHERNUMBERSERIES", "ACTIVETO", "HASCASHFLOW",
         *(f"{lst}/{path}" for lst in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST")
           for path in _LEDGER_ENTRY),
         *(f"{lst}/{path}" for lst in (
