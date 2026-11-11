@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp } from 'antd'
 import App from './App.tsx'
@@ -1636,6 +1636,28 @@ describe('the stock by godown', () => {
     expect(within(movements).getByText('Main Location')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: 'By godown and batch' }))
     expect(await screen.findByRole('region', { name: 'Our stock at job workers (still ours)' })).toBeInTheDocument()
+  })
+
+  it('explains how the page divides stock in a note, open the first time, which can be closed and stays closed', async () => {
+    renderApp('#/stock/godowns')
+    const title = await screen.findByText('How this page divides stock')
+    const note = title.closest('details') as HTMLDetailsElement
+    expect(note.open).toBe(true)
+    // One point per section, under the section's own title, as in the sections below.
+    expect(within(note).getByText('Our stock:')).toBeInTheDocument()
+    expect(within(note).getByText("Others' stock held with us (not ours):")).toBeInTheDocument()
+    expect(within(note).getByText('Our stock at job workers (still ours):')).toBeInTheDocument()
+    expect(note).toHaveTextContent("Tally counts them in its Stock Summary, so we count them in the total too.")
+    expect(note).toHaveTextContent('That is why it can show a negative quantity, and why it is not added to the total.')
+    expect(note).toHaveTextContent("The total on this page equals Tally's Stock Summary for the same date.")
+    // Closed by the reader: remembered in this browser, so it starts closed next time.
+    fireEvent.click(title)
+    await waitFor(() => expect(note.open).toBe(false))
+    await waitFor(() => expect(window.localStorage.getItem('ledgerbridge.godownNote')).toBe('closed'))
+    cleanup()
+    renderApp('#/stock/godowns')
+    const again = (await screen.findByText('How this page divides stock')).closest('details') as HTMLDetailsElement
+    expect(again.open).toBe(false)
   })
 
   it('says plainly when the stock by godown fails, with Retry', async () => {

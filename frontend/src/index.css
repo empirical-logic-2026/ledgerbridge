@@ -1220,3 +1220,28 @@ body,
 .godown-filter {
   margin: 0 0 12px;
 }
+
+/* "How this page divides stock" on the By godown page: a small info box the reader can close */
+.godown-note {
+  margin-bottom: 18px;
+  border-left: 4px solid var(--lb-primary);
+  background: var(--lb-primary-soft);
+}
+
+.godown-note-title {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.godown-note-points {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.godown-note-points li + li {
+  margin-top: 4px;
+}
+
+.godown-note-footer {
+  margin: 8px 0 0;
+}

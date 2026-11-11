@@ -4,7 +4,7 @@ This document tells you what each page of the dashboard shows and how to check i
 
 | Field | Value |
 | --- | --- |
-| Version | 1.1 |
+| Version | 1.2 |
 | Date | 2026-11-11 |
 | Requirements | RPT-014 (layout and modules), RPT-015 (formulas), RPT-016 (periods and comparison) |
 | Language | ASD-STE100 Simplified Technical English |
@@ -422,6 +422,14 @@ The module has two pages: Stock summary and By godown. Each item has its own pag
 
 The total is equal to the Stock summary page and to the Stock Summary of Tally. The tests prove this on the test company.
 
+**Note at the top of the page.** A small box with the title "How this page divides stock" explains the three sections. The box is open the first time. Click its title to close it or to open it again. The browser keeps your choice. The box says:
+
+- Our stock: stock that we keep in our own godowns. It is in the total.
+- Others' stock held with us (not ours): goods of other companies that we keep in our godowns. The Stock Summary of Tally counts them, so the total counts them too.
+- Our stock at job workers (still ours): material that we sent out for processing. It is still ours. Tally keeps it at the godown that sent it. Tally records here only what the job worker used. Thus the quantity can be negative, and it is not in the total.
+- The total on the page is equal to the Stock Summary of Tally at the same date.
+- The value of each row is the quantity multiplied by the rate of the item. The value of each godown in Tally shows beside the rows.
+
 **Contents:**
 
 | Item | What it shows | Formula IDs |
@@ -596,5 +604,6 @@ The module has two pages: Data health and Companies.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 1.2 | 2026-11-11 | Stock › By godown: the note "How this page divides stock". |
 | 1.1 | 2026-11-11 | Stock: the By godown page and the page of an item at one godown. The inventory lines dataset. |
 | 1.0 | 2026-11-11 | First version: each page in the order of the top tabs, with its contents, formula IDs, drill-downs, loading and errors, and the check against Tally. |
