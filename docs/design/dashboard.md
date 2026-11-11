@@ -195,6 +195,7 @@ Every page is built from the shared components of Section 0.4, so it loads and f
 - **Our colours.** The placeholders pulse gently between the border colour and the soft forest green of the theme (`--lb-border`, `--lb-primary-soft`), in light and dark mode. Pure CSS: no library.
 - **Reduced motion.** With the system's "reduce motion" setting (`prefers-reduced-motion: reduce`) nothing animates: the placeholders are static.
 - **Accessible.** The loading area carries `aria-busy="true"` and a screen-reader "Loading…"; the shapes themselves are hidden from screen readers.
+- **The top bar** keeps the logo and the period controls on its first row and the ten module tabs on a row of their own (scrolling sideways on a narrow screen, one line from 1900 px), so the tabs never wrap.
 - **First load.** While the companies and periods load, the logo in the top bar pulses (after the same 150 ms, still under reduced motion).
 - **Errors.** A request that fails shows what couldn't be loaded and the API's reason, with a **Retry** button that asks again (`components/loading/ErrorState.tsx`); it shows that it's busy, and a new failure shows the new reason.
 

@@ -64,11 +64,16 @@ body,
   font-size: 17px;
 }
 
+/* The module tabs: one row of their own under the logo and the period controls (ten tabs and
+   the controls don't fit one line below ~1900px), scrolling sideways rather than wrapping. */
 .top-modules {
+  order: 3;
   display: flex;
-  flex-wrap: wrap;
+  flex: 1 0 100%;
+  flex-wrap: nowrap;
   gap: 2px;
-  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .top-module {
@@ -93,6 +98,18 @@ body,
   display: flex;
   align-items: center;
   gap: 10px;
+  margin-left: auto;
+}
+
+@media (min-width: 1900px) {
+  .top-modules {
+    order: 0;
+    flex: 1 1 auto;
+  }
+
+  .top-right {
+    margin-left: 0;
+  }
 }
 
 .top-period {
