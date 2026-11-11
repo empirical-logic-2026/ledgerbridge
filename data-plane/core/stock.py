@@ -19,11 +19,11 @@ item in two companies is one row, its figures added together.
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import case, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from core.models import accounting as A  # noqa: N812
 from core.report_periods import Period, last_day
@@ -40,11 +40,12 @@ def counted_godown():  # noqa: ANN201 - a SQL condition
     return or_(A.Godown.id.is_(None), A.Godown.holding != "ours_with_third_party")
 
 
-def stock_moving(query):  # noqa: ANN001, ANN201
+def stock_moving(query, include_job_workers: bool = False):  # noqa: ANN001, ANN201
     """Limits a query on `inventory_lines` to the lines that move stock: vouchers not
     deleted, cancelled or optional, of a type that moves stock (orders and memorandum
-    don't), not at a job worker's location."""
-    return (
+    don't), not at a job worker's location (with `include_job_workers`, also there: the
+    By-godown view shows that stock apart, core/stock_godowns.py)."""
+    query = (
         query.join(A.Voucher, A.Voucher.id == A.InventoryLine.voucher_id)
         .join(A.VoucherType, A.VoucherType.id == A.Voucher.voucher_type_id)
         .outerjoin(A.Godown, A.Godown.id == A.InventoryLine.godown_id)
@@ -53,9 +54,9 @@ def stock_moving(query):  # noqa: ANN001, ANN201
             A.Voucher.is_cancelled.is_(False),
             A.Voucher.is_optional.is_(False),
             A.VoucherType.moves_stock.is_(True),
-            counted_godown(),
         )
     )
+    return query if include_job_workers else query.where(counted_godown())
 
 
 def _in_period(query, period: Period):  # noqa: ANN001, ANN202
@@ -114,6 +115,7 @@ class Movement:
     voucher_number: str
     voucher_type: str
     godown: str | None
+    other_godown: str | None  # where the stock went or came from (a move between godowns)
     quantity: Decimal  # signed: in +, out -
     balance: Decimal  # the quantity after it
     amount: Decimal  # the line's value on the voucher, signed like the quantity
@@ -135,6 +137,8 @@ class ItemPage:
     movements: list[Movement]
     truncated: bool
     months: list[ItemMonth]
+    godown: str | None = None  # the movements and months are at this godown only
+    by_godown: list = field(default_factory=list)  # GodownRow (core/stock_godowns.py)
 
 
 # --- dates and values --------------------------------------------------------------------
@@ -292,38 +296,62 @@ def find_item(session: Session, companies: list[int], item_id: int) -> ItemRef |
     return ItemRef(list(ids), item.name)
 
 
+OTHER_GODOWN = aliased(A.Godown)
+
+
+def _at_godown(query, godown: str | None):  # noqa: ANN001, ANN202
+    """Limits the stock-moving lines to one godown, by name (a job worker's too)."""
+    return query if godown is None else query.where(A.Godown.name == godown)
+
+
 def _movements(
-    session: Session, companies: list[int], ref: ItemRef, period: Period, opening: Decimal
+    session: Session,
+    companies: list[int],
+    ref: ItemRef,
+    period: Period,
+    opening: Decimal,
+    godown: str | None = None,
 ) -> tuple[list[Movement], bool]:
     query = _in_period(
-        stock_moving(
-            select(A.InventoryLine.entity_id, A.InventoryLine.voucher_date, A.Voucher.id,
-                   A.Voucher.voucher_number, A.VoucherType.name, A.Godown.name,
-                   A.InventoryLine.stock_quantity, A.InventoryLine.amount)
-            .where(A.InventoryLine.entity_id.in_(companies),
-                   A.InventoryLine.item_id.in_(ref.ids),
-                   A.InventoryLine.stock_quantity != 0)
+        _at_godown(
+            stock_moving(
+                select(A.InventoryLine.entity_id, A.InventoryLine.voucher_date, A.Voucher.id,
+                       A.Voucher.voucher_number, A.VoucherType.name, A.Godown.name,
+                       OTHER_GODOWN.name, A.InventoryLine.stock_quantity, A.InventoryLine.amount)
+                .outerjoin(OTHER_GODOWN, OTHER_GODOWN.id == A.InventoryLine.counterpart_godown_id)
+                .where(A.InventoryLine.entity_id.in_(companies),
+                       A.InventoryLine.item_id.in_(ref.ids),
+                       A.InventoryLine.stock_quantity != 0),
+                include_job_workers=godown is not None,
+            ),
+            godown,
         ),
         period,
     ).order_by(A.InventoryLine.voucher_date, A.Voucher.id, A.InventoryLine.line_no)  # fmt: skip
     found: list[Movement] = []
     balance = opening
-    for entity, on, vid, number, vtype, godown, quantity, amount in session.execute(
+    for entity, on, vid, number, vtype, at, other, quantity, amount in session.execute(
         query.limit(LIMIT + 1)
     ):
         balance += Decimal(quantity)
         found.append(
-            Movement(int(entity), on, int(vid), number, vtype, godown, Decimal(quantity),
+            Movement(int(entity), on, int(vid), number, vtype, at, other, Decimal(quantity),
                      balance, Decimal(amount))
         )  # fmt: skip
     return found[:LIMIT], len(found) > LIMIT
 
 
 def _months(
-    session: Session, companies: list[int], ref: ItemRef, period: Period, opening_qty: Decimal
+    session: Session,
+    companies: list[int],
+    ref: ItemRef,
+    period: Period,
+    opening_qty: Decimal,
+    godown: str | None = None,
 ) -> list[ItemMonth]:
     """Each month of the period: in, out, the closing quantity and the source's value at
-    the month's last stored date."""
+    the month's last stored date (at one godown: quantities only, as the source stores no
+    value per item and godown)."""
     dates = value_dates(session, companies)
     months = []
     for month in period.month_starts():
@@ -332,44 +360,59 @@ def _months(
         quantity = A.InventoryLine.stock_quantity
         inward, outward = session.execute(
             _in_period(
-                stock_moving(
-                    select(
-                        func.sum(case((quantity > 0, quantity), else_=0)),
-                        func.sum(case((quantity < 0, -quantity), else_=0)),
-                    ).where(
-                        A.InventoryLine.entity_id.in_(companies),
-                        A.InventoryLine.item_id.in_(ref.ids),
-                    )
+                _at_godown(
+                    stock_moving(
+                        select(
+                            func.sum(case((quantity > 0, quantity), else_=0)),
+                            func.sum(case((quantity < 0, -quantity), else_=0)),
+                        ).where(
+                            A.InventoryLine.entity_id.in_(companies),
+                            A.InventoryLine.item_id.in_(ref.ids),
+                        ),
+                        include_job_workers=godown is not None,
+                    ),
+                    godown,
                 ),
                 part,
             )
         ).one()
-        moved = session.scalar(
-            stock_moving(
-                select(func.sum(quantity)).where(
-                    A.InventoryLine.entity_id.in_(companies),
-                    A.InventoryLine.item_id.in_(ref.ids),
-                    A.InventoryLine.voucher_date <= end,
+        if godown is None:
+            moved = session.scalar(
+                stock_moving(
+                    select(func.sum(quantity)).where(
+                        A.InventoryLine.entity_id.in_(companies),
+                        A.InventoryLine.item_id.in_(ref.ids),
+                        A.InventoryLine.voucher_date <= end,
+                    )
                 )
             )
-        )
-        on = _last_within([d for d in dates if d >= month], end)
-        value = _values(session, companies, on, "item").get(ref.name) if on else None
-        months.append(
-            ItemMonth(
-                month,
-                Decimal(inward or 0),
-                Decimal(outward or 0),
-                opening_qty + Decimal(moved or 0),
-                value,
-            )
-        )
+            closing = opening_qty + Decimal(moved or 0)
+            on = _last_within([d for d in dates if d >= month], end)
+            value = _values(session, companies, on, "item").get(ref.name) if on else None
+        else:
+            closing, value = _at_godown_on(session, companies, ref, godown, end), None
+        months.append(ItemMonth(month, Decimal(inward or 0), Decimal(outward or 0), closing, value))
     return months
 
 
-def item_page(session: Session, companies: list[int], ref: ItemRef, period: Period) -> ItemPage:
+def _at_godown_on(
+    session: Session, companies: list[int], ref: ItemRef, godown: str, on: date
+) -> Decimal:
+    """The item's quantity at one godown at the end of a date (F-STK-010)."""
+    from core.stock_godowns import quantities  # noqa: PLC0415 - it builds on this module
+
+    found = quantities(session, companies, on, {ref.name})
+    return sum((q for (_, _, at, _), q in found.items() if at == godown), ZERO)
+
+
+def item_page(
+    session: Session, companies: list[int], ref: ItemRef, period: Period, godown: str | None = None
+) -> ItemPage:
     """The item's row, its movements in the period (the earliest first, with the quantity
-    after each) and its months."""
+    after each; at one godown when `godown` is given), its months, and where it is by
+    godown and batch at the period's end."""
+    from core.stock_godowns import by_godown  # noqa: PLC0415 - it builds on this module
+
     items, _ = _rows(session, companies, period)
     row = next(r for r in items if r.name == ref.name)
     summary_on = _last_within(value_dates(session, companies), period.end)
@@ -382,6 +425,10 @@ def item_page(session: Session, companies: list[int], ref: ItemRef, period: Peri
         )),
         ZERO,
     )  # fmt: skip
-    movements, truncated = _movements(session, companies, ref, period, row.opening)
-    months = _months(session, companies, ref, period, opening_qty)
-    return ItemPage(row, summary_on, movements, truncated, months)
+    start = row.opening
+    if godown is not None:
+        start = _at_godown_on(session, companies, ref, godown, period.start - timedelta(days=1))
+    movements, truncated = _movements(session, companies, ref, period, start, godown)
+    months = _months(session, companies, ref, period, opening_qty, godown)
+    breakdown = by_godown(session, companies, period, {ref.name}).rows
+    return ItemPage(row, summary_on, movements, truncated, months, godown, breakdown)

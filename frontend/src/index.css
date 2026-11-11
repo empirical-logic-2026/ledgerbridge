@@ -1207,3 +1207,16 @@ body,
   margin: 8px 0 0;
   opacity: 0.85;
 }
+
+/* the Stock module's By-godown view and an item at one godown (apps/stock/StockGodowns.tsx) */
+.godown-section {
+  margin-top: 18px;
+}
+
+.godown-help {
+  margin: 0 0 8px;
+}
+
+.godown-filter {
+  margin: 0 0 12px;
+}

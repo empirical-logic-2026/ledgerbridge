@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import { comparisonQuery, type CompareKind, type PeriodChoice } from '../selection.ts'
-import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport, StockItemPageOut, StockOut, TransactionsOut } from './types.ts'
+import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport, StockGodownsOut, StockItemPageOut, StockOut, TransactionsOut } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -222,10 +222,19 @@ export function useStock(companies: number[] | undefined, period: PeriodChoice |
   })
 }
 
-export function useStockItem(id: string | undefined, companies: number[] | undefined, period: PeriodChoice | undefined) {
+/** Every item by godown and batch at the period's end, in three sections (core/stock_godowns.py). */
+export function useStockGodowns(companies: number[] | undefined, period: PeriodChoice | undefined) {
   return useQuery({
-    queryKey: ['stock-item', id, companies, period],
-    queryFn: () => getJson<StockItemPageOut>(`/api/v1/stock/${id}`, { company: companies, ...periodQuery(period) }),
+    queryKey: ['stock-godowns', companies, period],
+    queryFn: () => getJson<StockGodownsOut>('/api/v1/stock/godowns', { company: companies, ...periodQuery(period) }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+export function useStockItem(id: string | undefined, companies: number[] | undefined, period: PeriodChoice | undefined, godown?: string) {
+  return useQuery({
+    queryKey: ['stock-item', id, companies, period, godown],
+    queryFn: () => getJson<StockItemPageOut>(`/api/v1/stock/${id}`, { company: companies, ...periodQuery(period), godown }),
     enabled: id !== undefined && companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }

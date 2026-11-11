@@ -6,7 +6,7 @@
 import { AmountFormatProvider } from './components/Money.tsx'
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockItem, useTransactions, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockGodowns, useStockItem, useTransactions, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { ErrorState } from './components/loading/ErrorState.tsx'
 import { Loading } from './components/loading/Loading.tsx'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
@@ -14,6 +14,7 @@ import { PnlKpis } from './apps/dashboard/PnlKpis.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
 import { CostCentrePage, CostCentres } from './apps/costcentres/CostCentres.tsx'
 import { StockItemPage, StockSummary } from './apps/stock/Stock.tsx'
+import { StockGodowns } from './apps/stock/StockGodowns.tsx'
 import { Transactions } from './apps/books/Transactions.tsx'
 import { Ageing } from './apps/parties/Ageing.tsx'
 import { BalanceSheet } from './apps/statements/BalanceSheet.tsx'
@@ -106,7 +107,9 @@ export default function App({ mode, onMode, today }: Props) {
   const centre = useCostCentre(centreId, at === 'pnl/cost-centres' ? ids : undefined, period)
   const stockItemId = at === 'stock/summary' && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
   const stock = useStock(at === 'stock/summary' && route.path.length < 3 ? ids : undefined, period)
-  const stockItem = useStockItem(stockItemId, at === 'stock/summary' ? ids : undefined, period)
+  const stockGodown = route.query.get('godown') ?? undefined
+  const stockItem = useStockItem(stockItemId, at === 'stock/summary' ? ids : undefined, period, stockGodown)
+  const stockGodowns = useStockGodowns(at === 'stock/godowns' ? ids : undefined, period)
   const transactions = useTransactions(at === 'books/transactions' ? ids : undefined, period)
   const query = selectionQuery(selection)
   const all = companies.data ?? []
@@ -193,6 +196,19 @@ export default function App({ mode, onMode, today }: Props) {
         loading={companies.isPending || periods.isPending || stockItem.isPending}
         error={periods.error ?? stockItem.error}
         onRetry={retry(periods, stockItem)}
+        dark={mode === 'dark'}
+        query={query}
+      />
+    )
+  } else if (at === 'stock/godowns') {
+    crumbs = [{ label: 'Stock', path: ['stock', 'summary'] }, { label: 'By godown' }]
+    content = (
+      <StockGodowns
+        companies={selected}
+        found={stockGodowns.data}
+        loading={companies.isPending || periods.isPending || stockGodowns.isPending}
+        error={periods.error ?? stockGodowns.error}
+        onRetry={retry(periods, stockGodowns)}
         dark={mode === 'dark'}
         query={query}
       />

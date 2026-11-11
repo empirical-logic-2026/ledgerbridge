@@ -4,7 +4,7 @@ This document tells you what each page of the dashboard shows and how to check i
 
 | Field | Value |
 | --- | --- |
-| Version | 1.0 |
+| Version | 1.1 |
 | Date | 2026-11-11 |
 | Requirements | RPT-014 (layout and modules), RPT-015 (formulas), RPT-016 (periods and comparison) |
 | Language | ASD-STE100 Simplified Technical English |
@@ -379,9 +379,13 @@ To remove the mark, run `./dev.ps1 loans clear -Ledger <id>`. The audit log keep
 
 ## 7. Stock
 
-**Purpose:** The page shows the stock value, the stock by group and godown, and each item.
+The module has two pages: Stock summary and By godown. Each item has its own page.
 
-**Filters:** None. Use the filter of the table, or open an item.
+**Filters for the Stock module:** None. Use the filter of the table, or open an item.
+
+### 7.1 Stock summary
+
+**Purpose:** The page shows the stock value, the stock by group and godown, and each item.
 
 **Contents:**
 
@@ -393,9 +397,8 @@ To remove the mark, run `./dev.ps1 loans clear -Ledger <id>`. The audit log keep
 | Stock value at the stored dates (chart) | The closing stock at each statement date. | F-STK-007 |
 | By stock group, by godown (horizontal bars) | The value of each group and godown. | F-STK-005 |
 | Stock items (table) | Opening, inward, outward, closing, value and rate of each item. | F-STK-001 to F-STK-006 |
-| Page of an item | Closing quantity, value and rate (key cards), each movement and each month. | F-STK-001 to F-STK-008 |
 
-**Drill-downs:** Click an item to open its page. A voucher number has no link yet.
+**Drill-downs:** Click an item to open its page.
 
 **Loading and errors:** As section 1.5, with key cards, a chart and table rows.
 
@@ -404,6 +407,82 @@ To remove the mark, run `./dev.ps1 loans clear -Ledger <id>`. The audit log keep
 1. Open Gateway of Tally › Stock Summary at the date on the page.
 2. Compare the quantities, the values and the rates.
 3. For godowns, open the Godown Summary.
+
+### 7.2 By godown
+
+**Purpose:** The page shows where each item is at the end of the period: at each godown and batch, in three sections.
+
+**Sections:**
+
+| Section | What it holds | In the total |
+| --- | --- | --- |
+| Our stock | Our stock in our own godowns. | Yes. |
+| Others' stock held with us (not ours) | Stock of others in our godowns. | Yes. The Stock Summary of Tally includes it. |
+| Our stock at job workers (still ours) | Our stock at the godown of a job worker. | No. Tally leaves it out of the Stock Summary. Tally records there only what the job worker used, so the quantity can be negative. |
+
+The total is equal to the Stock summary page and to the Stock Summary of Tally. The tests prove this on the test company.
+
+**Contents:**
+
+| Item | What it shows | Formula IDs |
+| --- | --- | --- |
+| Stock in the total (key card) | The quantity of our stock and of the stock of others held with us. | F-STK-013 |
+| Value in the total (key card) | The value of that stock. | F-STK-013 |
+| Others' stock held with us (key card) | The quantity of that section. | F-STK-012 |
+| Our stock at job workers (key card) | The quantity of that section. | F-STK-012 |
+| One table for each section | Item, godown, batch, quantity and value. The table is grouped by godown. Each section shows its total and if it is in the total. | F-STK-010, F-STK-011, F-STK-012 |
+| Value by godown (table) | The value of each godown as Tally calculates it. | F-STK-005 |
+
+A row value is the quantity multiplied by the rate of the item. Tally does not keep a value for each item at each godown. The rows of an item add up to its value on the Stock summary page. Rows at a job worker have no value. An opening that Tally does not split by godown shows as "(opening, not split by godown)".
+
+**Drill-downs:** Click an item or a godown to open the page of the item at that godown.
+
+**Loading and errors:** As section 1.5, with key cards and table rows.
+
+**Check against Tally:**
+
+1. Open Gateway of Tally › Stock Summary at the date on the page. Compare the total.
+2. Open the Godown Summary at the same date.
+3. Compare each godown with its rows.
+4. For a job worker, compare the quantity of its godown. It is not in the Stock Summary.
+
+### 7.3 Page of an item
+
+**Purpose:** The page shows one item: its figures, each movement, each month, and where it is.
+
+**Contents:**
+
+| Item | What it shows | Formula IDs |
+| --- | --- | --- |
+| Closing quantity, value, rate (key cards) | The figures of the item at the end of the period. | F-STK-004 to F-STK-006 |
+| Movements (tab) | Each movement with its godown, its other godown and the quantity after it. The other godown is where the stock went, or where it came from. | F-STK-002, F-STK-004, F-STK-008 |
+| Month by month (tab) | In, out, closing quantity and value for each month. | F-STK-002 to F-STK-005 |
+| By godown and batch (tab) | The item at each godown and batch, in the three sections of section 7.2. | F-STK-010 to F-STK-012 |
+
+**One godown.** A link from section 7.2 opens the item at one godown. The page then shows "At" and the godown. The movements and the months are only at that godown. A month then has no value, because Tally keeps no value for each item at each godown. The key cards show the whole item. Click "Show every godown" to see all godowns again.
+
+**Drill-downs:** A voucher number has no link yet. The voucher page is planned.
+
+**Loading and errors:** As section 1.5, with key cards and table rows.
+
+**Check against Tally:**
+
+1. Open Stock Summary › the item › Stock Item Monthly Summary for the same period.
+2. For one godown, open the Godown Summary and select the godown and the item.
+
+### 7.4 Inventory lines dataset
+
+The table explorer API has a dataset of inventory lines (`/api/v1/datasets/inventory_lines`). It has one row for each inventory line of a voucher that moves stock. The dashboard has no page for the datasets yet.
+
+| Columns | Formula IDs |
+| --- | --- |
+| Date, voucher type, voucher number, item, godown, holding, batch, other godown, order number, order due date | None (no figures) |
+| Quantity | F-STK-014 |
+| Rate | F-STK-015 |
+| Amount | F-STK-008 |
+| Lines | F-TBL-001 |
+
+You can group the rows by item, godown, holding, batch, other godown, order number, voucher type, month, quarter and financial year. For each item, the opening plus the quantities up to a date is the closing quantity. Do not count the rows with the holding "Our stock at job workers".
 
 ## 8. Cash Flow
 
@@ -517,4 +596,5 @@ The module has two pages: Data health and Companies.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 1.1 | 2026-11-11 | Stock: the By godown page and the page of an item at one godown. The inventory lines dataset. |
 | 1.0 | 2026-11-11 | First version: each page in the order of the top tabs, with its contents, formula IDs, drill-downs, loading and errors, and the check against Tally. |

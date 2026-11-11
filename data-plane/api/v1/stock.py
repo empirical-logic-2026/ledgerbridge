@@ -1,9 +1,11 @@
-"""`GET /api/v1/stock` and `.../{item_id}`: the Stock page and one item's page (RPT-014). For
+"""`GET /api/v1/stock`, `.../godowns` and `.../{item_id}`: the Stock page, its By-godown view and
+one item's page (RPT-014). For
 any combination of the companies the caller may see (`company`, repeatable; default all,
 combined) and a period (`month`, repeatable, or `date_from` and `date_to`). An item is known by
 its name across those companies; one outside them is 404, like a company outside access.
 Quantities are ours, values the source's own at the last stored date within the period. How:
-core/stock.py.
+core/stock.py and core/stock_godowns.py (by godown and batch, in three sections counted as
+Tally counts them).
 """
 
 from datetime import date
@@ -16,6 +18,7 @@ from api.access import CurrentAccess
 from api.v1.common import ReportSession, formula, parse_period
 from api.v1.home import PeriodOut
 from core.stock import ItemRow, find_item, item_page, stock_summary
+from core.stock_godowns import IN_TOTAL, SECTIONS, ByGodown, GodownRow, by_godown
 
 router = APIRouter(prefix="/stock", tags=["stock"])
 
@@ -63,6 +66,7 @@ class StockMovementOut(BaseModel):
     voucher_number: str
     voucher_type: str
     godown: str | None
+    other_godown: str | None  # where the stock went or came from
     quantity: Decimal = formula("F-STK-002")  # signed: in +, out -
     balance: Decimal = formula("F-STK-004")  # the quantity after it
     amount: Decimal = formula("F-STK-008")
@@ -76,13 +80,47 @@ class StockItemMonthOut(BaseModel):
     value: Decimal | None = formula("F-STK-005")
 
 
+class GodownRowOut(BaseModel):
+    """One item at one godown and batch at the date."""
+
+    item_id: int
+    item: str
+    unit: str | None
+    godown: str | None  # None: an opening not split by godown
+    batch: str | None
+    quantity: Decimal = formula("F-STK-010")
+    value: Decimal | None = formula("F-STK-011")  # None at a job worker, or without a value
+
+
+class GodownSectionOut(BaseModel):
+    key: str  # ours, held_for_others, at_job_workers
+    in_total: bool  # counted in the total, as Tally's Stock Summary counts it
+    quantity: Decimal = formula("F-STK-012")
+    value: Decimal | None = formula("F-STK-012")
+    rows: list[GodownRowOut]
+
+
+class StockGodownsOut(BaseModel):
+    companies: list[int]
+    combined: bool
+    period: PeriodOut
+    on: date  # the quantities are at this date (the period's end)
+    value_on: date | None  # the values are the source's at this date
+    sections: list[GodownSectionOut]
+    total_quantity: Decimal = formula("F-STK-013")  # = the Stock page and Tally's Stock Summary
+    total_value: Decimal | None = formula("F-STK-013")
+    godown_values: list[StockNamedValue]  # the source's own value of each godown
+
+
 class StockItemPageOut(BaseModel):
     item: StockItemOut
     period: PeriodOut
     value_on: date | None
+    godown: str | None  # the movements and months are at this godown only
     movements: list[StockMovementOut]
     truncated: bool  # more movements than shown
     months: list[StockItemMonthOut]
+    by_godown: list[GodownSectionOut]  # where the item is at the period's end
 
 
 def _item(row: ItemRow) -> StockItemOut:
@@ -91,6 +129,58 @@ def _item(row: ItemRow) -> StockItemOut:
         companies=row.companies, opening=row.opening, inward=row.inward, outward=row.outward,
         closing=row.closing, value=row.value, rate=row.rate,
     )  # fmt: skip
+
+
+def _row(row: GodownRow) -> GodownRowOut:
+    return GodownRowOut(
+        item_id=row.item_id, item=row.item, unit=row.unit, godown=row.godown, batch=row.batch,
+        quantity=row.quantity, value=row.value,
+    )  # fmt: skip
+
+
+def _sections(rows: list[GodownRow]) -> list[GodownSectionOut]:
+    """The three sections in order, each with its rows and total (empty ones left out)."""
+    found = ByGodown(date.min, None, rows)
+    sections = []
+    for key in SECTIONS:
+        mine = [r for r in rows if r.section == key]
+        if not mine:
+            continue
+        quantity, value = found.total(key)
+        sections.append(
+            GodownSectionOut(key=key, in_total=key in IN_TOTAL, quantity=quantity, value=value,
+                             rows=[_row(r) for r in mine])
+        )  # fmt: skip
+    return sections
+
+
+@router.get("/godowns")
+def godowns(
+    session: ReportSession,
+    access: CurrentAccess,
+    company: list[int] | None = Query(default=None),  # noqa: B008
+    month: list[str] | None = Query(default=None),  # noqa: B008
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> StockGodownsOut:
+    """Every item by godown and batch at the period's end, in three sections."""
+    companies = access.entities(company)
+    period = parse_period(month, date_from, date_to)
+    found = by_godown(session, companies, period)
+    quantity, value = found.counted()
+    return StockGodownsOut(
+        companies=companies,
+        combined=len(companies) > 1,
+        period=PeriodOut(start=period.start, end=period.end, months=list(period.months)),
+        on=found.on,
+        value_on=found.value_on,
+        sections=_sections(found.rows),
+        total_quantity=quantity,
+        total_value=value,
+        godown_values=[
+            StockNamedValue(name=n, value=v) for n, v in sorted(found.godown_values.items())
+        ],
+    )
 
 
 @router.get("")
@@ -127,21 +217,24 @@ def item(
     month: list[str] | None = Query(default=None),  # noqa: B008
     date_from: date | None = None,
     date_to: date | None = None,
+    godown: str | None = Query(default=None, max_length=255),
 ) -> StockItemPageOut:
     companies = access.entities(company)
     period = parse_period(month, date_from, date_to)
     ref = find_item(session, companies, item_id)
     if ref is None:
         raise HTTPException(404, "No such stock item in the selected companies.")
-    page = item_page(session, companies, ref, period)
+    page = item_page(session, companies, ref, period, godown)
     return StockItemPageOut(
         item=_item(page.item),
         period=PeriodOut(start=period.start, end=period.end, months=list(period.months)),
         value_on=page.value_on,
+        godown=page.godown,
         movements=[
             StockMovementOut(
                 company=m.company, date=m.on, voucher_id=m.voucher_id,
                 voucher_number=m.voucher_number, voucher_type=m.voucher_type, godown=m.godown,
+                other_godown=m.other_godown,
                 quantity=m.quantity, balance=m.balance, amount=m.amount,
             )
             for m in page.movements
@@ -154,4 +247,5 @@ def item(
             )
             for m in page.months
         ],
+        by_godown=_sections(page.by_godown),
     )  # fmt: skip

@@ -313,6 +313,24 @@ export interface FinancialYear {
   end: string
 }
 
+export interface GodownRowOut {
+  item_id: number
+  item: string
+  unit: string | null
+  godown: string | null
+  batch: string | null
+  quantity: string
+  value: string | null
+}
+
+export interface GodownSectionOut {
+  key: string
+  in_total: boolean
+  quantity: string
+  value: string | null
+  rows: GodownRowOut[]
+}
+
 export interface HTTPValidationError {
   detail?: ValidationError[]
 }
@@ -697,6 +715,18 @@ export interface StockDatedValue {
   value: string
 }
 
+export interface StockGodownsOut {
+  companies: number[]
+  combined: boolean
+  period: PeriodOut
+  on: string
+  value_on: string | null
+  sections: GodownSectionOut[]
+  total_quantity: string
+  total_value: string | null
+  godown_values: StockNamedValue[]
+}
+
 export interface StockItemMonthOut {
   month: string
   inward: string
@@ -723,9 +753,11 @@ export interface StockItemPageOut {
   item: StockItemOut
   period: PeriodOut
   value_on: string | null
+  godown: string | null
   movements: StockMovementOut[]
   truncated: boolean
   months: StockItemMonthOut[]
+  by_godown: GodownSectionOut[]
 }
 
 export interface StockMovementOut {
@@ -735,6 +767,7 @@ export interface StockMovementOut {
   voucher_number: string
   voucher_type: string
   godown: string | null
+  other_godown: string | null
   quantity: string
   balance: string
   amount: string

@@ -16,6 +16,7 @@ import type {
   Periods,
   RegisterOut,
   SalesDashboard,
+  StockGodownsOut,
   StockItemPageOut,
   StockOut,
   TransactionsOut,
@@ -1345,15 +1346,35 @@ const stockPage: StockItemPageOut = {
   item: stockFound.items[0],
   period: stockFound.period,
   value_on: '2026-08-31',
+  godown: null,
   movements: [
-    { company: 3, date: '2026-05-02', voucher_id: 7, voucher_number: 'P-1', voucher_type: 'Purchase', godown: 'Main Location', quantity: '30', balance: '50', amount: '600000' },
-    { company: 3, date: '2026-08-02', voucher_id: 8, voucher_number: 'S-1', voucher_type: 'Sales', godown: 'Main Location', quantity: '-10', balance: '40', amount: '-300000' },
+    { company: 3, date: '2026-05-02', voucher_id: 7, voucher_number: 'P-1', voucher_type: 'Purchase', godown: 'Main Location', other_godown: null, quantity: '30', balance: '50', amount: '600000' },
+    { company: 3, date: '2026-08-02', voucher_id: 8, voucher_number: 'S-1', voucher_type: 'Sales', godown: 'Main Location', other_godown: null, quantity: '-10', balance: '40', amount: '-300000' },
   ],
   truncated: false,
   months: [
     { month: '2026-05-01', inward: '30', outward: '0', closing: '50', value: '900000' },
     { month: '2026-08-01', inward: '0', outward: '10', closing: '40', value: '1000000' },
   ],
+  by_godown: [],
+}
+
+const godownRow = (item: string, godown: string | null, batch: string | null, quantity: string, value: string | null) =>
+  ({ item_id: 41, item, unit: 'Nos', godown, batch, quantity, value })
+const godownsFound: StockGodownsOut = {
+  companies: [3],
+  combined: false,
+  period: stockFound.period,
+  on: '2026-09-30',
+  value_on: '2026-08-31',
+  sections: [
+    { key: 'ours', in_total: true, quantity: '157', value: '5460', rows: [godownRow('Widget', 'Main Location', 'B-1', '127', '5460'), godownRow('Widget', null, null, '0', null)] },
+    { key: 'held_for_others', in_total: true, quantity: '30', value: '120', rows: [godownRow('Client Fabric', 'Principal Stock', null, '30', '120')] },
+    { key: 'at_job_workers', in_total: false, quantity: '-60', value: null, rows: [godownRow('Steel Sheet', 'Job Worker Alpha', null, '-60', null)] },
+  ],
+  total_quantity: '187',
+  total_value: '5580',
+  godown_values: [{ name: 'Main Location', value: '5460' }, { name: 'Principal Stock', value: '120' }],
 }
 
 describe('the stock', () => {
@@ -1569,6 +1590,63 @@ describe('loading and errors (pulse loading, docs/design/dashboard.md Section 0.
 declare const __FORMULA_SHEET__: string
 const formulaSheet = __FORMULA_SHEET__
 
+describe('the stock by godown', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    stubApi({
+      '/api/v1/companies': [companies[0]],
+      '/api/v1/periods': periods,
+      '/api/v1/stock/godowns': godownsFound,
+      '/api/v1/stock/41': { ...stockPage, godown: 'Branch Store', by_godown: godownsFound.sections,
+        movements: [{ ...stockPage.movements[0], godown: 'Branch Store', other_godown: 'Main Location' }] },
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('is a page of the Stock module, with the three sections in plain words and what is in the total', async () => {
+    renderApp('#/stock/godowns')
+    const total = await screen.findByRole('region', { name: 'Stock in the total' })
+    expect(total).toHaveTextContent('187')
+    expect(total).toHaveTextContent("as Tally's Stock Summary")
+    expect(within(screen.getByRole('navigation', { name: 'Stock pages' })).getByRole('link', { name: 'By godown' })).toHaveAttribute('aria-current', 'page')
+    const ours = screen.getByRole('region', { name: 'Our stock' })
+    expect(ours).toHaveTextContent('In the total')
+    const others = screen.getByRole('region', { name: "Others' stock held with us (not ours)" })
+    expect(others).toHaveTextContent('In the total')
+    expect(others).toHaveTextContent("It isn't ours, but Tally's Stock Summary and closing stock include it")
+    const workers = screen.getByRole('region', { name: 'Our stock at job workers (still ours)' })
+    expect(workers).toHaveTextContent('Not in the total')
+    expect(workers).toHaveTextContent('Tally leaves it out of its Stock Summary and closing stock')
+    expect(within(workers).getAllByText('-60').length).toBeGreaterThan(0) // the row and its total
+    // Every row opens the item's page at that godown; an opening not split by godown opens the whole item.
+    const table = within(ours).getByRole('table', { name: 'Our stock' })
+    const main = within(table).getAllByRole('link', { name: 'Main Location' })[0]
+    expect(main.getAttribute('href')).toMatch(/^#\/stock\/summary\/41\?.*godown=Main\+Location/)
+    const notSplit = within(table).getByRole('link', { name: '(opening, not split by godown)' })
+    expect(notSplit.getAttribute('href')).not.toContain('godown=')
+  })
+
+  it('opens an item at one godown: its movements there, the other godown of a move, and its breakdown', async () => {
+    renderApp('#/stock/summary/41?godown=Branch+Store')
+    expect(await screen.findByText('At Branch Store')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Show every godown' }).getAttribute('href')).not.toContain('godown=')
+    expect(requests.some((r) => r.includes('/api/v1/stock/41?') && r.includes('godown=Branch+Store'))).toBe(true)
+    const movements = screen.getByRole('table', { name: 'Movements' })
+    expect(within(movements).getByText('Other godown')).toBeInTheDocument()
+    expect(within(movements).getByText('Main Location')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'By godown and batch' }))
+    expect(await screen.findByRole('region', { name: 'Our stock at job workers (still ours)' })).toBeInTheDocument()
+  })
+
+  it('says plainly when the stock by godown fails, with Retry', async () => {
+    stubApi({ '/api/v1/companies': [companies[0]], '/api/v1/periods': periods })
+    renderApp('#/stock/godowns')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent("The stock by godown couldn't be loaded.")
+    expect(within(alert).getByRole('button', { name: /Retry/ })).toBeInTheDocument()
+  })
+})
+
 describe('every figure on every page names its formula (docs/formula-sheet.md)', () => {
   afterEach(() => vi.unstubAllGlobals())
 
@@ -1597,6 +1675,7 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     '/api/v1/cost-centres/21': centreFound,
     '/api/v1/stock': stockFound,
     '/api/v1/stock/41': stockPage,
+    '/api/v1/stock/godowns': godownsFound,
     '/api/v1/transactions': transactionsFound,
     '/api/v1/cash-flow': {
       companies: [3, 4], combined: true, start: '2026-04-01', end: '2026-10-30', opening: '1000000', closing: '1200000',
@@ -1608,7 +1687,7 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     'overview/dashboard', 'sales/dashboard', 'sales/register', 'sales/monthly', 'sales/channels', 'sales/customers',
     'sales/customers/11', 'purchases/dashboard', 'purchases/register', 'purchases/monthly', 'purchases/vendors',
     'pnl/profit-loss', 'pnl/cost-centres', 'pnl/cost-centres/21', 'balance-sheet/statement', 'stock/summary',
-    'stock/summary/41', 'cash-flow/movement', 'parties/receivables', 'parties/payables', 'books/transactions',
+    'stock/summary/41', 'stock/godowns', 'cash-flow/movement', 'parties/receivables', 'parties/payables', 'books/transactions',
     'data/health',
   ]
 

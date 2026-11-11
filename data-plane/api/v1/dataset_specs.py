@@ -10,6 +10,10 @@ expression here. No SQL text and no column names ever come from a request (ADR-0
 - **cost_allocations**: one row per cost-centre allocation.
 - **gst**: one row per effective line posted to a GST ledger, with the voucher's and the
   party's GST details.
+- **inventory_lines**: one row per inventory line of a voucher that moves stock (not
+  deleted, cancelled or optional): the item, godown (and whose stock it holds), batch, the
+  other godown of a move, the order, and the quantity (signed: in +, out -), rate and
+  amount (F-STK-014, F-STK-015, F-STK-008).
 
 Dimensions have an id (what filters and grouping use) and a label (what is shown). Time
 dimensions follow each company's financial year (`entities.fy_start_month`). Measures have
@@ -21,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import ColumnElement, and_, case, distinct, func, literal, select
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql import FromClause
 
 from api.v1.company_display import display_company_name_expression
@@ -446,8 +451,90 @@ def _gst() -> Dataset:
     )
 
 
+HOLDING_LABELS = {
+    "own": "Our stock",
+    "third_party_with_us": "Others' stock held with us",
+    "ours_with_third_party": "Our stock at job workers",
+}
+
+
+def _inventory_lines() -> Dataset:
+    """One row per inventory line of a voucher that moves stock (core/stock.py
+    `stock_moving`, with job workers' godowns, which the Holding column tells apart)."""
+    il, v, vt = A.InventoryLine, A.Voucher, A.VoucherType
+    godown, other = aliased(A.Godown), aliased(A.Godown)
+    source = (
+        il.__table__.join(v.__table__, v.id == il.voucher_id)
+        .join(vt.__table__, vt.id == v.voucher_type_id)
+        .join(A.Entity.__table__, A.Entity.id == il.entity_id)
+        .join(A.Item.__table__, A.Item.id == il.item_id)
+        .outerjoin(godown, godown.id == il.godown_id)
+        .outerjoin(other, other.id == il.counterpart_godown_id)
+    )
+    holding = func.coalesce(godown.holding, "own")
+    holding_label = case(
+        *((holding == key, label) for key, label in HOLDING_LABELS.items()), else_=NONE_LABEL
+    )
+    quantity = il.stock_quantity
+    return Dataset(
+        key="inventory_lines",
+        label="Inventory lines",
+        source=source,
+        base_conditions=(
+            v.is_deleted.is_(False),
+            v.is_cancelled.is_(False),
+            v.is_optional.is_(False),
+            vt.moves_stock.is_(True),
+        ),
+        company_id=il.entity_id,
+        dimensions=_by_key(
+            [
+                _named("company", "Company", A.Entity.id,
+                       display_company_name_expression(A.Entity.name)),
+                *_time_dimensions(il.voucher_date),
+                _named("voucher_type", "Voucher type", vt.id, vt.name),
+                Dimension("voucher_number", "Voucher number", v.id, v.voucher_number,
+                          groupable=False),
+                _named("item", "Item", A.Item.id, A.Item.name),
+                _named("godown", "Godown", godown.id, godown.name),
+                Dimension("holding", "Holding", holding, holding_label),
+                _named("batch", "Batch", il.batch_name, il.batch_name),
+                _named("other_godown", "Other godown", other.id, other.name),
+                _named("order_number", "Order number", il.order_number, il.order_number),
+                Dimension("order_due_date", "Order due date",
+                          func.coalesce(func.date_format(il.order_due_date, "%Y-%m-%d"), ""),
+                          func.coalesce(func.date_format(il.order_due_date, "%d-%b-%Y"), ""),
+                          groupable=False),
+            ]
+        ),  # fmt: skip
+        measures=_by_key(
+            [
+                Measure("quantity", "Quantity", quantity, func.sum(quantity)),
+                Measure("rate", "Rate", il.rate,
+                        func.sum(il.amount) / func.nullif(func.sum(quantity), 0)),
+                Measure("amount", "Amount", il.amount, func.sum(il.amount)),
+                Measure("lines", "Lines", literal(1), func.count(), is_count=True),
+            ]
+        ),  # fmt: skip
+        filters=_by_key(
+            [
+                *_date_filters(il.voucher_date),
+                Filter("company", "Company", "ids", _ids(il.entity_id)),
+                Filter("voucher_type", "Voucher type", "ids", _ids(v.voucher_type_id)),
+                Filter("item", "Item", "ids", _ids(il.item_id)),
+                Filter("godown", "Godown", "ids", _ids(il.godown_id)),
+            ]
+        ),  # fmt: skip
+        default_columns=("date", "voucher_number", "voucher_type", "item", "godown", "batch",
+                         "other_godown"),
+        default_measures=("quantity", "rate", "amount"),
+        default_order=(il.voucher_date, v.voucher_number, il.line_no),
+    )  # fmt: skip
+
+
 DATASETS: dict[str, Dataset] = {
-    d.key: d for d in (_voucher_lines(), _vouchers(), _cost_allocations(), _gst())
+    d.key: d
+    for d in (_voucher_lines(), _vouchers(), _cost_allocations(), _gst(), _inventory_lines())
 }
 
 

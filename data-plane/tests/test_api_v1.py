@@ -210,7 +210,13 @@ def test_refusals_over_http(client_without_db: TestClient) -> None:
 
 def test_the_catalogue_lists_only_allow_listed_keys(client_without_db: TestClient) -> None:
     catalogue = {d["key"]: d for d in client_without_db.get("/api/v1/datasets").json()}
-    assert set(catalogue) == {"voucher_lines", "vouchers", "cost_allocations", "gst"}
+    assert set(catalogue) == {
+        "voucher_lines",
+        "vouchers",
+        "cost_allocations",
+        "gst",
+        "inventory_lines",
+    }
     lines = catalogue["voucher_lines"]
     assert {d["key"] for d in lines["dimensions"]} == set(LINES.dimensions)
     assert {m["key"] for m in lines["measures"]} == {"debit", "credit", "net", "voucher_count"}
@@ -221,6 +227,19 @@ def test_the_catalogue_lists_only_allow_listed_keys(client_without_db: TestClien
     assert {"cost_category", "cost_centre"} <= {d["key"] for d in allocations["dimensions"]}
     gst = {d["key"] for d in catalogue["gst"]["dimensions"]}
     assert {"tax_head", "gstin", "place_of_supply", "gst_registration", "irn"} <= gst
+    stock = catalogue["inventory_lines"]
+    groupable = {d["key"] for d in stock["dimensions"] if d["groupable"]}
+    assert {
+        "item",
+        "godown",
+        "holding",
+        "batch",
+        "other_godown",
+        "voucher_type",
+        "month",
+    } <= groupable
+    assert {"voucher_number", "order_due_date"} <= {d["key"] for d in stock["dimensions"]}
+    assert {m["key"] for m in stock["measures"]} == {"quantity", "rate", "amount", "lines"}
 
 
 def test_request_logs_have_no_query_strings(
