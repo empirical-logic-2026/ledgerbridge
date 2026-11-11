@@ -3,7 +3,8 @@
 // month); a channel opens the Sales register filtered to it, and a month that month's.
 // Figures: core/sales.py (GET /api/v1/sales/channels).
 
-import { Alert, Skeleton } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import type { EChartsOption } from 'echarts'
 import type { ChannelOut, ChannelsOut, Company } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
@@ -20,6 +21,7 @@ interface Props extends PanelProps {
   channels: ChannelsOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
   dark: boolean
 }
 
@@ -92,9 +94,9 @@ export function Channels(props: Props) {
   const colours = tokens[props.dark ? 'dark' : 'light']
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message="The channels couldn't be loaded." description={props.error.message} />
+    content = <ErrorState message="The channels couldn't be loaded." error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !found) {
-    content = <Skeleton active paragraph={{ rows: 10 }} />
+    content = <Loading shape="chart-report" />
   } else {
     content = (
       <section className="card" aria-label="Net sales by channel">

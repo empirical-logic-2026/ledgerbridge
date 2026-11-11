@@ -4,7 +4,9 @@
 // the table explorer, each name opening its page. As at the period's end. Figures:
 // core/ageing.py (GET /api/v1/ageing/{kind}); formulas F-PTY-012 and F-PTY-013.
 
-import { Alert, Skeleton, Typography } from 'antd'
+import { Typography } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import type { AgeingOut, AgeingRowOut, Company } from '../../api/types.ts'
 import { HBars } from '../../components/HBars.tsx'
 import { KeyCard } from '../../components/KeyCard.tsx'
@@ -24,6 +26,7 @@ interface Props extends PanelProps {
   ageing: AgeingOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
   dark: boolean
 }
 
@@ -89,9 +92,9 @@ export function Ageing(props: Props) {
   const colours = tokens[props.dark ? 'dark' : 'light']
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message="The ageing couldn't be loaded." description={props.error.message} />
+    content = <ErrorState message="The ageing couldn't be loaded." error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !ageing) {
-    content = <Skeleton active paragraph={{ rows: 8 }} />
+    content = <Loading shape="dashboard" />
   } else {
     const t = ageing.total
     const billsText = fromScaled(toScaled(t.balance) - toScaled(t.uncovered))

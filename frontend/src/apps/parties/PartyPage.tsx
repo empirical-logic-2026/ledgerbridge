@@ -5,7 +5,9 @@
 // monthly trend, each in the table explorer. Figures: core/parties.py
 // (GET /api/v1/parties/{kind}/{id}).
 
-import { Alert, Button, Skeleton, Tabs, Typography } from 'antd'
+import { Alert, Button, Tabs, Typography } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import type { EChartsOption } from 'echarts'
 import type { BillOut, Company, EntryOut, PartyInvoiceOut, PartyMonthOut, PartyOut, SettlementOut } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
@@ -31,6 +33,7 @@ interface Props {
   party: PartyOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
   dark: boolean
   tab: PartyTab
   onTab: (tab: PartyTab) => void
@@ -215,9 +218,9 @@ export function PartyPage(props: Props) {
 
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message={`The ${w.one.toLowerCase()} couldn't be loaded.`} description={props.error.message} />
+    content = <ErrorState message={`The ${w.one.toLowerCase()} couldn't be loaded.`} error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !party) {
-    content = <Skeleton active paragraph={{ rows: 12 }} />
+    content = <Loading shape="dashboard" />
   } else {
     const combined = party.companies.length > 1
     const asAt = `as at ${formatDate(party.period.end)}`
@@ -245,13 +248,16 @@ export function PartyPage(props: Props) {
           </div>
         </section>
         <div className="sales-cards">
-          <KeyCard label={w.balance} figure={{ value: party.balance }} note={asAt} tone="up-neutral" />
-          <KeyCard label="Overdue" figure={{ value: party.overdue }} alert note={`${overdueBills} bill${overdueBills === 1 ? '' : 's'} past the due date`} tone="up-neutral" />
-          <KeyCard label={w.net} figure={party.net} against={againstOf(party.compared_with)} note={`${Number(party.invoices.value ?? 0).toLocaleString('en-IN')} invoices`} />
+          <KeyCard label={w.balance} figure={{ value: party.balance }} note={asAt} tone="up-neutral" accent={colours.accents[0]} />
+          <KeyCard label="Overdue" figure={{ value: party.overdue }} alert note={`${overdueBills} bill${overdueBills === 1 ? '' : 's'} past the due date`} tone="up-neutral"
+            accent={colours.accents[1]} />
+          <KeyCard label={w.net} figure={party.net} against={againstOf(party.compared_with)} note={`${Number(party.invoices.value ?? 0).toLocaleString('en-IN')} invoices`}
+            accent={colours.accents[2]} spark={party.monthly.map((m) => toLakhs(m.net))} />
           <KeyCard
             label="Average days to pay"
             figure={{ value: party.days_to_pay }}
             unit="days"
+            accent={colours.accents[3]}
             missing={`No bill was settled in this period.`}
             note={party.credit_days ? `credit period ${party.credit_days} days` : `${w.settled.toLowerCase()} against bills`}
           />

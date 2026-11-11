@@ -3,7 +3,8 @@
 // one and the balance due at the period's end; a name opens the party's page. Figures:
 // core/parties.py (GET /api/v1/parties/{kind}).
 
-import { Alert, Skeleton } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import type { Company, PartiesOut, PartyRowOut } from '../../api/types.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
@@ -19,6 +20,7 @@ interface Props extends PanelProps {
   parties: PartiesOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
 }
 
 function columns(kind: PartyKind, names: Map<number, string>, combined: boolean, query: Query): ExplorerColumn<PartyRowOut>[] {
@@ -57,9 +59,9 @@ export function Parties(props: Props) {
   const names = new Map(props.companies.map((c) => [c.id, companyDisplayName(c)]))
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message={`The ${PARTY_WORDS[kind].title.toLowerCase()} couldn't be loaded.`} description={props.error.message} />
+    content = <ErrorState message={`The ${PARTY_WORDS[kind].title.toLowerCase()} couldn't be loaded.`} error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !parties) {
-    content = <Skeleton active paragraph={{ rows: 10 }} />
+    content = <Loading shape="report" />
   } else {
     content = (
       <ExplorerTable

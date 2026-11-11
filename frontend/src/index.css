@@ -64,11 +64,16 @@ body,
   font-size: 17px;
 }
 
+/* The module tabs: one row of their own under the logo and the period controls (ten tabs and
+   the controls don't fit one line below ~1900px), scrolling sideways rather than wrapping. */
 .top-modules {
+  order: 3;
   display: flex;
-  flex-wrap: wrap;
+  flex: 1 0 100%;
+  flex-wrap: nowrap;
   gap: 2px;
-  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .top-module {
@@ -93,6 +98,18 @@ body,
   display: flex;
   align-items: center;
   gap: 10px;
+  margin-left: auto;
+}
+
+@media (min-width: 1900px) {
+  .top-modules {
+    order: 0;
+    flex: 1 1 auto;
+  }
+
+  .top-right {
+    margin-left: 0;
+  }
 }
 
 .top-period {
@@ -1044,4 +1061,112 @@ body,
 
 .what-is-this p {
   margin: 0 0 8px;
+}
+
+/* --- pulse loading and errors (Section 0.5) ------------------------------------------- */
+/* Placeholders in each component's shape (components/loading/Loading.tsx): laid out at once,
+   shown after 150 ms (no flicker for a quick load), pulsing between the border colour and the
+   soft green of the theme, in light and dark mode. Reduced motion: a static placeholder. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.loading-shapes {
+  opacity: 0;
+}
+
+.loading-shapes.shown {
+  opacity: 1;
+  transition: opacity 200ms ease-in;
+}
+
+.pulse {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  background: var(--lb-border);
+  animation: lb-pulse 1.6s ease-in-out infinite;
+}
+
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-table {
+  display: grid;
+  gap: 12px 16px;
+  margin-top: 14px;
+  align-items: center;
+}
+
+.skeleton-gap {
+  height: 18px;
+}
+
+/* the logo in the top bar while the app's first data loads */
+.logo-pulse {
+  animation: lb-logo-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes lb-pulse {
+  0%,
+  100% {
+    background: var(--lb-border);
+  }
+  50% {
+    background: var(--lb-primary-soft);
+  }
+}
+
+@keyframes lb-logo-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse,
+  .logo-pulse {
+    animation: none;
+  }
+
+  .loading-shapes.shown {
+    transition: none;
+  }
+}
+
+/* a request that failed: what, why, and Retry */
+.error-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  border-left: 4px solid var(--lb-negative);
+}
+
+.error-state-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--lb-negative);
+}
+
+.error-state-reason {
+  margin: 0;
+  color: var(--lb-muted);
 }

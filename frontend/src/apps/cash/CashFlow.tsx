@@ -5,7 +5,9 @@
 // separately: it needs every ledger classified. Figures: core/cash_flow.py (GET
 // /api/v1/cash-flow); formulas F-CF-001, F-CF-002.
 
-import { Alert, Skeleton, Typography } from 'antd'
+import { Typography } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import type { EChartsOption } from 'echarts'
 import type { CashFlowOut, Company, MovementOut } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
@@ -22,6 +24,7 @@ interface Props extends PanelProps {
   flow: CashFlowOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
   dark: boolean
 }
 
@@ -76,9 +79,9 @@ export function CashFlow(props: Props) {
   const colours = tokens[props.dark ? 'dark' : 'light']
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message="The cash movement couldn't be loaded." description={props.error.message} />
+    content = <ErrorState message="The cash movement couldn't be loaded." error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !flow) {
-    content = <Skeleton active paragraph={{ rows: 8 }} />
+    content = <Loading shape="dashboard" />
   } else {
     const total = (key: 'inflow' | 'outflow') => fromScaled(flow.movements.reduce((sum, m) => sum + toScaled(m[key]), 0n))
     const [green, charcoal, lighter, grey] = colours.accents
@@ -91,8 +94,8 @@ export function CashFlow(props: Props) {
       <>
         <div className="sales-cards">
           <KeyCard label="Cash & bank at the start" figure={{ value: flow.opening }} note={`On ${formatDate(flow.start)}, before the period`} accent={grey} />
-          <KeyCard label="Money in" figure={{ value: total('inflow') }} accent={green} />
-          <KeyCard label="Money out" figure={{ value: total('outflow') }} accent={charcoal} />
+          <KeyCard label="Money in" figure={{ value: total('inflow') }} accent={green} spark={flow.monthly.map((m) => toLakhs(m.inflow))} />
+          <KeyCard label="Money out" figure={{ value: total('outflow') }} accent={charcoal} spark={flow.monthly.map((m) => toLakhs(m.outflow))} />
           <KeyCard label="Cash & bank at the end" figure={{ value: flow.closing }} note={`As at ${formatDate(flow.end)}`} accent={lighter} />
         </div>
         <div className="home-charts">

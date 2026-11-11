@@ -4,7 +4,9 @@
 // the line's sign (debit positive). Figures: core/cost_centres.py
 // (GET /api/v1/cost-centres and .../{id}).
 
-import { Alert, Skeleton, Typography } from 'antd'
+import { Alert, Typography } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import type { AllocationOut, CentreOut, CentrePageOut, CentresOut, Company } from '../../api/types.ts'
 import { formatMonth } from '../../format.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
@@ -18,6 +20,7 @@ interface ListProps extends PanelProps {
   centres: CentresOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
 }
 
 interface PageProps extends PanelProps {
@@ -25,6 +28,7 @@ interface PageProps extends PanelProps {
   centre: CentrePageOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
 }
 
 /** A cost centre's page, keeping the selection. */
@@ -97,9 +101,9 @@ export function CostCentres(props: ListProps) {
   const { centres } = props
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message="The cost centres couldn't be loaded." description={props.error.message} />
+    content = <ErrorState message="The cost centres couldn't be loaded." error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !centres) {
-    content = <Skeleton active paragraph={{ rows: 10 }} />
+    content = <Loading shape="report" />
   } else if (centres.centres.length === 0) {
     content = <Alert type="info" showIcon message="No cost centres in the companies you chose." />
   } else {
@@ -125,9 +129,9 @@ export function CostCentrePage(props: PageProps) {
   const { centre } = props
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message="The cost centre couldn't be loaded." description={props.error.message} />
+    content = <ErrorState message="The cost centre couldn't be loaded." error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !centre) {
-    content = <Skeleton active paragraph={{ rows: 10 }} />
+    content = <Loading shape="report" />
   } else {
     content = (
       <>

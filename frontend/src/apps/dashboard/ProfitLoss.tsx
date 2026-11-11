@@ -4,7 +4,9 @@
 // CSV) and the options side panel. Figures: core/statement_report.py
 // (GET /api/v1/reports/profit-loss).
 
-import { Alert, Button, Checkbox, Dropdown, Skeleton, Tooltip, Typography } from 'antd'
+import { Alert, Button, Checkbox, Dropdown, Tooltip, Typography } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import { Explained } from '../../components/Explained.tsx'
 import type { Company, StatementReport } from '../../api/types.ts'
 import { useAmountFormat } from '../../amountFormat.ts'
@@ -42,6 +44,7 @@ interface Props {
   report: StatementReport | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
   options: ReportOptions
   onOptions: (change: Record<string, string | string[] | undefined>) => void
   query: Query
@@ -194,9 +197,9 @@ export function ProfitLoss(props: Props) {
           </div>
         </div>
         {props.error ? (
-          <Alert type="error" showIcon message="The Profit & Loss couldn't be loaded." description={props.error.message} />
+          <ErrorState message="The Profit & Loss couldn't be loaded." error={props.error} onRetry={props.onRetry} />
         ) : props.loading || !report ? (
-          <Skeleton active paragraph={{ rows: 10 }} />
+          <Loading shape="report" />
         ) : report.reason ? (
           <Alert type="info" showIcon message="No Profit & Loss for this period" description={`${report.reason}.`} />
         ) : (
