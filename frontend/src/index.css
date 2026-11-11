@@ -1170,3 +1170,40 @@ body,
   margin: 0;
   color: var(--lb-muted);
 }
+
+/* a ratio's parts, on its tile's hover (components/RatioBasis.tsx) */
+.ratio-value.has-basis {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--lb-muted);
+  text-underline-offset: 4px;
+}
+
+.ratio-basis-tip {
+  max-width: 420px;
+}
+
+.ratio-basis {
+  min-width: 300px;
+  font-size: 12px;
+}
+
+.ratio-basis-side + .ratio-basis-side {
+  margin-top: 8px;
+}
+
+.ratio-basis-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ratio-basis-total {
+  font-weight: 600;
+}
+
+.ratio-basis-note {
+  margin: 8px 0 0;
+  opacity: 0.85;
+}

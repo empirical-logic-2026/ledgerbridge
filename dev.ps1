@@ -31,6 +31,8 @@
     ./dev.ps1 validate monthly-sales            (monthly sales proven against Tally's Sales Accounts; database only)
     ./dev.ps1 validate currencies               (ledgers by their own currency; database only; counts)
     ./dev.ps1 on-hold [set|clear -EntityId <id>]  (entities on hold: skipped unless named; listed without a step)
+    ./dev.ps1 loans -Company "<name>" [-Date 2026-03-31]  (Loans (Liability) ledgers, group, closing balance; screen only)
+    ./dev.ps1 loans mark|clear -Ledger <id>     (count a loan ledger as a short-term borrowing in the ratios; audited)
     ./dev.ps1 dashboard                         (the dashboard on this computer only: http://127.0.0.1:<port>)
     ./dev.ps1 validate compare-ledger -Ledger 88 [-From 2020-04-01] [-To 2021-04-01]
     ./dev.ps1 statements [-From 2026-04-01]    (stock values and statements at every month end; compared with the source)
@@ -69,7 +71,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'audit', 'promote-field', 'find-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'dashboard', 'help')]
+    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'audit', 'promote-field', 'find-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'loans', 'dashboard', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -119,11 +121,12 @@ param(
     # For `validate compare-ledger`: compare up to this date (default: today).
     [string]$To = '',
 
-    # For `validate compare-ledger`: the ledger's id (as reports and `validate analyse`
-    # name ledgers).
+    # For `validate compare-ledger` and `loans mark|clear`: the ledger's id (as reports,
+    # `validate analyse` and `loans` name ledgers).
     [int]$Ledger = 0,
 
     # For `find-field`: the voucher's date (dd-mm-yyyy), its number, and the text to look for.
+    # For `loans`: the date of the closing balances (yyyy-mm-dd; default today).
     [string]$Date = '',
     [string]$VoucherNumber = '',
     [string]$Text = '',
@@ -715,6 +718,25 @@ switch ($Command) {
         if ($EntityId -le 0) { throw "Usage: ./dev.ps1 on-hold $Service -EntityId <id>" }
         Invoke-Checked exec -T api python -m workers.cli on-hold $Service --entity-id $EntityId
     }
+    'loans' {
+        # A company's Loans (Liability) ledgers with their group and closing balance at a date,
+        # on the screen only (names and amounts, nothing stored or logged), so you can decide
+        # which to mark; `mark`/`clear` count one as a short-term borrowing in the current and
+        # quick ratios (F-RAT-008). Database only, the source isn't contacted; audited.
+        Assert-Step 'loans' @('mark', 'clear')
+        Assert-EnvFile
+        Assert-ApiRunning
+        Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
+        if ($Service) {
+            if ($Ledger -le 0) { throw "Usage: ./dev.ps1 loans $Service -Ledger <id>" }
+            Invoke-Checked exec -T api python -m workers.cli loans $Service --connection $connection --ledger "$Ledger"
+            return
+        }
+        if ($Company.Count -ne 1) { throw 'Usage: ./dev.ps1 loans -Company "<name>" [-Date yyyy-mm-dd]' }
+        $listArgs = @('python', '-m', 'workers.cli', 'loans', 'list', '--connection', $connection, '--entity', $Company[0])
+        if ($Date) { $listArgs += @('--date', $Date) }
+        Invoke-Checked exec -T api @listArgs
+    }
     'logs' {
         Assert-EnvFile
         if ($Service) { Invoke-Stack logs -f --tail 200 $Service } else { Invoke-Stack logs -f --tail 200 }
@@ -799,7 +821,7 @@ switch ($Command) {
         $docs = Join-Path $root 'docs'
         $export = Join-Path $docs 'export'
         New-Item -ItemType Directory -Force -Path $export | Out-Null
-        $documents = @('rules/validation-and-conversion-rules.md', 'database/schema-reference.md', 'project-history.md', 'formulas.md')
+        $documents = @('rules/validation-and-conversion-rules.md', 'database/schema-reference.md', 'project-history.md', 'formula-sheet.md', 'dashboard-pages.md')
         foreach ($document in $documents) {
             $folder = Split-Path -Parent $document
             $leaf = Split-Path -Leaf $document

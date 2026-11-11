@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-70 tables, 839 columns.
+71 tables, 844 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -13,7 +13,7 @@ Every database, table and column of the client-hosted data plane (MySQL 8), gene
 | Database | What it holds | Tables |
 | --- | --- | --- |
 | `ledgerbridge_source` | Raw layer: every record exactly as the source sent it (ADR-005). Written only by connectors through the sync; the transform reads it. | 1 |
-| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 43 |
+| `ledgerbridge_accounting` | Canonical model: companies, chart of accounts, masters and transactions in one shape for every source. Written by the transform; read by validation, reports and (later) the reporting layer. | 44 |
 | `ledgerbridge_reporting` | Semantic layer for reports and AI (M6): views and aggregate tables. Empty until M6; the only database the AI user can read (AI-003). | 1 |
 | `ledgerbridge_system` | Running the platform: connections, sync runs and progress, validation, alerts, users, roles, audit and AI logs, configuration. | 25 |
 
@@ -58,9 +58,9 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 [![System, part 2: users, roles and access, audit and AI log, configuration (ledgerbridge_system)](../diagrams/er-system-access.png)](../diagrams/er-system-access.svg)
 
-**Source figures and statements: stock values, foreign-currency revaluations (ledgerbridge_accounting) and statement lines (ledgerbridge_reporting)**
+**Source figures and statements: stock values, foreign-currency revaluations, loans marked as short-term (ledgerbridge_accounting) and statement lines (ledgerbridge_reporting)**
 
-[![Source figures and statements: stock values, foreign-currency revaluations (ledgerbridge_accounting) and statement lines (ledgerbridge_reporting)](../diagrams/er-source-statements.png)](../diagrams/er-source-statements.svg)
+[![Source figures and statements: stock values, foreign-currency revaluations, loans marked as short-term (ledgerbridge_accounting) and statement lines (ledgerbridge_reporting)](../diagrams/er-source-statements.png)](../diagrams/er-source-statements.svg)
 
 **Data flow, level 0** (the platform and what it talks to)
 
@@ -138,7 +138,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `base_currency_code` → `currencies.code`.
 
-**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `item_opening_batches`, `item_prices`, `items`, `ledgers`, `line_gst_rates`, `opening_bills`, `parties`, `source_budget_lines`, `source_budgets`, `source_fields`, `statement_lines`, `stock_categories`, `stock_values`, `tax_units`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_number_series`, `voucher_orders`, `voucher_types`, `voucher_versions`, `vouchers`.
+**Referred to by:** `account_groups`, `alerts`, `audit_log`, `branches`, `cost_categories`, `cost_centres`, `currency_sources`, `dimension_values`, `entity_sources`, `exchange_rates`, `financial_years`, `fx_revaluation_snapshots`, `godowns`, `inventory_lines`, `item_groups`, `item_opening_batches`, `item_prices`, `items`, `ledgers`, `line_gst_rates`, `opening_bills`, `parties`, `short_term_borrowings`, `source_budget_lines`, `source_budgets`, `source_fields`, `statement_lines`, `stock_categories`, `stock_values`, `tax_units`, `units`, `user_entity_access`, `validation_runs`, `voucher_lines`, `voucher_number_series`, `voucher_orders`, `voucher_types`, `voucher_versions`, `vouchers`.
 
 ### `ledgerbridge_accounting.entity_sources`
 
@@ -387,7 +387,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 
 **Refers to:** `entity_id` → `entities.id`; `group_id` → `account_groups.id`; `party_id` → `parties.id`; `standard_account_id` → `standard_accounts.id`; `currency_code` → `currencies.code`; `connection_id` → `connections.id`; `import_batch_id` → `import_batches.id`.
 
-**Referred to by:** `fx_revaluation_snapshots`, `opening_bills`, `source_budget_lines`, `voucher_lines`, `voucher_version_lines`.
+**Referred to by:** `fx_revaluation_snapshots`, `opening_bills`, `short_term_borrowings`, `source_budget_lines`, `voucher_lines`, `voucher_version_lines`.
 
 ## `ledgerbridge_accounting`: masters
 
@@ -1304,6 +1304,26 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 **Keys and indexes:** unique (ledger_id, as_of); index `ix_fx_revaluation_entity_date` (entity_id, as_of).
 
 **Refers to:** `entity_id` → `entities.id`; `ledger_id` → `ledgers.id`; `connection_id` → `connections.id`.
+
+## `ledgerbridge_accounting`: settings for the figures
+
+### `ledgerbridge_accounting.short_term_borrowings`
+
+**Purpose:** Ledgers under Loans (Liability) marked as short-term: the ratios count their credit balance as a current liability (ADR-052, F-BS-008).
+
+**Filled by:** `./dev.ps1 loans mark` and `loans clear` (audited).
+
+| Column | Type | Null | Key | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | BIGINT UNSIGNED | no | PK | Row id. |
+| `entity_id` | BIGINT UNSIGNED | no | FK | The entity (company) the row belongs to. |
+| `ledger_id` | BIGINT UNSIGNED | no | FK, UK | Refers to `ledgers`. |
+| `created_at` | DATETIME(6) | no |  | When the row was created (UTC). |
+| `updated_at` | DATETIME(6) | no |  | When the row was last changed (UTC). |
+
+**Keys and indexes:** unique (ledger_id).
+
+**Refers to:** `entity_id` → `entities.id`; `ledger_id` → `ledgers.id`.
 
 ## `ledgerbridge_reporting`: statements, ours and the source's (views on top)
 

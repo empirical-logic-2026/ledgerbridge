@@ -3,7 +3,7 @@
 // change %, the totals of both sides, and the ratios as tiles (liquidity: current ratio, quick
 // ratio, debt to equity; working capital: receivable, payable and inventory days and the
 // working-capital days). Figures: core/balance_sheet.py (GET /api/v1/reports/balance-sheet);
-// formulas F-BS-005, F-BS-006, F-RAT-001 to F-RAT-007.
+// formulas F-BS-005, F-BS-006, F-RAT-004 to F-RAT-010 (hover: their parts, F-BS-007 to F-BS-011).
 
 import { Money } from '../../components/Money.tsx'
 import { Alert, Typography } from 'antd'
@@ -11,6 +11,7 @@ import type { BalanceSheetReport, Company, RatioOut, SheetLineOut } from '../../
 import { Explained } from '../../components/Explained.tsx'
 import { ErrorState } from '../../components/loading/ErrorState.tsx'
 import { Loading } from '../../components/loading/Loading.tsx'
+import { RatioBasis, type BasisKind } from '../../components/RatioBasis.tsx'
 import { RatioTiles, type Tile } from '../../components/RatioTiles.tsx'
 import { StatementChange, StatementTable, type StatementRow } from '../../components/StatementTable.tsx'
 import { formatDate } from '../../format.ts'
@@ -42,7 +43,11 @@ const HIGHER_IS_BETTER: Record<string, boolean> = {
 /** An amount as the Amounts setting shows it (components/Money.tsx). */
 const Amount = Money
 
-function tile(r: RatioOut): Tile {
+function isBasisKind(key: string): key is BasisKind {
+  return key === 'current_ratio' || key === 'quick_ratio' || key === 'debt_to_equity'
+}
+
+function tile(r: RatioOut, asOf: string | null): Tile {
   return {
     label: r.label,
     value: r.value ?? null,
@@ -50,7 +55,9 @@ function tile(r: RatioOut): Tile {
     change: r.change,
     higherIsBetter: HIGHER_IS_BETTER[r.key] ?? true,
     note: r.formula_id,
+    formula: r.formula_id,
     missing: 'Its divisor is zero, or a statement or the stock value is missing for this date.',
+    basis: r.basis && isBasisKind(r.key) ? <RatioBasis kind={r.key} basis={r.basis} asOf={asOf} /> : undefined,
   }
 }
 
@@ -59,6 +66,7 @@ function Statement({ sheet }: { sheet: BalanceSheetReport }) {
   return (
     <StatementTable
       label="Balance Sheet"
+      formula="F-BS-005"
       compared={compared}
       columns={{
         label: 'Particulars',
@@ -82,6 +90,7 @@ function Statement({ sheet }: { sheet: BalanceSheetReport }) {
           key: `${section}-total`,
           label: `Total ${title.toLowerCase()}`,
           kind: 'total',
+          formula: 'F-BS-006',
           current: <Amount value={total?.value} />,
           previous: <Amount value={total?.before} />,
           change: <StatementChange change={total?.change_pct} />,
@@ -100,9 +109,12 @@ function help(sourceName: string) {
         built from the books and checked line by line against {sourceName}'s (formula F-BS-005).
       </p>
       <p>
-        <strong>Ratios:</strong> current ratio = current assets ÷ current liabilities; quick ratio leaves out the closing stock; debt to equity =
-        Loans (Liability) ÷ (Capital Account + Profit &amp; Loss A/c); receivable, payable and inventory days = receivables ÷ net sales, payables ÷
-        net purchases, closing stock ÷ cost of sales, times the period's days (F-RAT-001 to F-RAT-007).
+        <strong>Ratios:</strong> current assets and current liabilities as Schedule III shows them: each ledger on the side its balance is on
+        (a debtor in credit is a liability, a creditor in debit an asset), Bank OD A/c, banks in credit and loans marked short-term as
+        short-term borrowings, the closing stock once (F-BS-007, F-BS-008). Current ratio = current assets ÷ current liabilities (F-RAT-008);
+        quick ratio leaves out the closing stock (F-RAT-009); debt to equity = borrowings ÷ (Capital Account + Profit &amp; Loss A/c)
+        (F-RAT-010). Hover a ratio to see its parts. Receivable, payable and inventory days = receivables ÷ net sales, payables ÷ net
+        purchases, closing stock ÷ cost of sales, times the period's days (F-RAT-004 to F-RAT-007).
       </p>
       <p>
         <strong>To compare with {sourceName}:</strong> Gateway of Tally → Balance Sheet at the same date; Display More Reports → Ratio Analysis.
@@ -122,7 +134,7 @@ export function BalanceSheet(props: Props) {
     content = <Alert type="info" showIcon message="No Balance Sheet for this period." description={`${sheet.reason}.`} />
   } else {
     const ratios = new Map(sheet.ratios.map((r) => [r.key, r]))
-    const pick = (keys: string[]) => keys.map((k) => ratios.get(k)).filter((r): r is RatioOut => r !== undefined).map(tile)
+    const pick = (keys: string[]) => keys.map((k) => ratios.get(k)).filter((r): r is RatioOut => r !== undefined).map((r) => tile(r, sheet.as_of ?? null))
     const against = againstOf(sheet.compared_with)
     content = (
       <div className="sheet-layout">

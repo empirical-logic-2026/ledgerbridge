@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.46 (Draft) |
-| Date | 2026-11-06 |
+| Version | 0.54 (Draft) |
+| Date | 2026-11-11 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
 This document describes the database inside each **client deployment**. The control plane has its own small database (users, clients, licences), described in `docs/architecture.md` Section 3.
@@ -573,6 +573,14 @@ Figures the source calculates itself and no voucher holds, stored with the date 
 - `item` (migration 0029): the same for each stock item, by name (Tally: the StockItem collection's `OPENINGVALUE`, `CLOSINGVALUE`, the request already sent for the items' total). The dashboard's Stock page shows them (`core/stock.py`); filled by the next `./dev.ps1 statements`.
 - Canonical sign (stock is a debit). Written by validation (as-of date and year ends; checked against the value stored before, LB-VAL-023) and `./dev.ps1 statements` (every month end and year end).
 
+### 4.10 Settings for the figures (ADR-052; migration 0037)
+
+Choices a person makes about the client's ledgers; not source data, so no source-tracking columns. Each change is audited (`audit_log`, AUD-001).
+
+#### `ledgerbridge_accounting.short_term_borrowings`
+
+`id, entity_id, ledger_id, created_at, updated_at`. Unique `(ledger_id)`. A ledger under Loans (Liability) marked as short-term (for example a cash-credit or working-capital loan under Secured Loans): the current and quick ratios count its credit balance as a current liability (formula F-BS-008, `core/ratios.py`). Bank OD A/c ledgers and bank accounts in credit are short-term without a mark. Set and cleared with `./dev.ps1 loans mark|clear -Ledger <id>` (actions `short_term_borrowing_marked`, `short_term_borrowing_cleared`); read by `report_ro`.
+
 ## 5. `ledgerbridge_system`
 
 ### 5.1 Integration
@@ -896,6 +904,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
 | 2026-11-06 | 0.45 | `stock_values.scope` `item`: each stock item's own value at the statement dates (migration 0029; the Stock page). |
 | 2026-11-05 | 0.44 | RPT-017 / ADR-051: append-only observed voucher versions, posting snapshots, ambiguity-aware comparison rows and deletion detection timestamps (migration 0028); nullable `vouchers.source_altered_at` stores Tally `UPDATEDDATETIME` without timezone conversion (migration 0027). |
+| 2026-11-11 | 0.54 | `short_term_borrowings` (migration 0037, Section 4.10): loans marked as short-term for the ratios (ADR-052). |
 | 2026-11-09 | 0.53 | `voucher_lines.utr` and `utr_source` stored only: not shown in the dashboard (no `/api/v1` response or CSV export). No migration. |
 | 2026-11-09 | 0.52 | Other masters (migration 0036): `stock_categories`, `items.stock_category_id`, `reorder_level`, `min_order_quantity`, `item_prices`, `source_budgets`, `source_budget_lines`. |
 | 2026-11-09 | 0.51 | Settings and order (migration 0035): `sort_position` on groups and ledgers (the statements' group order), `ledgers.affects_stock`, `entities.is_integrated`, `is_fifo`, `audited_upto`, `vouchers.number_series`, `active_to`, `has_cash_flow`, `voucher_number_series`. |
