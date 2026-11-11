@@ -100,6 +100,7 @@ npm run build
 ./dev.ps1 connect -Origin live -Company "LedgerBridge Test Co" -TimeoutSec 600 -PauseSec 0 -PartMonth auto -Educational auto
 # Pilot commands (init-env, connect -Origin backup, sync full, summary with -Env pilot) are in
 # docs/pilot-runbook.md: the developer runs them. Claude Code never does.
+./dev.ps1 load-test-fixtures [-Recording main]       # LedgerBridge Test Co into the test database from its recordings (no Tally; test only)
 ./dev.ps1 seed-test-data create-only                 # create missing seed items, skip alterations and deletions
 ./dev.ps1 seed-test-data integrated-off              # (or integrated-on) switch the test company's inventory integration
 ./deploy/stack.ps1 -Env test exec -T api python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO

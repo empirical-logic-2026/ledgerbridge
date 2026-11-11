@@ -475,3 +475,37 @@ def test_the_dashboard_starts_only_on_this_computer(
     assert done.returncode != 0
     assert message in done.stdout + done.stderr
     assert "Dashboard (test)" not in done.stdout  # nothing started
+
+
+def test_load_test_fixtures_refuses_the_pilot_before_anything_runs(tmp_path: Path) -> None:
+    """`load-test-fixtures` loads the test company's recordings: never into pilot."""
+    stack, log = tmp_path / "fake-stack.ps1", tmp_path / "calls.jsonl"
+    stack.write_text(FAKE_STACK, encoding="utf-8")
+    env = {
+        **__import__("os").environ,
+        "LEDGERBRIDGE_DEV_STACK": str(stack),
+        "LEDGERBRIDGE_DEV_STACK_LOG": str(log),
+    }
+    done = subprocess.run(  # noqa: S603 - fixed arguments, no shell
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-File", str(REPO / "dev.ps1"), "load-test-fixtures", "-Env", "pilot"],
+        capture_output=True, text=True, timeout=120, check=False, env=env, cwd=REPO,
+    )  # fmt: skip
+    assert done.returncode != 0
+    assert not log.exists()  # the stack was never called
+    assert "runs only against the test environment" in done.stdout + done.stderr
+
+
+def test_load_test_fixtures_rejects_an_unknown_recording(tmp_path: Path) -> None:
+    stack, log = tmp_path / "fake-stack.ps1", tmp_path / "calls.jsonl"
+    stack.write_text(FAKE_STACK, encoding="utf-8")
+    done = subprocess.run(  # noqa: S603 - fixed arguments, no shell
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-File", str(REPO / "dev.ps1"), "load-test-fixtures", "-Recording", "client",
+         "-Env", "test"],
+        capture_output=True, text=True, timeout=120, check=False, cwd=REPO,
+        env={**__import__("os").environ, "LEDGERBRIDGE_DEV_STACK": str(stack),
+             "LEDGERBRIDGE_DEV_STACK_LOG": str(log)},
+    )  # fmt: skip
+    assert done.returncode != 0
+    assert not log.exists()

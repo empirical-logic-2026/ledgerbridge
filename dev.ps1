@@ -33,6 +33,7 @@
     ./dev.ps1 on-hold [set|clear -EntityId <id>]  (entities on hold: skipped unless named; listed without a step)
     ./dev.ps1 loans -Company "<name>" [-Date 2026-03-31]  (Loans (Liability) ledgers, group, closing balance; screen only)
     ./dev.ps1 loans mark|clear -Ledger <id>     (count a loan ledger as a short-term borrowing in the ratios; audited)
+    ./dev.ps1 load-test-fixtures [-Recording main]  (LedgerBridge Test Co from its recordings, no Tally; test only)
     ./dev.ps1 dashboard                         (the dashboard on this computer only: http://127.0.0.1:<port>)
     ./dev.ps1 validate compare-ledger -Ledger 88 [-From 2020-04-01] [-To 2021-04-01]
     ./dev.ps1 statements [-From 2026-04-01]    (stock values and statements at every month end; compared with the source)
@@ -71,7 +72,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'audit', 'promote-field', 'find-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'loans', 'dashboard', 'help')]
+    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'audit', 'promote-field', 'find-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'loans', 'load-test-fixtures', 'dashboard', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -155,6 +156,10 @@ param(
 
     # For `on-hold set` / `on-hold clear`: the entity's id (as reports label companies).
     [int]$EntityId = 0,
+
+    # For `load-test-fixtures`: which recording of the test company to load.
+    [ValidateSet('data-completion', 'main')]
+    [string]$Recording = 'data-completion',
 
     # For `promote-field`: the catalogued field's id (from `fields`), and the dimension's
     # code and name.
@@ -842,6 +847,17 @@ switch ($Command) {
             Write-Host "Exported $name (docx, pdf)"
         }
         Write-Host "Saved in $export"
+    }
+    'load-test-fixtures' {
+        # LedgerBridge Test Co into the TEST database from its recorded Tally responses
+        # (data-plane/tests/fixtures/tally), without Tally: every connector the tool builds
+        # replays the files. Connect (paused), full sync, statements, validate. Runs on the
+        # host (the image has no tests/ or devtools/); the tool re-checks APP_ENV and the port.
+        if ($Env -ne 'test') { throw 'load-test-fixtures runs only against the test environment.' }
+        Assert-EnvFile
+        Push-Location (Join-Path $root 'data-plane')
+        try { Invoke-Uv run python -m devtools.load_test_fixtures --recording $Recording }
+        finally { Pop-Location }
     }
     'seed-test-data' {
         # Writes into Tally (ADR-014): test environment and test company only. The tool itself
