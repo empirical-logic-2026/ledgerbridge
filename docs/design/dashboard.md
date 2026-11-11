@@ -139,6 +139,7 @@ Every table: a filter (any part of a text or date cell), **Columns**, **Group by
 ### Stock by godown and the inventory dataset (built 2026-11-11, ADR-053)
 
 - **Stock › By godown:** every item at each godown and batch at the period's end, in three sections: *Our stock*, *Others' stock held with us (not ours)* (in the total, as Tally's Stock Summary counts it) and *Our stock at job workers (still ours)* (apart, outside the total, as Tally leaves it out). The total equals the Stock page and Tally's Stock Summary. A row's value is its quantity at the item's rate; Tally's own value of each godown is shown beside. Every row opens the item at that godown.
+- **The note "How this page divides stock"** at the top of By godown: a small info box (open the first time, then as the reader left it, in this browser) explaining the three sections under their own titles, the total and the values.
 - **The item page:** a *By godown and batch* tab; each movement's *Other godown*; with `?godown=` the movements and months at that godown only (a chip says so, *Show every godown* clears it).
 - **Table explorer, the inventory dataset** (`/api/v1/datasets/inventory_lines`): one row per stock-moving inventory line (date, voucher type and number, item, godown, holding, batch, other godown, order number and due date, quantity, rate, amount), grouped and filtered like the voucher-line dataset. No page for the datasets yet.
 
