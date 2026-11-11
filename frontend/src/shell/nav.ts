@@ -71,7 +71,7 @@ export const NAV: NavGroup[] = [
     pages: [page('profit-loss', 'Profit & Loss', true, [], STATEMENT), page('cost-centres', 'Cost centres', true, [], COST_CENTRES)],
   },
   { key: 'balance-sheet', label: 'Balance Sheet', pages: [page('statement', 'Balance Sheet', true, [], STATEMENT)] },
-  { key: 'stock', label: 'Stock', pages: [page('summary', 'Stock summary', true, [], STOCK)] },
+  { key: 'stock', label: 'Stock', pages: [page('summary', 'Stock summary', true, [], STOCK), page('godowns', 'By godown', true, [], STOCK)] },
   { key: 'cash-flow', label: 'Cash Flow', pages: [page('movement', 'Cash movement', true, [], STATEMENT)] },
   { key: 'parties', label: 'Parties', pages: [page('receivables', 'Receivables', true, [], PARTIES), page('payables', 'Payables', true, [], PARTIES)] },
   { key: 'books', label: 'Books', pages: [page('transactions', 'Transactions', true, [], BOOKS)] },

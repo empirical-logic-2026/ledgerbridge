@@ -528,3 +528,66 @@ def test_part_7_budgets_categories_prices_and_reorder_levels(synced: int) -> Non
             ("Electricity", "net_transactions", Decimal(60000)),
             ("Courier Charges", "net_transactions", Decimal(12000)),
         ]
+
+
+# --- stock by godown and the inventory dataset (dashboard: by godown) ----------------------
+
+
+def test_the_inventory_dataset_adds_up_to_each_items_closing(
+    client: TestClient, synced: int
+) -> None:
+    """Per item: the opening plus the dataset's quantities up to the date, outside job
+    workers' godowns (which Tally leaves out), is the Stock page's closing (F-STK-014)."""
+    end = {"date_from": "2026-04-01", "date_to": "2026-10-31"}
+    stock = client.get("/api/v1/stock", params=end)
+    assert stock.status_code == 200, stock.text
+    closing = {i["name"]: Decimal(i["closing"]) for i in stock.json()["items"]}
+    grouped = client.get(
+        "/api/v1/datasets/inventory_lines",
+        params={"group_by": ["item", "holding"], "measure": ["quantity"], "date_to": "2026-10-31",
+                "page_size": 500},
+    )  # fmt: skip
+    assert grouped.status_code == 200, grouped.text
+    moved: dict[str, Decimal] = {}
+    for row in grouped.json()["rows"]:
+        if row["keys"]["holding"]["id"] != "ours_with_third_party":
+            name = row["keys"]["item"]["label"]
+            moved[name] = moved.get(name, Decimal(0)) + Decimal(row["values"]["quantity"])
+    with Session(get_engine()) as session:
+        openings = dict(
+            session.execute(
+                select(A.Item.name, A.Item.opening_qty).where(A.Item.entity_id == synced)
+            ).all()
+        )
+    for name, quantity in closing.items():
+        assert Decimal(openings[name]) + moved.get(name, Decimal(0)) == quantity, name
+    # It groups by godown, batch, voucher type and month too.
+    for key in ("godown", "batch", "voucher_type", "month", "other_godown"):
+        response = client.get("/api/v1/datasets/inventory_lines", params={"group_by": key})
+        assert response.status_code == 200, (key, response.text)
+
+
+def test_the_stock_by_godown_adds_up_to_the_stock_page(client: TestClient, synced: int) -> None:
+    params = {"date_from": "2026-04-01", "date_to": "2026-10-31"}
+    found = client.get("/api/v1/stock/godowns", params=params)
+    assert found.status_code == 200, found.text
+    body = found.json()
+    stock = client.get("/api/v1/stock", params=params).json()
+    sections = {s["key"]: s for s in body["sections"]}
+    counted = sum(Decimal(s["quantity"]) for s in body["sections"] if s["in_total"])
+    assert (
+        counted
+        == Decimal(body["total_quantity"])
+        == sum(Decimal(i["closing"]) for i in stock["items"])
+    )
+    assert sections["at_job_workers"]["in_total"] is False
+    assert all(r["value"] is None for r in sections["at_job_workers"]["rows"])
+    # The item page at one godown (read as report_ro), with the other godown of moves.
+    gizmo = next(r for s in body["sections"] for r in s["rows"] if r["godown"] == "Branch Store")
+    page = client.get(
+        f"/api/v1/stock/{gizmo['item_id']}", params={**params, "godown": "Branch Store"}
+    )
+    assert page.status_code == 200, page.text
+    assert page.json()["godown"] == "Branch Store"
+    assert {m["godown"] for m in page.json()["movements"]} == {"Branch Store"}
+    assert any(m["other_godown"] for m in page.json()["movements"])

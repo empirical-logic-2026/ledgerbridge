@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.60 |
+| Version | 0.61 |
 | Date | 2026-11-11 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
@@ -183,6 +183,7 @@ ledgerbridge/
 | `report_periods.py` | The period a report covers (whole months or a date range), the period it is compared with (`Period.previous`: the same days of the month or quarter before, a year earlier, or as many months or days just before; `last_year`) and the stored statements its figures come from: the one at the end less the one before the start (in Educational mode a 30-day month ends on the 2nd of the next month; a date range runs to the last stored date within it). |
 | `home.py` | The dashboard home's figures (`GET /api/v1/home`): Profit & Loss and Balance Sheet cards from the stored statements, balances and stock value, sales and purchases by month, channel and company; groups found by their predefined role. |
 | `ratios.py` | Current assets, current liabilities and borrowings in the form of Schedule III, ledger by ledger at a statement date (ADR-052; F-BS-007 to F-BS-011): what the current ratio, quick ratio and debt to equity in `balance_sheet.py` are worked out from, with their parts for the ratio tiles' hover. |
+| `stock_godowns.py` | Stock by godown and batch at a date in three sections, counted as Tally counts them: our stock and others' stock held with us in the total (= the Stock page and Tally's Stock Summary), our stock at job workers apart (ADR-053; F-STK-010 to F-STK-013). |
 | `utr.py` | The UTR rule: a value is a bank's transaction reference only when it looks like one (NEFT/RTGS, IMPS/UPI, or labelled UTR); never the source's own codes. |
 | `stock.py` | The Stock page (`GET /api/v1/stock` and `.../{item_id}`, `api/v1/stock.py`): every item's opening, inward, outward and closing quantity (ours, by `stock_moving`: the same rule validation proves against the source, VAL-006), the source's own value per item, stock group and godown at the last stored date within the period, the stock value by date, and one item's movements and months. |
 | `transactions.py` | The Transactions page (`GET /api/v1/transactions`, `api/v1/transactions.py`): one row per effective ledger line, with its voucher's date, type, number, reference, party and GSTIN, narration, the voucher's other ledgers (particulars), and the line's bills, cost centres, order numbers, GST details and cheque number (the stored UTR is never read). |
@@ -252,6 +253,8 @@ ledgerbridge/
 
 **`migrations/revision_guard.py`: the migration-history check.** Reads the current Alembic revision and compares it with the checked-out migration scripts. `./dev.ps1 up` runs it in the one-off migrate container before applying any migration, and stops with recovery guidance if the database records an unknown revision.
 
+**`devtools/load_test_fixtures.py`: the test company from its recordings.** Development only. `./dev.ps1 load-test-fixtures [-Recording main]` loads LedgerBridge Test Co into the test database from the recorded Tally responses (`tests/fixtures/tally`, default the fullest, `rules/data-completion`) without Tally: every connector it builds replays the files. It refuses anywhere but the test environment and for another company's recording.
+
 **`devtools/tally_seed/`: filling the test company.** Development only, never part of the product, and it may only write to the company "LedgerBridge Test Co" (it checks this before doing anything). `data.py` holds the synthetic ledgers and vouchers, including the cases that reproduce Tally's counting rules (openings, delivery and receipt notes with tracked invoices, optional, memorandum, reversing and post-dated vouchers; schema.md 7.5); `requests.py` builds Tally's import requests; `seed.py` works out what is missing and imports it; `__main__.py` is the command (`./dev.ps1 seed-test-data`).
 
 **`tests/`: automatic checks.**
@@ -275,7 +278,7 @@ ledgerbridge/
 | `test_job_work.py` | Job work and godowns as Tally counts them, stock journals read once, Tally's own opening difference; on fixtures recorded from the test company. |
 | `test_dev_script_args.py`, `test_migration_guard.py`, `test_run_lock.py` | The docker compose arguments each `dev.ps1` command builds, the migration guard's revision comparison, and the run lock: released however a run ends, lapsing after a shutdown, cleared when orphaned, refusals that say what they found. |
 | `connectors/tally/test_*.py` | The Tally connector: requests, parser, mapping, signs, recorded fixtures. |
-| `devtools/test_tally_seed.py`, `devtools/test_diagrams.py` | The seeder and its safety checks; that the diagrams match the models and are drawn. |
+| `devtools/test_tally_seed.py`, `devtools/test_diagrams.py`, `devtools/test_load_test_fixtures.py` | The seeder and its safety checks; that the diagrams match the models and are drawn; that `load-test-fixtures` refuses outside the test environment and only replays recordings. |
 | `devtools/test_tally_full_export.py` | The full export's safety checks and requests; that the recording is complete and the generated field list current. |
 | `test_sync.py`, `test_large_sync.py`, `test_extract.py`, `test_raw_store.py`, `test_entity_lookup.py` | Syncing: small and large, resuming, finding companies, storing raw records. |
 | `test_validation.py`, `test_standard_accounts.py` | Validation checks and the standard chart of accounts. |
@@ -350,6 +353,7 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `src/components/RatioBasis.tsx` | What a ratio is worked out from, on its tile's hover: current assets and current liabilities (or borrowings and equity) with their parts, the loans marked as short-term, combined companies (ADR-052). |
 | `src/components/StatementTable.tsx` | A statement table: current, previous and change columns, section headings, indented lines and totals, each line opening its page (the Overview's Profit & Loss summary, the Balance Sheet). |
 | `src/components/loading/` | Loading and errors on every page (dashboard design Section 0.5): `Loading.tsx` (placeholders in each component's shape, pulsing; the page shapes), `delay.ts` (shown only after 150 ms), `ErrorState.tsx` (what failed, why, and Retry); `Loading.test.tsx` checks the delay, the announcement, reduced motion and Retry. |
+| `src/apps/stock/StockGodowns.tsx`, `godownWords.ts` | The Stock module's By godown page and the sections shared with the item page's breakdown; each section's name and meaning in plain words (ADR-053). |
 | `src/apps/stock/Stock.tsx` | The Stock module: the stock summary (value, value by date, by stock group and godown, every item with quantities, value and rate) and one item's page (movements with the quantity after each, month by month). |
 | `src/apps/books/Transactions.tsx` | The Books module's Transactions page: every ledger line in the table explorer with the fifteen columns (Order Number empty until it is fetched). |
 | `src/index.css`, `src/test-setup.ts`, `src/*.test.ts(x)` | Styles, the tests' setup, and the tests (formats, router and selection, search bar, the shell and Overview against a stubbed API). |
@@ -463,6 +467,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-11 | 0.61 | `core/stock_godowns.py`, `src/apps/stock/StockGodowns.tsx`, `godownWords.ts`, `devtools/load_test_fixtures.py` (`./dev.ps1 load-test-fixtures`); the `inventory_lines` dataset; tests `test_stock_godowns.py`, `tests/devtools/test_load_test_fixtures.py`. |
 | 2026-11-11 | 0.60 | `core/ratios.py`, `workers/loans.py`, `ShortTermBorrowing` (migration 0037), `src/components/RatioBasis.tsx`; `docs/formulas.md` moved to `docs/formula-sheet.md`; `docs/dashboard-pages.md`; tests `test_ratios.py`, `test_loans.py`, `test_ste_docs.py`. |
 | 2026-11-11 | 0.59 | `src/components/loading/` (pulse loading and the error state with Retry) and `src/components/StatementTable.tsx`; `docs/design/screenshots/reference-layout/`. |
 | 2026-11-09 | 0.58 | `core/problems.py`: `Problem.source_data` (warnings about the source's own data leave the verdict at OK WITH WARNINGS); `core/transform.py` `stored_orders`, `orders_named`, `unlinked_orders` shared by `link_orders` and validation; `workers/report.py` `by_cause`. |

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.17 |
+| Version | 0.18 |
 | Date | 2026-11-11 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1); the client's reference screenshots of 2026-11-02 (Section 0.4: layout and information design only; kept on the developer's computer in `docs/design/client-reference/`, not in git, as they show other products and a desktop) |
@@ -136,12 +136,11 @@ A party is known by its **name** across the selected companies (as the facets ar
 
 Every table: a filter (any part of a text or date cell), **Columns**, **Group by** (subtotals per group), sorting by any header, **saved views** (in this browser until login, M5) and **Export CSV** of exactly what is shown (exact rupees, subtotals and total; text guarded against formulas). Long lists show the first rows and "Show more".
 
-### Planned after the data-completion re-fetch (requested 2026-11-09)
+### Stock by godown and the inventory dataset (built 2026-11-11, ADR-053)
 
-Built once the full re-fetch after data completion part 7 has filled the new stock columns, one PR:
-
-- **Stock page, "by godown" view:** quantity and value per item, godown and batch at the period's end (the openings by godown and batch, `item_opening_batches`, plus the inventory lines' movements per godown). Stock at a job worker's godown (`godowns.holding` = `ours_with_third_party`, which Tally leaves out of its stock balances) is shown in a section of its own, apart from the stock on hand; third-party stock held with us likewise. The totals match the Stock page's own figures for the stock Tally counts.
-- **Table explorer, an inventory dataset:** one row per inventory line (date, voucher type and number, item, godown, batch, the other godown of a move, order number and due date, quantity, rate, amount), grouped and filtered like the voucher-line dataset (`api/v1/dataset_specs.py`).
+- **Stock › By godown:** every item at each godown and batch at the period's end, in three sections: *Our stock*, *Others' stock held with us (not ours)* (in the total, as Tally's Stock Summary counts it) and *Our stock at job workers (still ours)* (apart, outside the total, as Tally leaves it out). The total equals the Stock page and Tally's Stock Summary. A row's value is its quantity at the item's rate; Tally's own value of each godown is shown beside. Every row opens the item at that godown.
+- **The item page:** a *By godown and batch* tab; each movement's *Other godown*; with `?godown=` the movements and months at that godown only (a chip says so, *Show every godown* clears it).
+- **Table explorer, the inventory dataset** (`/api/v1/datasets/inventory_lines`): one row per stock-moving inventory line (date, voucher type and number, item, godown, holding, batch, other godown, order number and due date, quantity, rate, amount), grouped and filtered like the voucher-line dataset. No page for the datasets yet.
 
 ## 0.3 Everything clickable, and one detail page per entity
 
@@ -472,6 +471,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-11 | 0.18 | Stock by godown and the inventory dataset built (ADR-053): the three sections, the total as Tally counts it, the item page at one godown. |
 | 2026-11-11 | 0.17 | Section 0.5: loading and errors on every page (pulse loading in each component's shape, 150 ms delay, reduced motion, aria-busy, Retry; the logo pulsing on the first load); the statement table as one component; screenshots of the reference layout. |
 | 2026-11-09 | 0.16 | Planned after the data-completion re-fetch: the Stock page's "by godown" view (job workers' stock apart) and an inventory dataset in the table explorer. Opening bills are now stored and counted in ageing (data completion part 2). |
 | 2026-11-04 | 0.15 | Shared status labels and adjacent meanings across payment, validation and source-loaded tables; bill-wise payment states avoid treating advances as overdue. P&L and Balance Sheet display the active date range, with the Balance Sheet as-of clarification. |

@@ -1,7 +1,8 @@
 // The Stock module (RPT-014; formulas F-STK-001 to F-STK-008): the stock summary (key cards,
 // the stock value at the last stored dates, the value by stock group and by godown, and every
 // item with its opening, inward, outward and closing quantity, value and rate) and one item's
-// page (its movements with the quantity after each, and its months). Quantities are ours,
+// page (its movements with the quantity after each and the other godown of a move, its months,
+// and where it is by godown and batch; at one godown with `?godown=`). Quantities are ours,
 // proven against the source item by item; values are the source's own, at the last stored
 // date within the period. Figures: core/stock.py (GET /api/v1/stock and .../{id}).
 
@@ -19,6 +20,7 @@ import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import type { Query } from '../../router.ts'
 import { builtHref } from '../../shell/nav.ts'
+import { GodownSections } from './StockGodowns.tsx'
 import { tokens, type Tokens } from '../../theme.ts'
 
 interface SummaryProps extends PanelProps {
@@ -180,6 +182,8 @@ function movementColumns(page: StockItemPageOut, companies: Company[], query: Qu
     { key: 'type', label: 'Vch Type', kind: 'text', value: (m) => m.voucher_type, groupable: true },
     { key: 'number', label: 'Vch No.', kind: 'text', value: (m) => m.voucher_number, link: (m) => builtHref(['books', 'vouchers', String(m.voucher_id)], query) },
     { key: 'godown', label: 'Godown', kind: 'text', value: (m) => m.godown, groupable: true },
+    { key: 'other_godown', label: 'Other godown', kind: 'text', value: (m) => m.other_godown ?? null, groupable: true,
+      help: 'Where the stock went (a line going out) or came from (a line coming in), for a move between godowns.' },
     { key: 'quantity', label: 'Quantity', kind: 'count', value: (m) => m.quantity, summed: false },
     { key: 'balance', label: 'Balance qty', kind: 'count', value: (m) => m.balance, summed: false },
     { key: 'amount', label: 'Voucher value', kind: 'amount', value: (m) => m.amount },
@@ -216,6 +220,13 @@ export function StockItemPage(props: ItemProps) {
             spark={page.months.map((m) => (m.value === null ? null : toLakhs(m.value)))} />
           <KeyCard label="Rate" figure={{ value: item.rate ?? null }} note={`Per${unit || ' unit'}`} missing="No value, or no quantity" accent={lighter} />
         </div>
+        {page.godown && (
+          <p className="godown-filter">
+            <span className="chip active">At {page.godown}</span>{' '}
+            <a href={itemHref(item.item_id, props.query)}>Show every godown</a>
+            <span className="card-small-note"> · The movements and months are at this godown only; the cards are the item's whole.</span>
+          </p>
+        )}
         {page.truncated && <Alert type="warning" showIcon message="Only the first movements are shown: choose a shorter period." />}
         <section className="card" aria-label="Stock item lists">
           <Tabs
@@ -232,6 +243,11 @@ export function StockItemPage(props: ItemProps) {
                 key: 'monthly',
                 label: 'Month by month',
                 children: <ExplorerTable id="stock-item-months" label="Month by month" columns={MONTH_COLUMNS} rows={page.months} rowKey={(m) => m.month} />,
+              },
+              {
+                key: 'godowns',
+                label: 'By godown and batch',
+                children: <GodownSections sections={page.by_godown} query={props.query} withItem={false} id="stock-item-godowns" />,
               },
             ]}
           />

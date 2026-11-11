@@ -4,7 +4,7 @@ This sheet gives the formula of each figure that the dashboard shows. Use it to 
 
 | Field | Value |
 | --- | --- |
-| Version | 2.0 |
+| Version | 2.1 |
 | Date | 2026-11-11 |
 | Requirement | RPT-015 |
 | Language | ASD-STE100 Simplified Technical English |
@@ -999,6 +999,90 @@ Retired on 2026-11-11. Replaced by F-RAT-010. The old formula divided the Loans 
 | Companies | C2. An item counts one time in all companies. |
 | Check in Tally | 1. Open List of Accounts › Stock Items. 2. Count the items. |
 
+### 11.1 Stock by godown and batch (F-STK-010 to F-STK-015)
+
+**Sections.** The godown tells whose stock it holds (`godowns.holding`, from the godown settings in Tally):
+
+| Section | Holding | In the total | Why |
+| --- | --- | --- | --- |
+| Our stock | `own` | Yes | It is our stock in our godowns. |
+| Others' stock held with us (not ours) | `third_party_with_us` | Yes | It is not ours, but the Stock Summary of Tally includes it. The total must agree with Tally. |
+| Our stock at job workers (still ours) | `ours_with_third_party` | No | Tally leaves it out of the Stock Summary and of the closing stock. Tally records there only what the job worker used. |
+
+The tests prove these rules on the test company against the Stock Summary and the Godown Summary of Tally at 02-Oct-2026 (`data-plane/tests/test_stock_godowns.py`).
+
+#### F-STK-010 Quantity at a godown and batch, at a date
+
+| Item | Value |
+| --- | --- |
+| Expression | `opening at the godown and batch + Σ stock_quantity at the godown and batch`, where `voucher_date ≤ date` |
+| In words | The quantity of an item at one godown and batch at the end of the date. An opening that Tally does not split by godown shows on a row with no godown. |
+| Data | `item_opening_batches` (`godown_id`, `batch_name`, `quantity`), `items.opening_qty` and `inventory_lines` (`godown_id`, `batch_name`, `stock_quantity`) of vouchers that move stock. |
+| Signs | A quantity in is positive. A quantity out is negative. A godown can show a negative quantity when more went out than came in. |
+| Dates | D1. |
+| Companies | C1, C2. The rows add the companies by item, godown and batch name. |
+| Check in Tally | 1. Open Gateway of Tally › Godown Summary. 2. Set the same date. 3. Open the godown and read the item. |
+
+#### F-STK-011 Value at a godown and batch
+
+| Item | Value |
+| --- | --- |
+| Expression | `F-STK-010 × F-STK-006`, to the paisa. The last row of the item takes the rounding difference. |
+| In words | The quantity at the godown and batch multiplied by the rate of the item. Tally does not keep a value for each item at each godown. The rows of an item add up to its stored value (F-STK-005). Rows at a job worker have no value. |
+| Data | F-STK-005, F-STK-006 and F-STK-010. |
+| Signs | Positive for a positive quantity. |
+| Dates | D5, D7 for the rate. D1 for the quantity. |
+| Companies | C1, C2, C4. |
+| Check in Tally | 1. Open the Godown Summary at the same date. 2. Compare the value of the godown with the sum of its rows. Note: Tally values each godown with its own method. The two can differ a little. |
+
+#### F-STK-012 Section total
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ F-STK-010` and `Σ F-STK-011` of the rows of the section |
+| In words | The quantity and the value of one section: our stock, others' stock held with us, or our stock at job workers. |
+| Data | F-STK-010 and F-STK-011. |
+| Signs | As F-STK-010. |
+| Dates | As F-STK-010 and F-STK-011. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the Godown Summary at the same date. 2. Add the godowns of the section. |
+
+#### F-STK-013 Stock in the total
+
+| Item | Value |
+| --- | --- |
+| Expression | `F-STK-012 (our stock) + F-STK-012 (others' stock held with us)` |
+| In words | The stock that Tally counts. It is equal to the closing quantities of the Stock page (F-STK-004), item by item, and to the Stock Summary of Tally. Our stock at job workers is not in it. |
+| Data | F-STK-012. |
+| Signs | As F-STK-010. |
+| Dates | As F-STK-010 and F-STK-011. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open Gateway of Tally › Stock Summary. 2. Set the same date. 3. Read the closing quantity and the closing value. |
+
+#### F-STK-014 Quantity of an inventory line
+
+| Item | Value |
+| --- | --- |
+| Expression | `inventory_lines.stock_quantity` |
+| In words | The quantity that one inventory line moves in stock, in the inventory lines dataset. It is the quantity, minus a part that a delivery note or a receipt note already moved. For each item, the opening plus the lines up to a date, outside job workers, is the closing quantity (F-STK-004). |
+| Data | `inventory_lines` of vouchers that move stock and are not deleted, cancelled or optional. |
+| Signs | A quantity in is positive. A quantity out is negative. |
+| Dates | D1. |
+| Companies | The company of the voucher. |
+| Check in Tally | 1. Open the voucher. 2. Read the quantity of the stock item line. |
+
+#### F-STK-015 Rate of inventory lines
+
+| Item | Value |
+| --- | --- |
+| Expression | For one line: `inventory_lines.rate`. For a group: `Σ amount ÷ Σ stock_quantity`. |
+| In words | The rate of one line, or the average rate of a group of lines. With no quantity, there is no rate. |
+| Data | `inventory_lines` (`rate`, `amount`, `stock_quantity`). |
+| Signs | Positive. |
+| Dates | D1. |
+| Companies | C1, C2, C4. |
+| Check in Tally | 1. Open the voucher. 2. Read the rate of the stock item line. |
+
 ## 12. Transactions (`F-TRN`)
 
 #### F-TRN-001 Debit or credit of a line
@@ -1460,6 +1544,7 @@ Retired on 2026-11-11. Replaced by F-RAT-010. The old formula divided the Loans 
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 2.1 | 2026-11-11 | Stock by godown and batch (F-STK-010 to F-STK-013), the inventory lines dataset (F-STK-014, F-STK-015), and the three sections proved against Tally. |
 | 2.0 | 2026-11-11 | Moved from `formulas.md` to `formula-sheet.md`. Written again in ASD-STE100, with a Terms section, common rules and one table for each figure. Current ratio, quick ratio and debt to equity in the form of Schedule III (F-BS-007 to F-BS-011, F-RAT-008 to F-RAT-010). F-RAT-001 to F-RAT-003 retired. Stock items (F-STK-009). Data health (F-DAT-001 to F-DAT-004). A test fails when a figure on a page has no ID. |
 | 1.2 | 2026-11-06 | Transactions (`F-TRN-001`). |
 | 1.1 | 2026-11-06 | Stock (`F-STK-001` to `F-STK-008`); the Amounts setting (F-FMT-001, F-FMT-002). |
