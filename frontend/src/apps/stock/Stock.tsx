@@ -135,7 +135,7 @@ export function StockSummary(props: SummaryProps) {
           <KeyCard label="Stock value" figure={{ value: stock.total_value ?? null }} note={valueNote(stock.value_on)} accent={green}
             spark={stock.by_date.map((d) => toLakhs(d.value))}
             missing="Run ./dev.ps1 statements to store the source's stock values" />
-          <KeyCard label="Stock items" figure={{ value: String(stock.items.length) }} unit="count" accent={charcoal} />
+          <KeyCard label="Stock items" formula="F-STK-009" figure={{ value: String(stock.items.length) }} unit="count" accent={charcoal} />
           <KeyCard label="Items with negative stock" figure={{ value: String(negative) }} unit="count" alert accent={lighter}
             note="More went out than came in: check with the source" />
         </div>
@@ -150,10 +150,10 @@ export function StockSummary(props: SummaryProps) {
           </section>
           <section className="card" aria-label="Stock value by group and godown">
             <h2 className="card-title">By stock group</h2>
-            {stock.by_group.length ? <HBars label="Stock value by stock group" bars={bars(stock.by_group, stock.total_value ?? null, colours.primary)} />
+            {stock.by_group.length ? <HBars formula="F-STK-005" label="Stock value by stock group" bars={bars(stock.by_group, stock.total_value ?? null, colours.primary)} />
               : <Typography.Text type="secondary">No values by stock group.</Typography.Text>}
             <h2 className="card-title">By godown</h2>
-            {stock.by_godown.length ? <HBars label="Stock value by godown" bars={bars(stock.by_godown, stock.total_value ?? null, colours.neutralBar)} />
+            {stock.by_godown.length ? <HBars formula="F-STK-005" label="Stock value by godown" bars={bars(stock.by_godown, stock.total_value ?? null, colours.neutralBar)} />
               : <Typography.Text type="secondary">No values by godown.</Typography.Text>}
           </section>
         </div>

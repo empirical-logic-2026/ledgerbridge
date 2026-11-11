@@ -3,7 +3,7 @@
 // and bank, customers), each with its change and a twelve-month sparkline; sales and purchases
 // by month with each month's gross and net profit marked; sales by channel as a donut; the
 // Profit & Loss summary against last year; the top customers with their status. Figures:
-// core/home.py and core/overview.py (GET /api/v1/home); every formula: docs/formulas.md.
+// core/home.py and core/overview.py (GET /api/v1/home); every formula: docs/formula-sheet.md.
 // Short amounts (₹4.82 Cr), the exact amount on hover; "—" with the reason where a figure
 // needs a stored statement that isn't there. Everything opens the page behind it.
 
@@ -91,6 +91,16 @@ function Notes({ home }: { home: Home }) {
   )
 }
 
+/** Each summary line's own formula (F-OVR-003 gathers them). */
+const SUMMARY_FORMULAS: Record<string, string> = {
+  net_sales: 'F-PL-001',
+  cost_of_sales: 'F-PL-002',
+  gross_profit: 'F-PL-003',
+  net_profit: 'F-PL-004',
+  gross_margin_pct: 'F-PL-005',
+  net_profit_pct: 'F-PL-006',
+}
+
 function shown(line: SummaryLine, value: string | null | undefined) {
   if (value === null || value === undefined) return <span>—</span>
   return line.unit === 'percent' ? <span>{value}%</span> : <Amount value={value} />
@@ -124,6 +134,7 @@ function Summary({ home, query }: { home: Home; query: Query }) {
         label="Profit & Loss against last year"
         compact
         compared
+        formula="F-OVR-003"
         columns={{ label: 'Line', current: <Explained label="This period" />, previous: <Explained label="Last year" />, change: <Explained label="Change" /> }}
         sections={[
           {
@@ -138,6 +149,7 @@ function Summary({ home, query }: { home: Home; query: Query }) {
                 <StatementChange change={line.unit === 'percent' ? line.change_pts : line.change_pct} higherIsBetter={line.higher_is_better} points={line.unit === 'percent'} />
               ),
               to,
+              formula: SUMMARY_FORMULAS[line.key],
             })),
           },
         ]}
@@ -256,7 +268,7 @@ export function DashboardHome({ home, loading, error, onRetry, dark, query }: Pr
         <section className="card" aria-label="Sales by channel">
           <h2 className="card-title">Sales by channel</h2>
           {home.channels.length ? (
-            <Donut label="Net sales by channel" dark={dark} colours={[colours.primary, colours.netProfit, colours.grossProfit, colours.neutralBar, colours.primaryLine]}
+            <Donut label="Net sales by channel" formula="F-SAL-009" dark={dark} colours={[colours.primary, colours.netProfit, colours.grossProfit, colours.neutralBar, colours.primaryLine]}
               parts={home.channels.map((c) => ({ name: c.name, amount: c.net_sales, to: register(c.name) }))} />
           ) : (
             <Typography.Text type="secondary">No sales in this period.</Typography.Text>

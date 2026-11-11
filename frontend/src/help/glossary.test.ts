@@ -7,7 +7,7 @@ describe('the hover explanations', () => {
     expect(explain('Status')).toMatch(/remaining bill-wise amount and due date/)
   })
 
-  it('name only formula IDs written as in docs/formulas.md', () => {
+  it('name only formula IDs written as in docs/formula-sheet.md', () => {
     for (const [label, e] of Object.entries(GLOSSARY)) {
       if (e.id) expect(e.id, label).toMatch(/^F-[A-Z]{2,3}-\d{3}$/)
       expect(e.text.length, label).toBeGreaterThan(10)

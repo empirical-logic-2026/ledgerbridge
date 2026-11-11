@@ -1,712 +1,1467 @@
 # Formula sheet
 
-Every figure the dashboard shows, and how it is calculated: totals, net amounts, margins,
-balances, bills, comparisons and counts. Use it to check a figure against the books or
-against Tally, and as the reference for each page's "What is this?" help.
+This sheet gives the formula of each figure that the dashboard shows. Use it to check a figure against the books or against Tally.
 
 | Field | Value |
 | --- | --- |
-| Version | 1.2 |
-| Date | 2026-11-06 |
+| Version | 2.0 |
+| Date | 2026-11-11 |
 | Requirement | RPT-015 |
-| Word and PDF | `docs/export/formulas.docx`, `docs/export/formulas.pdf` (`./dev.ps1 docs-export`) |
+| Language | ASD-STE100 Simplified Technical English |
+| Word and PDF | `docs/export/formula-sheet.docx`, `docs/export/formula-sheet.pdf` (`./dev.ps1 docs-export`) |
+| Related | [dashboard-pages.md](dashboard-pages.md) (each page and its figures) |
 
-**How IDs are used.** Every figure has an ID such as `F-PL-003`:
+## 1. How to use this sheet
 
-- The code that returns it names the ID (`formula("F-PL-003")` in `data-plane/api/v1`).
-- The tests that prove it cite the same ID.
-- `data-plane/tests/test_formulas.py` fails when:
-  - a figure has no ID;
-  - an ID used in code has no entry here;
-  - an entry here is used nowhere.
-- IDs are never reused or renumbered. A retired formula keeps its entry, marked retired.
+Each figure has a **formula ID**, for example `F-PL-003`. The dashboard shows the ID in the hover text of the figure. Find the ID in this sheet to read the formula.
+
+Each entry has these items:
+
+| Item | What it gives |
+| --- | --- |
+| Expression | The formula as an expression. |
+| In words | The formula as text. |
+| Data | The view or table, the columns and the group roles that the formula reads. |
+| Signs | The sign rule. Section 3.1 gives the common sign rules. |
+| Dates | The date rule. Section 3.2 gives the common date rules, with Educational mode. |
+| Companies | The rule for one company and for combined companies. Section 3.3 gives the common rules. |
+| Check in Tally | The steps to find the same figure in TallyPrime. |
+
+**Rules for IDs:**
+
+- The code that calculates a figure names its ID. The tests that prove the figure also name the ID.
+- `data-plane/tests/test_formulas.py` fails when an API figure has no ID, or when an ID has no entry in this sheet.
+- `frontend/src/App.test.tsx` fails when a figure on a page has no ID, or when its ID has no entry in this sheet.
+- We never use an ID again for a different formula. A retired formula keeps its entry, with "(retired)" in its heading. No code can use a retired ID.
 
 **Areas:**
 
 | Prefix | Area |
 | --- | --- |
 | `F-SAL` | Sales, and purchases on the purchase side |
-| `F-PUR` | Purchases on their own |
+| `F-PUR` | Purchases |
 | `F-PL` | Profit & Loss |
 | `F-BS` | Balance Sheet |
+| `F-RAT` | Ratios |
 | `F-BAL` | Balances |
+| `F-CF` | Cash movement |
+| `F-CC` | Cost centres |
+| `F-STK` | Stock |
+| `F-TRN` | Transactions |
 | `F-PTY` | Parties and bills |
 | `F-REG` | Registers |
+| `F-OVR` | Overview |
 | `F-CMP` | Comparisons |
 | `F-CHK` | Checks against the source |
+| `F-DAT` | Data health |
 | `F-TBL` | Tables |
-| `F-FMT` | How amounts are shown |
+| `F-FMT` | How the dashboard shows amounts |
 
-Later modules add `F-RAT` (ratios), `F-CF` (cash flow) and ageing in `F-PTY`.
+## 2. Terms
 
-**What each entry gives:**
+Each term has one meaning in this sheet and in [dashboard-pages.md](dashboard-pages.md).
 
-- **In words** and as an **expression**.
-- **Source:** the table or view and the columns it reads. Tables are in `ledgerbridge_accounting`, statements in `ledgerbridge_reporting`.
-- **Sign:** the debit/credit rule.
-- **Educational mode:** the date rule when the source runs in Tally's Educational mode.
-- **Check in Tally:** where to find the same figure in TallyPrime.
-
-## 1. Rules every formula follows
-
-| Rule | Meaning |
+| Term | Meaning |
 | --- | --- |
-| **Stored sign** | `voucher_lines.amount` and `ledgers.opening_balance` are **debit positive, credit negative** (schema.md §7). Each formula turns them into the sign people read: sales positive, purchases positive, a profit positive, a loss negative. |
-| **Effective entry** | A voucher line that posts to the books: `voucher_lines.is_effective = 1` (not cancelled, not optional) and `vouchers.is_deleted = 0`. Only effective entries are counted. |
-| **Ledgers under a group** | The ledgers whose group is, at any depth, under a group with a given **predefined role** (`account_groups.predefined_role`, e.g. `sales_accounts`), through `v_group_ancestors`. Groups are found by role, never by name, so a renamed group still counts. |
-| **Period** | Whole months (adjacent or not), or a date range. MTD, QTD, YTD and FY are date ranges or months picked by the period toggles (RPT-016). |
-| **Several companies** | Added together: combined, **without inter-company eliminations**. |
-| **Currency** | The books' base currency, as the source keeps it. |
-| **Precision** | Exact decimals: `DECIMAL(20,4)` in MySQL, `Decimal` in Python, BigInt in the browser. Never floating point, except chart drawing (F-FMT-003). |
+| Source | The accounting system that the data comes from. For the pilot, the source is TallyPrime ("Tally"). |
+| Company | One set of books in the source. The database calls it an entity. |
+| Selection | The companies that the user selects in the page header. |
+| Combined | Two or more companies in the selection, added together. |
+| Ledger | An account in the books. |
+| Group | A group of ledgers. A group can contain other groups. |
+| Primary group | A group at the top level of the chart of accounts. |
+| Predefined role | The fixed name of a group that the source supplies, for example `sales_accounts`. The column is `account_groups.predefined_role`. |
+| Ledgers under a group | The ledgers in a group, or in a group below it at any depth. We find a group by its predefined role, not by its name. The view is `v_group_ancestors`. |
+| Stored amount | An amount as the database keeps it. A debit is positive. A credit is negative. |
+| Debit balance | A ledger balance that is more than zero (stored amount). |
+| Credit balance | A ledger balance that is less than zero (stored amount). |
+| Effective entry | A voucher line that changes the books. The line has `voucher_lines.is_effective = 1` and its voucher has `vouchers.is_deleted = 0`. A cancelled or optional voucher has no effective entries. |
+| Balance at a date | The opening balance of a ledger plus its effective entries up to and including the date. |
+| Period | The months or the dates that the user selects with the period toggles. |
+| Period start | The first day of the period. |
+| Period end | The last day of the period. |
+| Comparison period | The period that the dashboard compares with the period. Formula F-CMP-002 gives it. |
+| Statement | A Profit & Loss or a Balance Sheet. |
+| Stored statement | A statement that we calculate from the books and keep in `statement_lines` (`figures = 'ours'`). We compare each line with the statement of the source. |
+| Statement date | A date with a stored statement. `./dev.ps1 statements` stores the month ends. |
+| Line | One row of a statement. |
+| Main line | A line for a primary group (`level = 'main'`). |
+| Closing stock | The value of the stock at a date, as the source calculates it. The table is `stock_values`. |
+| Educational mode | A mode of TallyPrime. In this mode, a report can only use the 1st, the 2nd or the 31st day of a month. |
+| Party | A customer or a vendor. We identify a party by its name in all companies of the selection. |
+| Bill | An amount that a party must pay, or that we must pay, with a name and a due date. |
+| Due date | The date when a bill must be paid. |
+| Outstanding bill | The part of a bill that is not paid at a date. |
+| Lakh | One hundred thousand rupees (₹1,00,000). |
+| Figure | A number that the dashboard shows. |
 
-### 1.1 Figures from the stored statements
+## 3. Common rules
 
-Profit figures come from **our stored statements**, `statement_lines` (`figures = 'ours'`),
-read through `v_profit_loss` and `v_balance_sheet`. They are built from the books and checked
-line by line against the source's own statements (ADR-040, RPT-012). A stored Profit & Loss
-runs from the books' beginning to its date, so:
+### 3.1 Signs
 
-```text
-figure for a period = statement at the period's end − statement on the day before its start
-```
+| Rule | Text |
+| --- | --- |
+| S1 | The stored amount is positive for a debit and negative for a credit. |
+| S2 | The dashboard shows sales, incomes and credits to a party as positive numbers. It multiplies the stored amount by −1. |
+| S3 | The dashboard shows purchases, costs and debits as positive numbers. It uses the stored amount. |
+| S4 | A profit is positive. A loss is negative. |
+| S5 | A count, a percentage, a ratio or a number of days has no debit or credit. |
 
-At the books' beginning there is nothing to subtract. Several months are added month by
-month. **A month's statement** is the one on its last day, or the first stored date up to
-2 days later. **A date range** runs to its end date when that statement is stored, else to
-the **last stored date within it**, and the page says "to 31-Oct-2026". MTD, QTD and YTD
-therefore show profit to the last month end. With no stored date at all, the figure is "—"
-with the reason. `./dev.ps1 statements` stores the month ends.
+### 3.2 Dates
 
-**Educational mode (all statement figures).** Tally's Educational mode allows only the 1st,
-2nd and 31st of a month as report dates. The month ends stored for a 30-day month (and
-February) are then the 2nd of the next month. The page says "Months ending on the 30th run to
-the 2nd of the next month". When checking in Tally, use the same dates.
+| Rule | Text |
+| --- | --- |
+| D1 | **Entries.** The formula reads effective entries with a voucher date in the period. Entries are correct for each date, so Educational mode has no effect. |
+| D2 | **Balance at a date.** The formula reads the balance at the period end. Educational mode has no effect. |
+| D3 | **Statement for a period.** The figure is the line at the period end minus the line on the day before the period start. At the start of the books, there is nothing to subtract. For two or more months, the formula adds each month. |
+| D4 | **Statement at a date.** The figure is the line at one date. The formula never subtracts two dates. |
+| D5 | **Which statement date.** For a month, the formula uses the statement on its last day. If that statement is not stored, it uses the first stored date that is not more than 2 days later. For a date range, it uses the end date if it is stored. If not, it uses the last statement date in the range. The page then shows "to" and that date. With no statement date in the period, the figure is "—" with the reason. |
+| D6 | **Educational mode.** In Educational mode, Tally cannot use the 30th or the 28th as a report date. The stored month end for a month of 30 days, and for February, is then the 2nd of the next month. The page shows a note about this. To check in Tally, use the same dates. |
+| D7 | **Stock values.** The source supplies stock values only on statement dates. Rules D5 and D6 apply. |
 
-## 2. Sales and purchases (`F-SAL`, `F-PUR`)
+### 3.3 Companies
 
-These are the definitions of the monthly sales views (migration 0021, RPT-013), proven against
-the source's Sales Accounts figure (`core/sales.py`). The same formulas apply to purchases:
-read **Purchase Accounts** for Sales Accounts, **purchase invoices** (base type `purchase`) for
-sales invoices, and **debit notes** for credit notes. Sales are positive as credits, purchases
-as debits.
+| Rule | Text |
+| --- | --- |
+| C1 | **Combined companies.** The formula calculates each company and adds the results. It does not remove amounts between the companies (no inter-company eliminations). |
+| C2 | **Parties, items and cost centres.** The formula identifies them by name in all companies of the selection. |
+| C3 | **Financial year.** Each company uses its own financial year. |
+| C4 | **Ratios and percentages.** The formula adds the parts of all companies first. Then it divides. |
 
-Source for every `F-SAL` entry: `voucher_lines` (`amount`, `ledger_id`, `voucher_date`,
-`is_effective`) joined to `vouchers` (`is_deleted`, `party_id`) and `voucher_types`
-(`base_type`, `name`), on the ledgers under `sales_accounts`.
+### 3.4 Precision
+
+The database keeps amounts as `DECIMAL(20,4)`. The code uses exact decimals: `Decimal` in Python and BigInt in the browser. Charts use numbers in lakhs, only to draw (F-FMT-003). The dashboard rounds an amount only when it shows the amount.
+
+## 4. Sales and purchases (`F-SAL`, `F-PUR`)
+
+These formulas define the monthly sales views (`v_monthly_sales`, `v_monthly_sales_by_voucher_type`). The tests prove them against the Sales Accounts line of the source.
+
+For purchases, read these words in each `F-SAL` entry:
+
+| For sales | For purchases |
+| --- | --- |
+| Sales Accounts (`sales_accounts`) | Purchase Accounts (`purchase_accounts`) |
+| Sales invoice (base type `sales`) | Purchase invoice (base type `purchase`) |
+| Credit note (base type `credit_note`) | Debit note (base type `debit_note`) |
+| Sign rule S2 | Sign rule S3 |
+
+**Data for each `F-SAL` entry:** `voucher_lines` (`amount`, `ledger_id`, `voucher_date`, `is_effective`), `vouchers` (`is_deleted`, `party_id`) and `voucher_types` (`base_type`, `name`). The formulas read the ledgers under `sales_accounts`.
 
 #### F-SAL-001 Gross sales
 
-- **In words:** the entries on the Sales Accounts ledgers made by sales invoices.
-- **Expression:** `−Σ amount` where base type = `sales`. Purchases: `+Σ amount` where base type = `purchase`.
-- **Sign:** a sale is a credit, so the stored amount is negative and is turned positive.
-- **Educational mode:** none (entries are exact for any date).
-- **Check in Tally:** Display More Reports › Account Books › Sales Register, the same period (F2). Purchases: the Purchase Register.
+| Item | Value |
+| --- | --- |
+| Expression | `−Σ amount`, where base type = `sales` |
+| In words | The entries of sales invoices on the ledgers under Sales Accounts. |
+| Data | As for each `F-SAL` entry. |
+| Signs | S1, S2. A sale is a credit. |
+| Dates | D1. |
+| Companies | C1. |
+| Check in Tally | 1. Open Display More Reports › Account Books › Sales Register. 2. Set the same period (F2). 3. Read the total. |
 
 #### F-SAL-002 Sales returns
 
-- **In words:** the entries on the Sales Accounts ledgers made by credit notes. Negative.
-- **Expression:** `−Σ amount` where base type = `credit_note`. Purchases: `+Σ amount` where base type = `debit_note`.
-- **Sign:** a return is a debit to sales, so it is shown negative.
-- **Educational mode:** none.
-- **Check in Tally:** Account Books › Credit Note Register (Debit Note Register for purchases).
+| Item | Value |
+| --- | --- |
+| Expression | `−Σ amount`, where base type = `credit_note` |
+| In words | The entries of credit notes on the ledgers under Sales Accounts. The figure is negative. |
+| Data | As for each `F-SAL` entry. |
+| Signs | S1, S2. A return is a debit to sales, so the figure is negative. |
+| Dates | D1. |
+| Companies | C1. |
+| Check in Tally | 1. Open Account Books › Credit Note Register. 2. Set the same period. 3. Read the total. |
 
 #### F-SAL-003 Other adjustments
 
-- **In words:** entries on the Sales Accounts ledgers from any other voucher (journals and the like).
-- **Expression:** `−Σ amount` where base type ∉ {`sales`, `credit_note`}.
-- **Sign:** as F-SAL-001.
-- **Educational mode:** none.
-- **Check in Tally:** Account Books › Group Vouchers of Sales Accounts, leaving out sales and credit notes.
+| Item | Value |
+| --- | --- |
+| Expression | `−Σ amount`, where base type is not `sales` and not `credit_note` |
+| In words | The entries of all other vouchers on the ledgers under Sales Accounts, for example journals. |
+| Data | As for each `F-SAL` entry. |
+| Signs | S1, S2. |
+| Dates | D1. |
+| Companies | C1. |
+| Check in Tally | 1. Open Account Books › Group Vouchers. 2. Select Sales Accounts. 3. Do not count sales invoices and credit notes. |
 
 #### F-SAL-004 Net sales
 
-- **In words:** gross sales, plus returns, plus other adjustments.
-- **Expression:** `F-SAL-001 + F-SAL-002 + F-SAL-003`, i.e. `−Σ amount` on the Sales Accounts ledgers.
-- **Sign:** positive for sales.
-- **Educational mode:** none.
-- **Check in Tally:** the Sales Accounts line of the Profit & Loss A/c for the same period. Or Account Books › Group Summary › Sales Accounts. Month by month: the group's monthly summary.
-- **Shown as:** the net per month, per company, per party, and in the lists.
+| Item | Value |
+| --- | --- |
+| Expression | `F-SAL-001 + F-SAL-002 + F-SAL-003` = `−Σ amount` on the ledgers under Sales Accounts |
+| In words | Gross sales, plus sales returns, plus other adjustments. The dashboard shows net sales for each month, company and party. |
+| Data | As for each `F-SAL` entry. |
+| Signs | S1, S2. |
+| Dates | D1. |
+| Companies | C1. |
+| Check in Tally | 1. Open Gateway of Tally › Profit & Loss A/c. 2. Set the same period. 3. Read the Sales Accounts line. |
 
 #### F-SAL-005 Invoices
 
-- **In words:** the number of invoice vouchers with an entry on the Sales Accounts ledgers.
-- **Expression:** `COUNT(DISTINCT voucher)` where base type = `sales` (purchases: `purchase`).
-- **Sign:** a count.
-- **Educational mode:** none.
-- **Check in Tally:** the number of vouchers in the Sales Register.
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT(DISTINCT voucher)`, where base type = `sales` |
+| In words | The number of sales invoices with an entry on the ledgers under Sales Accounts. |
+| Data | As for each `F-SAL` entry. |
+| Signs | S5. |
+| Dates | D1. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Sales Register for the same period. 2. Count the vouchers. |
 
 #### F-SAL-006 Average invoice
 
-- **In words:** gross sales per invoice.
-- **Expression:** `F-SAL-001 ÷ F-SAL-005`, rounded to the paisa. "—" without invoices.
-- **Sign:** positive.
-- **Educational mode:** none.
-- **Check in Tally:** the Sales Register total ÷ its number of vouchers.
+| Item | Value |
+| --- | --- |
+| Expression | `F-SAL-001 ÷ F-SAL-005`, to the paisa |
+| In words | Gross sales for each invoice. With no invoices, the figure is "—". |
+| Data | F-SAL-001 and F-SAL-005. |
+| Signs | S2. |
+| Dates | D1. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Read the Sales Register total. 2. Divide it by the number of vouchers. |
 
 #### F-SAL-007 Returns (key figure)
 
-- **In words:** the sales returns as a positive amount (lower is better).
-- **Expression:** `−F-SAL-002`.
-- **Sign:** positive.
-- **Educational mode:** none.
-- **Check in Tally:** the Credit Note Register total.
+| Item | Value |
+| --- | --- |
+| Expression | `−F-SAL-002` |
+| In words | The sales returns as a positive number. A lower number is better. |
+| Data | F-SAL-002. |
+| Signs | Positive. |
+| Dates | D1. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Credit Note Register for the same period. 2. Read the total. |
 
 #### F-SAL-008 Closing balance (monthly)
 
-- **In words:** net sales from the start of the month's financial year to the month's end. Each company uses its own financial year, and the companies are then added together.
-- **Expression:** `Σ F-SAL-004` from the first month of the financial year to the month.
-- **Sign:** positive.
-- **Educational mode:** none.
-- **Check in Tally:** the Closing Balance column of the Sales Accounts group's monthly summary.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ F-SAL-004`, from the first month of the financial year to the month |
+| In words | The net sales from the start of the financial year to the end of the month. |
+| Data | F-SAL-004. |
+| Signs | S2. |
+| Dates | D1. |
+| Companies | C1, C3. Each company starts at its own financial year. |
+| Check in Tally | 1. Open Account Books › Group Summary › Sales Accounts. 2. Open the monthly summary. 3. Read the Closing Balance column. |
 
 #### F-SAL-009 Net sales by channel
 
-- **In words:** net sales of one channel, i.e. one voucher type name. Types with the same name in several companies count as one channel.
-- **Expression:** `F-SAL-004` restricted to `voucher_types.name = channel`.
-- **Sign:** positive.
-- **Educational mode:** none.
-- **Check in Tally:** the Sales Register for that voucher type.
-- **On the Overview:** the four largest channels are shown, and the rest are added together as "Others".
+| Item | Value |
+| --- | --- |
+| Expression | `F-SAL-004`, where `voucher_types.name` = the channel |
+| In words | The net sales of one channel. A channel is one voucher type name. Voucher types with the same name in two companies are one channel. |
+| Data | As for each `F-SAL` entry, with `voucher_types.name`. |
+| Signs | S2. |
+| Dates | D1. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the Sales Register. 2. Select the voucher type. 3. Set the same period and read the total. |
+
+On the Overview, the dashboard shows the four largest channels. It adds the other channels as "Others".
 
 #### F-SAL-010 Channel share
 
-- **In words:** a channel's net as a percentage of all channels' net.
-- **Expression:** `F-SAL-009 ÷ Σ F-SAL-009 × 100`, one decimal.
-- **Sign:** a percentage.
-- **Educational mode:** none.
-- **Check in Tally:** from the Sales Registers by voucher type.
+| Item | Value |
+| --- | --- |
+| Expression | `F-SAL-009 ÷ Σ F-SAL-009 × 100`, one decimal |
+| In words | The net sales of a channel as a percentage of the net sales of all channels. |
+| Data | F-SAL-009. |
+| Signs | S5. |
+| Dates | D1. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Read each voucher type in the Sales Register. 2. Divide the channel total by the sum of all totals. |
 
 #### F-SAL-011 Customers
 
-- **In words:** how many customers had entries on the Sales Accounts ledgers in the period. A customer is known by **name** across the selected companies. Vouchers without a party aren't counted.
-- **Expression:** `COUNT(DISTINCT parties.name)` over the entries of F-SAL-004 (`vouchers.party_id → parties.name`).
-- **Sign:** a count.
-- **Educational mode:** none.
-- **Check in Tally:** the parties listed in the Sales Register (Alt+F5 detailed), counted once each.
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT(DISTINCT parties.name)` over the entries of F-SAL-004 |
+| In words | The number of customers with entries on the ledgers under Sales Accounts in the period. Vouchers with no party are not counted. |
+| Data | As for each `F-SAL` entry, with `vouchers.party_id` and `parties.name`. |
+| Signs | S5. |
+| Dates | D1. |
+| Companies | C2. A customer counts one time in all companies. |
+| Check in Tally | 1. Open the Sales Register with details (Alt+F5). 2. Count each party one time. |
 
 #### F-SAL-012 Customer net sales
 
-- **In words:** net sales of one customer's vouchers.
-- **Expression:** `F-SAL-004` restricted to `vouchers.party_id` = the party.
-- **Sign:** positive.
-- **Educational mode:** none.
-- **Check in Tally:** Sales Register filtered by party, or the party's ledger vouchers for Sales Accounts.
+| Item | Value |
+| --- | --- |
+| Expression | `F-SAL-004`, where `vouchers.party_id` = the party |
+| In words | The net sales of the vouchers of one customer. |
+| Data | As for each `F-SAL` entry, with `vouchers.party_id`. |
+| Signs | S2. |
+| Dates | D1. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the Sales Register. 2. Filter it by the party. 3. Read the total. |
 
 #### F-SAL-013 Other customers
 
-- **In words:** net sales of every customer after the top ten, plus sales without a party.
-- **Expression:** `F-SAL-004 − Σ F-SAL-012` over the top ten.
-- **Sign:** positive.
-- **Educational mode:** none.
-- **Check in Tally:** the Sales Register total less the top ten customers'.
+| Item | Value |
+| --- | --- |
+| Expression | `F-SAL-004 − Σ F-SAL-012` over the top ten customers |
+| In words | The net sales of all customers after the top ten, plus sales with no party. |
+| Data | F-SAL-004 and F-SAL-012. |
+| Signs | S2. |
+| Dates | D1. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Read the Sales Register total. 2. Subtract the totals of the top ten customers. |
 
 #### F-SAL-014 Invoice amount (largest invoices)
 
-- **In words:** one invoice's entries on the Sales Accounts ledgers. Taxes and freight on other ledgers aren't included.
-- **Expression:** `−Σ amount` of that voucher on the Sales Accounts ledgers.
-- **Sign:** positive.
-- **Educational mode:** none.
-- **Check in Tally:** the voucher's sales ledger lines.
+| Item | Value |
+| --- | --- |
+| Expression | `−Σ amount` of the voucher on the ledgers under Sales Accounts |
+| In words | The entries of one invoice on the ledgers under Sales Accounts. Taxes and freight on other ledgers are not included. |
+| Data | As for each `F-SAL` entry. |
+| Signs | S2. |
+| Dates | D1. |
+| Companies | The company of the invoice. |
+| Check in Tally | 1. Open the voucher. 2. Add its lines on the sales ledgers. |
 
 #### F-SAL-015 Share of sales by company
 
-- **In words:** one company's net sales as a percentage of the selection's.
-- **Expression:** `F-SAL-004 (company) ÷ F-SAL-004 (all selected) × 100`, one decimal.
-- **Sign:** a percentage.
-- **Educational mode:** none.
-- **Check in Tally:** each company's Sales Accounts line.
+| Item | Value |
+| --- | --- |
+| Expression | `F-SAL-004 (company) ÷ F-SAL-004 (selection) × 100`, one decimal |
+| In words | The net sales of one company as a percentage of the net sales of the selection. |
+| Data | F-SAL-004. |
+| Signs | S5. |
+| Dates | D1. |
+| Companies | Each company of the selection. |
+| Check in Tally | 1. Read the Sales Accounts line of each company. 2. Divide one line by the sum of all lines. |
 
 #### F-PUR-001 Net purchases
 
-- **In words:** the net purchases of the period or month. This is F-SAL-004 on the purchase side.
-- **Expression:** `+Σ amount` on the ledgers under `purchase_accounts`.
-- **Sign:** a purchase is a debit, so positive.
-- **Educational mode:** none.
-- **Check in Tally:** the Purchase Accounts line of the Profit & Loss A/c, or the Purchase Accounts group summary.
+| Item | Value |
+| --- | --- |
+| Expression | `+Σ amount` on the ledgers under Purchase Accounts |
+| In words | The net purchases of the period or month. It is F-SAL-004 for purchases. |
+| Data | As for each `F-SAL` entry, on the ledgers under `purchase_accounts`. |
+| Signs | S1, S3. A purchase is a debit. |
+| Dates | D1. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Profit & Loss A/c for the same period. 2. Read the Purchase Accounts line. |
 
-## 3. Profit & Loss (`F-PL`)
+## 5. Profit & Loss (`F-PL`)
 
-Source for every `F-PL` entry: `statement_lines` (`statement = 'profit_loss'`,
-`figures = 'ours'`, `label`, `section`, `level`, `amount`, `as_of`) through `v_profit_loss`.
-Groups are matched by predefined role (`account_groups`), and §1.1 gives the period rule.
+**Data for each `F-PL` entry:** `statement_lines` (`statement = 'profit_loss'`, `figures = 'ours'`, `label`, `section`, `level`, `amount`, `as_of`), through the view `v_profit_loss`. We find the group of a line by its predefined role in `account_groups`.
 
-**Sign:** a stored line is debit positive. Income and profit are shown positive, and costs are shown positive when spent. A loss is negative.
+**Dates for each `F-PL` entry:** D3, D5 and D6.
 
-**Educational mode:** §1.1 applies to every `F-PL` entry.
+**Signs for each `F-PL` entry:** S1, S2, S3 and S4.
+
+**Companies for each `F-PL` entry:** C1. Percentages also use C4.
 
 #### F-PL-001 Revenue (net sales)
 
-- **In words:** the Sales Accounts line of the stored Profit & Loss for the period. It equals F-SAL-004, as the tests prove.
-- **Expression:** `−(line at end − line before start)`, for the line whose group has role `sales_accounts`.
-- **Check in Tally:** Gateway of Tally › Profit & Loss A/c, period (F2), the Sales Accounts line.
+| Item | Value |
+| --- | --- |
+| Expression | `−(line at the end − line before the start)`, for the line of the group with role `sales_accounts` |
+| In words | The Sales Accounts line of the stored Profit & Loss for the period. The tests prove that it is equal to F-SAL-004. |
+| Data | As for each `F-PL` entry. |
+| Signs | S2. |
+| Dates | D3, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open Gateway of Tally › Profit & Loss A/c. 2. Set the same period (F2). 3. Read the Sales Accounts line. |
 
 #### F-PL-002 Cost of sales
 
-- **In words:** the lines above gross profit that aren't income: the source's Cost of Sales block (opening stock + purchases + direct expenses − closing stock), or, without stock, its purchase and direct expense lines.
-- **Expression:** `Σ (line at end − line before start)`, for main lines in the `gross` section whose group nature isn't income.
-- **Check in Tally:** Profit & Loss A/c, the lines above Gross Profit on the expense side.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ (line at the end − line before the start)`, for the main lines in the section `gross` that are not income |
+| In words | The lines above gross profit that are not income. With stock, it is opening stock, plus purchases, plus direct expenses, minus closing stock. With no stock, it is the purchase lines and the direct expense lines. |
+| Data | As for each `F-PL` entry. |
+| Signs | S3. |
+| Dates | D3, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Profit & Loss A/c for the same period. 2. Add the expense lines above Gross Profit. |
 
 #### F-PL-003 Gross profit
 
-- **In words:** net sales + direct incomes − cost of sales. It comes from the stored Gross Profit line, for the period or for one month.
-- **Expression:** `−(Gross Profit line at end − before start)`.
-- **Check in Tally:** Profit & Loss A/c, Gross Profit c/o (or b/f).
+| Item | Value |
+| --- | --- |
+| Expression | `−(Gross Profit line at the end − line before the start)` |
+| In words | Net sales, plus direct incomes, minus cost of sales. The formula reads the stored Gross Profit line. |
+| Data | As for each `F-PL` entry. |
+| Signs | S4. |
+| Dates | D3, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Profit & Loss A/c for the same period. 2. Read Gross Profit c/o. |
 
 #### F-PL-004 Net profit or loss
 
-- **In words:** gross profit + indirect incomes − indirect expenses. It comes from the stored Net Profit line, for the period or for one month. Negative for a loss.
-- **Expression:** `−(Net Profit line at end − before start)`.
-- **Check in Tally:** Profit & Loss A/c, Nett Profit (or Nett Loss).
+| Item | Value |
+| --- | --- |
+| Expression | `−(Net Profit line at the end − line before the start)` |
+| In words | Gross profit, plus indirect incomes, minus indirect expenses. The formula reads the stored Net Profit line. A loss is negative. |
+| Data | As for each `F-PL` entry. |
+| Signs | S4. |
+| Dates | D3, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Profit & Loss A/c for the same period. 2. Read Nett Profit or Nett Loss. |
 
 #### F-PL-005 Gross margin %
 
-- **In words:** gross profit as a percentage of net sales.
-- **Expression:** `F-PL-003 ÷ F-PL-001 × 100`, one decimal. "—" when net sales is zero.
-- **Check in Tally:** Display More Reports › Ratio Analysis, Gross Profit %.
+| Item | Value |
+| --- | --- |
+| Expression | `F-PL-003 ÷ F-PL-001 × 100`, one decimal |
+| In words | Gross profit as a percentage of net sales. When net sales is zero, the figure is "—". |
+| Data | F-PL-001 and F-PL-003. |
+| Signs | S5. |
+| Dates | D3, D5, D6. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Open Display More Reports › Ratio Analysis. 2. Set the same period. 3. Read Gross Profit %. |
 
 #### F-PL-006 Net profit %
 
-- **In words:** net profit as a percentage of net sales.
-- **Expression:** `F-PL-004 ÷ F-PL-001 × 100`, one decimal. "—" when net sales is zero.
-- **Check in Tally:** Ratio Analysis, Net Profit %.
+| Item | Value |
+| --- | --- |
+| Expression | `F-PL-004 ÷ F-PL-001 × 100`, one decimal |
+| In words | Net profit as a percentage of net sales. When net sales is zero, the figure is "—". |
+| Data | F-PL-001 and F-PL-004. |
+| Signs | S5. |
+| Dates | D3, D5, D6. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Open Ratio Analysis for the same period. 2. Read Net Profit %. |
 
 #### F-PL-007 Statement line for a period
 
-- **In words:** any line of the Profit & Loss report: the line at the period's end less the line before its start. It applies per company, month or quarter column, and to the total.
-- **Expression:** `line at end − line before start`, signed as above.
-- **Check in Tally:** the same line of the Profit & Loss A/c for the same period and company.
+| Item | Value |
+| --- | --- |
+| Expression | `line at the end − line before the start`, with the sign of the line |
+| In words | One line of the Profit & Loss report for the period. The formula applies to each company column, month column, quarter column and the total. |
+| Data | As for each `F-PL` entry. |
+| Signs | S2 for income lines. S3 for cost lines. |
+| Dates | D3, D5, D6. |
+| Companies | C1. Each company column is one company. |
+| Check in Tally | 1. Open the Profit & Loss A/c of the same company. 2. Set the same period. 3. Read the same line. |
 
 #### F-PL-008 % of net sales
 
-- **In words:** a line as a percentage of the same column's net sales.
-- **Expression:** `F-PL-007 ÷ F-PL-001 (same column) × 100`, one decimal.
-- **Check in Tally:** Profit & Loss A/c with percentages (Alt+F5 in some releases), or by hand.
+| Item | Value |
+| --- | --- |
+| Expression | `F-PL-007 ÷ F-PL-001 (same column) × 100`, one decimal |
+| In words | A line as a percentage of the net sales in the same column. |
+| Data | F-PL-001 and F-PL-007. |
+| Signs | S5. |
+| Dates | D3, D5, D6. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Read the line and the Sales Accounts line. 2. Divide the line by sales. |
 
 #### F-PL-009 Other costs (indirect expenses less indirect incomes)
 
-- **In words:** what lies between gross profit and net profit.
-- **Expression:** `F-PL-003 − F-PL-004`.
-- **Check in Tally:** Profit & Loss A/c, the indirect expenses less the indirect incomes below Gross Profit.
+| Item | Value |
+| --- | --- |
+| Expression | `F-PL-003 − F-PL-004` |
+| In words | The amount between gross profit and net profit. |
+| Data | F-PL-003 and F-PL-004. |
+| Signs | S3. |
+| Dates | D3, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Profit & Loss A/c. 2. Subtract the indirect incomes from the indirect expenses below Gross Profit. |
 
 #### F-PL-010 Cost structure (% of net sales)
 
-- **In words:** cost of sales (F-PL-002), or other costs (F-PL-009), as a percentage of net sales; on the P&L page also each expense line (F-PL-008).
-- **Expression:** `cost ÷ F-PL-001 × 100`, one decimal.
+| Item | Value |
+| --- | --- |
+| Expression | `cost ÷ F-PL-001 × 100`, one decimal |
+| In words | Cost of sales (F-PL-002) or other costs (F-PL-009) as a percentage of net sales. The P&L page also shows each expense line (F-PL-008). |
+| Data | F-PL-001, F-PL-002, F-PL-008 and F-PL-009. |
+| Signs | S5. |
+| Dates | D3, D5, D6. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Read the cost lines and the Sales Accounts line. 2. Divide each cost by sales. |
 
-## 4. Balance Sheet (`F-BS`)
+## 6. Balance Sheet (`F-BS`)
 
-Source for every `F-BS` entry: `statement_lines` (`statement = 'balance_sheet'`, `figures = 'ours'`)
-at one date, the period's end or the last stored date within it (§1.1), through
-`v_balance_sheet`. A Balance Sheet is the position **at** a date, not a difference.
+**Data for the lines:** `statement_lines` (`statement = 'balance_sheet'`, `figures = 'ours'`) at one statement date, through the view `v_balance_sheet`.
 
-**Sign:** assets are positive (debit). Liabilities and capital are shown positive (credit).
+**Dates for each `F-BS` entry:** D4, D5 and D6. A Balance Sheet shows the position at a date.
 
-**Educational mode:** the date rule of §1.1 applies to every `F-BS` entry.
+**Signs for each `F-BS` entry:** assets are debits. Liabilities and capital are credits. The dashboard shows both as positive numbers.
 
 #### F-BS-001 Total assets
 
-- **In words:** the assets side's main lines added up.
-- **Expression:** `Σ amount` of main lines with section `assets`.
-- **Check in Tally:** Gateway of Tally › Balance Sheet, at the same date, the assets total.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ amount` of the main lines in the section `assets` |
+| In words | The main lines on the assets side, added. |
+| Data | As for the lines. |
+| Signs | Debit, shown positive. |
+| Dates | D4, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open Gateway of Tally › Balance Sheet. 2. Set the same date. 3. Read the assets total. |
 
-#### F-BS-002 Current assets
+#### F-BS-002 Current assets (statement line)
 
-- **In words:** the Current Assets line.
-- **Expression:** the main line of the group with role `current_assets`.
-- **Check in Tally:** Balance Sheet, Current Assets.
+| Item | Value |
+| --- | --- |
+| Expression | The main line of the group with role `current_assets` |
+| In words | The Current Assets line of the statement. The source adds all balances under the group, debit and credit. The ratios do not use this line (see F-BS-007). |
+| Data | As for the lines. |
+| Signs | Debit, shown positive. |
+| Dates | D4, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Read Current Assets. |
 
-#### F-BS-003 Current liabilities
+#### F-BS-003 Current liabilities (statement line)
 
-- **In words:** the Current Liabilities line, shown positive.
-- **Expression:** `−amount` of the main line of the group with role `current_liabilities`.
-- **Check in Tally:** Balance Sheet, Current Liabilities.
+| Item | Value |
+| --- | --- |
+| Expression | `−amount` of the main line of the group with role `current_liabilities` |
+| In words | The Current Liabilities line of the statement. The source adds all balances under the group, debit and credit. The ratios do not use this line (see F-BS-008). |
+| Data | As for the lines. |
+| Signs | Credit, shown positive. |
+| Dates | D4, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Read Current Liabilities. |
 
-#### F-BS-004 Capital and reserves (incl. profit to date)
+#### F-BS-004 Capital and reserves (with the profit to date)
 
-- **In words:** the Capital Account line plus the Profit & Loss A/c line.
-- **Expression:** `−Σ amount` of those main lines.
-- **Check in Tally:** Balance Sheet, Capital Account plus Profit & Loss A/c.
+| Item | Value |
+| --- | --- |
+| Expression | `−Σ amount` of the Capital Account line and the Profit & Loss A/c line |
+| In words | The Capital Account line plus the Profit & Loss A/c line. Reserves & Surplus is a group under Capital Account. The ratios call this figure equity. |
+| Data | As for the lines. Roles `capital_account` and the Profit & Loss A/c line. |
+| Signs | Credit, shown positive. A loss makes it smaller. |
+| Dates | D4, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Add Capital Account and Profit & Loss A/c. |
 
 #### F-BS-005 Balance Sheet line at a date
 
-- **In words:** any line of the stored Balance Sheet at the period's end (or the last stored date within it), and at the comparison period's end. Assets as debits, liabilities and capital as credits, both shown positive.
-- **Expression:** `amount` (assets) or `−amount` (liabilities), at that date; never a difference of two dates.
-- **Check in Tally:** Gateway of Tally › Balance Sheet at the same date, the same line.
+| Item | Value |
+| --- | --- |
+| Expression | `amount` (assets) or `−amount` (liabilities and capital), at the date |
+| In words | One line of the stored Balance Sheet at the date. The page also shows the line at the end of the comparison period. |
+| Data | As for the lines. |
+| Signs | Debit for assets and credit for liabilities, both shown positive. |
+| Dates | D4, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Read the same line. |
 
 #### F-BS-006 Total assets, total liabilities
 
-- **In words:** the main lines of each side added up; the two are equal.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ` of the main lines of each side |
+| In words | The main lines of each side, added. The two totals are equal. |
+| Data | As for the lines. |
+| Signs | Shown positive. |
+| Dates | D4, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Read the two totals. |
 
-### 4.1 Ratios (`F-RAT`)
+### 6.1 Current assets and current liabilities in the form of Schedule III
 
-Each ratio row carries its own ID below; the generic entry is F-RAT-000.
+Schedule III of the Companies Act 2013 shows each balance on its own side. The source nets each group. For example, a debtor with a credit balance makes the debtors smaller. Thus F-BS-007 to F-BS-011 classify each ledger by itself. The code is in `data-plane/core/ratios.py`.
+
+**Data:** the balance of each ledger at the statement date: `ledgers.opening_balance` plus the effective `voucher_lines` up to the date. For a foreign-currency ledger, the formula uses the revalued balance of the source at that date (`fx_revaluation_snapshots.revalued_value`). The closing stock is `stock_values.closing_value` (`scope = 'total'`) at the date. Marked loans are in `short_term_borrowings`. The roles of a ledger are the predefined roles of its group and of all groups above it.
+
+**Where a balance goes.** The formula uses the first row that applies to the ledger:
+
+| Ledger under (role) | Debit balance | Credit balance |
+| --- | --- | --- |
+| Stock-in-Hand (`stock_in_hand`) | Not counted: the closing stock replaces it. | Not counted. |
+| Bank OD A/c (`bank_od_a_c`) | Current asset: bank balances | Current liability: short-term borrowings |
+| Loans (Liability) (`loans_liability`), marked as short-term | Current asset: other | Current liability: short-term borrowings |
+| Loans (Liability), not marked | Not counted. | Borrowings that are not current |
+| Bank Accounts (`bank_accounts`) | Current asset: bank balances | Current liability: short-term borrowings |
+| Sundry Debtors (`sundry_debtors`) | Current asset: trade receivables | Current liability: advances from customers |
+| Sundry Creditors (`sundry_creditors`) | Current asset: advances to suppliers | Current liability: trade payables |
+| Current Assets (`current_assets`), other | Current asset: cash (`cash_in_hand`), deposits (`deposits_asset`), loans and advances (`loans_advances_asset`) or other | Current liability: other |
+| Current Liabilities (`current_liabilities`), other | Current asset: other | Current liability: duties and taxes (`duties_taxes`), provisions (`provisions`) or other |
+
+**Short-term borrowings.** By default, these are the Bank OD A/c ledgers and the bank accounts with a credit balance. Secured loans, unsecured loans and term loans are not current. A person can mark a ledger under Loans (Liability) as short-term, for example a cash-credit loan. Use `./dev.ps1 loans` (see F-BS-011).
+
+**Closing stock.** The formula adds the closing stock one time, at the value of the source at the date. If the source supplies no value, the formula uses the balances of the Stock-in-Hand ledgers.
+
+**Companies.** The formula classifies the ledgers of each company. Then it adds the companies (C1). It does not remove balances between the companies.
+
+#### F-BS-007 Current assets (Schedule III)
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ debit balances that go to current assets + closing stock` |
+| In words | The parts of current assets in section 6.1, added. |
+| Data | As in section 6.1. |
+| Signs | Debit, shown positive. |
+| Dates | D4, D5, D6, D7. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Expand Current Assets to ledgers (Alt+F1). 3. Add the debit balances. 4. Add the creditors with a debit balance. 5. Add the closing stock. |
+
+#### F-BS-008 Current liabilities (Schedule III)
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ credit balances that go to current liabilities` |
+| In words | The parts of current liabilities in section 6.1, added. Short-term borrowings are included. |
+| Data | As in section 6.1. |
+| Signs | Credit, shown positive. |
+| Dates | D4, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Expand Current Liabilities to ledgers. 3. Add the credit balances. 4. Add the debtors with a credit balance. 5. Add Bank OD A/c, banks in credit and marked loans. |
+
+**Check:** the rules move each amount to the two sides together. So F-BS-007 − F-BS-008 is equal to F-BS-002 − F-BS-003. This is not true when a ledger under Loans (Liability) counts as current.
+
+#### F-BS-009 Borrowings
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ credit balances under Loans (Liability) + Σ credit balances of bank accounts` |
+| In words | All loans: short-term borrowings and the borrowings that are not current. Debt to equity uses this figure. |
+| Data | As in section 6.1. |
+| Signs | Credit, shown positive. |
+| Dates | D4, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Read Loans (Liability). 3. Add the bank accounts with a credit balance. |
+
+#### F-BS-010 A part of current assets, current liabilities or borrowings
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ` of the balances that section 6.1 puts in the part |
+| In words | One row of the ratio hover, for example "Trade receivables (debtors in debit)". |
+| Data | As in section 6.1. |
+| Signs | Shown positive. |
+| Dates | D4, D5, D6, D7. |
+| Companies | C1. |
+| Check in Tally | 1. Open the group of the part in the Balance Sheet. 2. Expand it to ledgers. 3. Add the balances on the side of the part. |
+
+#### F-BS-011 Ledgers marked as short-term
+
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT(short_term_borrowings)` for the companies of the selection |
+| In words | The number of ledgers under Loans (Liability) that a person marked as short-term. The ratio hover shows "Includes N ledgers marked as short-term". |
+| Data | `short_term_borrowings` (`entity_id`, `ledger_id`). Each change is in `audit_log`. |
+| Signs | S5. |
+| Dates | Not applicable. A mark applies to all dates. |
+| Companies | C1. |
+| Check in Tally | Tally has no such mark. 1. Run `./dev.ps1 loans -Company "<name>"`. 2. Count the rows with "yes (marked)". |
+
+## 7. Ratios (`F-RAT`)
+
+**Dates for each `F-RAT` entry:** D4, D5 and D6. The ratio is at the date of the Balance Sheet. The page also shows the ratio at the end of the comparison period.
+
+**Signs:** S5.
+
+**Companies:** C1 and C4.
 
 #### F-RAT-000 A ratio at a date
 
-- **In words:** one of F-RAT-001 to F-RAT-007, at the period's end and at the comparison's; the change in the ratio's own unit. "—" when the divisor is zero or a statement is missing.
+| Item | Value |
+| --- | --- |
+| Expression | One of F-RAT-004 to F-RAT-010. The change is `value − before`, in the unit of the ratio. |
+| In words | A ratio at the date and at the end of the comparison period. When the divisor is zero or a statement is missing, the figure is "—". |
+| Data | As in each ratio. |
+| Signs | S5. |
+| Dates | D4, D5, D6. |
+| Companies | C1, C4. |
+| Check in Tally | Use the check of each ratio. |
 
-#### F-RAT-001 Current ratio
+#### F-RAT-001 Current ratio, from the statement lines (retired)
 
-- **Expression:** `current assets ÷ current liabilities` (main lines with roles `current_assets`, `current_liabilities`), two decimals.
-- **Check in Tally:** Display More Reports › Ratio Analysis, Current Ratio.
+Retired on 2026-11-11. Replaced by F-RAT-008. The old formula divided the Current Assets line by the Current Liabilities line (F-BS-002 ÷ F-BS-003). It did not count Bank OD A/c, and it netted debtors and creditors with balances on the other side.
 
-#### F-RAT-002 Quick ratio
+#### F-RAT-002 Quick ratio, from the statement lines (retired)
 
-- **Expression:** `(current assets − closing stock (F-BAL-005)) ÷ current liabilities`, two decimals.
-- **Check in Tally:** Ratio Analysis, Quick Ratio.
+Retired on 2026-11-11. Replaced by F-RAT-009. The old formula was (F-BS-002 − F-BAL-005) ÷ F-BS-003.
 
-#### F-RAT-003 Debt to equity
+#### F-RAT-003 Debt to equity, from the Loans (Liability) line (retired)
 
-- **Expression:** `Loans (Liability) ÷ (Capital Account + Profit & Loss A/c)`, main lines by role, two decimals.
-- **Check in Tally:** Ratio Analysis, Debt/Equity Ratio.
+Retired on 2026-11-11. Replaced by F-RAT-010. The old formula divided the Loans (Liability) line by F-BS-004. It did not count bank accounts with a credit balance.
 
 #### F-RAT-004 Receivable days
 
-- **Expression:** `receivables (F-BAL-003) ÷ net sales (F-SAL-004) × days`, the days from the period's start to the date; whole days.
-- **Check in Tally:** Ratio Analysis, Recv. Turnover in days.
+| Item | Value |
+| --- | --- |
+| Expression | `F-BAL-003 ÷ F-SAL-004 × days`, whole days |
+| In words | Receivables divided by net sales, multiplied by the days from the period start to the date. |
+| Data | F-BAL-003 and F-SAL-004. |
+| Signs | S5. |
+| Dates | D2 and D1 to the date of the Balance Sheet. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Open Ratio Analysis for the same period. 2. Read Recv. Turnover in days. |
 
 #### F-RAT-005 Payable days
 
-- **Expression:** `payables (F-BAL-004) ÷ net purchases (F-PUR-001) × days`; whole days.
+| Item | Value |
+| --- | --- |
+| Expression | `F-BAL-004 ÷ F-PUR-001 × days`, whole days |
+| In words | Payables divided by net purchases, multiplied by the days from the period start to the date. |
+| Data | F-BAL-004 and F-PUR-001. |
+| Signs | S5. |
+| Dates | D2 and D1 to the date of the Balance Sheet. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Read Sundry Creditors and the Purchase Accounts line for the same period. 2. Calculate the expression. |
 
 #### F-RAT-006 Inventory days
 
-- **Expression:** `closing stock (F-BAL-005) ÷ cost of sales (F-PL-002) × days`; whole days.
+| Item | Value |
+| --- | --- |
+| Expression | `F-BAL-005 ÷ F-PL-002 × days`, whole days |
+| In words | Closing stock divided by cost of sales, multiplied by the days from the period start to the date. |
+| Data | F-BAL-005 and F-PL-002. |
+| Signs | S5. |
+| Dates | D3, D5, D6, D7. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Read the closing stock and the cost of sales in the Profit & Loss A/c. 2. Calculate the expression. |
 
 #### F-RAT-007 Working-capital days
 
-- **Expression:** `F-RAT-004 + F-RAT-006 − F-RAT-005`.
+| Item | Value |
+| --- | --- |
+| Expression | `F-RAT-004 + F-RAT-006 − F-RAT-005` |
+| In words | Receivable days plus inventory days minus payable days. |
+| Data | F-RAT-004, F-RAT-005 and F-RAT-006. |
+| Signs | S5. |
+| Dates | As in the three ratios. |
+| Companies | C1, C4. |
+| Check in Tally | Calculate the expression from the three ratios. |
 
-## 5. Balances (`F-BAL`)
+#### F-RAT-008 Current ratio
 
-Source for every `F-BAL` entry: `ledgers` (`opening_balance`, `group_id`, `is_deleted`) and the
-effective `voucher_lines` up to the date.
+| Item | Value |
+| --- | --- |
+| Expression | `F-BS-007 ÷ F-BS-008`, two decimals |
+| In words | Current assets divided by current liabilities, in the form of Schedule III (section 6.1). The hover shows the parts. |
+| Data | F-BS-007, F-BS-008 and F-BS-010. |
+| Signs | S5. |
+| Dates | D4, D5, D6, D7. |
+| Companies | C1, C4. No inter-company eliminations. The hover tells you when the companies are combined. |
+| Check in Tally | 1. Calculate F-BS-007 and F-BS-008 with their checks. 2. Divide F-BS-007 by F-BS-008. Note: Ratio Analysis in Tally uses the netted lines and leaves out Bank OD A/c. |
 
-**Educational mode:** none for F-BAL-001 to F-BAL-004, because entries are exact for any date.
+#### F-RAT-009 Quick ratio
 
-#### F-BAL-001 Balance of ledgers under a group (as at a date)
+| Item | Value |
+| --- | --- |
+| Expression | `(F-BS-007 − closing stock) ÷ F-BS-008`, two decimals |
+| In words | Current assets without the closing stock, divided by current liabilities. |
+| Data | F-BS-007, F-BS-008 and the closing stock of section 6.1. |
+| Signs | S5. |
+| Dates | D4, D5, D6, D7. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Calculate F-BS-007 and F-BS-008. 2. Subtract the closing stock from F-BS-007. 3. Divide the result by F-BS-008. |
 
-- **In words:** the ledgers' opening balances plus their effective entries up to and including the date.
-- **Expression:** `Σ opening_balance + Σ amount (voucher_date ≤ date)`.
-- **Sign:** debit positive.
-- **Check in Tally:** Account Books › Group Summary of that group, at the date.
+#### F-RAT-010 Debt to equity
+
+| Item | Value |
+| --- | --- |
+| Expression | `F-BS-009 ÷ F-BS-004`, two decimals |
+| In words | Borrowings divided by equity (capital and reserves with the profit to date). |
+| Data | F-BS-009 and F-BS-004. |
+| Signs | S5. When equity is negative, the ratio is negative. |
+| Dates | D4, D5, D6. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Calculate F-BS-009. 2. Add Capital Account and Profit & Loss A/c in the Balance Sheet. 3. Divide F-BS-009 by that sum. |
+
+## 8. Balances (`F-BAL`)
+
+**Data for F-BAL-001 to F-BAL-004:** `ledgers` (`opening_balance`, `group_id`, `is_deleted`) and the effective `voucher_lines` up to the date.
+
+#### F-BAL-001 Balance of the ledgers under a group, at a date
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ opening_balance + Σ amount`, where `voucher_date ≤ date` |
+| In words | The balance at a date of the ledgers under a group. |
+| Data | As for F-BAL entries. |
+| Signs | S1. |
+| Dates | D2. |
+| Companies | C1. |
+| Check in Tally | 1. Open Account Books › Group Summary of the group. 2. Set the same date. 3. Read the closing balance. |
 
 #### F-BAL-002 Cash & bank
 
-- **In words:** F-BAL-001 for the groups with roles `cash_in_hand` and `bank_accounts`, at the period's end. Bank OD and OCC accounts are loans, so they aren't included.
-- **Sign:** debit positive. A negative figure means an overdrawn ledger.
-- **Check in Tally:** Balance Sheet › Current Assets › Cash-in-Hand plus Bank Accounts. Or Account Books › Cash/Bank Book(s).
+| Item | Value |
+| --- | --- |
+| Expression | F-BAL-001 for the roles `cash_in_hand` and `bank_accounts` |
+| In words | The cash and bank balances at the period end. Bank OD A/c ledgers are loans, so this figure does not include them. A negative figure shows an overdrawn ledger. |
+| Data | As for F-BAL entries. |
+| Signs | S1. |
+| Dates | D2. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Add Cash-in-Hand and Bank Accounts. |
 
 #### F-BAL-003 Receivables
 
-- **In words:** F-BAL-001 for the group `sundry_debtors`, at the period's end.
-- **Sign:** debit positive: owed to us.
-- **Check in Tally:** Group Summary of Sundry Debtors. Or Statements of Accounts › Outstandings › Receivables (bill-wise totals).
+| Item | Value |
+| --- | --- |
+| Expression | F-BAL-001 for the role `sundry_debtors` |
+| In words | The amount that customers must pay us at the period end. |
+| Data | As for F-BAL entries. |
+| Signs | S1. Debit, positive. |
+| Dates | D2. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Group Summary of Sundry Debtors. 2. Set the same date. 3. Read the closing balance. |
 
 #### F-BAL-004 Payables
 
-- **In words:** −F-BAL-001 for the group `sundry_creditors`, so that an amount we owe shows positive.
-- **Sign:** a credit, shown positive.
-- **Check in Tally:** Group Summary of Sundry Creditors. Or Outstandings › Payables.
+| Item | Value |
+| --- | --- |
+| Expression | `−F-BAL-001` for the role `sundry_creditors` |
+| In words | The amount that we must pay to vendors at the period end. |
+| Data | As for F-BAL entries. |
+| Signs | S2. Credit, shown positive. |
+| Dates | D2. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Group Summary of Sundry Creditors. 2. Set the same date. 3. Read the closing balance. |
 
 #### F-BAL-005 Stock value
 
-- **In words:** the source's closing stock, stored with the statements for that date. "—" unless every selected company has one.
-- **Source:** `stock_values` (`scope = 'total'`, `closing_value`, `as_of`).
-- **Sign:** positive.
-- **Educational mode:** stored only on statement dates (§1.1).
-- **Check in Tally:** Gateway of Tally › Stock Summary, closing value at the date. It is also the Closing Stock in the Profit & Loss A/c.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ stock_values.closing_value`, where `scope = 'total'` and `as_of` = the date |
+| In words | The closing stock that the source supplies for the date. If one company has no value, the figure is "—". |
+| Data | `stock_values` (`scope`, `closing_value`, `as_of`). |
+| Signs | Positive. |
+| Dates | D7. |
+| Companies | C1. Each company must have a value. |
+| Check in Tally | 1. Open Gateway of Tally › Stock Summary. 2. Set the same date. 3. Read the closing value. |
 
-### 5.1 Cash movement (`F-CF`)
+## 9. Cash movement (`F-CF`)
 
 #### F-CF-001 Money in and out by category
 
-- **In words:** every effective entry on the ledgers under Cash-in-Hand and Bank Accounts in the period, by voucher. A voucher's cash amount goes to the category of its other ledgers (the nearest group with a known predefined role: Sundry Debtors → customers, Sundry Creditors → suppliers, sales and incomes → income, purchases and expenses → expenses, Duties & Taxes → taxes, loans and bank OD → loans, capital and reserves → capital, fixed assets and investments → assets; anything else → other), split by their entries when there are several. A voucher with only cash and bank ledgers is a transfer, which nets to nothing.
-- **Expression:** opening (F-BAL-002) + Σ in − Σ out = closing (F-BAL-002), exactly.
-- **Sign:** money in is a debit to cash or bank; out is a credit, shown positive.
-- **Check in Tally:** Display More Reports › Account Books › Cash/Bank Book(s), and the Cash Flow report (Display More Reports › Statements of Accounts) for the month-by-month in and out.
+| Item | Value |
+| --- | --- |
+| Expression | `F-BAL-002 (opening) + Σ in − Σ out = F-BAL-002 (closing)` |
+| In words | The effective entries on the cash and bank ledgers in the period, by voucher. Each cash amount goes to the category of the other ledgers in its voucher. A voucher with only cash and bank ledgers is a transfer. A transfer adds to zero. |
+| Data | `voucher_lines` on the ledgers under `cash_in_hand` and `bank_accounts`. The category comes from the nearest group with a known role: customers, suppliers, income, expenses, taxes, loans, capital, assets or other. |
+| Signs | Money in is a debit to cash or bank. Money out is a credit, shown positive. |
+| Dates | D1 for the movements. D2 for the opening and the closing. |
+| Companies | C1. |
+| Check in Tally | 1. Open Display More Reports › Account Books › Cash/Bank Book(s). 2. Set the same period. 3. Read the inward and outward totals. |
 
 #### F-CF-002 Monthly in and out
 
-- **In words:** the cash and bank debits (in) and credits (out) of each month, by voucher.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ debits` (in) and `Σ credits` (out) for each month |
+| In words | The money in and the money out of each month on the cash and bank ledgers. |
+| Data | As for F-CF-001. |
+| Signs | As for F-CF-001. |
+| Dates | D1. |
+| Companies | C1. |
+| Check in Tally | 1. Open Display More Reports › Statements of Accounts › Cash Flow. 2. Read each month. |
 
-### 5.2 Cost centres (`F-CC`)
+## 10. Cost centres (`F-CC`)
 
 #### F-CC-001 Cost centre allocations (by month, total)
 
-- **In words:** the amounts of a period's voucher lines allocated to the cost centre (its own allocations; the centres under it have their own rows), effective lines of vouchers not deleted. A cost centre is known by name and category across the companies.
-- **Source:** `v_cost_allocations` (`cost_centre_id`, `voucher_date`, `amount`).
-- **Sign:** as the line's: a debit (an expense) positive.
-- **Check in Tally:** Display More Reports › Statements of Accounts › Cost Centres › Category Summary, or the cost centre's breakup, for the same period (Tally shows a centre's total with the centres under it).
+| Item | Value |
+| --- | --- |
+| Expression | `Σ amount` of the allocations to the cost centre in the period |
+| In words | The amounts of voucher lines that the books allocate to the cost centre. A cost centre below it has its own row. |
+| Data | `v_cost_allocations` (`cost_centre_id`, `voucher_date`, `amount`), effective lines only. |
+| Signs | S1. An expense is positive. |
+| Dates | D1. |
+| Companies | C1, C2. A cost centre is identified by its name and its category. |
+| Check in Tally | 1. Open Statements of Accounts › Cost Centres › Category Summary. 2. Set the same period. 3. Read the cost centre. Note: Tally includes the centres below it. |
 
 #### F-CC-002 An allocation
 
-- **In words:** one line's amount allocated to the cost centre in one cost category.
+| Item | Value |
+| --- | --- |
+| Expression | `amount` of one allocation |
+| In words | The amount of one line that the books allocate to the cost centre, in one cost category. |
+| Data | `v_cost_allocations`. |
+| Signs | S1. |
+| Dates | D1. |
+| Companies | The company of the voucher. |
+| Check in Tally | 1. Open the voucher. 2. Read the cost centre allocation of the line. |
 
 #### F-CC-003 Allocations (count)
 
-- **In words:** how many allocations the cost centre has in the period.
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT` of the allocations to the cost centre in the period |
+| In words | The number of allocations to the cost centre in the period. |
+| Data | `v_cost_allocations`. |
+| Signs | S5. |
+| Dates | D1. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the breakup of the cost centre. 2. Count the entries. |
 
-### 5.3 Stock (`F-STK`)
+## 11. Stock (`F-STK`)
 
-Quantities are ours: an item's opening plus the stock movements of vouchers not deleted, cancelled or optional, of a type that moves stock, not at a job worker's location (the rule validation proves against Tally item by item, VAL-006). A line moves its `stock_quantity`: the quantity, less any part a delivery or receipt note already moved. Values are Tally's own (its valuation method), stored at its statement dates: a period's value is the one at the **last stored date within it**, shown with that date. An item is known by name across the companies.
+**Quantities** are ours. A quantity is the opening of the item plus the movements of vouchers that move stock. The formula does not count deleted, cancelled or optional vouchers. It does not count stock at a job worker. A line moves its `stock_quantity`. Validation proves the quantities against Tally for each item (VAL-006).
+
+**Values** come from the source. The source uses its own valuation method. For a period, the value is the value at the last statement date in the period (D5, D7).
+
+**Companies:** C1 and C2. An item is identified by its name.
 
 #### F-STK-001 Opening quantity
 
-- **In words:** the item's quantity at the period's start: its opening plus every movement before that day.
-- **Source:** `items.opening_qty` + Σ `inventory_lines.stock_quantity` (moving lines, `voucher_date` before the start).
-- **Check in Tally:** Stock Summary › the item › Opening quantity for the same period.
+| Item | Value |
+| --- | --- |
+| Expression | `items.opening_qty + Σ stock_quantity`, where `voucher_date` is before the period start |
+| In words | The quantity of the item at the period start. |
+| Data | `items.opening_qty` and `inventory_lines.stock_quantity`. |
+| Signs | A quantity in is positive. A quantity out is negative. |
+| Dates | D1. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open Stock Summary › the item. 2. Set the same period. 3. Read the opening quantity. |
 
 #### F-STK-002 Inward
 
-- **In words:** the quantity that came in during the period (purchases, receipts, production, transfers in).
-- **Expression:** Σ positive `stock_quantity` of moving lines in the period.
-- **Check in Tally:** Stock Item Monthly Summary, Inwards column.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ positive stock_quantity` in the period |
+| In words | The quantity that came in during the period. |
+| Data | `inventory_lines.stock_quantity`. |
+| Signs | Positive. |
+| Dates | D1. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the Stock Item Monthly Summary. 2. Read the Inwards column. |
 
 #### F-STK-003 Outward
 
-- **In words:** the quantity that went out (sales, deliveries, consumption, transfers out), shown positive.
-- **Expression:** − Σ negative `stock_quantity` of moving lines in the period.
-- **Check in Tally:** Stock Item Monthly Summary, Outwards column.
+| Item | Value |
+| --- | --- |
+| Expression | `−Σ negative stock_quantity` in the period |
+| In words | The quantity that went out during the period, shown positive. |
+| Data | `inventory_lines.stock_quantity`. |
+| Signs | Shown positive. |
+| Dates | D1. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the Stock Item Monthly Summary. 2. Read the Outwards column. |
 
 #### F-STK-004 Closing quantity
 
-- **In words:** the quantity at the period's end: the opening plus every movement up to that day. For a period of adjacent months, F-STK-001 + F-STK-002 − F-STK-003. On an item's page, the quantity after each movement.
-- **Check in Tally:** Stock Summary, Closing quantity. Proven at each validation (VAL-006).
+| Item | Value |
+| --- | --- |
+| Expression | `F-STK-001 + F-STK-002 − F-STK-003` |
+| In words | The quantity at the period end. On the page of an item, the quantity after each movement. A negative quantity shows that more went out than came in. |
+| Data | As F-STK-001 to F-STK-003. |
+| Signs | As F-STK-001. |
+| Dates | D1. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the Stock Summary. 2. Set the same date. 3. Read the closing quantity. |
 
 #### F-STK-005 Value (item, stock group, godown)
 
-- **In words:** Tally's own closing value at the last stored date within the period (its valuation method: average cost, FIFO, ...). Stock groups and godowns at the top level; their values hold the ones under them.
-- **Source:** `stock_values` (`scope` `item`, `stock_group` or `godown`, by name; `closing_value`).
-- **Educational mode:** stored only on statement dates (§1.1).
-- **Check in Tally:** Stock Summary at that date (Closing Value); by godown: Godown Summary.
+| Item | Value |
+| --- | --- |
+| Expression | `stock_values.closing_value` at the last statement date in the period |
+| In words | The closing value that the source supplies for an item, a stock group or a godown. A stock group or a godown includes those below it. |
+| Data | `stock_values` (`scope` = `item`, `stock_group` or `godown`; `scope_name`; `closing_value`). |
+| Signs | Positive. |
+| Dates | D5, D6, D7. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the Stock Summary (or the Godown Summary). 2. Set the same date. 3. Read the closing value. |
 
 #### F-STK-006 Rate
 
-- **In words:** the value per unit.
-- **Expression:** F-STK-005 ÷ F-STK-004, to 2 decimals; "—" when either is missing or the quantity is zero.
+| Item | Value |
+| --- | --- |
+| Expression | `F-STK-005 ÷ F-STK-004`, two decimals |
+| In words | The value for each unit. When the value is missing or the quantity is zero, the figure is "—". |
+| Data | F-STK-004 and F-STK-005. |
+| Signs | Positive. |
+| Dates | D5, D7. |
+| Companies | C1, C2, C4. |
+| Check in Tally | 1. Open the Stock Summary. 2. Read the rate of the item. |
 
 #### F-STK-007 Stock value (total, by date)
 
-- **In words:** F-BAL-005 at the last stored date within the period, and at each of the last twelve stored dates up to its end.
-- **Source:** `stock_values` (`scope = 'total'`).
+| Item | Value |
+| --- | --- |
+| Expression | F-BAL-005 at the last statement date in the period, and at each of the last twelve statement dates |
+| In words | The total closing stock at the period end, and for the chart at earlier dates. |
+| Data | `stock_values` (`scope = 'total'`). |
+| Signs | Positive. |
+| Dates | D5, D6, D7. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Stock Summary. 2. Set each date. 3. Read the closing value. |
 
-#### F-STK-008 A movement's value
+#### F-STK-008 Value of a movement
 
-- **In words:** the inventory line's amount on the voucher (purchase or sale value, not the stock valuation), signed like the quantity.
-- **Source:** `inventory_lines.amount`.
+| Item | Value |
+| --- | --- |
+| Expression | `inventory_lines.amount` |
+| In words | The amount of the stock line on the voucher. It is the purchase value or the sale value, not the stock valuation. |
+| Data | `inventory_lines.amount`. |
+| Signs | As the quantity. |
+| Dates | D1. |
+| Companies | The company of the voucher. |
+| Check in Tally | 1. Open the voucher. 2. Read the amount of the stock item line. |
 
-### 5.4 Transactions (`F-TRN`)
+#### F-STK-009 Stock items (count)
 
-#### F-TRN-001 A line's debit or credit
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT(DISTINCT items.name)` |
+| In words | The number of stock items in the selection. |
+| Data | `items` (`name`, `is_deleted`). |
+| Signs | S5. |
+| Dates | Not applicable. |
+| Companies | C2. An item counts one time in all companies. |
+| Check in Tally | 1. Open List of Accounts › Stock Items. 2. Count the items. |
 
-- **In words:** each effective ledger line (not cancelled or optional, of a voucher type that posts to the books, of a voucher not deleted) of the period, one row per line: its amount as a Debit when positive, as a Credit (shown positive) when negative. A voucher's debits equal its credits.
-- **Source:** `voucher_lines.amount` (`is_effective`), with the voucher, its type, party and the line's ledger; particulars are the voucher's ledgers on the other side.
-- **Sign:** canonical: debit positive.
-- **Check in Tally:** Display More Reports › Day Book for the same dates (the voucher's lines with Alt+F1 detailed), or the ledger's Ledger Vouchers report.
+## 12. Transactions (`F-TRN`)
 
-## 6. Parties and bills (`F-PTY`)
+#### F-TRN-001 Debit or credit of a line
 
-A party is known by **name** across the selected companies, and its ledgers are those linked
-to any party of that name (`parties`, `ledgers.party_id`). Bills come from
-`opening_bills` (the ledgers' bills from before the books' beginning, as new bills on their
-bill date) and `bill_allocations` (`bill_name`, `bill_type`, `bill_date`, `due_date`,
-`amount`) of effective vouchers. A bill without a due date is due its date plus the party's
-credit days.
+| Item | Value |
+| --- | --- |
+| Expression | Debit = `amount` when it is positive. Credit = `−amount` when it is negative. |
+| In words | Each effective line of the period, with one row for each line. The debits of a voucher are equal to its credits. |
+| Data | `voucher_lines.amount` (`is_effective`), with the voucher, its type, its party and the ledger of the line. |
+| Signs | S1. |
+| Dates | D1. |
+| Companies | The company of the voucher. |
+| Check in Tally | 1. Open Display More Reports › Day Book. 2. Set the same dates. 3. Show the details (Alt+F1). |
+
+## 13. Parties and bills (`F-PTY`)
+
+**Data for each `F-PTY` entry:** the ledgers of the party (`parties`, `ledgers.party_id`). Bills come from `opening_bills` and from `bill_allocations` (`bill_name`, `bill_type`, `bill_date`, `due_date`, `amount`) of effective vouchers. A bill with no due date is due on its bill date plus the credit days of the party.
+
+**Companies for each `F-PTY` entry:** C1 and C2.
 
 #### F-PTY-001 Balance due
 
-- **In words:** the party's ledgers at the period's end (F-BAL-001 for those ledgers). A customer's is owed to us. A vendor's credit is shown positive, as an amount we owe.
-- **Sign:** customers: debit positive. Vendors: `−` (credit shown positive).
-- **Educational mode:** none.
-- **Check in Tally:** the party ledger's closing balance (Account Books › Ledger).
+| Item | Value |
+| --- | --- |
+| Expression | F-BAL-001 for the ledgers of the party |
+| In words | The balance of the party at the period end. |
+| Data | As for each `F-PTY` entry. |
+| Signs | Customers: S1, debit positive. Vendors: S2, credit shown positive. |
+| Dates | D2. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open Account Books › Ledger of the party. 2. Read the closing balance. |
 
 #### F-PTY-002 Overdue
 
-- **In words:** the outstanding bills (F-PTY-004) whose due date is before the period's end.
-- **Expression:** `Σ F-PTY-004` where `due < period end` and the amount is positive.
-- **Educational mode:** none.
-- **Check in Tally:** Outstandings › Ledger (party), the overdue column at the date.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ F-PTY-004`, where the due date is before the period end and the amount is positive |
+| In words | The outstanding bills that are past their due date. |
+| Data | As for each `F-PTY` entry. |
+| Signs | As F-PTY-001. |
+| Dates | D2. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open Outstandings › Ledger of the party. 2. Read the overdue amount at the date. |
 
 #### F-PTY-003 Bills cover
 
-- **In words:** all outstanding bills added up, opening bills included. It is less than the balance when amounts aren't split into bills (on account).
-- **Expression:** `Σ F-PTY-004`.
-- **Check in Tally:** Outstandings › Ledger (party), the total pending.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ F-PTY-004` |
+| In words | All outstanding bills, with the opening bills. It is less than the balance when some amounts are not in bills. |
+| Data | As for each `F-PTY` entry. |
+| Signs | As F-PTY-001. |
+| Dates | D2. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open Outstandings › Ledger of the party. 2. Read the total pending. |
 
 #### F-PTY-004 Outstanding bill
 
-- **In words:** per ledger and bill name, the new reference less everything settled against it, up to the period's end. "On account" is excluded. Amounts below half a paisa count as settled.
-- **Expression:** `sign × Σ allocation amount` per (ledger, bill name).
-- **Sign:** customers debit positive. Vendors are shown positive.
-- **Check in Tally:** Outstandings › Ledger (party), the bill's pending amount.
+| Item | Value |
+| --- | --- |
+| Expression | `sign × Σ allocation amount`, for each ledger and bill name |
+| In words | The new reference of a bill minus all amounts against it, up to the period end. "On account" amounts are not bills. An amount of less than half a paisa counts as paid. |
+| Data | As for each `F-PTY` entry. |
+| Signs | As F-PTY-001. |
+| Dates | D2. |
+| Companies | The company of the ledger. |
+| Check in Tally | 1. Open Outstandings › Ledger of the party. 2. Read the pending amount of the bill. |
 
-#### F-PTY-005 Overdue days (a bill)
+#### F-PTY-005 Overdue days of a bill
 
-- **In words:** the days from the bill's due date to the period's end, or 0 when not yet due. The due date is the allocation's due date, else the bill's date plus the party's credit days.
-- **Expression:** `max(0, period end − due date)`.
-- **Check in Tally:** Outstandings, the "Overdue by days" column.
+| Item | Value |
+| --- | --- |
+| Expression | `max(0, period end − due date)` |
+| In words | The days from the due date to the period end. A bill that is not due has 0 days. |
+| Data | As for each `F-PTY` entry. |
+| Signs | S5. |
+| Dates | D2. |
+| Companies | The company of the ledger. |
+| Check in Tally | 1. Open Outstandings. 2. Read the "Overdue by days" column. |
 
 #### F-PTY-006 Receipts (payments)
 
-- **In words:** what receipt (payment) vouchers put on the party's ledgers in the period. As a monthly figure: per month. As one settlement: that voucher.
-- **Expression:** `Σ amount` of receipt-type vouchers (payment-type for vendors) on the party's ledgers, shown positive.
-- **Check in Tally:** the party ledger's receipt (payment) vouchers in the period.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ amount` of receipt vouchers (payment vouchers for vendors) on the ledgers of the party |
+| In words | The money from the party (to the party) in the period. For each month, or for one voucher. |
+| Data | As for each `F-PTY` entry, with `voucher_types.base_type`. |
+| Signs | Shown positive. |
+| Dates | D1. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the ledger of the party. 2. Read the receipt (payment) vouchers in the period. |
 
 #### F-PTY-007 Average days to pay
 
-- **In words:** for settlements in the period ("against" allocations), the days from the bill's date to the settlement, weighted by amount.
-- **Expression:** `Σ(|amount| × days) ÷ Σ |amount|`, rounded to whole days.
-- **Check in Tally:** not a Tally report. Check by hand from the bill-wise ledger.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ(abs(amount) × days) ÷ Σ abs(amount)`, whole days |
+| In words | For each amount against a bill in the period, the days from the bill date to the payment. The formula weights each amount. |
+| Data | As for each `F-PTY` entry. |
+| Signs | S5. |
+| Dates | D1. |
+| Companies | C1, C2, C4. |
+| Check in Tally | Tally has no such report. 1. Open the bill-wise ledger of the party. 2. Calculate the expression. |
 
 #### F-PTY-008 Ledger statement entry (debit, credit)
 
-- **In words:** one effective entry on the party's ledgers. The particulars are the other side's first ledger.
-- **Expression:** debit = `amount` when positive; credit = `−amount` when negative.
-- **Check in Tally:** the party ledger's vouchers (Account Books › Ledger).
+| Item | Value |
+| --- | --- |
+| Expression | Debit = `amount` when it is positive. Credit = `−amount` when it is negative. |
+| In words | One effective entry on the ledgers of the party. The particulars are the first ledger on the other side. |
+| Data | As for each `F-PTY` entry. |
+| Signs | S1. |
+| Dates | D1. |
+| Companies | The company of the voucher. |
+| Check in Tally | 1. Open Account Books › Ledger of the party. 2. Read the voucher. |
 
 #### F-PTY-009 Running balance
 
-- **In words:** the previous balance plus this entry.
-- **Expression:** `balance(n) = balance(n−1) + amount(n)`, starting from F-PTY-010.
-- **Check in Tally:** the party ledger, running balance shown (F12: Show running balance).
+| Item | Value |
+| --- | --- |
+| Expression | `balance(n) = balance(n − 1) + amount(n)`, from F-PTY-010 |
+| In words | The balance after each entry. |
+| Data | F-PTY-008 and F-PTY-010. |
+| Signs | S1. |
+| Dates | D1. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the ledger of the party. 2. Show the running balance (F12). |
 
 #### F-PTY-010 Statement opening
 
-- **In words:** the party's ledgers at the day before the period's start (F-BAL-001).
-- **Check in Tally:** the party ledger's Opening Balance for the period.
+| Item | Value |
+| --- | --- |
+| Expression | F-BAL-001 for the ledgers of the party, on the day before the period start |
+| In words | The balance of the party at the start of the period. |
+| Data | As for each `F-PTY` entry. |
+| Signs | S1. |
+| Dates | D2, on the day before the period start. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the ledger of the party for the period. 2. Read the opening balance. |
 
-#### F-PTY-011 Invoice days (due in or overdue by)
+#### F-PTY-011 Invoice days (due in, or overdue by)
 
-- **In words:** for an invoice's bill at the period's end: the days until it is due, or the days it is overdue.
-- **Expression:** due: `due − period end`; overdue: `period end − due`.
-- **Check in Tally:** Outstandings, the due date of the bill.
+| Item | Value |
+| --- | --- |
+| Expression | Due: `due date − period end`. Overdue: `period end − due date`. |
+| In words | For the bill of an invoice: the days until the due date, or the days after it. |
+| Data | As for each `F-PTY` entry. |
+| Signs | S5. |
+| Dates | D2. |
+| Companies | The company of the invoice. |
+| Check in Tally | 1. Open Outstandings. 2. Read the due date of the bill. |
 
 #### F-PTY-012 Ageing bucket
 
-- **In words:** a party's outstanding bills (F-PTY-004) at the day, by the days from each bill's due date to that day: not due, 1-30, 31-60, 61-90 and over 90 days past due.
-- **Check in Tally:** Display More Reports › Statements of Accounts › Outstandings › Ageing Analysis (Receivables or Payables), at the same date, by due date.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ F-PTY-004` for each bucket of days past the due date |
+| In words | The outstanding bills at the date, by the days after their due date. The buckets are: not due, 1–30, 31–60, 61–90 and more than 90 days. |
+| Data | As for each `F-PTY` entry. |
+| Signs | As F-PTY-001. |
+| Dates | D2. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open Statements of Accounts › Outstandings › Ageing Analysis. 2. Set the same date. 3. Select ageing by due date. |
 
-#### F-PTY-013 Uncovered by bills
+#### F-PTY-013 Not in bills
 
-- **In words:** the balance due (F-PTY-001) less the outstanding bills (F-PTY-003). It is anything posted without a bill (on account), and any difference between a ledger's opening balance and its opening bills (validation warns: LB-VAL-041).
+| Item | Value |
+| --- | --- |
+| Expression | `F-PTY-001 − F-PTY-003` |
+| In words | The balance that is not in bills. It includes amounts on account, and differences between an opening balance and its opening bills. Validation gives a warning for such a difference (LB-VAL-041). |
+| Data | F-PTY-001 and F-PTY-003. |
+| Signs | As F-PTY-001. |
+| Dates | D2. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Read the closing balance of the party. 2. Subtract the total pending in Outstandings. |
 
-## 7. Registers (`F-REG`)
+## 14. Registers (`F-REG`)
 
-Source for every `F-REG` entry: `vouchers` and their first effective `voucher_lines`
-(`line_no` order), with the vouchers' entries on the side's ledgers.
+**Data for each `F-REG` entry:** `vouchers` and their first effective `voucher_lines` (by `line_no`), with the entries of the voucher on the ledgers of the side.
 
 #### F-REG-001 Debit or credit (Day Book)
 
-- **In words:** the voucher's first ledger entry, as the source's Day Book shows it. For an invoice, that is the party.
-- **Expression:** debit = `amount` when positive; credit = `−amount` when negative.
-- **Check in Tally:** Display More Reports › Day Book, the same voucher.
+| Item | Value |
+| --- | --- |
+| Expression | Debit = `amount` when it is positive. Credit = `−amount` when it is negative. |
+| In words | The first ledger entry of the voucher, as the Day Book of the source shows it. For an invoice, it is the party. |
+| Data | As for each `F-REG` entry. |
+| Signs | S1. |
+| Dates | D1. |
+| Companies | The company of the voucher. |
+| Check in Tally | 1. Open Display More Reports › Day Book. 2. Find the same voucher. |
 
-#### F-REG-002 Value (on sales or purchase ledgers)
+#### F-REG-002 Value (on the sales or purchase ledgers)
 
-- **In words:** the voucher's entries on the Sales (Purchase) Accounts ledgers. Positive for an invoice, negative for a return. The register's total is gross plus returns (F-SAL-001 + F-SAL-002).
-- **Expression:** `−Σ amount` (sales) or `+Σ amount` (purchases), per voucher.
-- **Check in Tally:** the Sales (Purchase) Register, voucher by voucher.
+| Item | Value |
+| --- | --- |
+| Expression | `−Σ amount` (sales) or `+Σ amount` (purchases), for each voucher |
+| In words | The entries of the voucher on the ledgers under Sales Accounts (Purchase Accounts). A return is negative. The total of the register is F-SAL-001 + F-SAL-002. |
+| Data | As for each `F-REG` entry. |
+| Signs | S2 for sales. S3 for purchases. |
+| Dates | D1. |
+| Companies | The company of the voucher. |
+| Check in Tally | 1. Open the Sales (Purchase) Register. 2. Find the same voucher. |
 
-## 7a. Overview (`F-OVR`)
+## 15. Overview (`F-OVR`)
 
 #### F-OVR-001 Twelve-month trend (sparklines)
 
-- **In words:** the twelve months up to the period's end month, each with its net sales (F-SAL-004), gross and net profit (F-PL-003, F-PL-004), cash and bank at the month's end (F-BAL-002) and customers (F-SAL-011).
+| Item | Value |
+| --- | --- |
+| Expression | For each of the twelve months to the month of the period end: F-SAL-004, F-PL-003, F-PL-004, F-BAL-002 and F-SAL-011 |
+| In words | The small line in a key card. It shows the last twelve months. The line only draws. It does not give a figure. |
+| Data | As in each formula. |
+| Signs | As in each formula. |
+| Dates | As in each formula, for each month. |
+| Companies | C1. |
+| Check in Tally | Check each month with the formula of the card. |
 
 #### F-OVR-002 Top customers
 
-- **In words:** the ten customers, by name across the companies, with the largest net sales (F-SAL-012), each with its balance due (F-PTY-001) and overdue (F-PTY-002) at the period's end. The status is "overdue" when anything is overdue, else "current".
+| Item | Value |
+| --- | --- |
+| Expression | The ten largest F-SAL-012, each with F-PTY-001 and F-PTY-002 |
+| In words | The ten customers with the largest net sales, each with the balance due and the overdue amount at the period end. |
+| Data | As in each formula. |
+| Signs | As in each formula. |
+| Dates | D1 for the sales. D2 for the balances. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Sort the Sales Register by party. 2. Read the ten largest. 3. Read their balances. |
 
 #### F-OVR-003 Profit & Loss summary against last year
 
-- **In words:** net sales, cost of sales, gross profit, gross margin %, net profit and net profit % (F-PL-001 to F-PL-006) for the period and for the same months or dates last year, with the change (F-CMP-001, or F-CMP-003 for a percentage).
+| Item | Value |
+| --- | --- |
+| Expression | F-PL-001 to F-PL-006 for the period and for the same months or dates last year, with F-CMP-001 (F-CMP-003 for a percentage) |
+| In words | Net sales, cost of sales, gross profit, gross margin %, net profit and net profit %, with last year and the change. |
+| Data | As in each formula. |
+| Signs | As in each formula. |
+| Dates | D3, D5, D6. |
+| Companies | C1, C4. |
+| Check in Tally | 1. Open the Profit & Loss A/c for the period. 2. Open it for the same period last year. 3. Compare the lines. |
 
 #### F-OVR-004 Customer share of net sales
 
-- **Expression:** `F-SAL-012 ÷ F-SAL-004 × 100`, one decimal.
+| Item | Value |
+| --- | --- |
+| Expression | `F-SAL-012 ÷ F-SAL-004 × 100`, one decimal |
+| In words | The net sales of a customer as a percentage of all net sales. |
+| Data | F-SAL-004 and F-SAL-012. |
+| Signs | S5. |
+| Dates | D1. |
+| Companies | C1, C2, C4. |
+| Check in Tally | 1. Read the total of the customer in the Sales Register. 2. Divide it by the register total. |
 
-## 8. Comparisons (`F-CMP`)
+## 16. Comparisons (`F-CMP`)
 
 #### F-CMP-001 Change %
 
-- **In words:** how much a figure moved against the comparison period.
-- **Expression:** `(value − before) ÷ |before| × 100`, one decimal. None without a comparison figure, or when it is zero.
-- **Colour:** green when the change is good for the business, crimson when sales or profit fall, and neutral when a cost rises.
+| Item | Value |
+| --- | --- |
+| Expression | `(value − before) ÷ abs(before) × 100`, one decimal |
+| In words | How much a figure changed against the comparison period. With no comparison figure, or when it is zero, there is no change. The colour is green when the change is good for the business, crimson when it is bad and grey for a cost that goes up. |
+| Data | The figure in the period and in the comparison period. |
+| Signs | S5. |
+| Dates | F-CMP-002. |
+| Companies | As the figure. |
+| Check in Tally | Calculate the expression from the two figures. |
 
 #### F-CMP-002 The comparison period
 
-- **In words:** what "before" means.
+| Item | Value |
+| --- | --- |
+| Expression | The table below |
+| In words | The period that the dashboard compares with. A month end stays a month end (31 May to 30 April). 29 February becomes 28 February. |
+| Data | `core/report_periods.py` (`Period.previous`, `Period.last_year`). |
+| Signs | Not applicable. |
+| Dates | The table below. |
+| Companies | The same companies. |
+| Check in Tally | Set the period in Tally to the same comparison period. |
 
 | Selected | Previous period | Last year |
 | --- | --- | --- |
-| MTD | the same days of the month before | the same dates a year earlier |
-| QTD | the same days of the quarter before | the same dates a year earlier |
-| YTD | the same dates a year earlier | the same dates a year earlier |
-| FY | the previous financial year | the previous financial year |
-| Months chosen | as many months just before | the same months a year earlier |
-| Dates chosen | as many days just before | the same dates a year earlier |
-
-- **Month ends:** a month end stays a month end (31-May → 30-Apr), and 29-Feb becomes 28-Feb.
-- **Source:** `core/report_periods.py` (`Period.previous`, `Period.last_year`).
+| MTD | The same days of the month before | The same dates one year before |
+| QTD | The same days of the quarter before | The same dates one year before |
+| YTD | The same dates one year before | The same dates one year before |
+| FY | The financial year before | The financial year before |
+| Months | The same number of months just before | The same months one year before |
+| Dates | The same number of days just before | The same dates one year before |
 
 #### F-CMP-003 Change in percentage points
 
-- **In words:** for a percentage (a margin), the difference between this period's and the comparison's.
-- **Expression:** `value − before`, shown as "▼ 1.1 pts".
+| Item | Value |
+| --- | --- |
+| Expression | `value − before`, shown as "▼ 1.1 pts" |
+| In words | For a percentage (a margin), the difference between the period and the comparison period. |
+| Data | The percentage in the two periods. |
+| Signs | S5. |
+| Dates | F-CMP-002. |
+| Companies | As the percentage. |
+| Check in Tally | Subtract the two percentages. |
 
-## 9. Checks against the source (`F-CHK`)
+## 17. Checks against the source (`F-CHK`)
 
-Source for every `F-CHK` entry: `statement_lines` at the dates used, ours (`figures = 'ours'`)
-against the source's own (`figures = 'source'`), line by line and in total.
+**Data for each `F-CHK` entry:** `statement_lines` at the dates used. The formula compares ours (`figures = 'ours'`) with the statement of the source (`figures = 'source'`), line by line and in total.
 
 #### F-CHK-001 Lines that differ
 
-- **In words:** compared lines and totals (company × date × line) whose amounts differ from the source's.
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT` of the compared lines where our amount is not equal to the amount of the source |
+| In words | The lines and totals (company × date × line) that are different from the source. |
+| Data | As for each `F-CHK` entry. |
+| Signs | S5. |
+| Dates | The statement dates of the period. |
+| Companies | Each company. |
+| Check in Tally | Run `./dev.ps1 statements`. It prints the counts. |
 
 #### F-CHK-002 Lines compared
 
-- **In words:** the lines and totals compared at the dates used.
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT` of the compared lines and totals |
+| In words | The lines and totals that the check compared at the dates used. |
+| Data | As for each `F-CHK` entry. |
+| Signs | S5. |
+| Dates | The statement dates of the period. |
+| Companies | Each company. |
+| Check in Tally | Run `./dev.ps1 statements`. |
 
-#### F-CHK-003 Unchecked company-dates
+#### F-CHK-003 Company dates that are not checked
 
-- **In words:** company and date pairs without the source's own statement to compare.
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT` of the company and date pairs with no statement of the source |
+| In words | The pairs of company and date that the check could not compare. "Matches Tally" shows only when F-CHK-002 is more than 0, F-CHK-001 is 0 and F-CHK-003 is 0. |
+| Data | As for each `F-CHK` entry. |
+| Signs | S5. |
+| Dates | The statement dates of the period. |
+| Companies | Each company. |
+| Check in Tally | Run `./dev.ps1 statements` for the missing dates. |
 
-**"Matches Tally"** holds when F-CHK-002 > 0, F-CHK-001 = 0 and F-CHK-003 = 0.
+## 18. Data health (`F-DAT`)
 
-## 10. Tables (`F-TBL`)
+**Data for each `F-DAT` entry:** the view `v_data_health` and `entity_sources.source_loaded`, through `GET /api/v1/companies`. A company on hold is not shown.
+
+#### F-DAT-001 Companies
+
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT` of the companies that the user can see |
+| In words | The number of companies on the page. Companies on hold are not counted. |
+| Data | As for each `F-DAT` entry. |
+| Signs | S5. |
+| Dates | Not applicable. |
+| Companies | All companies that the user can see. |
+| Check in Tally | Tally has no such figure. Run `./dev.ps1 on-hold` to see the companies on hold. |
+
+#### F-DAT-002 Checks passed
+
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT` of the companies with `validation_status = 'passed'` |
+| In words | The number of companies with a passed last validation. |
+| Data | As for each `F-DAT` entry. |
+| Signs | S5. |
+| Dates | The last validation of each company. |
+| Companies | All companies that the user can see. |
+| Check in Tally | Tally has no such figure. Run `./dev.ps1 report` to see the validation of each company. |
+
+#### F-DAT-003 Loaded in the source
+
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT` of the companies with `source_loaded = true` |
+| In words | The number of companies that the source had loaded when we last asked it. |
+| Data | As for each `F-DAT` entry. |
+| Signs | S5. |
+| Dates | The last check of each company. |
+| Companies | All companies that the user can see. |
+| Check in Tally | 1. Open TallyPrime. 2. Press F3 (Select Company). 3. Count the loaded companies. |
+
+#### F-DAT-004 Last sync
+
+| Item | Value |
+| --- | --- |
+| Expression | `MAX(last_sync_at)` of the companies |
+| In words | The time of the most recent sync, shown as "N min ago" with the date. |
+| Data | As for each `F-DAT` entry. |
+| Signs | Not applicable. |
+| Dates | The time of the sync, in UTC, shown in local time. |
+| Companies | All companies that the user can see. |
+| Check in Tally | Tally has no such figure. Run `./dev.ps1 status` to see the syncs. |
+
+## 19. Tables (`F-TBL`)
 
 #### F-TBL-001 Total
 
-- **In words:** the sum of an amount or count column over the rows shown, after the filter. Used by the table explorer's total row and the dataset explorer's total.
-- **Expression:** `Σ value`, as exact decimals (BigInt).
-- **Not summed:** balance columns (a closing or running balance), because adding balances means nothing.
+| Item | Value |
+| --- | --- |
+| Expression | `Σ value` of the rows that the table shows, as exact decimals |
+| In words | The sum of an amount column or a count column after the filter. The table does not add balance columns, because a sum of balances has no meaning. |
+| Data | The rows of the table. |
+| Signs | As the column. |
+| Dates | As the column. |
+| Companies | As the column. |
+| Check in Tally | Add the same rows in the report of Tally. |
 
 #### F-TBL-002 Subtotal
 
-- **In words:** F-TBL-001 within each group when a table is grouped. The CSV carries the subtotals and the total.
+| Item | Value |
+| --- | --- |
+| Expression | F-TBL-001 in each group |
+| In words | The total of each group when the user groups a table. The CSV file contains the subtotals and the total. |
+| Data | The rows of the group. |
+| Signs | As the column. |
+| Dates | As the column. |
+| Companies | As the column. |
+| Check in Tally | Add the rows of the group. |
 
-## 11. Showing amounts (`F-FMT`)
+## 20. How the dashboard shows amounts (`F-FMT`)
 
-#### F-FMT-001 Amounts in lakhs (the Amounts setting: Lakhs)
+#### F-FMT-001 Amounts in lakhs
 
-- The top bar's **Amounts** setting (Lakhs or Full) applies to every card, summary, statement and table; it is kept in the browser. Lakhs is the default.
-- Lakhs: every amount in lakhs to 2 decimals, with Indian grouping ("₹12.35 L", "₹482.00 L" for ₹4.82 crore, "₹0.45 L" for ₹45,000). Hovering shows the exact amount (F-FMT-002).
-- Rounding is half away from zero, and applies only when the amount is shown.
+| Item | Value |
+| --- | --- |
+| Expression | `amount ÷ 1,00,000`, two decimals, with Indian grouping and "L" |
+| In words | The Amounts setting in the top bar is Lakhs or Full. Lakhs is the default. With Lakhs, each amount shows in lakhs, for example "₹12.35 L". The hover shows the exact amount. The rounding is half away from zero. |
+| Data | Each amount. |
+| Signs | As the amount. A negative amount is crimson. |
+| Dates | Not applicable. |
+| Companies | Not applicable. |
+| Check in Tally | Divide the amount in Tally by 1,00,000. |
 
 #### F-FMT-002 Exact amounts (Full, hover, CSV)
 
-- To the paisa with Indian grouping ("₹4,82,00,000.00"): every amount when the setting is Full, the hover in Lakhs, and always in CSV exports. Sums use the unrounded amounts.
+| Item | Value |
+| --- | --- |
+| Expression | The amount to the paisa, with Indian grouping, for example "₹4,82,00,000.00" |
+| In words | Each amount when the setting is Full, in the hover with Lakhs, and in each CSV file. Sums use the amounts before rounding. |
+| Data | Each amount. |
+| Signs | As the amount. |
+| Dates | Not applicable. |
+| Companies | Not applicable. |
+| Check in Tally | Compare the amount with Tally directly. |
 
 #### F-FMT-003 Chart amounts
 
-- In ₹ lakh, for drawing only. Never used for sums or for the figures shown.
+| Item | Value |
+| --- | --- |
+| Expression | `amount ÷ 1,00,000` as a number |
+| In words | Charts use amounts in lakhs only to draw. The dashboard never adds them and never shows them as figures. |
+| Data | Each amount in a chart. |
+| Signs | As the amount. |
+| Dates | Not applicable. |
+| Companies | Not applicable. |
+| Check in Tally | Read the figure in the table below the chart. |
 
 ## Change log
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 2.0 | 2026-11-11 | Moved from `formulas.md` to `formula-sheet.md`. Written again in ASD-STE100, with a Terms section, common rules and one table for each figure. Current ratio, quick ratio and debt to equity in the form of Schedule III (F-BS-007 to F-BS-011, F-RAT-008 to F-RAT-010). F-RAT-001 to F-RAT-003 retired. Stock items (F-STK-009). Data health (F-DAT-001 to F-DAT-004). A test fails when a figure on a page has no ID. |
 | 1.2 | 2026-11-06 | Transactions (`F-TRN-001`). |
-| 1.1 | 2026-11-06 | Stock (`F-STK-001` to `F-STK-008`); the Amounts setting (F-FMT-001, F-FMT-002: Lakhs or Full everywhere). |
-| 1.0 | 2026-11-02 | Rewritten as the formula sheet (RPT-015): an ID per figure with words, expression, source, sign, Educational-mode rule and the check in Tally; the comparison with the previous period (F-CMP-002, RPT-016); date ranges to the last stored date; `test_formulas.py`; Word and PDF copies. |
-| 0.1 | 2026-11-02 | First version: building blocks, sales and purchases, the Dashboard's key figures, registers, parties, tables, showing amounts. |
+| 1.1 | 2026-11-06 | Stock (`F-STK-001` to `F-STK-008`); the Amounts setting (F-FMT-001, F-FMT-002). |
+| 1.0 | 2026-11-02 | Rewritten as the formula sheet (RPT-015): an ID for each figure, with the formula, data, signs, Educational mode and the check in Tally. |
+| 0.1 | 2026-11-02 | First version. |

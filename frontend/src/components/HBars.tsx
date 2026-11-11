@@ -13,9 +13,9 @@ export interface Bar {
   to?: string // the page behind it
 }
 
-export function HBars({ label, bars }: { label: string; bars: Bar[] }) {
+export function HBars({ label, bars, formula }: { label: string; bars: Bar[]; formula: string }) {
   return (
-    <div className="hbars" role="list" aria-label={label}>
+    <div className="hbars" role="list" aria-label={label} data-figure="bars" data-formula={formula}>
       {bars.map((b) => (
         <div key={b.label} className="hbar" role="listitem">
           <span className="hbar-label">{b.to ? <a href={b.to}>{b.label}</a> : b.label}</span>

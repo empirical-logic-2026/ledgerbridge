@@ -4,7 +4,7 @@
 // deeper page. The logic is in explorer.ts.
 
 import { Button, Checkbox, Dropdown, Input, Tooltip } from 'antd'
-import { explain } from '../help/glossary.ts'
+import { explain, formulaOf } from '../help/glossary.ts'
 import { useState } from 'react'
 import { formatDate } from '../format.ts'
 import { Money } from '../components/Money.tsx'
@@ -209,6 +209,8 @@ export function ExplorerTable<R>(props: Props<R>) {
                   scope="col"
                   className={cellClass(c)}
                   aria-sort={state.sortKey === c.key ? (state.descending ? 'descending' : 'ascending') : undefined}
+                  data-figure={c.kind === 'amount' || c.kind === 'count' ? 'column' : undefined}
+                  data-formula={c.kind === 'amount' || c.kind === 'count' ? formulaOf(c.label, c.formula) : undefined}
                 >
                   <Tooltip title={[c.help ?? explain(c.label), 'Click to sort.'].filter(Boolean).join(' ')}>
                     <button type="button" className={c.help ?? explain(c.label) ? 'explorer-sort has-help' : 'explorer-sort'} onClick={() => sortBy(c.key)}>

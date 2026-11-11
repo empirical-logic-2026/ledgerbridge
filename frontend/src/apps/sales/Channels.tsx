@@ -45,6 +45,7 @@ function columns(found: ChannelsOut, query: Query): ExplorerColumn<ChannelOut>[]
         key: `m-${month}`,
         label: formatMonth(month).slice(0, 3),
         kind: 'amount',
+        formula: 'F-SAL-009',
         value: (c) => c.months[i]?.net ?? null,
         link: (c) => registerHref(query, c.name, month),
         hidden: months.length > 6,

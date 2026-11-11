@@ -1,4 +1,4 @@
-// The Amounts setting (docs/formulas.md F-FMT-001, F-FMT-002): every amount the dashboard
+// The Amounts setting (docs/formula-sheet.md F-FMT-001, F-FMT-002): every amount the dashboard
 // shows in lakhs ("₹12.35 L", the exact amount on hover) or in full ("₹12,35,000.00"),
 // chosen in the top bar and remembered in this browser, as the light or dark mode is. CSV
 // exports are always exact; charts draw in lakhs either way.

@@ -47,7 +47,7 @@ export function PnlKpis({ home, report, dark }: Props) {
       <section className="card" aria-label="Expense structure">
         <h2 className="card-title">Expense structure (% of net sales)</h2>
         {costs.length ? (
-          <HBars label="Cost lines as % of net sales"
+          <HBars formula="F-PL-010" label="Cost lines as % of net sales"
             bars={costs.map((line, i) => ({
               label: line.label,
               amount: line.values.total ?? '0',

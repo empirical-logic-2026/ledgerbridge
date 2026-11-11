@@ -1,7 +1,7 @@
 """Receivables and payables with ageing (RPT-004, RPT-014; docs/design/dashboard.md Section
 0.4): every customer (vendor), known by name across the selected companies, with its balance
 due at a day and its outstanding bills by how long past due they are. Source-independent;
-formulas F-PTY-012 to F-PTY-014 in docs/formulas.md.
+formulas F-PTY-012 and F-PTY-013 in docs/formula-sheet.md.
 
 - **Bills:** as on the party's page (core/parties.py): per ledger and bill name, the opening
   bills and the allocations of effective vouchers up to the day ("on account" excluded), due

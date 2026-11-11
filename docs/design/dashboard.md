@@ -52,7 +52,7 @@ Six screens, approved by the developer on 2026-10-31. Build to them: their **lay
 - **Period:** the financial year, month chips (one or several, adjacent or not), or a from/to date range ("or dates"), and **Compare: last year** (the same period a year earlier) or no comparison.
 - **Status pill:** how many selected companies were loaded in Tally, the last sync, and whether every latest validation passed.
 
-Cards, each following the selection (from 2026-11-02 the Overview module, Section 0.4, replaces these cards with its key figures; every formula: [formulas.md](../formulas.md)):
+Cards, each following the selection (from 2026-11-02 the Overview module, Section 0.4, replaces these cards with its key figures; every formula: [formula-sheet.md](../formula-sheet.md)):
 - **Profit & Loss:** net sales, cost of sales, gross profit, net profit, each with the change against last year. From the stored statements (`v_profit_loss`, validated against Tally's): a period's figure is the statement at its end less the one before its start. Whole months use the stored month ends; where the source's statements exist only for some days of the month (Tally's Educational mode: the 1st, 2nd and 31st), a 30-day month runs to the 2nd of the next month and the card says so. Other from/to ranges show "—" with the reason. "Open" leads to the Profit & Loss report (D1 c1).
 - **Balance Sheet:** total assets, current assets, current liabilities, "capital and reserves (incl. profit to date)": the capital account and the Profit & Loss A/c, at the period's end, from the stored statement for that date.
 - **Cash & bank, Receivables, Payables:** balances at the period's end (ledgers under Cash-in-Hand and Bank Accounts, Sundry Debtors, Sundry Creditors, by the source's predefined groups).
@@ -176,7 +176,7 @@ The client asked for the dashboard to follow the design pattern of their referen
 
 | Module | Shows | PR |
 | --- | --- | --- |
-| Frame | top bar, page header, period toggles and comparison, formula sheet (`docs/formulas.md`) | 1 |
+| Frame | top bar, page header, period toggles and comparison, formula sheet (`docs/formula-sheet.md`) | 1 |
 | Overview | key cards: net sales · gross profit (gross margin %) · net profit (net profit %) · cash & bank · customers; monthly sales and purchases with gross and net profit marked; sales by channel (donut); P&L summary vs last year; top customers | 2 |
 | Sales | the Sales dashboard, register, monthly and channels in the pattern, channel chips | 3 |
 | Purchases | the same for purchases | 4 |

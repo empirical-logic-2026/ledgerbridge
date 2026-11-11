@@ -248,7 +248,7 @@ export function SalesDashboard(props: Props) {
         {dashboard.channels.length > 0 && (
           <section className="card" aria-label={w.mix}>
             <h2 className="card-title">{w.mix}</h2>
-            <Donut label={w.mixLabel} dark={props.dark} colours={[colours.primary, colours.netProfit, colours.grossProfit, colours.neutralBar, colours.primaryLine]}
+            <Donut label={w.mixLabel} formula="F-SAL-009" dark={props.dark} colours={[colours.primary, colours.netProfit, colours.grossProfit, colours.neutralBar, colours.primaryLine]}
               parts={dashboard.channels.map((c) => ({ name: c.name, amount: c.net_sales, to: register(c.name) }))} />
           </section>
         )}

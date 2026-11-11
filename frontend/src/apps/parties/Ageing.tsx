@@ -111,7 +111,7 @@ export function Ageing(props: Props) {
         </div>
         <section className="card" aria-label="By days past due">
           <h2 className="card-title">Outstanding bills by days past due</h2>
-          <HBars label="Outstanding bills by bucket"
+          <HBars formula="F-PTY-012" label="Outstanding bills by bucket"
             bars={BUCKET_LABELS.map(([key, label], i) => ({ label, amount: t.buckets[key], share: percentOf(t.buckets[key], billsText), colour: bucketColours[i] }))} />
           <p className="card-note">
             Bills total {formatExact(billsText)}; the balance due is {formatExact(t.balance)}.

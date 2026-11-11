@@ -6,7 +6,7 @@ migration 0026). Amounts use the canonical sign (debit positive, as the line's).
 A cost centre is known by its **name and category** across the selected companies (as
 parties are by name): the same cost centre in two companies is one row, its figures added
 together. Its own allocations only; the cost centres under it have their own rows (`parent`
-says where each sits). Formula F-CC-001 in docs/formulas.md.
+says where each sits). Formula F-CC-001 in docs/formula-sheet.md.
 """
 
 from collections import defaultdict

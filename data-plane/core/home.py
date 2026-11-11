@@ -20,7 +20,7 @@ added together: combined, without inter-company eliminations.
   month's gross and net profit from the stored statements, as the card's (none for a month
   the period covers only in part, or without its statements).
 
-Every formula: docs/formulas.md.
+Every formula: docs/formula-sheet.md.
 """
 
 from collections import defaultdict

@@ -1,10 +1,10 @@
-"""Every figure the dashboard shows has a formula in docs/formulas.md (RPT-015).
+"""Every figure the dashboard shows has a formula in docs/formula-sheet.md (RPT-015).
 
 Walks the response models of every `/api/v1` module: each field holding a number (an amount,
 percentage, ratio, days or a count, also in lists and dicts) must carry a formula ID
 (`api.v1.common.formula`), and so must each field holding a `Comparable` (whose `value` and
 `before` follow it). Identifiers and paging numbers are exempt, by name. Every ID used must
-have its section in docs/formulas.md, and every ID there must be used somewhere in the code
+have its section in docs/formula-sheet.md, and every ID there must be used somewhere in the code
 (the data plane or the frontend), so the sheet and the code can't drift apart.
 """
 
@@ -22,7 +22,7 @@ import api.v1
 from api.v1.common import Comparable
 
 ROOT = Path(__file__).resolve().parents[2]
-SHEET = ROOT / "docs" / "formulas.md"
+SHEET = ROOT / "docs" / "formula-sheet.md"
 ID = re.compile(r"F-[A-Z]{2,3}-\d{3}")
 # Numbers that aren't figures: identifiers, source settings shown as they are, paging.
 NOT_FIGURES = {
@@ -75,9 +75,19 @@ def _figure_fields() -> list[tuple[str, str | None]]:
     return fields
 
 
+def _headings() -> list[tuple[str, str]]:
+    """(ID, name) of every entry (a heading) in the formula sheet."""
+    return re.findall(r"^#{2,4} (F-[A-Z]{2,3}-\d{3})\b(.*)$", SHEET.read_text("utf-8"), re.M)
+
+
 def _sheet_ids() -> set[str]:
-    """The IDs with an entry (a heading) in the formula sheet."""
-    return set(re.findall(r"^#{2,4} (F-[A-Z]{2,3}-\d{3})\b", SHEET.read_text("utf-8"), re.M))
+    """The IDs of the formulas in use: every entry not marked "(retired)"."""
+    return {i for i, name in _headings() if "(retired)" not in name.lower()}
+
+
+def _retired_ids() -> set[str]:
+    """Retired formulas keep their entry (an ID is never reused) but no code uses them."""
+    return {i for i, name in _headings() if "(retired)" in name.lower()}
 
 
 def _code_ids() -> set[str]:
@@ -101,12 +111,17 @@ def test_every_formula_used_is_in_the_sheet() -> None:
     unknown = {f"{field}: {formula}" for field, formula in _figure_fields() if formula} - {
         f"{field}: {formula}" for field, formula in _figure_fields() if formula in _sheet_ids()
     }
-    assert not unknown, f"formula IDs with no entry in docs/formulas.md: {sorted(unknown)}"
+    assert not unknown, f"formula IDs with no entry in docs/formula-sheet.md: {sorted(unknown)}"
 
 
 def test_every_formula_in_the_sheet_is_used_in_the_code() -> None:
     unused = _sheet_ids() - _code_ids()
-    assert not unused, f"formulas in docs/formulas.md that no code refers to: {sorted(unused)}"
+    assert not unused, f"formulas in docs/formula-sheet.md that no code refers to: {sorted(unused)}"
+
+
+def test_no_code_uses_a_retired_formula() -> None:
+    used = _retired_ids() & _code_ids()
+    assert not used, f"retired formulas still used in the code: {sorted(used)}"
 
 
 def test_a_formula_id_is_unique_in_the_sheet() -> None:
