@@ -1427,3 +1427,82 @@ describe('the transactions', () => {
     expect(await screen.findByText(/orders the voucher is made against/)).toBeInTheDocument()
   })
 })
+
+describe('loading and errors (pulse loading, docs/design/dashboard.md Section 0.5)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  /** The API, where `held` paths wait until `release` is called, and `failing` paths fail as
+   *  many times as given before they answer. */
+  function stubHeldApi(answers: Record<string, unknown>, held: string[] = [], failing: Record<string, number> = {}) {
+    requests = []
+    const waiting: (() => void)[] = []
+    const failures = { ...failing }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        requests.push(url)
+        const path = new URL(url).pathname
+        if (held.includes(path)) await new Promise<void>((resolve) => waiting.push(resolve))
+        if ((failures[path] ?? 0) > 0) {
+          failures[path]--
+          return new Response(JSON.stringify({ detail: 'Server error' }), { status: 500 })
+        }
+        return new Response(JSON.stringify(answers[path]))
+      }),
+    )
+    return () => {
+      held.length = 0
+      waiting.splice(0).forEach((resolve) => resolve())
+    }
+  }
+
+  const answers = { '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/reports/balance-sheet': sheetFound }
+
+  it('shows a page in its own shape while it loads, busy and announced, then the figures', async () => {
+    const release = stubHeldApi(answers, ['/api/v1/reports/balance-sheet'])
+    renderApp('#/balance-sheet/statement')
+    const area = await screen.findByTestId('loading')
+    expect(area).toHaveAttribute('aria-busy', 'true')
+    expect(within(area).getByText('Loading…')).toBeInTheDocument()
+    expect(area.querySelector('.sheet-layout .ratio-tile')).not.toBeNull() // the statement's shape
+    await waitFor(() => expect(area.querySelector('.loading-shapes')).toHaveClass('shown')) // after 150 ms
+    release()
+    expect(await screen.findByRole('table', { name: 'Balance Sheet' })).toBeInTheDocument()
+    expect(screen.queryByTestId('loading')).toBeNull()
+    expect(screen.queryByText('Loading…')).toBeNull()
+  })
+
+  it('shows a failed request plainly with Retry, which asks again and shows the figures', async () => {
+    stubHeldApi(answers, [], { '/api/v1/reports/balance-sheet': 1 })
+    renderApp('#/balance-sheet/statement')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent("The Balance Sheet couldn't be loaded.")
+    const asked = requests.filter((r) => r.includes('/reports/balance-sheet')).length
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByRole('table', { name: 'Balance Sheet' })).toBeInTheDocument()
+    expect(requests.filter((r) => r.includes('/reports/balance-sheet')).length).toBe(asked + 1)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('retries the data plane itself when it could not be reached', async () => {
+    stubHeldApi({ ...answers, '/api/v1/home': home }, [], { '/api/v1/companies': 1 })
+    renderApp('#/overview/dashboard')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent("The dashboard can't reach the data plane.")
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByRole('region', { name: 'Net sales' })).toBeInTheDocument()
+  })
+
+  it('pulses the logo while the app\'s first data loads, then stops', async () => {
+    const release = stubHeldApi({ ...answers, '/api/v1/home': home }, ['/api/v1/companies'])
+    renderApp('#/overview/dashboard')
+    const logo = screen.getByTestId('top-logo')
+    expect(logo).toHaveAttribute('aria-busy', 'true')
+    await waitFor(() => expect(screen.getByTestId('top-logo')).toHaveClass('logo-pulse')) // after 150 ms
+    expect(screen.getByTestId('loading')).toHaveAttribute('aria-busy', 'true') // the page's shape meanwhile
+    release()
+    await screen.findByRole('region', { name: 'Net sales' })
+    expect(screen.getByTestId('top-logo')).not.toHaveClass('logo-pulse')
+    expect(screen.getByTestId('top-logo')).not.toHaveAttribute('aria-busy')
+  })
+})

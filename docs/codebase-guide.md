@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.50 |
-| Date | 2026-11-06 |
+| Version | 0.59 |
+| Date | 2026-11-11 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
 
@@ -110,6 +110,7 @@ ledgerbridge/
     └── src/
         ├── api/
         └── components/
+            └── loading/
 ```
 
 ### 2.2 Top level
@@ -342,6 +343,8 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `src/api/types.ts` | The API's response types, generated from its OpenAPI schema by `python -m devtools.api_types` (never edited by hand; a test fails when stale). |
 | `src/components/EChart.tsx` | A reusable chart component; a clicked bar or point can open a page. |
 | `src/components/KeyCard.tsx` | A key-figure card with the change against the comparison period ("vs previous period"), its page as a link (Overview, Sales dashboard, party pages). |
+| `src/components/StatementTable.tsx` | A statement table: current, previous and change columns, section headings, indented lines and totals, each line opening its page (the Overview's Profit & Loss summary, the Balance Sheet). |
+| `src/components/loading/` | Loading and errors on every page (dashboard design Section 0.5): `Loading.tsx` (placeholders in each component's shape, pulsing; the page shapes), `delay.ts` (shown only after 150 ms), `ErrorState.tsx` (what failed, why, and Retry); `Loading.test.tsx` checks the delay, the announcement, reduced motion and Retry. |
 | `src/apps/stock/Stock.tsx` | The Stock module: the stock summary (value, value by date, by stock group and godown, every item with quantities, value and rate) and one item's page (movements with the quantity after each, month by month). |
 | `src/apps/books/Transactions.tsx` | The Books module's Transactions page: every ledger line in the table explorer with the fifteen columns (Order Number empty until it is fetched). |
 | `src/index.css`, `src/test-setup.ts`, `src/*.test.ts(x)` | Styles, the tests' setup, and the tests (formats, router and selection, search bar, the shell and Overview against a stubbed API). |
@@ -455,6 +458,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-11 | 0.59 | `src/components/loading/` (pulse loading and the error state with Retry) and `src/components/StatementTable.tsx`; `docs/design/screenshots/reference-layout/`. |
 | 2026-11-09 | 0.58 | `core/problems.py`: `Problem.source_data` (warnings about the source's own data leave the verdict at OK WITH WARNINGS); `core/transform.py` `stored_orders`, `orders_named`, `unlinked_orders` shared by `link_orders` and validation; `workers/report.py` `by_cause`. |
 | 2026-11-09 | 0.57 | The UTR is no longer shown in the dashboard: `core/transactions.py`, `core/registers.py`, `api/v1/dataset_specs.py` don't read it; `tests/test_utr_not_exposed.py`. |
 | 2026-11-09 | 0.56 | Data completion part 7: other masters (`StockCategory`, `ItemPrice`, `SourceBudget`, `SourceBudgetLine`, migration 0036; `envelopes.STOCK_CATEGORIES`, `envelopes.BUDGETS`); `tests/test_other_masters.py`. |

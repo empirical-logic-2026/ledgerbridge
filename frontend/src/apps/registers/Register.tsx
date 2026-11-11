@@ -4,7 +4,9 @@
 // with credit notes, purchases with debit notes. Rows: core/registers.py
 // (GET /api/v1/registers/{side}).
 
-import { Alert, Skeleton, Typography } from 'antd'
+import { Alert, Typography } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import type { Company, RegisterOut, RegisterRowOut } from '../../api/types.ts'
 import { formatDate, formatMonth } from '../../format.ts'
 import { companyDisplayName } from '../../companyDisplayName.ts'
@@ -28,6 +30,7 @@ interface Props {
   register: RegisterOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
   query: Query
 }
 
@@ -96,9 +99,9 @@ export function Register(props: Props) {
 
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message={`The ${words.title.toLowerCase()} couldn't be loaded.`} description={props.error.message} />
+    content = <ErrorState message={`The ${words.title.toLowerCase()} couldn't be loaded.`} error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !register) {
-    content = <Skeleton active paragraph={{ rows: 12 }} />
+    content = <Loading shape="report" />
   } else {
     content = (
       <>

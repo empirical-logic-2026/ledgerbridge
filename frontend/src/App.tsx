@@ -4,9 +4,11 @@
 // page header around the page (ADR-050).
 
 import { AmountFormatProvider } from './components/Money.tsx'
-import { Alert, Result, Skeleton } from 'antd'
+import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
 import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockItem, useTransactions, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { ErrorState } from './components/loading/ErrorState.tsx'
+import { Loading } from './components/loading/Loading.tsx'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { PnlKpis } from './apps/dashboard/PnlKpis.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
@@ -37,6 +39,20 @@ interface Props {
   mode: Mode
   onMode: (mode: Mode) => void
   today: string // YYYY-MM-DD, from the root (tests set it)
+}
+
+/** A request that can be asked again: a TanStack query's error and refetch. */
+interface Refetchable {
+  error: Error | null
+  refetch: () => unknown
+}
+
+/** Retry for an error state: asks again for each request that failed (the periods before the
+ *  page's own figures, which wait for them). */
+function retry(...queries: Refetchable[]): () => void {
+  return () => {
+    for (const query of queries) if (query.error) void query.refetch()
+  }
 }
 
 export default function App({ mode, onMode, today }: Props) {
@@ -99,14 +115,15 @@ export default function App({ mode, onMode, today }: Props) {
   let crumbs: Crumb[] = [{ label: 'There is no such page' }]
   let content: ReactNode
   if (companies.error) {
-    content = <Alert type="error" showIcon message="The dashboard can't reach the data plane." description={companies.error.message} />
+    content = <ErrorState message="The dashboard can't reach the data plane." error={companies.error} onRetry={retry(companies)} />
   } else if (companies.data && companies.data.length === 0) {
     content = <Alert type="info" showIcon message="No companies to show yet." description="Connect and sync a company first (companies on hold aren't shown)." />
   } else if (at === 'overview/dashboard') {
     crumbs = [{ label: 'Overview' }]
     content = (
       <DashboardHome home={home.data} loading={companies.isPending || periods.isPending || home.isPending}
-        error={periods.error ?? home.error} dark={mode === 'dark'} query={query} />
+        error={periods.error ?? home.error}
+        onRetry={retry(periods, home)} dark={mode === 'dark'} query={query} />
     )
   } else if (at === 'pnl/profit-loss') {
     crumbs = [{ label: 'P&L & KPIs', path: ['pnl', 'profit-loss'] }, { label: 'Profit & Loss' }]
@@ -118,6 +135,7 @@ export default function App({ mode, onMode, today }: Props) {
           report={profitLoss.data}
           loading={companies.isPending || periods.isPending || profitLoss.isPending}
           error={periods.error ?? profitLoss.error}
+        onRetry={retry(periods, profitLoss)}
           options={options}
           onOptions={(change) => updateQuery(route, change)}
               query={query}
@@ -135,6 +153,7 @@ export default function App({ mode, onMode, today }: Props) {
         centre={centre.data}
         loading={companies.isPending || periods.isPending || centre.isPending}
         error={periods.error ?? centre.error}
+        onRetry={retry(periods, centre)}
         query={query}
       />
     )
@@ -146,6 +165,7 @@ export default function App({ mode, onMode, today }: Props) {
         centres={centreList.data}
         loading={companies.isPending || periods.isPending || centreList.isPending}
         error={periods.error ?? centreList.error}
+        onRetry={retry(periods, centreList)}
         query={query}
       />
     )
@@ -157,6 +177,7 @@ export default function App({ mode, onMode, today }: Props) {
         page={transactions.data}
         loading={companies.isPending || periods.isPending || transactions.isPending}
         error={periods.error ?? transactions.error}
+        onRetry={retry(periods, transactions)}
         query={query}
       />
     )
@@ -171,6 +192,8 @@ export default function App({ mode, onMode, today }: Props) {
         page={stockItem.data}
         loading={companies.isPending || periods.isPending || stockItem.isPending}
         error={periods.error ?? stockItem.error}
+        onRetry={retry(periods, stockItem)}
+        dark={mode === 'dark'}
         query={query}
       />
     )
@@ -182,6 +205,7 @@ export default function App({ mode, onMode, today }: Props) {
         stock={stock.data}
         loading={companies.isPending || periods.isPending || stock.isPending}
         error={periods.error ?? stock.error}
+        onRetry={retry(periods, stock)}
         dark={mode === 'dark'}
         query={query}
       />
@@ -195,6 +219,7 @@ export default function App({ mode, onMode, today }: Props) {
         dashboard={sales.data}
         loading={companies.isPending || periods.isPending || sales.isPending}
         error={periods.error ?? sales.error}
+        onRetry={retry(periods, sales)}
         dark={mode === 'dark'}
         query={query}
       />
@@ -209,6 +234,7 @@ export default function App({ mode, onMode, today }: Props) {
         dashboard={purchases.data}
         loading={companies.isPending || periods.isPending || purchases.isPending}
         error={periods.error ?? purchases.error}
+        onRetry={retry(periods, purchases)}
         dark={mode === 'dark'}
         query={query}
       />
@@ -221,15 +247,16 @@ export default function App({ mode, onMode, today }: Props) {
         sheet={sheet.data}
         loading={companies.isPending || periods.isPending || sheet.isPending}
         error={periods.error ?? sheet.error}
+        onRetry={retry(periods, sheet)}
         query={query}
       />
     )
   } else if (at === 'data/health') {
     crumbs = [{ label: 'Data', path: ['data', 'health'] }, { label: 'Data health' }]
-    content = companies.isPending ? <Skeleton active paragraph={{ rows: 6 }} /> : <DataHealth companies={all} dark={mode === 'dark'} />
+    content = companies.isPending ? <Loading shape="dashboard" /> : <DataHealth companies={all} dark={mode === 'dark'} />
   } else if (at === 'data/companies') {
     crumbs = [{ label: 'Data', path: ['data', 'health'] }, { label: 'Companies' }]
-    content = companies.isPending ? <Skeleton active paragraph={{ rows: 6 }} /> : <CompaniesPage companies={all} />
+    content = companies.isPending ? <Loading shape="report" /> : <CompaniesPage companies={all} />
   } else if (at === 'cash-flow/movement') {
     crumbs = [{ label: 'Cash Flow' }]
     content = (
@@ -238,6 +265,7 @@ export default function App({ mode, onMode, today }: Props) {
         flow={flow.data}
         loading={companies.isPending || periods.isPending || flow.isPending}
         error={periods.error ?? flow.error}
+        onRetry={retry(periods, flow)}
         dark={mode === 'dark'}
         query={query}
       />
@@ -253,6 +281,7 @@ export default function App({ mode, onMode, today }: Props) {
         ageing={ageing.data}
         loading={companies.isPending || periods.isPending || ageing.isPending}
         error={periods.error ?? ageing.error}
+        onRetry={retry(periods, ageing)}
         dark={mode === 'dark'}
         query={query}
       />
@@ -272,6 +301,7 @@ export default function App({ mode, onMode, today }: Props) {
         register={found.data}
         loading={companies.isPending || periods.isPending || found.isPending}
         error={periods.error ?? found.error}
+        onRetry={retry(periods, found)}
         query={query}
       />
     )
@@ -290,6 +320,7 @@ export default function App({ mode, onMode, today }: Props) {
         monthly={found.data}
         loading={companies.isPending || periods.isPending || found.isPending}
         error={periods.error ?? found.error}
+        onRetry={retry(periods, found)}
         dark={mode === 'dark'}
         query={query}
       />
@@ -302,6 +333,7 @@ export default function App({ mode, onMode, today }: Props) {
         channels={channels.data}
         loading={companies.isPending || periods.isPending || channels.isPending}
         error={periods.error ?? channels.error}
+        onRetry={retry(periods, channels)}
         dark={mode === 'dark'}
         query={query}
       />
@@ -326,6 +358,7 @@ export default function App({ mode, onMode, today }: Props) {
         party={party.data}
         loading={companies.isPending || periods.isPending || party.isPending}
         error={periods.error ?? party.error}
+        onRetry={retry(periods, party)}
         dark={mode === 'dark'}
         tab={tab}
         onTab={(next) => updateQuery(route, { tab: next === 'invoices' ? undefined : next })}
@@ -347,6 +380,7 @@ export default function App({ mode, onMode, today }: Props) {
         parties={partyList.data}
         loading={companies.isPending || periods.isPending || partyList.isPending}
         error={periods.error ?? partyList.error}
+        onRetry={retry(periods, partyList)}
         query={query}
       />
     )
@@ -358,7 +392,7 @@ export default function App({ mode, onMode, today }: Props) {
     <AmountFormatProvider>
       <AppShell
         topBar={
-          <TopBar module={found?.group.key} query={query} selection={selection} years={periods.data?.financial_years ?? []} year={year}
+          <TopBar module={found?.group.key} starting={companies.isLoading || periods.isLoading} query={query} selection={selection} years={periods.data?.financial_years ?? []} year={year}
             period={period} onChange={select} mode={mode} onMode={onMode} />
         }
         header={

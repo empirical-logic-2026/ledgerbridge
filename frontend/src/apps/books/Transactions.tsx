@@ -6,7 +6,9 @@
 // number, with its other bank details hidden. The UTR is never shown (the API doesn't return it).
 // Rows: core/transactions.py (GET /api/v1/transactions).
 
-import { Alert, Skeleton, Typography } from 'antd'
+import { Alert, Typography } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import type { Company, TransactionOut, TransactionsOut } from '../../api/types.ts'
 import { formatMonth } from '../../format.ts'
 import type { ExplorerColumn } from '../../reporting/explorer.ts'
@@ -20,6 +22,7 @@ interface Props extends PanelProps {
   page: TransactionsOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
 }
 
 function columns(page: TransactionsOut, companies: Company[], query: Query): ExplorerColumn<TransactionOut>[] {
@@ -91,9 +94,9 @@ export function Transactions(props: Props) {
   const { page } = props
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message="The transactions couldn't be loaded." description={props.error.message} />
+    content = <ErrorState message="The transactions couldn't be loaded." error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !page) {
-    content = <Skeleton active paragraph={{ rows: 10 }} />
+    content = <Loading shape="report" />
   } else {
     content = (
       <>

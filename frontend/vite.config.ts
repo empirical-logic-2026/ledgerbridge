@@ -18,5 +18,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
+    // The stylesheet is read as text by components/loading/Loading.test.tsx (the reduced-motion
+    // rule); without this, the tests see every CSS file as empty.
+    css: { include: [/index\.css/] },
   },
 })

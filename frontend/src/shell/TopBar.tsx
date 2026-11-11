@@ -10,6 +10,7 @@ import { useAmountFormat, type AmountFormat } from '../amountFormat.ts'
 import type { FinancialYear } from '../api/types.ts'
 import logo from '../assets/company-logo-wide.png'
 import { formatDate, formatMonth, parseDisplayDate } from '../format.ts'
+import { useShownAfter } from '../components/loading/delay.ts'
 import { href, type Query } from '../router.ts'
 import { COMPARE_OPTIONS, periodDates, TOGGLES, yearMonths, type Change, type CompareKind, type PeriodChoice, type Selection } from '../selection.ts'
 import type { Mode } from '../theme.ts'
@@ -18,6 +19,7 @@ import { builtNav, HOME } from './nav.ts'
 
 interface Props {
   module: string | undefined // the module shown
+  starting?: boolean // the app's first data (companies, periods) is loading: the logo pulses
   query: Query // the selection, kept on every link
   selection: Selection
   years: FinancialYear[]
@@ -115,14 +117,31 @@ function AmountsSelect() {
   )
 }
 
+/** The company logo; it pulses gently while the app's first data loads (after 150 ms, as every
+ *  placeholder: components/loading/Loading.tsx). */
+function Logo({ starting }: { starting: boolean }) {
+  return starting ? <StartingLogo /> : <LogoImage className="top-logo" />
+}
+
+function StartingLogo() {
+  const shown = useShownAfter()
+  return <LogoImage className={shown ? 'top-logo logo-pulse' : 'top-logo'} busy />
+}
+
+function LogoImage({ className, busy }: { className: string; busy?: boolean }) {
+  return (
+    <span className={className} aria-busy={busy || undefined} data-testid="top-logo">
+      <img src={logo} alt="Empirical Logic" />
+    </span>
+  )
+}
+
 export function TopBar(props: Props) {
   const modules = builtNav()
   return (
     <header className="top-bar">
       <a href={href([...HOME], props.query)} className="top-brand" aria-label="LedgerBridge: Overview">
-        <span className="top-logo">
-          <img src={logo} alt="Empirical Logic" />
-        </span>
+        <Logo starting={props.starting ?? false} />
         <span className="top-name">LedgerBridge</span>
       </a>
       <nav className="top-modules" aria-label="Modules">

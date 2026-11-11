@@ -6,11 +6,14 @@
 // formulas F-BS-005, F-BS-006, F-RAT-001 to F-RAT-007.
 
 import { Money } from '../../components/Money.tsx'
-import { Alert, Skeleton, Typography } from 'antd'
+import { Alert, Typography } from 'antd'
 import type { BalanceSheetReport, Company, RatioOut, SheetLineOut } from '../../api/types.ts'
 import { Explained } from '../../components/Explained.tsx'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import { RatioTiles, type Tile } from '../../components/RatioTiles.tsx'
-import { formatChange, formatDate } from '../../format.ts'
+import { StatementChange, StatementTable, type StatementRow } from '../../components/StatementTable.tsx'
+import { formatDate } from '../../format.ts'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import { againstOf } from '../../selection.ts'
 
@@ -19,6 +22,7 @@ interface Props extends PanelProps {
   sheet: BalanceSheetReport | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
 }
 
 const SECTIONS: [SheetLineOut['section'], string][] = [
@@ -38,10 +42,6 @@ const HIGHER_IS_BETTER: Record<string, boolean> = {
 /** An amount as the Amounts setting shows it (components/Money.tsx). */
 const Amount = Money
 
-function Change({ pct }: { pct: string | null | undefined }) {
-  return pct ? <span className="muted">{formatChange(pct)}</span> : <span className="muted">—</span>
-}
-
 function tile(r: RatioOut): Tile {
   return {
     label: r.label,
@@ -57,62 +57,38 @@ function tile(r: RatioOut): Tile {
 function Statement({ sheet }: { sheet: BalanceSheetReport }) {
   const compared = sheet.compared_with !== null && sheet.compared_with !== undefined
   return (
-    <table className="report-table" aria-label="Balance Sheet">
-      <thead>
-        <tr>
-          <th>Particulars</th>
-          <th className="num">{sheet.as_of ? formatDate(sheet.as_of) : 'Now'}</th>
-          {compared && <th className="num">{sheet.before_as_of ? formatDate(sheet.before_as_of) : sheet.compared_with?.label}</th>}
-          {compared && <th className="num"><Explained label="Change %">Change</Explained></th>}
-        </tr>
-      </thead>
-      {SECTIONS.map(([section, title]) => {
+    <StatementTable
+      label="Balance Sheet"
+      compared={compared}
+      columns={{
+        label: 'Particulars',
+        current: sheet.as_of ? formatDate(sheet.as_of) : 'Now',
+        previous: sheet.before_as_of ? formatDate(sheet.before_as_of) : sheet.compared_with?.label,
+        change: <Explained label="Change %">Change</Explained>,
+      }}
+      sections={SECTIONS.map(([section, title]) => {
         const total = sheet.totals.find((t) => t.section === section)
-        return (
-          <tbody key={section}>
-            <tr className="line-section">
-              <th scope="rowgroup" colSpan={compared ? 4 : 2}>{title}</th>
-            </tr>
-            {sheet.lines
-              .filter((line) => line.section === section)
-              .map((line) => (
-                <tr key={line.key} className={`line-${line.level}`}>
-                  <th scope="row">{line.label}</th>
-                  <td className="num">
-                    <Amount value={line.value} />
-                  </td>
-                  {compared && (
-                    <td className="num">
-                      <Amount value={line.before} />
-                    </td>
-                  )}
-                  {compared && (
-                    <td className="num">
-                      <Change pct={line.change_pct} />
-                    </td>
-                  )}
-                </tr>
-              ))}
-            <tr className="line-total">
-              <th scope="row">Total {title.toLowerCase()}</th>
-              <td className="num">
-                <Amount value={total?.value} />
-              </td>
-              {compared && (
-                <td className="num">
-                  <Amount value={total?.before} />
-                </td>
-              )}
-              {compared && (
-                <td className="num">
-                  <Change pct={total?.change_pct} />
-                </td>
-              )}
-            </tr>
-          </tbody>
-        )
+        const lines: StatementRow[] = sheet.lines
+          .filter((line) => line.section === section)
+          .map((line) => ({
+            key: line.key,
+            label: line.label,
+            level: line.level,
+            current: <Amount value={line.value} />,
+            previous: <Amount value={line.before} />,
+            change: <StatementChange change={line.change_pct} />,
+          }))
+        const totalRow: StatementRow = {
+          key: `${section}-total`,
+          label: `Total ${title.toLowerCase()}`,
+          kind: 'total',
+          current: <Amount value={total?.value} />,
+          previous: <Amount value={total?.before} />,
+          change: <StatementChange change={total?.change_pct} />,
+        }
+        return { key: section, title, rows: [...lines, totalRow] }
       })}
-    </table>
+    />
   )
 }
 
@@ -139,9 +115,9 @@ export function BalanceSheet(props: Props) {
   const { sheet } = props
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message="The Balance Sheet couldn't be loaded." description={props.error.message} />
+    content = <ErrorState message="The Balance Sheet couldn't be loaded." error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !sheet) {
-    content = <Skeleton active paragraph={{ rows: 10 }} />
+    content = <Loading shape="statement" />
   } else if (sheet.reason) {
     content = <Alert type="info" showIcon message="No Balance Sheet for this period." description={`${sheet.reason}.`} />
   } else {

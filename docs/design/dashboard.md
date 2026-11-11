@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.12 |
-| Date | 2026-11-02 |
+| Version | 0.17 |
+| Date | 2026-11-11 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1); the client's reference screenshots of 2026-11-02 (Section 0.4: layout and information design only; kept on the developer's computer in `docs/design/client-reference/`, not in git, as they show other products and a desktop) |
 
@@ -185,6 +185,22 @@ The client asked for the dashboard to follow the design pattern of their referen
 | Balance Sheet | the Balance Sheet with change %; current ratio, quick ratio, debt to equity, receivable, payable and inventory days, working-capital days | 7 |
 | Cash Flow | a simple cash movement: in and out of cash and bank by category, as a waterfall (the full operating / investing / financing statement is planned separately: it needs every ledger classified) | 8 |
 | Data | data health and companies | 9 |
+
+## 0.5 Loading and errors on every page (2026-11-11, ADR-050)
+
+Every page is built from the shared components of Section 0.4, so it loads and fails the same way:
+
+- **Pulse loading.** While a page's data loads, it shows its own shape at once: key cards (label, figure, change, sparkline), chart areas, table rows and ratio tiles, in the page's grid (`components/loading/Loading.tsx`: the shapes *overview*, *dashboard*, *statement*, *kpis-report*, *chart-report* and *report*). Nothing jumps when the data arrives.
+- **No flicker.** The shape is laid out at once but becomes visible only when the load takes longer than **150 ms** (`components/loading/delay.ts`).
+- **Our colours.** The placeholders pulse gently between the border colour and the soft forest green of the theme (`--lb-border`, `--lb-primary-soft`), in light and dark mode. Pure CSS: no library.
+- **Reduced motion.** With the system's "reduce motion" setting (`prefers-reduced-motion: reduce`) nothing animates: the placeholders are static.
+- **Accessible.** The loading area carries `aria-busy="true"` and a screen-reader "Loading…"; the shapes themselves are hidden from screen readers.
+- **First load.** While the companies and periods load, the logo in the top bar pulses (after the same 150 ms, still under reduced motion).
+- **Errors.** A request that fails shows what couldn't be loaded and the API's reason, with a **Retry** button that asks again (`components/loading/ErrorState.tsx`); it shows that it's busy, and a new failure shows the new reason.
+
+**Statement tables** (Section 0.4) are one component, `components/StatementTable.tsx`: current, previous and change columns, section headings, indented lines, bold totals, and each line's label opening the page behind it. The Overview's Profit & Loss summary and the Balance Sheet use it; the full Profit & Loss keeps its multi-column table (companies, months, % of sales) in the same row styles.
+
+Screenshots of every page on the test company, and one page loading: [screenshots/reference-layout/](screenshots/reference-layout/).
 
 ## 1. Principles
 
@@ -455,6 +471,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-11 | 0.17 | Section 0.5: loading and errors on every page (pulse loading in each component's shape, 150 ms delay, reduced motion, aria-busy, Retry; the logo pulsing on the first load); the statement table as one component; screenshots of the reference layout. |
 | 2026-11-09 | 0.16 | Planned after the data-completion re-fetch: the Stock page's "by godown" view (job workers' stock apart) and an inventory dataset in the table explorer. Opening bills are now stored and counted in ageing (data completion part 2). |
 | 2026-11-04 | 0.15 | Shared status labels and adjacent meanings across payment, validation and source-loaded tables; bill-wise payment states avoid treating advances as overdue. P&L and Balance Sheet display the active date range, with the Balance Sheet as-of clarification. |
 | 2026-11-04 | 0.14 | Voucher and voucher-line transaction exports include Tally's optional `UPDATEDDATETIME` as Entry Altered Date; the source timezone is unspecified, so the timestamp is preserved without UTC conversion. |

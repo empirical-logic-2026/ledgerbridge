@@ -8,14 +8,17 @@
 // needs a stored statement that isn't there. Everything opens the page behind it.
 
 import { Money } from '../../components/Money.tsx'
-import { Alert, Skeleton, Typography } from 'antd'
+import { Alert, Typography } from 'antd'
 import type { Home, SummaryLine, TopCustomerOut } from '../../api/types.ts'
 import { Donut } from '../../components/Donut.tsx'
 import { EChart } from '../../components/EChart.tsx'
 import { Explained } from '../../components/Explained.tsx'
 import { KeyCard } from '../../components/KeyCard.tsx'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
+import { StatementChange, StatementTable } from '../../components/StatementTable.tsx'
 import { StatusPill } from '../../components/StatusPill.tsx'
-import { formatChange, formatDate, toLakhs, toScaled } from '../../format.ts'
+import { formatDate, toLakhs } from '../../format.ts'
 import { type Query } from '../../router.ts'
 import { againstOf } from '../../selection.ts'
 import { builtHref } from '../../shell/nav.ts'
@@ -28,6 +31,7 @@ interface Props {
   home: Home | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
   dark: boolean
   query: Query // the selection, for the links
 }
@@ -87,17 +91,6 @@ function Notes({ home }: { home: Home }) {
   )
 }
 
-/** "▲ 12%" or "▼ 1.1 pts", green when good for the business, crimson when bad, neutral for
- *  a cost going up. */
-function Change({ line }: { line: SummaryLine }) {
-  const change = line.unit === 'percent' ? line.change_pts : line.change_pct
-  if (!change) return <span className="muted">—</span>
-  const up = toScaled(change) >= 0n
-  const tone = up === line.higher_is_better ? 'good' : line.higher_is_better ? 'bad' : 'neutral'
-  const text = formatChange(change)
-  return <span className={`change ${tone}`}>{line.unit === 'percent' ? text.replace(/%$/, ' pts') : text}</span>
-}
-
 function shown(line: SummaryLine, value: string | null | undefined) {
   if (value === null || value === undefined) return <span>—</span>
   return line.unit === 'percent' ? <span>{value}%</span> : <Amount value={value} />
@@ -127,30 +120,28 @@ function Summary({ home, query }: { home: Home; query: Query }) {
           </a>
         )}
       </div>
-      <div className="report-table-wrap">
-      <table className="report-table compact" aria-label="Profit & Loss against last year">
-        <thead>
-          <tr>
-            <th>Line</th>
-            <th className="num"><Explained label="This period" /></th>
-            <th className="num"><Explained label="Last year" /></th>
-            <th className="num"><Explained label="Change" /></th>
-          </tr>
-        </thead>
-        <tbody>
-          {home.summary.map((line) => (
-            <tr key={line.key} className={line.key.endsWith('profit') ? 'line-total' : undefined}>
-              <th>{to ? <a href={to}><Explained label={line.label} /></a> : <Explained label={line.label} />}</th>
-              <td className="num">{shown(line, line.value)}</td>
-              <td className="num">{shown(line, line.last_year)}</td>
-              <td className="num">
-                <Change line={line} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
+      <StatementTable
+        label="Profit & Loss against last year"
+        compact
+        compared
+        columns={{ label: 'Line', current: <Explained label="This period" />, previous: <Explained label="Last year" />, change: <Explained label="Change" /> }}
+        sections={[
+          {
+            key: 'summary',
+            rows: home.summary.map((line) => ({
+              key: line.key,
+              label: <Explained label={line.label} />,
+              kind: line.key.endsWith('profit') ? 'total' : 'line',
+              current: shown(line, line.value),
+              previous: shown(line, line.last_year),
+              change: (
+                <StatementChange change={line.unit === 'percent' ? line.change_pts : line.change_pct} higherIsBetter={line.higher_is_better} points={line.unit === 'percent'} />
+              ),
+              to,
+            })),
+          },
+        ]}
+      />
       {home.summary_reason && <p className="card-note">No figures for last year: {home.summary_reason}.</p>}
     </section>
   )
@@ -234,9 +225,9 @@ function TopCustomers({ home, query }: { home: Home; query: Query }) {
   )
 }
 
-export function DashboardHome({ home, loading, error, dark, query }: Props) {
-  if (error) return <Alert type="error" showIcon message="The figures couldn't be loaded." description={error.message} />
-  if (loading || !home) return <Skeleton active paragraph={{ rows: 8 }} />
+export function DashboardHome({ home, loading, error, onRetry, dark, query }: Props) {
+  if (error) return <ErrorState message="The figures couldn't be loaded." error={error} onRetry={onRetry} />
+  if (loading || !home) return <Loading shape="overview" />
   const colours = tokens[dark ? 'dark' : 'light']
   const profitShown = home.monthly.some((m) => m.net_profit !== null)
   const register = (channel: string) => (channel === OTHERS ? undefined : builtHref(['sales', 'register'], { ...query, channel: [channel] }))

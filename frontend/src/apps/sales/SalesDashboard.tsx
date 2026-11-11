@@ -8,7 +8,9 @@
 // The same page for purchases (`side`): net purchases, the vendors and the mix by voucher type
 // (GET /api/v1/purchases/dashboard); its words: words.ts.
 
-import { Alert, Skeleton, Typography } from 'antd'
+import { Typography } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import type { EChartsOption } from 'echarts'
 import type { Company, InvoiceOut, MonthSales, PartySales, SalesDashboard as Dashboard } from '../../api/types.ts'
 import { branchSalesChart } from './branchSalesChart.ts'
@@ -35,6 +37,7 @@ interface Props {
   dashboard: Dashboard | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
   dark: boolean
   query: Query // the selection, kept on every link
 }
@@ -188,9 +191,9 @@ export function SalesDashboard(props: Props) {
 
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message={w.loadError} description={props.error.message} />
+    content = <ErrorState message={w.loadError} error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !dashboard) {
-    content = <Skeleton active paragraph={{ rows: 10 }} />
+    content = <Loading shape="dashboard" />
   } else {
     const k = dashboard.key_figures
     const combined = dashboard.combined

@@ -5,7 +5,9 @@
 // proven against the source item by item; values are the source's own, at the last stored
 // date within the period. Figures: core/stock.py (GET /api/v1/stock and .../{id}).
 
-import { Alert, Skeleton, Tabs, Typography } from 'antd'
+import { Alert, Tabs, Typography } from 'antd'
+import { ErrorState } from '../../components/loading/ErrorState.tsx'
+import { Loading } from '../../components/loading/Loading.tsx'
 import type { EChartsOption } from 'echarts'
 import type { Company, StockItemMonthOut, StockItemOut, StockItemPageOut, StockMovementOut, StockNamedValue, StockOut } from '../../api/types.ts'
 import { EChart } from '../../components/EChart.tsx'
@@ -24,6 +26,7 @@ interface SummaryProps extends PanelProps {
   stock: StockOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
   dark: boolean
 }
 
@@ -32,6 +35,8 @@ interface ItemProps extends PanelProps {
   page: StockItemPageOut | undefined
   loading: boolean
   error: Error | null
+  onRetry?: () => void // ask again after an error
+  dark: boolean
 }
 
 function itemHref(id: number, query: Query): string | undefined {
@@ -116,9 +121,9 @@ export function StockSummary(props: SummaryProps) {
   const colours = tokens[props.dark ? 'dark' : 'light']
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message="The stock couldn't be loaded." description={props.error.message} />
+    content = <ErrorState message="The stock couldn't be loaded." error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !stock) {
-    content = <Skeleton active paragraph={{ rows: 10 }} />
+    content = <Loading shape="dashboard" />
   } else if (stock.items.length === 0) {
     content = <Alert type="info" showIcon message="No stock items in the companies you chose." />
   } else {
@@ -128,6 +133,7 @@ export function StockSummary(props: SummaryProps) {
       <>
         <div className="sales-cards">
           <KeyCard label="Stock value" figure={{ value: stock.total_value ?? null }} note={valueNote(stock.value_on)} accent={green}
+            spark={stock.by_date.map((d) => toLakhs(d.value))}
             missing="Run ./dev.ps1 statements to store the source's stock values" />
           <KeyCard label="Stock items" figure={{ value: String(stock.items.length) }} unit="count" accent={charcoal} />
           <KeyCard label="Items with negative stock" figure={{ value: String(negative) }} unit="count" alert accent={lighter}
@@ -193,19 +199,22 @@ export function StockItemPage(props: ItemProps) {
   const { page } = props
   let content: React.ReactNode
   if (props.error) {
-    content = <Alert type="error" showIcon message="The stock item couldn't be loaded." description={props.error.message} />
+    content = <ErrorState message="The stock item couldn't be loaded." error={props.error} onRetry={props.onRetry} />
   } else if (props.loading || !page) {
-    content = <Skeleton active paragraph={{ rows: 10 }} />
+    content = <Loading shape="dashboard" />
   } else {
     const item = page.item
+    const [green, charcoal, lighter] = tokens[props.dark ? 'dark' : 'light'].accents
     const unit = item.unit ? ` ${item.unit}` : ''
     content = (
       <>
         <Typography.Paragraph className="muted">{[item.group && `Stock group: ${item.group}`, item.unit && `Unit: ${item.unit}`].filter(Boolean).join(' · ')}</Typography.Paragraph>
         <div className="sales-cards">
-          <KeyCard label="Closing quantity" figure={{ value: item.closing }} unit="count" alert={toScaled(item.closing) < 0n} note={`Opening ${Number(item.opening).toLocaleString('en-IN')}${unit}`} />
-          <KeyCard label="Value" figure={{ value: item.value ?? null }} note={valueNote(page.value_on)} missing="No value stored for this item at that date" />
-          <KeyCard label="Rate" figure={{ value: item.rate ?? null }} note={`Per${unit || ' unit'}`} missing="No value, or no quantity" />
+          <KeyCard label="Closing quantity" figure={{ value: item.closing }} unit="count" alert={toScaled(item.closing) < 0n} note={`Opening ${Number(item.opening).toLocaleString('en-IN')}${unit}`}
+            accent={green} spark={page.months.map((m) => Number(m.closing))} />
+          <KeyCard label="Value" figure={{ value: item.value ?? null }} note={valueNote(page.value_on)} missing="No value stored for this item at that date" accent={charcoal}
+            spark={page.months.map((m) => (m.value === null ? null : toLakhs(m.value)))} />
+          <KeyCard label="Rate" figure={{ value: item.rate ?? null }} note={`Per${unit || ' unit'}`} missing="No value, or no quantity" accent={lighter} />
         </div>
         {page.truncated && <Alert type="warning" showIcon message="Only the first movements are shown: choose a shorter period." />}
         <section className="card" aria-label="Stock item lists">
