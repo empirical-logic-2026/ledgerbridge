@@ -582,7 +582,7 @@ const sheetFound = {
     { section: 'liabilities' as const, value: '628000000', before: '600000000', change_pct: '4.7' },
   ],
   ratios: [
-    { key: 'current_ratio', label: 'Current ratio', unit: 'times' as const, formula_id: 'F-RAT-001', value: '1.82', before: '1.75', change: '0.07' },
+    { key: 'current_ratio', label: 'Current ratio', unit: 'times' as const, formula_id: 'F-RAT-008', value: '1.82', before: '1.75', change: '0.07' },
     { key: 'receivable_days', label: 'Receivable days', unit: 'days' as const, formula_id: 'F-RAT-004', value: '45', before: '40', change: '5' },
   ],
 }
@@ -656,6 +656,64 @@ describe('the Balance Sheet', () => {
     const days = within(screen.getByRole('list', { name: 'Working capital days' })).getByRole('listitem', { name: 'Receivable days' })
     expect(days).toHaveTextContent('45 days')
     expect(within(days).getByText('▲ 5 days vs previous period')).toHaveClass('bad') // slower collection
+  })
+})
+
+describe('the ratio tiles show what they are worked out from', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const basis = {
+    current_assets: '79278', current_liabilities: '38489', borrowings: '12000', stock: '5580', equity: '47889',
+    asset_parts: [
+      { key: 'cash', label: 'Cash in hand', amount: '26059' },
+      { key: 'supplier_advances', label: 'Advances to suppliers (creditors in debit)', amount: '700' },
+      { key: 'stock', label: 'Closing stock', amount: '5580' },
+    ],
+    liability_parts: [
+      { key: 'payables', label: 'Trade payables (creditors in credit)', amount: '7150' },
+      { key: 'short_term_borrowings', label: 'Short-term borrowings (Bank OD, banks in credit, marked loans)', amount: '12000' },
+    ],
+    borrowing_parts: [{ key: 'short_term_borrowings', label: 'Short-term borrowings', amount: '12000' }],
+    marked_short_term: 1,
+    combined: true,
+  }
+  const withBasis = {
+    ...sheetFound,
+    ratios: [
+      { key: 'current_ratio', label: 'Current ratio', unit: 'times' as const, formula_id: 'F-RAT-008', value: '2.06', before: null, change: null, basis },
+      { key: 'debt_to_equity', label: 'Debt to equity', unit: 'times' as const, formula_id: 'F-RAT-010', value: '0.25', before: null, change: null, basis },
+      ...sheetFound.ratios.filter((r) => r.key !== 'current_ratio'),
+    ],
+  }
+
+  it('lists current assets and liabilities with their parts, the marked loans and the combination on hover', async () => {
+    fullAmounts()
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/reports/balance-sheet': withBasis })
+    renderApp('#/balance-sheet/statement')
+    const tile = await screen.findByRole('listitem', { name: 'Current ratio' })
+    expect(tile).toHaveAttribute('data-formula', 'F-RAT-008')
+    const value = within(tile).getByText('2.06×')
+    expect(value).toHaveAttribute('tabindex', '0') // reachable from the keyboard too
+    fireEvent.mouseEnter(value)
+    const shown = await screen.findByLabelText('How it is worked out')
+    expect(shown).toHaveTextContent(/Current assets\s*₹79,278\.00/)
+    expect(shown).toHaveTextContent(/Advances to suppliers \(creditors in debit\)\s*₹700\.00/)
+    expect(shown).toHaveTextContent(/÷ Current liabilities\s*₹38,489\.00/)
+    expect(shown).toHaveTextContent(/Short-term borrowings \(Bank OD, banks in credit, marked loans\)\s*₹12,000\.00/)
+    expect(shown).toHaveTextContent('Includes 1 ledger marked as short-term.')
+    expect(shown).toHaveTextContent('At 30-Sep-2026.')
+    expect(shown).toHaveTextContent('Several companies combined, without inter-company eliminations.')
+  })
+
+  it('shows borrowings over equity for debt to equity', async () => {
+    fullAmounts()
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/reports/balance-sheet': withBasis })
+    renderApp('#/balance-sheet/statement')
+    const tile = await screen.findByRole('listitem', { name: 'Debt to equity' })
+    fireEvent.mouseEnter(within(tile).getByText('0.25×'))
+    const shown = await screen.findByLabelText('How it is worked out')
+    expect(shown).toHaveTextContent(/Borrowings\s*₹12,000\.00/)
+    expect(shown).toHaveTextContent(/÷ Equity \(capital and profit\)\s*₹47,889\.00/)
   })
 })
 
@@ -1504,5 +1562,70 @@ describe('loading and errors (pulse loading, docs/design/dashboard.md Section 0.
     await screen.findByRole('region', { name: 'Net sales' })
     expect(screen.getByTestId('top-logo')).not.toHaveClass('logo-pulse')
     expect(screen.getByTestId('top-logo')).not.toHaveAttribute('aria-busy')
+  })
+})
+
+// The formula sheet's text, given to the tests by vite.config.ts.
+declare const __FORMULA_SHEET__: string
+const formulaSheet = __FORMULA_SHEET__
+
+describe('every figure on every page names its formula (docs/formula-sheet.md)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  // The sheet's IDs: "#### F-SAL-004 Net sales"; a retired entry says "(retired)" in its heading.
+  const headings = [...formulaSheet.matchAll(/^#### (F-[A-Z]{2,3}-\d{3}) (.*)$/gm)]
+  const known = new Set(headings.filter(([, , name]) => !/\(retired\)/i.test(name)).map(([, id]) => id))
+  const answers = {
+    '/api/v1/companies': companies,
+    '/api/v1/periods': periods,
+    '/api/v1/home': home,
+    '/api/v1/reports/profit-loss': statement,
+    '/api/v1/reports/balance-sheet': sheetFound,
+    '/api/v1/sales/dashboard': sales,
+    '/api/v1/purchases/dashboard': sales,
+    '/api/v1/registers/sales': salesRegister,
+    '/api/v1/registers/purchases': { ...salesRegister, side: 'purchases' },
+    '/api/v1/monthly/sales': monthlySales,
+    '/api/v1/monthly/purchases': { ...monthlySales, side: 'purchases' },
+    '/api/v1/sales/channels': channelsFound,
+    '/api/v1/parties/customers': partiesFound,
+    '/api/v1/parties/customers/11': partyFound,
+    '/api/v1/parties/vendors': { ...partiesFound, kind: 'vendors' },
+    '/api/v1/ageing/customers': ageingFound,
+    '/api/v1/ageing/vendors': { ...ageingFound, kind: 'vendors' },
+    '/api/v1/cost-centres': centresFound,
+    '/api/v1/cost-centres/21': centreFound,
+    '/api/v1/stock': stockFound,
+    '/api/v1/stock/41': stockPage,
+    '/api/v1/transactions': transactionsFound,
+    '/api/v1/cash-flow': {
+      companies: [3, 4], combined: true, start: '2026-04-01', end: '2026-10-30', opening: '1000000', closing: '1200000',
+      movements: [{ key: 'customers', label: 'Customers', inflow: '900000', outflow: '0', net: '900000' }],
+      monthly: [{ month: '2026-04-01', inflow: '900000', outflow: '700000' }],
+    },
+  }
+  const pages = [
+    'overview/dashboard', 'sales/dashboard', 'sales/register', 'sales/monthly', 'sales/channels', 'sales/customers',
+    'sales/customers/11', 'purchases/dashboard', 'purchases/register', 'purchases/monthly', 'purchases/vendors',
+    'pnl/profit-loss', 'pnl/cost-centres', 'pnl/cost-centres/21', 'balance-sheet/statement', 'stock/summary',
+    'stock/summary/41', 'cash-flow/movement', 'parties/receivables', 'parties/payables', 'books/transactions',
+    'data/health',
+  ]
+
+  it('reads the sheet', () => {
+    expect(known.size).toBeGreaterThan(80)
+  })
+
+  it.each(pages)('#/%s', async (page) => {
+    stubApi(answers)
+    renderApp(`#/${page}`)
+    await waitFor(() => expect(document.querySelectorAll('[data-figure]').length).toBeGreaterThan(0))
+    await waitFor(() => expect(screen.queryByTestId('loading')).toBeNull())
+    const figures = [...document.querySelectorAll<HTMLElement>('[data-figure]')]
+    const named = (f: HTMLElement) => `${f.dataset.figure} "${f.getAttribute('aria-label') ?? f.textContent?.trim().slice(0, 40)}"`
+    const without = figures.filter((f) => !f.dataset.formula).map(named)
+    expect(without, 'figures with no formula ID').toEqual([])
+    const unknown = figures.filter((f) => !known.has(f.dataset.formula ?? '')).map((f) => `${named(f)}: ${f.dataset.formula}`)
+    expect(unknown, 'formula IDs not in the sheet, or retired').toEqual([])
   })
 })

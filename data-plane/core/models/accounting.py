@@ -1022,3 +1022,22 @@ class FxRevaluationSnapshot(TimestampMixin, Base):
     # book - revalued, canonical sign: a debit (positive) is an unrealised loss.
     unrealised_gain_loss: Mapped[Decimal] = mapped_column(Money)
     read_at: Mapped[datetime] = mapped_column(Timestamp)
+
+
+# --- 4.10 Settings for the figures (F-RAT-008) -----------------------------------------
+# Choices a person makes about the client's ledgers; not source data. Set by a command,
+# each change audited (AUD-001).
+
+
+class ShortTermBorrowing(TimestampMixin, Base):
+    """A ledger under Loans (Liability) marked as short-term (e.g. a cash-credit or
+    working-capital loan under Secured Loans): the ratios count its credit balance as a
+    current liability, like Bank OD A/c (core/ratios.py, F-RAT-008). Set with
+    `./dev.ps1 loans mark -Ledger <id>`; ids only, never names."""
+
+    __tablename__ = "short_term_borrowings"
+    __table_args__ = (UniqueConstraint("ledger_id", name="uq_short_term_borrowings_ledger"), _A)
+
+    id: Mapped[int] = mapped_column(Id, primary_key=True, autoincrement=True)
+    entity_id: Mapped[int] = mapped_column(Id, _fk("entities"))
+    ledger_id: Mapped[int] = mapped_column(Id, _fk("ledgers"))

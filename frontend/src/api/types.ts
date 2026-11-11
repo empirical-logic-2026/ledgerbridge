@@ -564,6 +564,19 @@ export interface Ratio {
   change_pts?: string | null
 }
 
+export interface RatioBasisOut {
+  current_assets: string
+  current_liabilities: string
+  borrowings: string
+  stock: string
+  equity: string | null
+  asset_parts: RatioPartOut[]
+  liability_parts: RatioPartOut[]
+  borrowing_parts: RatioPartOut[]
+  marked_short_term: number
+  combined: boolean
+}
+
 export interface RatioOut {
   key: string
   label: string
@@ -572,6 +585,13 @@ export interface RatioOut {
   value: string | null
   before: string | null
   change: string | null
+  basis?: RatioBasisOut | null
+}
+
+export interface RatioPartOut {
+  key: string
+  label: string
+  amount: string
 }
 
 export interface Readiness {

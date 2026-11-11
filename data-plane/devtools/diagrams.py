@@ -101,9 +101,10 @@ AREAS = (
     ),
     Area(
         "er-source-statements",
-        "Source figures and statements: stock values, foreign-currency revaluations "
-        "(ledgerbridge_accounting) and statement lines (ledgerbridge_reporting)",
-        ("stock_values", "fx_revaluation_snapshots", "statement_lines"),
+        "Source figures and statements: stock values, foreign-currency revaluations, loans "
+        "marked as short-term (ledgerbridge_accounting) and statement lines "
+        "(ledgerbridge_reporting)",
+        ("stock_values", "fx_revaluation_snapshots", "short_term_borrowings", "statement_lines"),
         ("entities", "ledgers", "connections"),
     ),
     Area(
@@ -124,6 +125,7 @@ SCHEMA_GROUPS = (
     (ACCOUNTING, "transactions", AREAS[2].tables),
     (ACCOUNTING, "field catalogue", ("source_fields",)),
     (ACCOUNTING, "source figures", ("stock_values", "fx_revaluation_snapshots")),
+    (ACCOUNTING, "settings for the figures", ("short_term_borrowings",)),
     (REPORTING, "statements, ours and the source's (views on top)", ("statement_lines",)),
     (SYSTEM, "connections and sync", (
         "sources", "agents", "connections", "sync_markers", "sync_runs", "sync_logs",

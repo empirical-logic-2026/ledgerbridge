@@ -107,6 +107,10 @@ TABLES: dict[str, tuple[str, str]] = {
                                  "it (revalued at current rates) against its book value "
                                  "(FX-004, ADR-037, ADR-040).",
                                  "Validation and `./dev.ps1 statements`, for each date."),
+    "short_term_borrowings": ("Ledgers under Loans (Liability) marked as short-term: the "
+                              "ratios count their credit balance as a current liability "
+                              "(ADR-052, F-BS-008).",
+                              "`./dev.ps1 loans mark` and `loans clear` (audited)."),
     "statement_lines": ("Trial Balance, Profit & Loss and Balance Sheet lines, ours and the "
                         "source's, as of each stored date (RPT-012, ADR-040); the views "
                         "v_trial_balance, v_profit_loss, v_balance_sheet, "

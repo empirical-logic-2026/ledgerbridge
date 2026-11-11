@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.59 |
+| Version | 0.60 |
 | Date | 2026-11-11 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
@@ -92,7 +92,8 @@ ledgerbridge/
 │   ├── data-completeness.md    every Tally object type and field: stored, in extra or not fetched
 │   ├── data-completeness-fields.md  every field, generated from the full export
 │   ├── error-catalogue.md      every error and warning code (generated)
-│   ├── formulas.md             every figure the dashboard shows, by formula ID (F-PL-003)
+│   ├── formula-sheet.md        every figure the dashboard shows, by formula ID (F-PL-003; ASD-STE100)
+│   ├── dashboard-pages.md      every page: its contents, formula IDs, links and the check in Tally (ASD-STE100)
 │   ├── project-history.md      what was built and done so far, PR by PR
 │   ├── progress-log.md         dated progress entries
 │   ├── rules/                  the rulebook: conversion and validation rules
@@ -144,7 +145,7 @@ ledgerbridge/
 | `validation.py` | Endpoints that return validation results and alerts. |
 | `deps.py` | Shared helpers: a database session per request (`app_rw`), and the read-only one for the dashboard (`report_ro`). |
 | `access.py` | Who may see which companies: `current_access`, the one dependency every `/api/v1` endpoint goes through. Until login (M5) it allows every company not on hold; M5 replaces it here (ADR-049). |
-| `v1/` | The dashboard API, `/api/v1`, GET only, as `report_ro`: `companies.py` (companies with their original names, configured display labels, data health, financial years and "as at" dates), `company_display.py` (central mapping for display labels, including fixed SQL labels for the table explorer), `datasets.py` (the table explorer's endpoints: catalogue, a page of a result, CSV), `dataset_specs.py` (each dataset's allow-listed dimensions, measures and filters, each a fixed SQL expression), `dataset_query.py` (reading a request against those allow-lists and answering it: groups with subtotals, lists, the CSV rows), `home.py` (the dashboard home's figures: `GET /api/v1/home`), `reports.py` (report pages: `GET /api/v1/reports/profit-loss`), `facets.py` (the facets' choices for the selected companies: `GET /api/v1/facets/{kind}`), `sales.py` (the Sales dashboard and its per-company monthly sales: `GET /api/v1/sales/dashboard`), `registers.py` (the Sales and Purchase registers: `GET /api/v1/registers/{side}`), `monthly.py` (monthly sales and purchases with the closing balance: `GET /api/v1/monthly/{side}`), `parties.py` (customers and vendors: `GET /api/v1/parties/{kind}` and `.../{party_id}`), and in `sales.py` also sales by channel (`GET /api/v1/sales/channels`), `common.py` (the read-only session, the period parser, the comparison (`compare`, `span`: the previous period or last year) and `formula()`, which names each figure field's formula ID in docs/formulas.md). |
+| `v1/` | The dashboard API, `/api/v1`, GET only, as `report_ro`: `companies.py` (companies with their original names, configured display labels, data health, financial years and "as at" dates), `company_display.py` (central mapping for display labels, including fixed SQL labels for the table explorer), `datasets.py` (the table explorer's endpoints: catalogue, a page of a result, CSV), `dataset_specs.py` (each dataset's allow-listed dimensions, measures and filters, each a fixed SQL expression), `dataset_query.py` (reading a request against those allow-lists and answering it: groups with subtotals, lists, the CSV rows), `home.py` (the dashboard home's figures: `GET /api/v1/home`), `reports.py` (report pages: `GET /api/v1/reports/profit-loss`), `facets.py` (the facets' choices for the selected companies: `GET /api/v1/facets/{kind}`), `sales.py` (the Sales dashboard and its per-company monthly sales: `GET /api/v1/sales/dashboard`), `registers.py` (the Sales and Purchase registers: `GET /api/v1/registers/{side}`), `monthly.py` (monthly sales and purchases with the closing balance: `GET /api/v1/monthly/{side}`), `parties.py` (customers and vendors: `GET /api/v1/parties/{kind}` and `.../{party_id}`), and in `sales.py` also sales by channel (`GET /api/v1/sales/channels`), `common.py` (the read-only session, the period parser, the comparison (`compare`, `span`: the previous period or last year) and `formula()`, which names each figure field's formula ID in docs/formula-sheet.md). |
 
 **`ai/`**: an empty package that will hold the AI layer (text-to-SQL, model providers, guardrails) in milestone M8 ([architecture.md](architecture.md) Section 5).
 
@@ -181,6 +182,7 @@ ledgerbridge/
 | `statement_differences.py` | A pilot-safe summary of the statement lines that differ from the source's: safe labels (standard names; custom groups described by where they sit), missing or different, on how many dates, and which tested amounts each difference equals (Direct Expenses, stock, forex, the last year end's profit and stock). Printed by validation and `statements`. |
 | `report_periods.py` | The period a report covers (whole months or a date range), the period it is compared with (`Period.previous`: the same days of the month or quarter before, a year earlier, or as many months or days just before; `last_year`) and the stored statements its figures come from: the one at the end less the one before the start (in Educational mode a 30-day month ends on the 2nd of the next month; a date range runs to the last stored date within it). |
 | `home.py` | The dashboard home's figures (`GET /api/v1/home`): Profit & Loss and Balance Sheet cards from the stored statements, balances and stock value, sales and purchases by month, channel and company; groups found by their predefined role. |
+| `ratios.py` | Current assets, current liabilities and borrowings in the form of Schedule III, ledger by ledger at a statement date (ADR-052; F-BS-007 to F-BS-011): what the current ratio, quick ratio and debt to equity in `balance_sheet.py` are worked out from, with their parts for the ratio tiles' hover. |
 | `utr.py` | The UTR rule: a value is a bank's transaction reference only when it looks like one (NEFT/RTGS, IMPS/UPI, or labelled UTR); never the source's own codes. |
 | `stock.py` | The Stock page (`GET /api/v1/stock` and `.../{item_id}`, `api/v1/stock.py`): every item's opening, inward, outward and closing quantity (ours, by `stock_moving`: the same rule validation proves against the source, VAL-006), the source's own value per item, stock group and godown at the last stored date within the period, the stock value by date, and one item's movements and months. |
 | `transactions.py` | The Transactions page (`GET /api/v1/transactions`, `api/v1/transactions.py`): one row per effective ledger line, with its voucher's date, type, number, reference, party and GSTIN, narration, the voucher's other ledgers (particulars), and the line's bills, cost centres, order numbers, GST details and cheque number (the stored UTR is never read). |
@@ -223,6 +225,7 @@ ledgerbridge/
 | `currencies.py` | `./dev.ps1 validate currencies`: each company's ledgers by their own currency, which hold foreign amounts, and the ledgers the source revalues that aren't marked foreign (counts and ISO codes). |
 | `monthly_sales.py` | `./dev.ps1 validate monthly-sales`: the proof per company, from the database only, printed as counts and dates. |
 | `on_hold.py` | `./dev.ps1 on-hold`: put an entity on hold, take it off, or list them (SYN-007); every change in the audit log. |
+| `loans.py` | `./dev.ps1 loans`: a company's Loans (Liability) ledgers with their group and closing balance at a date (on the screen only), and marking one as a short-term borrowing for the ratios (ADR-052); every change in the audit log. |
 | `fx_rules.py` | `./dev.ps1 validate fx-rules`: the finder per company (the expected company checked, the netting setting read once), printed as counts. |
 | `statements.py` | `./dev.ps1 statements`: the stock values and statements at every month end and year end, read from the source, stored and compared (counts only). |
 | `compare.py` | `validate compare-ledger`: one ledger's vouchers in the source against ours, voucher by voucher; counts printed, details only as private lines for a local file. |
@@ -301,7 +304,8 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | [schema.md](schema.md) | The database design: every table, the Tally mapping, the processing rules, the migrations. |
 | [roadmap.md](roadmap.md) | The milestones (M0 to M9, plus M7b), each with "done when" and the prompt that starts it. |
 | [error-catalogue.md](error-catalogue.md) | Every error and warning code: what it means, common causes, how to investigate, how to fix (generated from `core/problems.py`). |
-| [formulas.md](formulas.md) | The formula sheet (RPT-015): every figure the dashboard shows by ID (e.g. F-PL-003), in words and as an expression, its data, sign rule, Educational-mode date rule and how to check it in Tally; Word and PDF copies in `export/`. `data-plane/tests/test_formulas.py` fails when a figure has no entry. |
+| [formula-sheet.md](formula-sheet.md) | The formula sheet (RPT-015), in ASD-STE100 Simplified Technical English: every figure the dashboard shows by ID (e.g. F-PL-003), as an expression and in words, its data, sign rule, date rule (with Educational mode), single and combined companies, and how to check it in Tally; Word and PDF copies in `export/`. `data-plane/tests/test_formulas.py` fails when an API figure has no entry; `frontend/src/App.test.tsx` when a figure on a page has none; `data-plane/tests/test_ste_docs.py` checks the sentence lengths. |
+| [dashboard-pages.md](dashboard-pages.md) | Every page of the dashboard in the order of the top tabs (ASD-STE100): its purpose, filters and controls, every card, chart and table with its formula IDs, what each click opens, loading and errors, and how to check it against Tally; Word and PDF copies in `export/`. |
 | [rules/validation-and-conversion-rules.md](rules/validation-and-conversion-rules.md) | The rulebook: every rule for converting and validating Tally data, with why, how it was proven, where it lives in the code, its tests and ADR; flowcharts. |
 | [database/schema-reference.md](database/schema-reference.md) | Every database, table and column with its type, keys, relationships and meaning, the database users and their rights, ER and data-flow diagrams (generated from the models by `devtools/schema_reference.py`). |
 | [project-history.md](project-history.md) | What has been built and done so far: milestones, every PR with what and why, problems and fixes, pilot results, lessons, open items. |
@@ -343,6 +347,7 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `src/api/types.ts` | The API's response types, generated from its OpenAPI schema by `python -m devtools.api_types` (never edited by hand; a test fails when stale). |
 | `src/components/EChart.tsx` | A reusable chart component; a clicked bar or point can open a page. |
 | `src/components/KeyCard.tsx` | A key-figure card with the change against the comparison period ("vs previous period"), its page as a link (Overview, Sales dashboard, party pages). |
+| `src/components/RatioBasis.tsx` | What a ratio is worked out from, on its tile's hover: current assets and current liabilities (or borrowings and equity) with their parts, the loans marked as short-term, combined companies (ADR-052). |
 | `src/components/StatementTable.tsx` | A statement table: current, previous and change columns, section headings, indented lines and totals, each line opening its page (the Overview's Profit & Loss summary, the Balance Sheet). |
 | `src/components/loading/` | Loading and errors on every page (dashboard design Section 0.5): `Loading.tsx` (placeholders in each component's shape, pulsing; the page shapes), `delay.ts` (shown only after 150 ms), `ErrorState.tsx` (what failed, why, and Retry); `Loading.test.tsx` checks the delay, the announcement, reduced motion and Retry. |
 | `src/apps/stock/Stock.tsx` | The Stock module: the stock summary (value, value by date, by stock group and godown, every item with quantities, value and rate) and one item's page (movements with the quantity after each, month by month). |
@@ -458,6 +463,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-11 | 0.60 | `core/ratios.py`, `workers/loans.py`, `ShortTermBorrowing` (migration 0037), `src/components/RatioBasis.tsx`; `docs/formulas.md` moved to `docs/formula-sheet.md`; `docs/dashboard-pages.md`; tests `test_ratios.py`, `test_loans.py`, `test_ste_docs.py`. |
 | 2026-11-11 | 0.59 | `src/components/loading/` (pulse loading and the error state with Retry) and `src/components/StatementTable.tsx`; `docs/design/screenshots/reference-layout/`. |
 | 2026-11-09 | 0.58 | `core/problems.py`: `Problem.source_data` (warnings about the source's own data leave the verdict at OK WITH WARNINGS); `core/transform.py` `stored_orders`, `orders_named`, `unlinked_orders` shared by `link_orders` and validation; `workers/report.py` `by_cause`. |
 | 2026-11-09 | 0.57 | The UTR is no longer shown in the dashboard: `core/transactions.py`, `core/registers.py`, `api/v1/dataset_specs.py` don't read it; `tests/test_utr_not_exposed.py`. |

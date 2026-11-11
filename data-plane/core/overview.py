@@ -1,6 +1,6 @@
 """The Overview's figures beyond the home page's (RPT-014; docs/design/dashboard.md Section
 0.4): the key cards' twelve-month trends (sparklines) and the top customers with their balance
-due and what is overdue. Source-independent; every formula in docs/formulas.md.
+due and what is overdue. Source-independent; every formula in docs/formula-sheet.md.
 
 - **Trend** (F-OVR-001): the twelve months up to the period's end month. Each month's net sales
   (F-SAL-004), gross and net profit (F-PL-003, F-PL-004: none for a month without its stored

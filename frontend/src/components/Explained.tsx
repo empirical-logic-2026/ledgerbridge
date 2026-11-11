@@ -1,5 +1,5 @@
 // A label with its explanation on hover (help/glossary.ts): what the value or status means and
-// how it is worked out, with its formula and its ID in docs/formulas.md. Underlined with dots
+// how it is worked out, with its formula and its ID in docs/formula-sheet.md. Underlined with dots
 // when there is one; plain text when there isn't.
 
 import { Tooltip } from 'antd'

@@ -18,7 +18,7 @@ const sections: StatementSection[] = [
 
 describe('the statement table', () => {
   it('shows each line with this period, the comparison and the change, under its section', () => {
-    render(<StatementTable label="Test statement" compared sections={sections} columns={{ label: 'Particulars', current: 'Now', previous: 'Before', change: 'Change' }} />)
+    render(<StatementTable label="Test statement" formula="F-BS-005" compared sections={sections} columns={{ label: 'Particulars', current: 'Now', previous: 'Before', change: 'Change' }} />)
     const table = screen.getByRole('table', { name: 'Test statement' })
     expect(table.parentElement).toHaveClass('report-table-wrap')
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Particulars', 'Now', 'Before', 'Change'])
@@ -33,7 +33,7 @@ describe('the statement table', () => {
   })
 
   it('shows only this period without a comparison', () => {
-    render(<StatementTable label="Test statement" compared={false} sections={sections} columns={{ label: 'Particulars', current: 'Now' }} />)
+    render(<StatementTable label="Test statement" formula="F-BS-005" compared={false} sections={sections} columns={{ label: 'Particulars', current: 'Now' }} />)
     const table = screen.getByRole('table', { name: 'Test statement' })
     expect(within(table).getAllByRole('columnheader')).toHaveLength(2)
     expect(within(table).getByRole('rowheader', { name: 'Assets' })).toHaveAttribute('colspan', '2')

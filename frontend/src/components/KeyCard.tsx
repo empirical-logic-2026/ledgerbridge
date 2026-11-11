@@ -11,6 +11,7 @@ import { Tooltip } from 'antd'
 import type { EChartsOption } from 'echarts'
 import { EChart } from './EChart.tsx'
 import { Explained } from './Explained.tsx'
+import { formulaOf } from '../help/glossary.ts'
 import { formatAmount, useAmountFormat, type AmountFormat } from '../amountFormat.ts'
 import { formatChange, formatExact, toScaled } from '../format.ts'
 
@@ -36,6 +37,7 @@ interface Props {
   accent?: string // the top border's colour
   spark?: (number | null)[] // the recent months, oldest first (drawing only)
   sparkColour?: string
+  formula?: string // its formula ID; default: its label's in help/glossary.ts
 }
 
 function shown(value: string, unit: Props['unit'], format: AmountFormat): string {
@@ -64,7 +66,7 @@ function sparkline(values: (number | null)[], colour: string): EChartsOption {
   }
 }
 
-export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', against, note, alert, missing, to, accent, spark, sparkColour, help }: Props) {
+export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', against, note, alert, missing, to, accent, spark, sparkColour, help, formula }: Props) {
   const { format } = useAmountFormat()
   const value = figure.value
   const change = figure.change_pct
@@ -83,7 +85,8 @@ export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', agai
   }
   const text = value === null ? '—' : shown(value, unit, format)
   return (
-    <section className={accent ? 'card card-small kpi-card' : 'card card-small'} aria-label={label} style={accent ? { borderTopColor: accent } : undefined}>
+    <section className={accent ? 'card card-small kpi-card' : 'card card-small'} aria-label={label} style={accent ? { borderTopColor: accent } : undefined}
+      data-figure="card" data-formula={formulaOf(label, formula)}>
       {to ? (
         <a href={to} className="card-small-label card-row-link">
           <Explained label={label} help={help} />

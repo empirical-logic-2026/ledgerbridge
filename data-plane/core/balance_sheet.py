@@ -1,16 +1,17 @@
 """The Balance Sheet module (RPT-003, RPT-014; docs/design/dashboard.md Section 0.4): our stored
 Balance Sheet (validated against the source's, ADR-040) at the period's end and at the end of
 the period it is compared with, line by line with the change, and the ratios. Source-
-independent: groups by their predefined role, never by name. Formulas F-BS-005, F-BS-006 and
-F-RAT-001 to F-RAT-007 in docs/formulas.md.
+independent: groups by their predefined role, never by name. Formulas F-BS-005, F-BS-006,
+F-RAT-004 to F-RAT-010 in docs/formula-sheet.md.
 
 A Balance Sheet is the position **at** a date: the period's end, or the last stored date
 within the period (core/report_periods.py `windows`). Assets are shown as debits, liabilities
 and capital as credits, both positive.
 
 - **Current ratio** = current assets ÷ current liabilities; **quick ratio** = (current assets −
-  closing stock) ÷ current liabilities; **debt to equity** = Loans (Liability) ÷ (Capital Account
-  + Profit & Loss A/c), all main lines at the date.
+  closing stock) ÷ current liabilities; **debt to equity** = borrowings ÷ (Capital Account +
+  Profit & Loss A/c). Current assets, current liabilities and borrowings in the form of
+  Schedule III, ledger by ledger (core/ratios.py); equity from the main lines at the date.
 - **Receivable days** = receivables ÷ net sales × days; **payable days** = payables ÷ net
   purchases × days; **inventory days** = closing stock ÷ cost of sales × days, over the days
   from the period's start to the date; **working-capital days** = receivable + inventory −
@@ -26,8 +27,6 @@ from sqlalchemy.orm import Session
 
 from core.home import (
     CAPITAL,
-    CURRENT_ASSETS,
-    CURRENT_LIABILITIES,
     PAYABLES,
     RECEIVABLES,
     balance,
@@ -36,12 +35,14 @@ from core.home import (
 )
 from core.models import accounting as A  # noqa: N812
 from core.models.reporting import StatementLine
+from core.ratios import Position, position
 from core.report_periods import Period, books_start, stored_dates, windows
 from core.sales import PURCHASES_SIDE, SALES_SIDE, Facets, period_totals
 from core.statements import PROFIT_LOSS_ACCOUNT, match_key
 
 ZERO = Decimal(0)
-LOANS = "loans_liability"
+# The ratios built from current assets, current liabilities and borrowings (core/ratios.py).
+POSITION_RATIOS = ("current_ratio", "quick_ratio", "debt_to_equity")
 
 
 @dataclass
@@ -60,6 +61,8 @@ class RatioFigure:
     label: str
     unit: str  # times, days
     values: dict[str, Decimal | None] = field(default_factory=dict)  # "now", "before"
+    # Current assets, liabilities and borrowings behind it ("now", "before"; core/ratios.py).
+    positions: dict[str, Position] = field(default_factory=dict)
 
 
 @dataclass
@@ -118,6 +121,8 @@ def balance_sheet(
         for ratio in _ratios(session, companies, side, found, roles, stored, books_from):
             ratios.setdefault(ratio.key, RatioFigure(ratio.key, ratio.label, ratio.unit))
             ratios[ratio.key].values[name] = ratio.values["now"]
+            if "now" in ratio.positions:
+                ratios[ratio.key].positions[name] = ratio.positions["now"]
     now = sides["now"]
     compared = sides.get("before")
     return Sheet(
@@ -178,6 +183,17 @@ def days_of(part: Decimal | None, whole: Decimal | None, days: int) -> Decimal |
     return None if found is None else (found * days).quantize(Decimal("1"), ROUND_HALF_UP)
 
 
+def position_ratios(parts: Position, equity: Decimal) -> dict[str, Decimal | None]:
+    """Current ratio (F-RAT-008), quick ratio (F-RAT-009) and debt to equity (F-RAT-010)
+    from current assets, current liabilities and borrowings, and the equity."""
+    assets, liabilities = parts.current_assets, parts.current_liabilities
+    return {
+        "current_ratio": ratio_of(assets, liabilities),
+        "quick_ratio": ratio_of(assets - parts.stock, liabilities),
+        "debt_to_equity": ratio_of(parts.total_borrowings, equity),
+    }
+
+
 def _ratios(
     session: Session,
     companies: list[int],
@@ -187,7 +203,7 @@ def _ratios(
     stored: set[date],
     books_from: date | None,
 ) -> list[RatioFigure]:
-    """The ratios at the side's date (F-RAT-001 to F-RAT-007)."""
+    """The ratios at the side's date (F-RAT-004 to F-RAT-010)."""
     if side.on is None:
         return []
     on = side.on
@@ -210,8 +226,10 @@ def _ratios(
         ),
         ZERO,
     )
-    current_assets, current_liabilities = main(CURRENT_ASSETS), main(CURRENT_LIABILITIES)
+    parts = position(session, companies, on)
     equity = main(CAPITAL) + profit_loss_line
+    parts.equity = equity
+    from_parts = position_ratios(parts, equity)
     stock = stock_value(session, companies, on)
     span = Period(side.period.start, on)
     days = (on - side.period.start).days + 1
@@ -225,14 +243,17 @@ def _ratios(
     working = (
         receivable + inventory - payable if None not in (receivable, inventory, payable) else None
     )
-    quick = None if stock is None else ratio_of(current_assets - stock, current_liabilities)
     figures = [
-        ("current_ratio", "Current ratio", "times", ratio_of(current_assets, current_liabilities)),
-        ("quick_ratio", "Quick ratio", "times", quick),
-        ("debt_to_equity", "Debt to equity", "times", ratio_of(main(LOANS), equity)),
+        ("current_ratio", "Current ratio", "times", from_parts["current_ratio"]),
+        ("quick_ratio", "Quick ratio", "times", from_parts["quick_ratio"]),
+        ("debt_to_equity", "Debt to equity", "times", from_parts["debt_to_equity"]),
         ("receivable_days", "Receivable days", "days", receivable),
         ("payable_days", "Payable days", "days", payable),
         ("inventory_days", "Inventory days", "days", inventory),
         ("working_capital_days", "Working-capital days", "days", working),
     ]  # fmt: skip
-    return [RatioFigure(key, label, unit, {"now": value}) for key, label, unit, value in figures]
+    behind = {"now": parts}
+    return [
+        RatioFigure(key, label, unit, {"now": value}, behind if key in POSITION_RATIOS else {})
+        for key, label, unit, value in figures
+    ]

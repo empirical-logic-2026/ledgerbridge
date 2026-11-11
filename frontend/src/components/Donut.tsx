@@ -15,6 +15,7 @@ interface Props {
   parts: DonutPart[]
   colours: string[]
   dark: boolean
+  formula: string // the parts' formula ID (docs/formula-sheet.md)
 }
 
 function ring(parts: DonutPart[], colours: string[], total: string): EChartsOption {
@@ -31,13 +32,13 @@ function ring(parts: DonutPart[], colours: string[], total: string): EChartsOpti
   }
 }
 
-export function Donut({ label, parts, colours, dark }: Props) {
+export function Donut({ label, parts, colours, dark, formula }: Props) {
   const { format } = useAmountFormat()
   const share = shares(parts)
   const total = parts.reduce((sum, p) => sum + toScaled(p.amount), 0n)
   const totalText = formatAmount(fromScaled(total), format)
   return (
-    <div className="donut" aria-label={label} role="group">
+    <div className="donut" aria-label={label} role="group" data-figure="donut" data-formula={formula}>
       <div className="donut-ring">
         <EChart key={dark ? 'dark' : 'light'} option={ring(parts, colours, totalText)} dark={dark} height={150} />
       </div>

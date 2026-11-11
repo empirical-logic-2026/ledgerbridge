@@ -28,6 +28,7 @@ from api.v1.common import (
 from api.v1.company_display import display_company_name
 from api.v1.home import change_pct
 from core.balance_sheet import balance_sheet
+from core.ratios import ASSET_PARTS, BORROWING_PARTS, LIABILITY_PARTS, Position
 from core.statement_report import percent, profit_loss
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -142,9 +143,9 @@ def profit_loss_report(
 # --- the Balance Sheet (RPT-003, RPT-014) ---------------------------------------------------
 
 RATIO_FORMULAS = {
-    "current_ratio": "F-RAT-001",
-    "quick_ratio": "F-RAT-002",
-    "debt_to_equity": "F-RAT-003",
+    "current_ratio": "F-RAT-008",
+    "quick_ratio": "F-RAT-009",
+    "debt_to_equity": "F-RAT-010",
     "receivable_days": "F-RAT-004",
     "payable_days": "F-RAT-005",
     "inventory_days": "F-RAT-006",
@@ -169,14 +170,38 @@ class SheetTotalOut(BaseModel):
     change_pct: Decimal | None = formula("F-CMP-001")
 
 
+class RatioPartOut(BaseModel):
+    """One part of current assets, current liabilities or borrowings (a line of the hover)."""
+
+    key: str
+    label: str
+    amount: Decimal = formula("F-BS-010")
+
+
+class RatioBasisOut(BaseModel):
+    """What a ratio is worked out from at the date, so anyone can check it (core/ratios.py)."""
+
+    current_assets: Decimal = formula("F-BS-007")
+    current_liabilities: Decimal = formula("F-BS-008")
+    borrowings: Decimal = formula("F-BS-009")
+    stock: Decimal = formula("F-BAL-005")
+    equity: Decimal | None = formula("F-BS-004")
+    asset_parts: list[RatioPartOut]
+    liability_parts: list[RatioPartOut]
+    borrowing_parts: list[RatioPartOut]
+    marked_short_term: int = formula("F-BS-011")  # ledgers marked as short-term borrowings
+    combined: bool  # several companies added up, without inter-company eliminations
+
+
 class RatioOut(BaseModel):
     key: str
     label: str
     unit: Literal["times", "days"]
-    formula_id: str  # the ratio's own formula (F-RAT-001 ...)
+    formula_id: str  # the ratio's own formula (F-RAT-004 ...)
     value: Decimal | None = formula("F-RAT-000")
     before: Decimal | None = formula("F-RAT-000")
     change: Decimal | None = formula("F-RAT-000")  # in the ratio's own unit
+    basis: RatioBasisOut | None = None  # current, quick and debt to equity: their parts
 
 
 class BalanceSheetReport(BaseModel):
@@ -192,6 +217,32 @@ class BalanceSheetReport(BaseModel):
     lines: list[SheetLineOut]
     totals: list[SheetTotalOut]
     ratios: list[RatioOut]
+
+
+def _parts(amounts: dict[str, Decimal], labels: dict[str, str]) -> list[RatioPartOut]:
+    """The parts with an amount, in the order of `labels`."""
+    return [
+        RatioPartOut(key=key, label=label, amount=amounts[key])
+        for key, label in labels.items()
+        if amounts.get(key)
+    ]
+
+
+def _basis(found: Position | None, combined: bool) -> RatioBasisOut | None:
+    if found is None:
+        return None
+    return RatioBasisOut(
+        current_assets=found.current_assets,
+        current_liabilities=found.current_liabilities,
+        borrowings=found.total_borrowings,
+        stock=found.stock,
+        equity=found.equity,
+        asset_parts=_parts(found.assets, ASSET_PARTS),
+        liability_parts=_parts(found.liabilities, LIABILITY_PARTS),
+        borrowing_parts=_parts(found.borrowings, BORROWING_PARTS),
+        marked_short_term=found.marked,
+        combined=combined,
+    )
 
 
 @router.get("/balance-sheet")
@@ -243,6 +294,7 @@ def balance_sheet_report(
                 key=r.key, label=r.label, unit=r.unit, formula_id=RATIO_FORMULAS[r.key],
                 value=r.values.get("now"), before=r.values.get("before"),
                 change=change(r.values.get("now"), r.values.get("before")),
+                basis=_basis(r.positions.get("now"), len(companies) > 1),
             )
             for r in found.ratios
         ],

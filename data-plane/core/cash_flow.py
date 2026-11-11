@@ -1,6 +1,6 @@
 """The Cash Flow module, a simple cash movement (RPT-014; docs/design/dashboard.md Section 0.4):
 the money into and out of cash and bank in a period, by what it was for. Source-independent;
-formulas F-CF-001 and F-CF-002 in docs/formulas.md. The full statement (operating, investing,
+formulas F-CF-001 and F-CF-002 in docs/formula-sheet.md. The full statement (operating, investing,
 financing) needs every ledger classified and is planned separately.
 
 - **Opening and closing:** cash and bank (F-BAL-002) the day before the period and at its end.

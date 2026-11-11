@@ -229,6 +229,13 @@ def _books(
     return ledgers, primary
 
 
+def ledger_balances(session: Session, entity_id: int, as_of: date) -> list[_Ledger]:
+    """Every ledger's balance as of the date, as the statements count it (before a
+    foreign-currency revaluation), with the source keys of its groups: for the ratios'
+    current assets and liabilities (core/ratios.py)."""
+    return _books(session, entity_id, as_of)[0]
+
+
 # --- building ours ------------------------------------------------------------------------
 
 

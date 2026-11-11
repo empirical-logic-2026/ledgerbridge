@@ -96,7 +96,7 @@ from core.problems import BY_CODE, for_error, title
 from core.statement_differences import KINDS
 from core.transform import trial_balance
 from core.validation import ValidationReport
-from workers import currencies, fx_rules, monthly_sales, on_hold, style
+from workers import currencies, fx_rules, loans, monthly_sales, on_hold, style
 from workers.analyse import analyse
 from workers.compare import compare_ledger
 from workers.entities import (
@@ -312,6 +312,21 @@ def _parser() -> argparse.ArgumentParser:
         "action", nargs="?", choices=("list", "set", "clear"), default="list"
     )
     on_hold_parser.add_argument("--entity-id", type=int, help="the entity's id (set, clear)")
+
+    loans_parser = sub.add_parser(
+        "loans",
+        help="a company's Loans (Liability) ledgers with their group and closing balance at a "
+        "date (screen only), or mark one as a short-term borrowing (F-RAT-008); database only",
+    )
+    loans_parser.add_argument(
+        "action", nargs="?", choices=("list", "mark", "clear"), default="list"
+    )
+    connection_args(loans_parser)
+    loans_parser.add_argument("--entity", action="append", help="the company's name (list)")
+    loans_parser.add_argument(
+        "--date", dest="on", type=date.fromisoformat, help="balances at (list; default: today)"
+    )
+    loans_parser.add_argument("--ledger", type=int, help="the ledger's id (mark, clear)")
 
     currencies_parser = sub.add_parser(
         "currencies",
@@ -609,6 +624,8 @@ def _run(session: Session, args: argparse.Namespace) -> int:
         return _on_hold(session, args)
     if args.command == "currencies":
         return _currencies(session, args)
+    if args.command == "loans":
+        return _loans(session, args)
     if args.command == "summary":
         return _summary(session)
     if args.command == "report":
@@ -1635,6 +1652,27 @@ def _on_hold(session: Session, args: argparse.Namespace) -> int:
         print(f"on-hold {args.action} needs --entity-id.", file=sys.stderr)
         return 2
     return on_hold.set_on_hold(session, args.entity_id, args.action == "set")
+
+
+def _loans(session: Session, args: argparse.Namespace) -> int:
+    """Loans (Liability) ledgers: list one company's, or mark or clear one (workers/loans.py).
+    The source isn't contacted."""
+    if args.action != "list":
+        if args.ledger is None:
+            print(f"loans {args.action} needs --ledger.", file=sys.stderr)
+            return 2
+        return loans.set_short_term(session, args.ledger, args.action == "mark")
+    if not args.entity or len(args.entity) != 1:
+        print("loans list needs one --entity (the company's name).", file=sys.stderr)
+        return 2
+    chosen = _stored_entities(session, args)
+    if chosen is None:
+        return 2
+    if not chosen:
+        print("That company has no stored data yet.", file=sys.stderr)
+        return 2
+    entity_id, _ = chosen[0]
+    return loans.list_loans(session, entity_id, args.on or date.today())
 
 
 def _currencies(session: Session, args: argparse.Namespace) -> int:

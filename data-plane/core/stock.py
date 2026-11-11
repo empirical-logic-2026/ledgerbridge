@@ -1,7 +1,7 @@
 """Stock for the dashboard (RPT-014): every stock item's quantities over a period and its
 value, totals by stock group and godown, the stock value month by month, and one item's
 movements voucher by voucher (the drill-down). Formulas F-STK-001 to F-STK-007 in
-docs/formulas.md.
+docs/formula-sheet.md.
 
 - **Quantities are ours**, by the rule validation proves against the source item by item
   (VAL-006): the item's opening plus the stock movements of vouchers that aren't deleted,

@@ -1,6 +1,6 @@
 // The Dashboard's sales and purchases chart (docs/design/dashboard.md Section 0.1, screen 5):
 // the months' sales and purchases as bars, and each month's gross and net profit (from the
-// stored statements; docs/formulas.md) as marked lines, with a gap where a month has none.
+// stored statements; docs/formula-sheet.md) as marked lines, with a gap where a month has none.
 
 import type { EChartsOption } from 'echarts'
 import type { Home } from '../../api/types.ts'

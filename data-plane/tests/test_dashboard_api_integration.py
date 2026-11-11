@@ -545,13 +545,24 @@ def test_the_balance_sheet_balances_and_its_ratios_follow_from_it(
     assert {line["key"]: _d(line["before"]) for line in found["lines"] if line["before"]} == {
         line["key"]: _d(line["value"]) for line in april["lines"] if line["value"]
     }
-    # F-RAT-001: current assets over current liabilities, as the home's card has them.
+    # F-RAT-008: current assets over current liabilities in the form of Schedule III (by
+    # sign, read as report_ro), with the parts that add up to them (F-BS-007, F-BS-008).
     home = _get(client, "/api/v1/home", month="2026-05")
     bs = home["balance_sheet"]
     ratios = {r["key"]: r for r in found["ratios"]}
-    current = Decimal(bs["current_assets"]) / Decimal(bs["current_liabilities"])
+    basis = ratios["current_ratio"]["basis"]
+    assets, liabilities = Decimal(basis["current_assets"]), Decimal(basis["current_liabilities"])
+    assert sum(Decimal(p["amount"]) for p in basis["asset_parts"]) == assets
+    assert sum(Decimal(p["amount"]) for p in basis["liability_parts"]) == liabilities
+    current = assets / liabilities
     assert _d(ratios["current_ratio"]["value"]) == current.quantize(Decimal("0.01"), ROUND_HALF_UP)
-    assert ratios["current_ratio"]["formula_id"] == "F-RAT-001"
+    assert ratios["current_ratio"]["formula_id"] == "F-RAT-008"
+    assert basis["marked_short_term"] == 0 and basis["combined"] is False
+    # By sign, the same amount moves to both sides: without loans, the working capital is
+    # the statement lines' (the home's card).
+    netted = Decimal(bs["current_assets"]) - Decimal(bs["current_liabilities"])
+    assert assets - liabilities == netted
+    assert ratios["receivable_days"]["basis"] is None
     # F-RAT-004: receivables over net sales, times the month's days.
     sales = sum(Decimal(m["sales"]) for m in home["monthly"])
     receivable = Decimal(home["balances"]["receivables"]) / sales * 31

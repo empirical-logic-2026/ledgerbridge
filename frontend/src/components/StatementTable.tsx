@@ -16,6 +16,7 @@ export interface StatementRow {
   previous?: ReactNode
   change?: ReactNode
   to?: string // the page behind the line
+  formula?: string // its formula ID; default: the table's
 }
 
 export interface StatementSection {
@@ -30,6 +31,7 @@ interface Props {
   sections: StatementSection[]
   compared: boolean // show the comparison period and the change
   compact?: boolean
+  formula: string // the lines' formula ID (docs/formula-sheet.md), unless a row has its own
 }
 
 function rowClass(row: StatementRow): string | undefined {
@@ -37,7 +39,7 @@ function rowClass(row: StatementRow): string | undefined {
   return classes.length ? classes.join(' ') : undefined
 }
 
-export function StatementTable({ label, columns, sections, compared, compact }: Props) {
+export function StatementTable({ label, columns, sections, compared, compact, formula }: Props) {
   const width = compared ? 4 : 2
   return (
     <div className="report-table-wrap">
@@ -60,7 +62,7 @@ export function StatementTable({ label, columns, sections, compared, compact }: 
               </tr>
             )}
             {section.rows.map((row) => (
-              <tr key={row.key} className={rowClass(row)}>
+              <tr key={row.key} className={rowClass(row)} data-figure="line" data-formula={row.formula ?? formula}>
                 <th scope="row">{row.to ? <a href={row.to}>{row.label}</a> : row.label}</th>
                 <td className="num">{row.current}</td>
                 {compared && <td className="num">{row.previous}</td>}

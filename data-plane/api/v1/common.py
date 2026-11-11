@@ -30,7 +30,7 @@ LABELS = {"previous": "Previous period", "last_year": "Last year"}
 
 
 def formula(formula_id: str, default: Any = PydanticUndefined) -> Any:  # noqa: ANN401
-    """A response field showing a figure, with its formula's ID in docs/formulas.md (RPT-015;
+    """A response field showing a figure, with its formula's ID in docs/formula-sheet.md (RPT-015;
     `tests/test_formulas.py` checks that every figure has one and that the ID exists)."""
     return Field(default, json_schema_extra={"formula": formula_id})
 

@@ -52,6 +52,7 @@ function listColumns(centres: CentresOut, companies: Company[], query: Query): E
         key: `m-${month}`,
         label: formatMonth(month),
         kind: 'amount',
+        formula: 'F-CC-001',
         value: (c) => c.months[i]?.amount ?? '0',
         help: `The allocations to the cost centre in ${formatMonth(month)} (F-CC-001).`,
       }),

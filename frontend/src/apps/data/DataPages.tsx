@@ -64,10 +64,10 @@ export function DataHealth({ companies, dark }: { companies: Company[]; dark: bo
   return (
     <>
       <div className="sales-cards">
-        <KeyCard label="Companies" figure={{ value: String(companies.length) }} unit="count" note="Shown (companies on hold aren't)" accent={grey} />
-        <KeyCard label="Checks passed" figure={{ value: count((c) => c.health.validation_status === 'passed') }} unit="count" note={`of ${companies.length}`} accent={green} />
-        <KeyCard label="Loaded in the source" figure={{ value: count((c) => c.health.source_loaded === true) }} unit="count" note={`of ${companies.length}, as last asked`} accent={lighter} />
-        <KeyCard label="Last sync" figure={{ value: null }} missing="Never synced" note={synced ? `${timeAgo(synced)}, ${formatDate(synced.slice(0, 10))}` : 'Never synced'} accent={charcoal} />
+        <KeyCard label="Companies" formula="F-DAT-001" figure={{ value: String(companies.length) }} unit="count" note="Shown (companies on hold aren't)" accent={grey} />
+        <KeyCard label="Checks passed" formula="F-DAT-002" figure={{ value: count((c) => c.health.validation_status === 'passed') }} unit="count" note={`of ${companies.length}`} accent={green} />
+        <KeyCard label="Loaded in the source" formula="F-DAT-003" figure={{ value: count((c) => c.health.source_loaded === true) }} unit="count" note={`of ${companies.length}, as last asked`} accent={lighter} />
+        <KeyCard label="Last sync" formula="F-DAT-004" figure={{ value: null }} missing="Never synced" note={synced ? `${timeAgo(synced)}, ${formatDate(synced.slice(0, 10))}` : 'Never synced'} accent={charcoal} />
       </div>
       <section className="card" aria-label="Data health by company">
         <ExplorerTable id="data-health" label="Data health by company" columns={HEALTH} rows={companies} rowKey={(c) => String(c.id)} />

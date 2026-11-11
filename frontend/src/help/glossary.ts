@@ -1,12 +1,12 @@
 // What every card, column header, ratio and status means, in plain words with its formula and
-// its ID in docs/formulas.md: shown on hover (components/Explained.tsx), so the client can see
+// its ID in docs/formula-sheet.md: shown on hover (components/Explained.tsx), so the client can see
 // how each value or status is worked out. Keyed by the label as shown; a label that means
 // different things on different pages is written out where it is used instead.
 
 export interface Explanation {
   text: string // in plain words
   formula?: string // as an expression
-  id?: string // in docs/formulas.md
+  id?: string // in docs/formula-sheet.md
 }
 
 const SALES = 'the entries on the ledgers under the Sales Accounts group (by its role, at any depth)'
@@ -56,7 +56,7 @@ export const GLOSSARY: Record<string, Explanation> = {
 
   // --- stock ---
   'Stock value': { text: 'The source\'s own value of all stock (its valuation method) at the last stored date within the period.', id: 'F-STK-007' },
-  'Stock items': { text: 'How many stock items the companies have, by name.' },
+  'Stock items': { text: 'How many stock items the companies have, by name.', id: 'F-STK-009' },
   'Items with negative stock': { text: 'Items whose closing quantity is below zero: more went out than came in. Worth checking in the source.', id: 'F-STK-004' },
   'Opening qty': { text: 'The quantity at the period\'s start: the item\'s opening plus every movement before that day.', id: 'F-STK-001' },
   'Inward qty': { text: 'The quantity that came in during the period (purchases, receipts, production, transfers in).', id: 'F-STK-002' },
@@ -115,9 +115,9 @@ export const GLOSSARY: Record<string, Explanation> = {
   Paid: { text: 'Nothing of this invoice\'s bill is outstanding.', id: 'F-PTY-004' },
 
   // --- balance sheet and ratios ---
-  'Current ratio': { text: 'Current assets over current liabilities: can short-term debts be paid from short-term assets?', formula: 'Current assets ÷ Current liabilities', id: 'F-RAT-001' },
-  'Quick ratio': { text: 'As the current ratio, without the stock.', formula: '(Current assets − Closing stock) ÷ Current liabilities', id: 'F-RAT-002' },
-  'Debt to equity': { text: 'Loans against the owners\' funds.', formula: 'Loans (Liability) ÷ (Capital Account + Profit & Loss A/c)', id: 'F-RAT-003' },
+  'Current ratio': { text: 'Current assets over current liabilities, each ledger on the side its balance is on (Schedule III): can short-term debts be paid from short-term assets? Hover the figure for its parts.', formula: 'Current assets ÷ Current liabilities', id: 'F-RAT-008' },
+  'Quick ratio': { text: 'As the current ratio, without the closing stock.', formula: '(Current assets − Closing stock) ÷ Current liabilities', id: 'F-RAT-009' },
+  'Debt to equity': { text: 'Borrowings (all loans, Bank OD and banks in credit) against the funds of the owners.', formula: 'Borrowings ÷ (Capital Account + Profit & Loss A/c)', id: 'F-RAT-010' },
   'Receivable days': { text: 'How many days of sales are still to be collected.', formula: 'Receivables ÷ Net sales × days in the period', id: 'F-RAT-004' },
   'Payable days': { text: 'How many days of purchases are still to be paid.', formula: 'Payables ÷ Net purchases × days in the period', id: 'F-RAT-005' },
   'Inventory days': { text: 'How many days of cost of sales the closing stock covers.', formula: 'Closing stock ÷ Cost of sales × days in the period', id: 'F-RAT-006' },
@@ -140,6 +140,13 @@ export const GLOSSARY: Record<string, Explanation> = {
 }
 
 /** The explanation of a label, as one line for a tooltip; undefined when there is none. */
+/** A figure's formula ID (docs/formula-sheet.md): the one given, else its label's in the
+ *  glossary. Figure components show it as data-formula; App.test.tsx fails on a figure
+ *  without one. */
+export function formulaOf(label: string, given?: string): string | undefined {
+  return given ?? GLOSSARY[label]?.id
+}
+
 export function explain(label: string): string | undefined {
   const found = GLOSSARY[label]
   if (!found) return undefined

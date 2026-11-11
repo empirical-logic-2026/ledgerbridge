@@ -6,7 +6,7 @@ added together: combined, without inter-company eliminations) and a period: whol
 `compare` adds the previous period or last year (api/v1/common.py) to the figures, as
 their `before` values. The figures and
 how they are found: core/home.py; periods and statement windows: core/report_periods.py;
-every formula: docs/formulas.md. The key figures: revenue (net sales), gross margin, net
+every formula: docs/formula-sheet.md. The key figures: revenue (net sales), gross margin, net
 profit, both as a percentage of revenue, and the customer count (core/sales.py).
 """
 
