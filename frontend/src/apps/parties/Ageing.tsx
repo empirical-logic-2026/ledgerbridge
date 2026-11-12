@@ -14,7 +14,6 @@ import { KeyCard } from '../../components/KeyCard.tsx'
 import { ErrorState } from '../../components/loading/ErrorState.tsx'
 import { Loading } from '../../components/loading/Loading.tsx'
 import { Money } from '../../components/Money.tsx'
-import { PageNote } from '../../components/PageNote.tsx'
 import { StatementTable } from '../../components/StatementTable.tsx'
 import { StatusPill } from '../../components/StatusPill.tsx'
 import { formatDate, formatExact, toScaled } from '../../format.ts'
@@ -24,7 +23,7 @@ import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import { builtHref } from '../../shell/nav.ts'
 import { partyPaymentStatusInfo } from '../../statuses.ts'
 import { tokens } from '../../theme.ts'
-import { ageingNote, BASIS_LABELS, BUCKET_LABELS, NOT_IN_BILLS, type Basis } from './ageingWords.ts'
+import { BASIS_LABELS, BUCKET_LABELS, NOT_IN_BILLS, type Basis } from './ageingWords.ts'
 import { PARTY_WORDS, type PartyKind } from './words.ts'
 
 interface Props extends PanelProps {
@@ -207,7 +206,6 @@ export function Ageing(props: Props) {
   return (
     <ReportFrame {...props} title={kind === 'customers' ? 'Receivables' : 'Payables'} page={`${kind}-ageing`} period={undefined}
       combined={ageing?.combined ?? false} help={help(kind)}>
-      <PageNote page={`parties-${kind === 'customers' ? 'receivables' : 'payables'}`} note={ageingNote(kind)} />
       {content}
     </ReportFrame>
   )

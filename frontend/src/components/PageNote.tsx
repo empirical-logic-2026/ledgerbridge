@@ -1,14 +1,16 @@
-// A short explanation at the top of a page (docs/design/dashboard.md Section 0.5): a small box
-// the reader can close, open the first time and then as they last left it on that page (kept
-// in this browser only). A native <details>: its title is a button for the keyboard, and screen
-// readers announce it as expandable. The text lives next to each page's labels.
+// A short explanation at the top of every page (docs/design/dashboard.md Section 0.5): a small
+// box the reader can close, open the first time and then as they last left it on that page
+// (kept in this browser only, one key per page). A native <details>: its title is a button for
+// the keyboard (Enter or Space), and screen readers announce it as expandable. Each page's text
+// lives in its module's notes.ts, next to the page's labels; shell/pageNotes.ts says which note
+// a page shows, and App.tsx puts it at the top.
 
 import { useState } from 'react'
 
 export interface NoteContent {
-  title: string // "How ageing is worked out"
+  title: string // "About this page"
   points: { label?: string; text: string }[] // 3 to 6 short points; a label in bold first
-  footer?: string
+  footer?: string // which Tally report to compare it with
 }
 
 const PREFIX = 'ledgerbridge.note.'
@@ -31,12 +33,13 @@ function remember(key: string, open: boolean): void {
   }
 }
 
-/** `page` names the page ("parties-receivables"); `storageKey` keeps an older note's key. */
-export function PageNote({ page, note, storageKey }: { page: string; note: NoteContent; storageKey?: string }) {
-  const key = storageKey ?? `${PREFIX}${page}`
+/** `page` names the page ("sales-dashboard"): the note's own key in this browser. */
+export function PageNote({ page, note, pageTitle }: { page: string; note: NoteContent; pageTitle: string }) {
+  const key = `${PREFIX}${page}`
   const [open] = useState(() => noteIsOpen(key))
   return (
-    <details className="card page-note" open={open} onToggle={(e) => remember(key, e.currentTarget.open)} data-note={page}>
+    <details className="card page-note" open={open} onToggle={(e) => remember(key, e.currentTarget.open)} data-note={page}
+      aria-label={`About this page: ${pageTitle}`}>
       <summary className="page-note-title">{note.title}</summary>
       <ul className="page-note-points">
         {note.points.map((p) => (

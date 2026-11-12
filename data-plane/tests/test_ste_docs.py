@@ -81,3 +81,24 @@ def test_the_check_counts_steps_and_sentences() -> None:
         (False, "It has two sentences."),
     ]
     assert _words("Divide CODE by ₹1,00,000 — then stop.") == 6  # the dash is no word
+
+
+# Every page section of docs/dashboard-pages.md has the text of the note at the top of its page
+# (the page's own note: shell/pageNotes.ts in the frontend).
+PAGE_SECTIONS = [
+    "## 2. Overview", "### 3.1 Sales dashboard", "### 3.2 Sales register", "### 3.3 Monthly sales",
+    "### 3.4 Channels", "### 3.5 Customers and the page of a customer", "## 4. Purchases",
+    "### 5.1 Profit & Loss", "### 5.2 Cost centres", "## 6. Balance Sheet", "### 7.1 Stock summary",
+    "### 7.2 By godown", "### 7.3 Page of an item", "## 8. Cash Flow", "## 9. Parties",
+    "### 10.1 Transactions", "### 10.2 Page of a voucher", "### 11.1 Data health and Companies",
+    "### 11.2 Explore",
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("heading", PAGE_SECTIONS)
+def test_every_page_section_has_its_note(heading: str) -> None:
+    text = (ROOT / "docs" / "dashboard-pages.md").read_text("utf-8")
+    start = text.index(heading + "\n")
+    ends = [i for i in (text.find("\n## ", start + 1), text.find("\n### ", start + 1)) if i != -1]
+    section = text[start : min(ends)]
+    assert "**Note at the top of the page.**" in section, heading

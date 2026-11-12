@@ -1260,3 +1260,10 @@ body,
   font-size: 12px;
   color: var(--lb-muted);
 }
+
+/* the note's title: a button for the keyboard, with a visible focus ring */
+.page-note-title:focus-visible {
+  outline: 2px solid var(--lb-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

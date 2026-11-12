@@ -14,11 +14,9 @@ import type { Company, DatasetInfo, DatasetResult, Row } from '../../api/types.t
 import { ErrorState } from '../../components/loading/ErrorState.tsx'
 import { Loading } from '../../components/loading/Loading.tsx'
 import { Money } from '../../components/Money.tsx'
-import { PageNote } from '../../components/PageNote.tsx'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import { deleteView, loadViews, saveView, type SavedView } from '../../reporting/savedViews.ts'
 import { updateQuery, useRoute } from '../../router.ts'
-import { exploreNote } from './exploreWords.ts'
 
 interface Props extends PanelProps {
   companies: Company[]
@@ -278,7 +276,6 @@ export function Explore(props: Props) {
   }
   return (
     <ReportFrame {...props} title="Explore" page="explore" period={undefined} combined={props.companies.length > 1} help={help}>
-      <PageNote page="data-explore" note={exploreNote} />
       {content}
     </ReportFrame>
   )

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.19 |
+| Version | 0.20 |
 | Date | 2026-11-11 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1); the client's reference screenshots of 2026-11-02 (Section 0.4: layout and information design only; kept on the developer's computer in `docs/design/client-reference/`, not in git, as they show other products and a desktop) |
@@ -204,6 +204,8 @@ Every page is built from the shared components of Section 0.4, so it loads and f
 - **The top bar** keeps the logo and the period controls on its first row and the ten module tabs on a row of their own (scrolling sideways on a narrow screen, one line from 1900 px), so the tabs never wrap.
 - **First load.** While the companies and periods load, the logo in the top bar pulses (after the same 150 ms, still under reduced motion).
 - **Errors.** A request that fails shows what couldn't be loaded and the API's reason, with a **Retry** button that asks again (`components/loading/ErrorState.tsx`); it shows that it's busy, and a new failure shows the new reason.
+
+**A note on every page.** Every page starts with a small collapsible box (`components/PageNote.tsx`): open the first time, then as the reader left it on that page (one key per page, this browser), a native `<details>` for the keyboard and screen readers. In 3 to 6 everyday bullets it says what the page shows, where the figures come from (Tally, and as at which date), how the main figures are worked out (with formula IDs), what could surprise (Educational-mode dates, companies added without inter-company eliminations, amounts not in bills, stock at job workers), and which Tally report to compare with. Each module keeps its notes in its own `notes.ts` next to its labels; `shell/pageNotes.ts` says which note a page shows and `App.tsx` puts it at the top. A test fails if a built page has none; `docs/dashboard-pages.md` has the same text in ASD-STE100, checked page by page.
 
 **Statement tables** (Section 0.4) are one component, `components/StatementTable.tsx`: current, previous and change columns, section headings, indented lines, bold totals, and each line's label opening the page behind it. The Overview's Profit & Loss summary and the Balance Sheet use it; the full Profit & Loss keeps its multi-column table (companies, months, % of sales) in the same row styles.
 
@@ -478,6 +480,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-12 | 0.20 | Section 0.5: a note on every page (one component, its text next to each page's labels, the same text in dashboard-pages.md). |
 | 2026-11-12 | 0.19 | Receivables and Payables in six buckets with the parts not in bills; the voucher page; Data › Explore (ADR-054). |
 | 2026-11-11 | 0.18 | Stock by godown and the inventory dataset built (ADR-053): the three sections, the total as Tally counts it, the item page at one godown. |
 | 2026-11-11 | 0.17 | Section 0.5: loading and errors on every page (pulse loading in each component's shape, 150 ms delay, reduced motion, aria-busy, Retry; the logo pulsing on the first load); the statement table as one component; screenshots of the reference layout. |

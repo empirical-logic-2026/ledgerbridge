@@ -17,8 +17,7 @@ import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import type { Query } from '../../router.ts'
 import { tokens } from '../../theme.ts'
-import { DIVIDES_STOCK, godownHref, NOT_SPLIT, SECTION_WORDS, type SectionKey } from './godownWords.ts'
-import { PageNote } from '../../components/PageNote.tsx'
+import { godownHref, NOT_SPLIT, SECTION_WORDS, type SectionKey } from './godownWords.ts'
 
 function columns(query: Query, withItem: boolean): ExplorerColumn<GodownRowOut>[] {
   return [
@@ -56,16 +55,6 @@ export function GodownSections({ sections, query, withItem, id }: { sections: Go
       })}
     </>
   )
-}
-
-/** "How this page divides stock": one point per section, under its own title. */
-export function DividesStockNote() {
-  const note = {
-    title: DIVIDES_STOCK.title,
-    points: DIVIDES_STOCK.points.map((p) => ({ label: SECTION_WORDS[p.section].title, text: p.text })),
-    footer: DIVIDES_STOCK.footer,
-  }
-  return <PageNote page="stock-godowns" note={note} storageKey="ledgerbridge.godownNote" />
 }
 
 interface Props extends PanelProps {
@@ -111,7 +100,6 @@ export function StockGodowns(props: Props) {
     const valueNote = found.value_on ? `Values at ${formatDate(found.value_on)}` : 'No stock values stored in the period yet'
     content = (
       <>
-        <DividesStockNote />
         <div className="sales-cards">
           <KeyCard label="Stock in the total" formula="F-STK-013" figure={{ value: found.total_quantity }} unit="count" accent={green}
             note={`At ${formatDate(found.on)}; as Tally's Stock Summary`} />

@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.62 |
+| Version | 0.63 |
 | Date | 2026-11-11 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
@@ -357,7 +357,9 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `src/apps/books/VoucherPage.tsx` | The voucher page (Books › Voucher, a detail page): header, ledger lines, bills, stock. |
 | `src/apps/data/Explore.tsx`, `exploreWords.ts` | Data › Explore: the table explorer's datasets on a screen (columns, group-bys, measures, filters, saved views, CSV) and its note. |
 | `src/apps/parties/ageingWords.ts` | The Receivables and Payables pages' words: bucket names, the parts of *Not in bills* and the note *How ageing is worked out*. |
-| `src/components/PageNote.tsx` | A collapsible note at the top of a page: open the first time, then as the reader left it on that page (this browser). |
+| `src/components/PageNote.tsx` | The note at the top of every page: a collapsible box, open the first time, then as the reader left it on that page (this browser). |
+| `src/shell/pageNotes.ts` | Which note each page shows (the text is in each module's `notes.ts`); every built page must have one (tested). |
+| `src/apps/*/notes.ts` | Each module's page notes in plain words, next to its labels: what the page shows, where the figures come from, how they are worked out, what could surprise, and the Tally report to compare with. |
 | `src/apps/stock/StockGodowns.tsx`, `godownWords.ts` | The Stock module's By godown page and the sections shared with the item page's breakdown; each section's name and meaning in plain words (ADR-053). |
 | `src/apps/stock/Stock.tsx` | The Stock module: the stock summary (value, value by date, by stock group and godown, every item with quantities, value and rate) and one item's page (movements with the quantity after each, month by month). |
 | `src/apps/books/Transactions.tsx` | The Books module's Transactions page: every ledger line in the table explorer with the fifteen columns (Order Number empty until it is fetched). |
@@ -472,6 +474,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-12 | 0.63 | `src/shell/pageNotes.ts` and a `notes.ts` in each app folder: a note on every page. |
 | 2026-11-12 | 0.62 | `core/vouchers.py`, `api/v1/vouchers.py`, `src/apps/books/VoucherPage.tsx`, `src/apps/data/Explore.tsx`, `exploreWords.ts`, `src/apps/parties/ageingWords.ts`, `src/components/PageNote.tsx`; `core/ageing.py` reworked; tests `test_ageing.py`, `test_vouchers.py`. |
 | 2026-11-11 | 0.61 | `core/stock_godowns.py`, `src/apps/stock/StockGodowns.tsx`, `godownWords.ts`, `devtools/load_test_fixtures.py` (`./dev.ps1 load-test-fixtures`); the `inventory_lines` dataset; tests `test_stock_godowns.py`, `tests/devtools/test_load_test_fixtures.py`. |
 | 2026-11-11 | 0.60 | `core/ratios.py`, `workers/loans.py`, `ShortTermBorrowing` (migration 0037), `src/components/RatioBasis.tsx`; `docs/formulas.md` moved to `docs/formula-sheet.md`; `docs/dashboard-pages.md`; tests `test_ratios.py`, `test_loans.py`, `test_ste_docs.py`. |
