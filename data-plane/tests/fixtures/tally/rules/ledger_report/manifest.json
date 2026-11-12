@@ -1,0 +1,47 @@
+{
+  "company": "LedgerBridge Test Co",
+  "start": "2026-04-01",
+  "end": "2026-10-02",
+  "ledgers": {
+    "Test Bank Current A/c": [
+      "test_bank_current_a_c_vouchers_2026-04.xml",
+      "test_bank_current_a_c_vouchers_2026-05.xml",
+      "test_bank_current_a_c_vouchers_2026-06.xml",
+      "test_bank_current_a_c_vouchers_2026-07.xml",
+      "test_bank_current_a_c_vouchers_2026-08.xml",
+      "test_bank_current_a_c_vouchers_2026-09.xml",
+      "test_bank_current_a_c_vouchers_2026-10.xml",
+      "test_bank_current_a_c_report_2026-05-31.xml",
+      "test_bank_current_a_c_report_2026-07-31.xml",
+      "test_bank_current_a_c_report_2026-08-31.xml",
+      "test_bank_current_a_c_report_2026-10-02.xml"
+    ],
+    "Customer Alpha Traders": [
+      "customer_alpha_traders_vouchers_2026-04.xml",
+      "customer_alpha_traders_vouchers_2026-05.xml",
+      "customer_alpha_traders_vouchers_2026-06.xml",
+      "customer_alpha_traders_vouchers_2026-07.xml",
+      "customer_alpha_traders_vouchers_2026-08.xml",
+      "customer_alpha_traders_vouchers_2026-09.xml",
+      "customer_alpha_traders_vouchers_2026-10.xml",
+      "customer_alpha_traders_report_2026-05-31.xml",
+      "customer_alpha_traders_report_2026-07-31.xml",
+      "customer_alpha_traders_report_2026-08-31.xml",
+      "customer_alpha_traders_report_2026-10-02.xml"
+    ],
+    "Sales - Goods": [
+      "sales_goods_vouchers_2026-04.xml",
+      "sales_goods_vouchers_2026-05.xml",
+      "sales_goods_vouchers_2026-06.xml",
+      "sales_goods_vouchers_2026-07.xml",
+      "sales_goods_vouchers_2026-08.xml",
+      "sales_goods_vouchers_2026-09.xml",
+      "sales_goods_vouchers_2026-10.xml",
+      "sales_goods_report_2026-05-31.xml",
+      "sales_goods_report_2026-07-31.xml",
+      "sales_goods_report_2026-08-31.xml",
+      "sales_goods_report_2026-10-02.xml"
+    ]
+  },
+  "balances": "ledger_balances.xml"
+}

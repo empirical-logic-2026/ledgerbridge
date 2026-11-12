@@ -23,7 +23,7 @@ from core.ledger_statement import ledger_statement
 from core.models import accounting as A  # noqa: N812
 from core.models import system as S  # noqa: N812
 from core.models.reporting import StatementLine as LineRow
-from core.report_periods import Period
+from core.report_periods import Period, last_day
 from core.statements import match_key
 from tests.conftest import FIXTURES
 from tests.stock_replay import LAYOUT, YEAR_END, replay
@@ -180,16 +180,25 @@ def test_each_recorded_ledger_equals_tallys_ledger_vouchers(
             if (v.findtext("ISCANCELLED") or "No") == "No"
             and (v.findtext("ISOPTIONAL") or "No") == "No"
         )  # fmt: skip
-        ours = sorted((f"{e.on:%Y%m%d}", e.number) for e in found.entries if e.voucher_id)
+        # Tally's list for a part month (1-2 October) is empty in Educational mode: it can't
+        # end a request on the 3rd. Those days are proved by its report (below) and closing.
+        part = f"{period.end:%Y%m}" if period.end != last_day(period.end) else None
+        ours = sorted(
+            (f"{e.on:%Y%m%d}", e.number)
+            for e in found.entries
+            if e.voucher_id and f"{e.on:%Y%m}" != part
+        )
         assert ours == theirs, name
         for f in files:
             if "_report_" not in f:
                 continue
-            month = f.rsplit("_", 1)[1].removesuffix(".xml")[:7]
             rows = report_rows((LEDGER_REPORTS / f).read_bytes())
             shown = [
                 (datetime.strptime(r.on, "%d-%b-%y").date(), r.account, r.amount) for r in rows
             ]
+            # The export lists one month: the To date's, or (recorded 2026-11-12, To date
+            # 2 October, no October entries) the ledger's last month with entries.
+            month = f"{shown[0][0]:%Y-%m}" if shown else f.rsplit("_", 1)[1][:7]
             mine = [
                 (e.on, e.particulars, e.amount) for e in found.entries if f"{e.on:%Y-%m}" == month
             ]
