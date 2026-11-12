@@ -21,7 +21,7 @@ a per-row form (lists) and a total form (groups, subtotals, the total).
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from sqlalchemy import ColumnElement, and_, case, distinct, func, literal, select
@@ -51,6 +51,7 @@ class Measure:
     row_expr: ColumnElement[Any]  # one row's value (list mode)
     total_expr: ColumnElement[Any]  # the value of a group, a subtotal or the total
     is_count: bool = False
+    formula: str = ""  # its formula ID (docs/formula-sheet.md); set from FORMULAS below
 
 
 @dataclass(frozen=True)
@@ -532,8 +533,28 @@ def _inventory_lines() -> Dataset:
     )  # fmt: skip
 
 
+# Each measure's formula ID (docs/formula-sheet.md): shown in the Explore page's column headers
+# and checked by tests/test_api_v1.py (every measure has one) and tests/test_formulas.py.
+FORMULAS: dict[str, dict[str, str]] = {
+    "voucher_lines": {"debit": "F-TRN-001", "credit": "F-TRN-001", "net": "F-TRN-001",
+                      "voucher_count": "F-TBL-003"},
+    "vouchers": {"amount": "F-TRN-001", "voucher_count": "F-TBL-003"},
+    "cost_allocations": {"amount": "F-CC-002", "allocations": "F-CC-003"},
+    "gst": {"debit": "F-TRN-001", "credit": "F-TRN-001", "net": "F-TRN-001",
+            "voucher_count": "F-TBL-003"},
+    "inventory_lines": {"quantity": "F-STK-014", "rate": "F-STK-015", "amount": "F-STK-008",
+                        "lines": "F-TBL-003"},
+}  # fmt: skip
+
+
+def _with_formulas(dataset: Dataset) -> Dataset:
+    formulas = FORMULAS[dataset.key]
+    measures = {k: replace(m, formula=formulas[k]) for k, m in dataset.measures.items()}
+    return replace(dataset, measures=measures)
+
+
 DATASETS: dict[str, Dataset] = {
-    d.key: d
+    d.key: _with_formulas(d)
     for d in (_voucher_lines(), _vouchers(), _cost_allocations(), _gst(), _inventory_lines())
 }
 

@@ -17,9 +17,10 @@ from collections.abc import Iterator
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from api.access import CurrentAccess
 from api.v1.common import ReportSession, formula
@@ -33,14 +34,19 @@ from api.v1.dataset_query import (
     rows_for_csv,
     run,
 )
-from api.v1.dataset_specs import DATASETS, Dataset
+from api.v1.dataset_specs import DATASETS, Dataset, Dimension
 
 router = APIRouter(tags=["datasets"])
+VALUES_LIMIT = 200  # the values a filter picker lists at once (search for more)
 
 
 class Option(BaseModel):
     key: str
     label: str
+
+
+class MeasureOption(Option):
+    formula: str  # its formula ID (docs/formula-sheet.md)
 
 
 class FilterOption(Option):
@@ -55,7 +61,7 @@ class DatasetInfo(BaseModel):
     key: str
     label: str
     dimensions: list[DimensionOption]
-    measures: list[Option]
+    measures: list[MeasureOption]
     filters: list[FilterOption]
     default_columns: list[str]
     default_measures: list[str]
@@ -95,7 +101,10 @@ def datasets() -> list[DatasetInfo]:
                 DimensionOption(key=x.key, label=x.label, groupable=x.groupable)
                 for x in d.dimensions.values()
             ],
-            measures=[Option(key=m.key, label=m.label) for m in d.measures.values()],
+            measures=[
+                MeasureOption(key=m.key, label=m.label, formula=m.formula)
+                for m in d.measures.values()
+            ],
             filters=[
                 FilterOption(key=f.key, label=f.label, kind=f.kind) for f in d.filters.values()
             ],
@@ -124,6 +133,58 @@ def query(
         page_size=asked.page_size,
         total_rows=result.total_rows,
     )
+
+
+class Value(BaseModel):
+    id: int | str
+    label: str
+
+
+@router.get("/datasets/{name}/values/{key}")
+def values(
+    name: str,
+    key: str,
+    session: ReportSession,
+    access: CurrentAccess,
+    q: str | None = Query(default=None, max_length=100),
+    company: list[int] | None = Query(default=None),  # noqa: B008
+) -> list[Value]:
+    """The choices of a filter of kind "ids" (the Explore page's pickers): the values of the
+    dimension of that key in the caller's companies, first VALUES_LIMIT by label, with an
+    optional search. Only allow-listed keys; no SQL text from the request."""
+    dataset = DATASETS.get(name)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail="Unknown dataset.")
+    found = dataset.filters.get(key)
+    if found is None or found.kind != "ids":
+        raise HTTPException(status_code=404, detail="That filter has no list of values.")
+    source = _values_source(dataset, key)
+    if source is None:
+        raise HTTPException(status_code=404, detail="That filter has no list of values.")
+    owner, dimension = source
+    companies = access.entities(company)
+    query = (
+        select(dimension.id_expr, dimension.label_expr)
+        .select_from(owner.source)
+        .where(*owner.base_conditions, owner.company_id.in_(companies))
+        .distinct()
+        .order_by(dimension.label_expr)
+        .limit(VALUES_LIMIT)
+    )
+    if q:
+        query = query.where(dimension.label_expr.contains(q, autoescape=True))
+    return [Value(id=i, label=str(label)) for i, label in session.execute(query)]
+
+
+def _values_source(dataset: Dataset, key: str) -> tuple[Dataset, Dimension] | None:
+    """The dimension that lists a filter's values: the dataset's own of that key, else the
+    first other dataset's (e.g. cost centres for the voucher lines' cost-centre filter)."""
+    if key in dataset.dimensions:
+        return dataset, dataset.dimensions[key]
+    for other in DATASETS.values():
+        if key in other.dimensions:
+            return other, other.dimensions[key]
+    return None
 
 
 @router.get("/datasets/{name}/csv")
