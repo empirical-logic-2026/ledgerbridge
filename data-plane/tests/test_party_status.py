@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from api.v1.ageing import _row
 from api.v1.home import _top
-from core.ageing import AgeingRow
+from core.ageing import AgeingRow, OpenBill
 from core.overview import TopCustomer
 from core.parties import KINDS, bill_payment_status, party_payment_status
 
@@ -100,12 +100,18 @@ def test_party_with_bills_in_different_states_is_not_summarized_as_only_overdue(
     )
 
 
+def _bill(amount: Decimal, days_past_due: int) -> OpenBill:
+    """A synthetic open bill this many days past its due date."""
+    day = date(2026, 10, 1)
+    return OpenBill(1, "Synthetic party", "B-1", day, day, amount, days_past_due,
+                    max(days_past_due, 0), None)  # fmt: skip
+
+
 def test_ageing_summary_does_not_count_past_due_advances_as_overdue_or_pending() -> None:
     row = AgeingRow(1, "Synthetic party", Decimal("-45.00"))
 
-    row.add_outstanding(Decimal("80.00"), 30)
-    row.add_outstanding(Decimal("-150.00"), 60)
-    row.add_outstanding(Decimal("25.00"), 0)
+    for amount, days in (("80.00", 30), ("-150.00", 60), ("25.00", 0)):
+        row.add_outstanding(_bill(Decimal(amount), days))
 
     assert row.overdue == Decimal("80.00")
     assert row.pending == Decimal("25.00")

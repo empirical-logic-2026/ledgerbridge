@@ -55,24 +55,3 @@ export const DIVIDES_STOCK = {
     "The total on this page equals Tally's Stock Summary for the same date. Values per godown are worked out at each item's rate; " +
     "Tally's own value for each godown is shown beside them.",
 }
-
-const NOTE_KEY = 'ledgerbridge.godownNote' // "closed" once the reader closes it; this browser only
-
-/** Whether the note starts open: open the first time, then as the reader last left it. */
-export function noteStartsOpen(): boolean {
-  try {
-    return window.localStorage.getItem(NOTE_KEY) !== 'closed'
-  } catch {
-    return true // storage blocked: open
-  }
-}
-
-/** Remembers whether the reader left the note open (in this browser only). */
-export function rememberNote(open: boolean): void {
-  try {
-    if (open) window.localStorage.removeItem(NOTE_KEY)
-    else window.localStorage.setItem(NOTE_KEY, 'closed')
-  } catch {
-    // storage blocked: the note opens again next time
-  }
-}

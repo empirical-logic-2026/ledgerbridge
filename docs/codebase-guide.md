@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.61 |
+| Version | 0.62 |
 | Date | 2026-11-11 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
@@ -184,6 +184,7 @@ ledgerbridge/
 | `home.py` | The dashboard home's figures (`GET /api/v1/home`): Profit & Loss and Balance Sheet cards from the stored statements, balances and stock value, sales and purchases by month, channel and company; groups found by their predefined role. |
 | `ratios.py` | Current assets, current liabilities and borrowings in the form of Schedule III, ledger by ledger at a statement date (ADR-052; F-BS-007 to F-BS-011): what the current ratio, quick ratio and debt to equity in `balance_sheet.py` are worked out from, with their parts for the ratio tiles' hover. |
 | `stock_godowns.py` | Stock by godown and batch at a date in three sections, counted as Tally counts them: our stock and others' stock held with us in the total (= the Stock page and Tally's Stock Summary), our stock at job workers apart (ADR-053; F-STK-010 to F-STK-013). |
+| `vouchers.py` | One voucher for the dashboard's voucher page: header, ledger lines with debit and credit, bill allocations and stock lines (ADR-054; F-VCH-001). |
 | `utr.py` | The UTR rule: a value is a bank's transaction reference only when it looks like one (NEFT/RTGS, IMPS/UPI, or labelled UTR); never the source's own codes. |
 | `stock.py` | The Stock page (`GET /api/v1/stock` and `.../{item_id}`, `api/v1/stock.py`): every item's opening, inward, outward and closing quantity (ours, by `stock_moving`: the same rule validation proves against the source, VAL-006), the source's own value per item, stock group and godown at the last stored date within the period, the stock value by date, and one item's movements and months. |
 | `transactions.py` | The Transactions page (`GET /api/v1/transactions`, `api/v1/transactions.py`): one row per effective ledger line, with its voucher's date, type, number, reference, party and GSTIN, narration, the voucher's other ledgers (particulars), and the line's bills, cost centres, order numbers, GST details and cheque number (the stored UTR is never read). |
@@ -353,6 +354,10 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `src/components/RatioBasis.tsx` | What a ratio is worked out from, on its tile's hover: current assets and current liabilities (or borrowings and equity) with their parts, the loans marked as short-term, combined companies (ADR-052). |
 | `src/components/StatementTable.tsx` | A statement table: current, previous and change columns, section headings, indented lines and totals, each line opening its page (the Overview's Profit & Loss summary, the Balance Sheet). |
 | `src/components/loading/` | Loading and errors on every page (dashboard design Section 0.5): `Loading.tsx` (placeholders in each component's shape, pulsing; the page shapes), `delay.ts` (shown only after 150 ms), `ErrorState.tsx` (what failed, why, and Retry); `Loading.test.tsx` checks the delay, the announcement, reduced motion and Retry. |
+| `src/apps/books/VoucherPage.tsx` | The voucher page (Books › Voucher, a detail page): header, ledger lines, bills, stock. |
+| `src/apps/data/Explore.tsx`, `exploreWords.ts` | Data › Explore: the table explorer's datasets on a screen (columns, group-bys, measures, filters, saved views, CSV) and its note. |
+| `src/apps/parties/ageingWords.ts` | The Receivables and Payables pages' words: bucket names, the parts of *Not in bills* and the note *How ageing is worked out*. |
+| `src/components/PageNote.tsx` | A collapsible note at the top of a page: open the first time, then as the reader left it on that page (this browser). |
 | `src/apps/stock/StockGodowns.tsx`, `godownWords.ts` | The Stock module's By godown page and the sections shared with the item page's breakdown; each section's name and meaning in plain words (ADR-053). |
 | `src/apps/stock/Stock.tsx` | The Stock module: the stock summary (value, value by date, by stock group and godown, every item with quantities, value and rate) and one item's page (movements with the quantity after each, month by month). |
 | `src/apps/books/Transactions.tsx` | The Books module's Transactions page: every ledger line in the table explorer with the fifteen columns (Order Number empty until it is fetched). |
@@ -467,6 +472,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-12 | 0.62 | `core/vouchers.py`, `api/v1/vouchers.py`, `src/apps/books/VoucherPage.tsx`, `src/apps/data/Explore.tsx`, `exploreWords.ts`, `src/apps/parties/ageingWords.ts`, `src/components/PageNote.tsx`; `core/ageing.py` reworked; tests `test_ageing.py`, `test_vouchers.py`. |
 | 2026-11-11 | 0.61 | `core/stock_godowns.py`, `src/apps/stock/StockGodowns.tsx`, `godownWords.ts`, `devtools/load_test_fixtures.py` (`./dev.ps1 load-test-fixtures`); the `inventory_lines` dataset; tests `test_stock_godowns.py`, `tests/devtools/test_load_test_fixtures.py`. |
 | 2026-11-11 | 0.60 | `core/ratios.py`, `workers/loans.py`, `ShortTermBorrowing` (migration 0037), `src/components/RatioBasis.tsx`; `docs/formulas.md` moved to `docs/formula-sheet.md`; `docs/dashboard-pages.md`; tests `test_ratios.py`, `test_loans.py`, `test_ste_docs.py`. |
 | 2026-11-11 | 0.59 | `src/components/loading/` (pulse loading and the error state with Retry) and `src/components/StatementTable.tsx`; `docs/design/screenshots/reference-layout/`. |

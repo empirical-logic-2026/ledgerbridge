@@ -4,6 +4,7 @@ allow-listed keys and turns them into bound SQL; CSV cells can't run as formulas
 logs carry no query strings."""
 
 import logging
+import re
 from collections.abc import Iterator
 from datetime import date, datetime
 from decimal import Decimal
@@ -240,6 +241,9 @@ def test_the_catalogue_lists_only_allow_listed_keys(client_without_db: TestClien
     } <= groupable
     assert {"voucher_number", "order_due_date"} <= {d["key"] for d in stock["dimensions"]}
     assert {m["key"] for m in stock["measures"]} == {"quantity", "rate", "amount", "lines"}
+    # Every measure names its formula (the Explore page's column headers).
+    for dataset in catalogue.values():
+        assert all(re.fullmatch(r"F-[A-Z]{2,3}-\d{3}", m["formula"]) for m in dataset["measures"])
 
 
 def test_request_logs_have_no_query_strings(

@@ -492,7 +492,7 @@ def test_ageing_adds_up_and_equals_the_party_pages(
     found = _get(client, f"/api/v1/ageing/{kind}", month=MONTHS)
     rows = found["rows"]
     assert rows and found["as_of"] == "2026-09-30"
-    for row in rows:  # buckets (F-PTY-012) plus uncovered (F-PTY-013) are the balance
+    for row in rows:  # buckets (F-PTY-014) plus uncovered (F-PTY-013) are the balance
         buckets = sum(Decimal(v) for v in row["buckets"].values())
         assert buckets + Decimal(row["uncovered"]) == Decimal(row["balance"])
         assert Decimal(row["overdue"]) >= 0
@@ -505,6 +505,15 @@ def test_ageing_adds_up_and_equals_the_party_pages(
             assert balance >= Decimal("0.005")
             assert Decimal(row["overdue"]) > 0
         assert row["status"] == ("overdue" if row["payment_status"] == "overdue" else "current")
+        parts = row["not_in_bills"]  # F-PTY-015 to F-PTY-017, F-PTY-020 make up F-PTY-013
+        assert (
+            Decimal(parts["total"])
+            == Decimal(row["uncovered"])
+            == sum(
+                Decimal(parts[k])
+                for k in ("on_account", "opening_difference", "revaluation", "other")
+            )
+        )
     for key in ("balance", "overdue", "uncovered"):
         assert sum(Decimal(r[key]) for r in rows) == Decimal(found["total"][key])
     # Each party as its own page has it (F-PTY-001 to F-PTY-003).
@@ -513,6 +522,31 @@ def test_ageing_adds_up_and_equals_the_party_pages(
         assert _d(row["balance"]) == _d(page["balance"])
         assert _d(row["overdue"]) == _d(page["overdue"])
         assert Decimal(row["balance"]) - Decimal(row["uncovered"]) == Decimal(page["bills_cover"])
+    # Each open bill names its party and the voucher that raised it (read as report_ro).
+    for bill in found["bills"][:5]:
+        assert bill["party"] in {r["name"] for r in rows}
+        if bill["voucher_id"] is not None:
+            voucher = _get(client, f"/api/v1/vouchers/{bill['voucher_id']}")
+            assert voucher["voucher_id"] == bill["voucher_id"]
+            assert _d(voucher["total_debit"]) == _d(voucher["total_credit"])
+    by_bill_date = _get(client, f"/api/v1/ageing/{kind}", month=MONTHS, basis="bill_date")
+    assert by_bill_date["basis"] == "bill_date"
+    assert _d(by_bill_date["total"]["balance"]) == _d(found["total"]["balance"])
+
+
+def test_explore_values_lists_and_refuses(client: TestClient, synced: int) -> None:
+    """The Explore page's filter pickers: values of allow-listed keys only (read as report_ro)."""
+    ledgers = client.get("/api/v1/datasets/voucher_lines/values/ledger")
+    assert ledgers.status_code == 200, ledgers.text
+    assert ledgers.json() and all({"id", "label"} <= set(v) for v in ledgers.json())
+    some = ledgers.json()[0]["label"][:3]
+    searched = client.get("/api/v1/datasets/voucher_lines/values/ledger", params={"q": some})
+    assert searched.status_code == 200 and all(some in v["label"] for v in searched.json())
+    centres = client.get("/api/v1/datasets/voucher_lines/values/cost_centre")
+    assert centres.status_code == 200, centres.text  # listed from the cost allocations
+    for bad in ("amount_min", "date_from", "nothing", "ledger_id;drop"):
+        assert client.get(f"/api/v1/datasets/voucher_lines/values/{bad}").status_code == 404
+    assert client.get("/api/v1/datasets/nothing/values/ledger").status_code == 404
 
 
 def test_the_cost_structure_adds_up(

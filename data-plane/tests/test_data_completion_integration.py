@@ -189,7 +189,8 @@ def test_part_2_ageing_counts_the_opening_bills(client: TestClient, synced: int)
         # Every amount of these parties is in a bill: the opening ones included.
         assert Decimal(row["uncovered"]) == 0, (kind, row)
         # The opening bills, from March 2025, are over 90 days past due by October 2026.
-        assert Decimal(row["buckets"]["over_90"]) > 0, (kind, row)
+        assert Decimal(row["over_90"]) > 0, (kind, row)
+        assert Decimal(row["buckets"]["over_180"]) > 0, (kind, row)  # 19 months: over 180
 
 
 def test_part_2_opening_bills_add_up_to_the_openings(synced: int) -> None:

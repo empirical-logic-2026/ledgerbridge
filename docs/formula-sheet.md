@@ -4,8 +4,8 @@ This sheet gives the formula of each figure that the dashboard shows. Use it to 
 
 | Field | Value |
 | --- | --- |
-| Version | 2.1 |
-| Date | 2026-11-11 |
+| Version | 2.2 |
+| Date | 2026-11-12 |
 | Requirement | RPT-015 |
 | Language | ASD-STE100 Simplified Technical English |
 | Word and PDF | `docs/export/formula-sheet.docx`, `docs/export/formula-sheet.pdf` (`./dev.ps1 docs-export`) |
@@ -48,6 +48,7 @@ Each entry has these items:
 | `F-CC` | Cost centres |
 | `F-STK` | Stock |
 | `F-TRN` | Transactions |
+| `F-VCH` | Vouchers |
 | `F-PTY` | Parties and bills |
 | `F-REG` | Registers |
 | `F-OVR` | Overview |
@@ -1097,6 +1098,18 @@ The tests prove these rules on the test company against the Stock Summary and th
 | Companies | The company of the voucher. |
 | Check in Tally | 1. Open Display More Reports › Day Book. 2. Set the same dates. 3. Show the details (Alt+F1). |
 
+#### F-VCH-001 Voucher total
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ debits` and `Σ credits` of the effective lines of the voucher |
+| In words | The total of the debit lines and the total of the credit lines of one voucher. The two totals are equal. A cancelled voucher has no lines. |
+| Data | `voucher_lines` (`amount`, `is_effective`) of the voucher. |
+| Signs | S1. Each total shows positive. |
+| Dates | The date of the voucher. |
+| Companies | The company of the voucher. |
+| Check in Tally | 1. Open the voucher in the Day Book. 2. Read the totals of the debit and credit columns. |
+
 ## 13. Parties and bills (`F-PTY`)
 
 **Data for each `F-PTY` entry:** the ledgers of the party (`parties`, `ledgers.party_id`). Bills come from `opening_bills` and from `bill_allocations` (`bill_name`, `bill_type`, `bill_date`, `due_date`, `amount`) of effective vouchers. A bill with no due date is due on its bill date plus the credit days of the party.
@@ -1235,29 +1248,105 @@ The tests prove these rules on the test company against the Stock Summary and th
 | Companies | The company of the invoice. |
 | Check in Tally | 1. Open Outstandings. 2. Read the due date of the bill. |
 
-#### F-PTY-012 Ageing bucket
+#### F-PTY-012 Ageing bucket, five buckets (retired)
 
-| Item | Value |
-| --- | --- |
-| Expression | `Σ F-PTY-004` for each bucket of days past the due date |
-| In words | The outstanding bills at the date, by the days after their due date. The buckets are: not due, 1–30, 31–60, 61–90 and more than 90 days. |
-| Data | As for each `F-PTY` entry. |
-| Signs | As F-PTY-001. |
-| Dates | D2. |
-| Companies | C1, C2. |
-| Check in Tally | 1. Open Statements of Accounts › Outstandings › Ageing Analysis. 2. Set the same date. 3. Select ageing by due date. |
+Retired on 2026-11-12. Replaced by F-PTY-014. The old formula had five buckets: not due, 1–30, 31–60, 61–90 and more than 90 days past the due date.
 
 #### F-PTY-013 Not in bills
 
 | Item | Value |
 | --- | --- |
-| Expression | `F-PTY-001 − F-PTY-003` |
-| In words | The balance that is not in bills. It includes amounts on account, and differences between an opening balance and its opening bills. Validation gives a warning for such a difference (LB-VAL-041). |
+| Expression | `F-PTY-001 − F-PTY-003` = `F-PTY-015 + F-PTY-016 + F-PTY-020 + F-PTY-017` |
+| In words | The balance that is not in bills. It has four parts: amounts on account, opening-bill differences, the exchange-rate revaluation and other amounts. |
 | Data | F-PTY-001 and F-PTY-003. |
 | Signs | As F-PTY-001. |
 | Dates | D2. |
 | Companies | C1, C2. |
 | Check in Tally | 1. Read the closing balance of the party. 2. Subtract the total pending in Outstandings. |
+
+#### F-PTY-014 Ageing bucket
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ F-PTY-004` for each bucket of days |
+| In words | The outstanding bills at the date, by their age in days. The buckets are: not due, 1–30, 31–60, 61–90, 91–180 and more than 180 days. By default, the age is the days after the due date. With the option "by bill date", the age is the days after the bill date. A bill is overdue only after its due date, with each option. |
+| Data | As for each `F-PTY` entry. |
+| Signs | As F-PTY-001. An advance is negative and goes in the bucket of its age. |
+| Dates | D2. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open Statements of Accounts › Outstandings › Ageing Analysis. 2. Set the same date. 3. Select ageing by due date, or by bill date. 4. Set the same periods of days. |
+
+#### F-PTY-015 On account
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ amount` of the allocations with the type "On Account", up to the date |
+| In words | Amounts that a voucher put on the ledger of the party without a bill. For example, a receipt that is not against an invoice. |
+| Data | `bill_allocations` (`bill_type = 'on_account'`) of effective vouchers. |
+| Signs | As F-PTY-001. |
+| Dates | D2. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open Outstandings › Ledger of the party. 2. Read the amounts "On Account". |
+
+#### F-PTY-016 Opening-bill difference
+
+| Item | Value |
+| --- | --- |
+| Expression | `opening balance of the ledger − Σ opening bills of the ledger` |
+| In words | The part of the opening balance that the opening bills do not explain. The formula uses only ledgers that have opening bills. Validation gives a warning for such a difference (LB-VAL-041). |
+| Data | `ledgers.opening_balance` and `opening_bills.amount`. |
+| Signs | As F-PTY-001. |
+| Dates | The start of the books. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the ledger of the party. 2. Compare the opening balance with the total of its opening bills (Alt+F1 in the ledger master). |
+
+#### F-PTY-017 Other amounts not in bills
+
+| Item | Value |
+| --- | --- |
+| Expression | `F-PTY-013 − F-PTY-015 − F-PTY-016 − F-PTY-020` |
+| In words | The rest of the balance that is not in bills. For example, the entries of a ledger that the books do not keep bill by bill. |
+| Data | F-PTY-013, F-PTY-015, F-PTY-016 and F-PTY-020. |
+| Signs | As F-PTY-001. |
+| Dates | D2. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the ledger master of the party. 2. Check "Maintain balances bill-by-bill". |
+
+#### F-PTY-018 Over 90 days
+
+| Item | Value |
+| --- | --- |
+| Expression | `F-PTY-014 (91–180) + F-PTY-014 (more than 180)` |
+| In words | The outstanding bills that are more than 90 days old. |
+| Data | F-PTY-014. |
+| Signs | As F-PTY-001. |
+| Dates | D2. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the Ageing Analysis at the same date. 2. Add the columns after 90 days. |
+
+#### F-PTY-019 Average days to pay (all parties)
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ(abs(amount) × days) ÷ Σ abs(amount)`, whole days |
+| In words | For each amount against a bill in the period, the days from the bill date to the payment. The formula weights each amount. It uses all the parties on the page. |
+| Data | As for each `F-PTY` entry. |
+| Signs | S5. |
+| Dates | D1. |
+| Companies | C1, C2, C4. |
+| Check in Tally | Tally has no such report. 1. Open the bill-wise ledgers of the parties. 2. Calculate the expression. |
+
+#### F-PTY-020 Exchange-rate revaluation
+
+| Item | Value |
+| --- | --- |
+| Expression | `revalued balance − book balance`, at the date |
+| In words | For a party in a foreign currency, the difference between its balance at the current exchange rate and its balance in the books. The balance due uses the revalued balance, as the Balance Sheet of Tally does. The bills stay at their book amounts. |
+| Data | `fx_revaluation_snapshots` (`revalued_value`, `book_value`) at the date. Tally supplies them only on statement dates. |
+| Signs | As F-PTY-001. |
+| Dates | D7 rules apply: only on statement dates. |
+| Companies | C1, C2. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Expand Sundry Debtors or Sundry Creditors to the party. 3. Compare its balance with the ledger in the books. |
 
 ## 14. Registers (`F-REG`)
 
@@ -1502,6 +1591,18 @@ The tests prove these rules on the test company against the Stock Summary and th
 | Companies | As the column. |
 | Check in Tally | Add the rows of the group. |
 
+#### F-TBL-003 Count of rows
+
+| Item | Value |
+| --- | --- |
+| Expression | `COUNT` of the rows, or of the different vouchers |
+| In words | The number of lines (or vouchers) in a row, a group or the total of the Explore page. |
+| Data | The rows of the dataset. |
+| Signs | S5. |
+| Dates | As the dataset. |
+| Companies | C1. |
+| Check in Tally | Count the vouchers in the same report of Tally. |
+
 ## 20. How the dashboard shows amounts (`F-FMT`)
 
 #### F-FMT-001 Amounts in lakhs
@@ -1544,6 +1645,7 @@ The tests prove these rules on the test company against the Stock Summary and th
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 2.2 | 2026-11-12 | Ageing in six buckets, by due date or bill date (F-PTY-014; F-PTY-012 retired). The parts not in bills (F-PTY-015 to F-PTY-017, F-PTY-020). Over 90 days (F-PTY-018). Average days to pay (F-PTY-019). Count of rows (F-TBL-003). Voucher total (F-VCH-001). |
 | 2.1 | 2026-11-11 | Stock by godown and batch (F-STK-010 to F-STK-013), the inventory lines dataset (F-STK-014, F-STK-015), and the three sections proved against Tally. |
 | 2.0 | 2026-11-11 | Moved from `formulas.md` to `formula-sheet.md`. Written again in ASD-STE100, with a Terms section, common rules and one table for each figure. Current ratio, quick ratio and debt to equity in the form of Schedule III (F-BS-007 to F-BS-011, F-RAT-008 to F-RAT-010). F-RAT-001 to F-RAT-003 retired. Stock items (F-STK-009). Data health (F-DAT-001 to F-DAT-004). A test fails when a figure on a page has no ID. |
 | 1.2 | 2026-11-06 | Transactions (`F-TRN-001`). |

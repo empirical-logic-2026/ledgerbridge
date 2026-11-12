@@ -19,6 +19,7 @@ from api.v1 import (
     sales,
     stock,
     transactions,
+    vouchers,
 )
 
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(current_access)])
@@ -37,3 +38,4 @@ router.include_router(cash_flow.router)
 router.include_router(cost_centres.router)
 router.include_router(stock.router)
 router.include_router(transactions.router)
+router.include_router(vouchers.router)

@@ -6,7 +6,6 @@
 // outside it. Each row opens the item's page at that godown. Figures: GET /api/v1/stock/godowns.
 
 import { Typography } from 'antd'
-import { useState } from 'react'
 import type { Company, GodownRowOut, GodownSectionOut, StockGodownsOut } from '../../api/types.ts'
 import { KeyCard } from '../../components/KeyCard.tsx'
 import { ErrorState } from '../../components/loading/ErrorState.tsx'
@@ -18,7 +17,8 @@ import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import type { Query } from '../../router.ts'
 import { tokens } from '../../theme.ts'
-import { DIVIDES_STOCK, godownHref, noteStartsOpen, NOT_SPLIT, rememberNote, SECTION_WORDS, type SectionKey } from './godownWords.ts'
+import { DIVIDES_STOCK, godownHref, NOT_SPLIT, SECTION_WORDS, type SectionKey } from './godownWords.ts'
+import { PageNote } from '../../components/PageNote.tsx'
 
 function columns(query: Query, withItem: boolean): ExplorerColumn<GodownRowOut>[] {
   return [
@@ -58,23 +58,14 @@ export function GodownSections({ sections, query, withItem, id }: { sections: Go
   )
 }
 
-/** "How this page divides stock": a small info box the reader can close; open the first
- *  time, then as they last left it (in this browser). */
+/** "How this page divides stock": one point per section, under its own title. */
 export function DividesStockNote() {
-  const [open] = useState(noteStartsOpen)
-  return (
-    <details className="card godown-note" open={open} onToggle={(e) => rememberNote(e.currentTarget.open)}>
-      <summary className="godown-note-title">{DIVIDES_STOCK.title}</summary>
-      <ul className="godown-note-points">
-        {DIVIDES_STOCK.points.map((p) => (
-          <li key={p.section}>
-            <strong>{SECTION_WORDS[p.section].title}:</strong> {p.text}
-          </li>
-        ))}
-      </ul>
-      <p className="godown-note-footer">{DIVIDES_STOCK.footer}</p>
-    </details>
-  )
+  const note = {
+    title: DIVIDES_STOCK.title,
+    points: DIVIDES_STOCK.points.map((p) => ({ label: SECTION_WORDS[p.section].title, text: p.text })),
+    footer: DIVIDES_STOCK.footer,
+  }
+  return <PageNote page="stock-godowns" note={note} storageKey="ledgerbridge.godownNote" />
 }
 
 interface Props extends PanelProps {

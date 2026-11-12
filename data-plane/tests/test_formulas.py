@@ -27,7 +27,7 @@ ID = re.compile(r"F-[A-Z]{2,3}-\d{3}")
 # Numbers that aren't figures: identifiers, source settings shown as they are, paging.
 NOT_FIGURES = {
     "id", "company", "companies", "fy_start_month", "start_year", "credit_days",
-    "page", "page_size", "total_rows", "level",
+    "page", "page_size", "total_rows", "level", "line_no",
 }  # fmt: skip
 
 

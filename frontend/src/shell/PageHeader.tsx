@@ -155,7 +155,7 @@ function Updated({ companies }: { companies: Company[] }) {
 }
 
 export function PageHeader(props: Props) {
-  const tabs = props.group?.pages.filter((p) => p.built) ?? []
+  const tabs = props.group?.pages.filter((p) => p.built && !p.detail) ?? []
   const facets = props.page?.facets ?? []
   return (
     <section className="page-header" aria-label="Page">
