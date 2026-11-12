@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.63 |
+| Version | 0.64 |
 | Date | 2026-11-11 |
 | For | Anyone who wants to find their way around the repository without being a developer |
 | Related | [requirements.md](requirements.md) (what to build), [architecture.md](architecture.md) (how it is built, with the decision log), [schema.md](schema.md) (the database), [roadmap.md](roadmap.md) (milestones), [learning/docker.md](learning/docker.md) (the Docker setup), [pilot-runbook.md](pilot-runbook.md) (running the pilot) |
@@ -335,12 +335,12 @@ The Docker guide, [learning/docker.md](learning/docker.md), explains each of the
 | `src/format.ts` | Amounts in rupees with Indian grouping or in lakhs (`formatLakhs`), from the API's decimal strings without floating point; dates DD-MMM-YYYY. |
 | `src/amountFormat.ts`, `src/components/Money.tsx` | The Amounts setting (Lakhs or Full, in the top bar, remembered in the browser; F-FMT-001, F-FMT-002): a React context, `useAmountFormat`, and `<Money>`, which shows an amount as set (in lakhs with the exact amount on hover). |
 | `src/companyDisplayName.ts` | The frontend's single company-label helper: use the API's configured display name, falling back to its original name. |
-| `src/statuses.ts` | Shared business-readable labels, meanings and tones for payment, validation and source-loaded statuses. |
+| `src/statuses.ts` | Shared business-readable labels, meanings and tones for payment, validation and source-loaded statuses; `statusHint` gives a status as one line for the hover on a row's label (the tables have no Status or Meaning column). |
 | `src/theme.ts`, `src/theme.test.ts` | Our colours defined once as tokens, light and dark (charcoal, forest green, crimson, the profit line colours and the key cards' accents; written as `--lb-*` CSS variables by `Root.tsx`), and the test that every text colour meets WCAG AA and chart lines 3:1. |
 | `src/shell/` | The frame (ADR-050): `AppShell.tsx` (the top bar, the page header, the page), `TopBar.tsx` (dark: the logo and product name, the module tabs, the period toggles, the financial year, the comparison, light/dark), `PageHeader.tsx` (breadcrumbs, the title with its period, the company chips, the page's facets, "Updated N min ago", Copy link, the module's pages as tabs), `nav.ts` (the modules and pages, which are built, which facets each page applies, older paths that moved), `status.ts`, `SearchBar.tsx` and `search.ts` (for lists), `icons.tsx`. |
 | `src/assets/company-logo-wide.png` | The company logo in the top bar: a small copy (432×96) cut from `company-logo.png`, which isn't committed (1.3 MB). |
 | `src/apps/dashboard/ProfitLoss.tsx` | The Profit & Loss page (screen 6): the statement in the source's layout, a column per company, month or quarter, total, last year and change; the toolbar (Columns, Group by, Filters, Export CSV) and the options panel. |
-| `src/reporting/` | What every report page shares: `OptionsPanel.tsx` (the charcoal side panel: matches Tally, view as, columns, open related, saved views, export, "What is this?"), `reportTable.ts` (options in the URL, the visible columns, ₹ or ₹ lakh, the CSV of exactly the table), `savedViews.ts` (per browser), `download.ts`, `ReportFrame.tsx` (report title and active period), `ReportPeriod.tsx` (From/To dates, reporting period and optional Balance Sheet as-of note), and the table explorer on every table: `ExplorerTable.tsx` (filter, Columns, Group by with subtotals, sorting, saved views, Export CSV) with its logic in `explorer.ts`. (Not `reports/`: the root `.gitignore` excludes folders of that name.) |
+| `src/reporting/` | What every report page shares: `OptionsPanel.tsx` (the charcoal side panel: matches Tally, view as, columns, open related, saved views, export, "What is this?"), `reportTable.ts` (options in the URL, the visible columns, ₹ or ₹ lakh, the CSV of exactly the table), `savedViews.ts` (per browser), `download.ts`, `ReportFrame.tsx` (report title and active period), `ReportPeriod.tsx` (From/To dates, reporting period and optional Balance Sheet as-of note), and the table explorer on every table: `ExplorerTable.tsx` (filter, Columns, Group by with subtotals, sorting, saved views, Export CSV; a column's `hint` shows a row's explanation on hover over its cell) with its logic in `explorer.ts`. (Not `reports/`: the root `.gitignore` excludes folders of that name.) |
 | `src/apps/registers/Register.tsx` | The Sales register and the Purchase register, Day Book style, grouped by month with subtotals and the grand total, in the table explorer. |
 | `src/apps/parties/` | Customers and vendors: `Parties.tsx` (the lists), `PartyPage.tsx` (one party: key figures and tabs, screen 8), `words.ts` (what each kind calls things). |
 | `src/apps/registers/Monthly.tsx` | Monthly sales and monthly purchases: each month's figures and the closing balance, a chart, a month opening its register. |
@@ -474,6 +474,7 @@ Short commands (`status`, `summary`, `report`, `validate`, `fields`, `audit coun
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-12 | 0.64 | `statuses.ts` (`statusHint`) and the explorer's `hint` option: the status on hover instead of Status and Meaning columns. |
 | 2026-11-12 | 0.63 | `src/shell/pageNotes.ts` and a `notes.ts` in each app folder: a note on every page. |
 | 2026-11-12 | 0.62 | `core/vouchers.py`, `api/v1/vouchers.py`, `src/apps/books/VoucherPage.tsx`, `src/apps/data/Explore.tsx`, `exploreWords.ts`, `src/apps/parties/ageingWords.ts`, `src/components/PageNote.tsx`; `core/ageing.py` reworked; tests `test_ageing.py`, `test_vouchers.py`. |
 | 2026-11-11 | 0.61 | `core/stock_godowns.py`, `src/apps/stock/StockGodowns.tsx`, `godownWords.ts`, `devtools/load_test_fixtures.py` (`./dev.ps1 load-test-fixtures`); the `inventory_lines` dataset; tests `test_stock_godowns.py`, `tests/devtools/test_load_test_fixtures.py`. |

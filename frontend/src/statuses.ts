@@ -171,3 +171,9 @@ export function sourceStatusInfo(loaded: unknown): StatusInfo {
     tone: 'neutral',
   }
 }
+
+/** A status as one line for a hover on a row's label ("Payment Overdue: Customer has not paid by
+ *  the due date."): the tables have no Status or Meaning column (docs/design/dashboard.md 0.4). */
+export function statusHint(status: StatusInfo, timing = ''): string {
+  return `${status.label}${timing}: ${status.meaning}`
+}

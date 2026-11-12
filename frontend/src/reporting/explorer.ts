@@ -23,6 +23,7 @@ export interface ExplorerColumn<R> {
   wrap?: boolean // long text (e.g. a status's meaning) wraps onto more lines
   summed?: boolean // false: no subtotal or total (e.g. a closing balance); amounts and counts are summed
   formula?: string // an amount or count column's formula ID; default: its label's in help/glossary.ts
+  hint?: (row: R) => string | undefined // a row's explanation, on hover over its cell (e.g. a party's payment status)
 }
 
 export interface ExplorerState {

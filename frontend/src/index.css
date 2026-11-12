@@ -1267,3 +1267,11 @@ body,
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* a row's label with its explanation on hover (a party's payment status: no Status column) */
+.row-hint {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--lb-muted);
+  text-underline-offset: 3px;
+}

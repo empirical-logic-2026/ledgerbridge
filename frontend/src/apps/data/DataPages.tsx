@@ -23,6 +23,7 @@ const HEALTH: ExplorerColumn<Company>[] = [
   { key: 'synced', label: 'Last sync', kind: 'text', value: (c) => (c.health.last_sync_at ? timeAgo(c.health.last_sync_at) : 'Never') },
   {
     key: 'checks',
+    help: 'Hover a status to see what it means.',
     label: 'Status',
     kind: 'text',
     groupable: true,
@@ -32,10 +33,10 @@ const HEALTH: ExplorerColumn<Company>[] = [
       return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
     },
   },
-  { key: 'checks_meaning', label: 'Meaning', kind: 'text', value: (c) => validationStatusInfo(c.health.validation_status).meaning, wrap: true },
   { key: 'checked_to', label: 'Checked up to', kind: 'date', value: (c) => c.health.validated_as_of },
   {
     key: 'loaded',
+    help: 'Hover a status to see what it means.',
     label: 'Source status',
     kind: 'text',
     groupable: true,
@@ -45,7 +46,6 @@ const HEALTH: ExplorerColumn<Company>[] = [
       return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
     },
   },
-  { key: 'loaded_meaning', label: 'Meaning', kind: 'text', value: (c) => sourceStatusInfo(c.health.source_loaded).meaning, wrap: true },
 ]
 
 const COMPANIES: ExplorerColumn<Company>[] = [

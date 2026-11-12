@@ -8,7 +8,7 @@
 // needs a stored statement that isn't there. Everything opens the page behind it.
 
 import { Money } from '../../components/Money.tsx'
-import { Alert, Typography } from 'antd'
+import { Alert, Tooltip, Typography } from 'antd'
 import type { Home, SummaryLine, TopCustomerOut } from '../../api/types.ts'
 import { Donut } from '../../components/Donut.tsx'
 import { EChart } from '../../components/EChart.tsx'
@@ -17,7 +17,6 @@ import { KeyCard } from '../../components/KeyCard.tsx'
 import { ErrorState } from '../../components/loading/ErrorState.tsx'
 import { Loading } from '../../components/loading/Loading.tsx'
 import { StatementChange, StatementTable } from '../../components/StatementTable.tsx'
-import { StatusPill } from '../../components/StatusPill.tsx'
 import { formatDate, toLakhs } from '../../format.ts'
 import { type Query } from '../../router.ts'
 import { againstOf } from '../../selection.ts'
@@ -25,7 +24,7 @@ import { builtHref } from '../../shell/nav.ts'
 import { tokens, type Tokens } from '../../theme.ts'
 import { salesAndPurchases } from './homeChart.ts'
 import { COMBINED_NOTE } from './words.ts'
-import { partyPaymentStatusInfo } from '../../statuses.ts'
+import { partyPaymentStatusInfo, statusHint } from '../../statuses.ts'
 
 interface Props {
   home: Home | undefined
@@ -196,12 +195,10 @@ function TopCustomers({ home, query }: { home: Home; query: Query }) {
             <table className="report-table compact" aria-label="Top customers by net sales">
               <thead>
                 <tr>
-                  <th>Customer</th>
+                  <th><Explained label="Customer" help="Hover a row's name to see its payment status and what it means." /></th>
                   <th className="num"><Explained label="Net sales" /></th>
                   <th className="num"><Explained label="Share" /></th>
                   <th className="num"><Explained label="Balance due" /></th>
-                  <th><Explained label="Status" /></th>
-                  <th><Explained label="Meaning" /></th>
                 </tr>
               </thead>
               <tbody>
@@ -210,7 +207,11 @@ function TopCustomers({ home, query }: { home: Home; query: Query }) {
                   const status = partyPaymentStatusInfo(c.payment_status ?? c.status, c.balance, 'customers')
                   return (
                     <tr key={c.party_id}>
-                      <th className="wrap">{to ? <a href={to}>{c.name}</a> : c.name}</th>
+                      <th className="wrap">
+                        <Tooltip title={statusHint(status)}>
+                          <span className="row-hint" data-hint={statusHint(status)}>{to ? <a href={to}>{c.name}</a> : c.name}</span>
+                        </Tooltip>
+                      </th>
                       <td className="num">
                         <Amount value={c.net_sales} />
                       </td>
@@ -218,10 +219,6 @@ function TopCustomers({ home, query }: { home: Home; query: Query }) {
                       <td className="num">
                         <Amount value={c.balance} />
                       </td>
-                      <td>
-                        <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
-                      </td>
-                      <td className="wrap">{status.meaning}</td>
                     </tr>
                   )
                 })}

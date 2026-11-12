@@ -164,6 +164,16 @@ function renderApp(hash: string, onMode = vi.fn()) {
 
 const lastHomeRequest = () => requests.filter((r) => r.includes('/api/v1/home')).pop() ?? ''
 
+/** The hover text on a row's label: its status and what it means (the tables have no Status or Meaning column). */
+const hintOf = (scope: HTMLElement, label: string) =>
+  within(scope).getAllByText(label)[0].closest('[data-hint]')?.getAttribute('data-hint')
+/** A table's column headers. */
+const headersOf = (table: HTMLElement) => within(table).getAllByRole('columnheader').map((h) => h.textContent?.trim() ?? '')
+/** A table has no Status and no Meaning column. */
+const expectNoStatusColumns = (table: HTMLElement) =>
+  expect(headersOf(table).filter((h) => /^(Status|Meaning)\b/.test(h))).toEqual([])
+const OVERDUE_HINT = 'Payment Overdue: Customer has not paid by the due date.'
+
 describe('the dashboard', () => {
   beforeEach(() =>
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/home': home }),
@@ -230,8 +240,8 @@ describe('the dashboard', () => {
     const top = await screen.findByRole('table', { name: 'Top customers by net sales' })
     expect(top.parentElement).toHaveClass('report-table-wrap')
     expect(screen.getByRole('table', { name: 'Profit & Loss against last year' }).parentElement).toHaveClass('report-table-wrap')
-    const meaning = within(top).getAllByRole('cell').find((c) => c.textContent?.startsWith('Customer has not paid'))
-    expect(meaning).toHaveClass('wrap')
+    expect(within(top).getByText('Customer One').closest('th')).toHaveClass('wrap') // a long name wraps
+    expectNoStatusColumns(top)
   })
 
   it('copies the page\'s link, which holds the whole selection', async () => {
@@ -268,12 +278,12 @@ describe('the dashboard', () => {
     const summary = screen.getByRole('table', { name: 'Profit & Loss against last year' })
     expect(within(summary).getByText('▲ 9%')).toHaveClass('neutral')
     expect(within(summary).getByText('▼ 1.1 pts')).toHaveClass('bad')
-    // The top customers, each opening their page, with their status.
+    // The top customers, each opening their page, with their status on hover over the name.
     const top = screen.getByRole('table', { name: 'Top customers by net sales' })
     expect(within(top).getByRole('link', { name: 'Customer One' })).toHaveAttribute('href', expect.stringMatching(/^#\/sales\/customers\/11/))
-    expect(within(top).getByText('Payment Overdue')).toHaveClass('status-bad')
-    expect(within(top).getByText('Fully Settled')).toHaveClass('status-good')
-    expect(within(top).getByText('Customer has not paid by the due date.')).toBeInTheDocument()
+    expect(hintOf(top, 'Customer One')).toBe(OVERDUE_HINT)
+    expect(hintOf(top, 'Customer Two')).toMatch(/^Fully Settled: /)
+    expectNoStatusColumns(top)
     // On the page itself (the note at the top says it too).
     expect(screen.getAllByText(/without inter-company eliminations/).some((el) => !el.closest('[data-note]'))).toBe(true)
     expect(screen.getAllByTestId('chart').length).toBeGreaterThan(1) // the charts and the sparklines
@@ -287,8 +297,8 @@ describe('the dashboard', () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/home': legacyHome })
     renderApp('#/overview/dashboard')
     const table = await screen.findByRole('table', { name: 'Top customers by net sales' })
-    expect(within(table).getByText('Payment Overdue')).toBeInTheDocument()
-    expect(within(table).getByText('Fully Settled')).toBeInTheDocument()
+    expect(hintOf(table, 'Customer One')).toMatch(/^Payment Overdue: /)
+    expect(hintOf(table, 'Customer Two')).toMatch(/^Fully Settled: /)
   })
 
   it('keeps the Overview usable and reports malformed customer entries', async () => {
@@ -614,6 +624,11 @@ describe('the Data module', () => {
     const table = screen.getByRole('table', { name: 'Data health by company' })
     expect(within(table).getByText('Beta').closest('tr')?.querySelector('.status-bad')).toHaveTextContent('Not loaded')
     expect(within(table).getAllByText('Passed')).toHaveLength(2)
+    // The status is this page's purpose: its two status columns stay, their meaning on hover; no Meaning column.
+    const headers = headersOf(table)
+    expect(headers.some((h) => h.startsWith('Status'))).toBe(true)
+    expect(headers.some((h) => h.startsWith('Source status'))).toBe(true)
+    expect(headers.filter((h) => h.startsWith('Meaning'))).toEqual([])
   })
 
   it('lists the companies', async () => {
@@ -780,8 +795,8 @@ describe('Receivables with ageing', () => {
     expect(within(bars).getByText('Over 180 days')).toBeInTheDocument()
     const table = screen.getByRole('table', { name: 'Customers by ageing' })
     expect(within(table).getByRole('link', { name: 'Customer One' })).toHaveAttribute('href', expect.stringMatching(/^#\/sales\/customers\/11/))
-    expect(within(table).getByText('Payment Overdue')).toHaveClass('status-bad')
-    expect(within(table).getByText('Customer has not paid by the due date.')).toBeInTheDocument()
+    expect(hintOf(table, 'Customer One')).toBe(OVERDUE_HINT)
+    expectNoStatusColumns(table)
     expect(within(screen.getByRole('navigation', { name: 'Parties pages' })).getByRole('link', { name: 'Payables' })).toHaveAttribute('href', expect.stringMatching(/^#\/parties\/payables/))
   })
 
@@ -805,6 +820,19 @@ describe('Receivables with ageing', () => {
     expect(window.location.hash).toContain('basis=bill_date')
   })
 
+  it('exports the parties by ageing as CSV without a status or its meaning', async () => {
+    const created: Blob[] = []
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: (b: Blob) => (created.push(b), 'blob:x'), revokeObjectURL: () => {} }))
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/ageing/customers': ageingFound })
+    renderApp('#/parties/receivables')
+    const table = await screen.findByRole('table', { name: 'Customers by ageing' })
+    fireEvent.click(within(table.closest('.explorer') as HTMLElement).getByRole('button', { name: 'Export CSV' }))
+    const [header, ...lines] = (await created[0].text()).split(/\r?\n/)
+    expect(header).toMatch(/^Customer,/)
+    expect(header).not.toMatch(/Status|Meaning/)
+    expect(lines.join('\n')).not.toMatch(/Payment Overdue|has not paid/)
+  })
+
   it('uses the legacy aggregate status field when payment_status is absent', async () => {
     const legacyAgeing = {
       ...ageingFound,
@@ -814,9 +842,9 @@ describe('Receivables with ageing', () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/ageing/customers': legacyAgeing })
     renderApp('#/parties/receivables')
     const table = await screen.findByRole('table', { name: 'Customers by ageing' })
-    expect(within(table).getByText('Payment Overdue')).toBeInTheDocument()
-    expect(within(table).queryByText('Payment Pending')).toBeNull()
-    expect(within(table).getByText('No bill details')).toBeInTheDocument()
+    expect(hintOf(table, 'Customer One')).toMatch(/^Payment Overdue: /)
+    expect(hintOf(table, 'Customer Two')).toMatch(/^No bill details: /)
+    expect(table.querySelectorAll('[data-hint^="Payment Pending"]')).toHaveLength(0)
   })
 
   it('shows direction-aware statuses and meanings for supplier payables', async () => {
@@ -834,11 +862,10 @@ describe('Receivables with ageing', () => {
     renderApp('#/parties/payables')
 
     const table = await screen.findByRole('table', { name: 'Vendors by ageing' })
-    expect(within(table).getByText('Supplier Advance')).toHaveClass('status-good')
-    expect(within(table).getByText('Your company has paid the supplier extra. This amount is available as credit.')).toBeInTheDocument()
-    expect(within(table).getByText('Payment to Supplier Overdue')).toHaveClass('status-bad')
-    expect(within(table).getByText('Payment to Supplier Pending')).toBeInTheDocument()
-    expect(within(table).getByText('Multiple bill statuses')).toBeInTheDocument()
+    expect(hintOf(table, 'Supplier Credit')).toBe('Supplier Advance: Your company has paid the supplier extra. This amount is available as credit.')
+    expect(hintOf(table, 'Overdue Supplier')).toMatch(/^Payment to Supplier Overdue: /)
+    expect(hintOf(table, 'Pending Supplier')).toMatch(/^Payment to Supplier Pending: /)
+    expect(hintOf(table, 'Mixed Supplier')).toMatch(/^Multiple bill statuses: /)
   })
 })
 
@@ -883,11 +910,11 @@ describe('the Sales dashboard', () => {
     const mix = screen.getByRole('group', { name: 'Net sales by channel' })
     expect(within(mix).getByRole('link', { name: 'Online Sales' })).toHaveAttribute('href', expect.stringMatching(/^#\/sales\/register\?.*channel=Online\+Sales/))
     expect(within(mix).getByText('20.7%')).toBeInTheDocument()
-    // The top customers with their status.
+    // The top customers with their status on hover over the name.
     const top = screen.getByRole('table', { name: 'Top customers' })
-    expect(within(top).getByText('Payment Overdue')).toHaveClass('status-bad')
-    expect(within(top).getByText('Fully Settled')).toHaveClass('status-good')
-    expect(within(top).getByText('Customer has not paid by the due date.')).toBeInTheDocument()
+    expect(hintOf(top, 'Customer One')).toBe(OVERDUE_HINT)
+    expect(hintOf(top, 'Customer Two')).toMatch(/^Fully Settled: /)
+    expectNoStatusColumns(top)
   })
 
   it('uses the legacy party status field when payment_status is absent', async () => {
@@ -898,8 +925,8 @@ describe('the Sales dashboard', () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/sales/dashboard': legacySales })
     renderApp('#/sales/dashboard')
     const table = await screen.findByRole('table', { name: 'Top customers' })
-    expect(within(table).getByText('Payment Overdue')).toBeInTheDocument()
-    expect(within(table).getByText('Fully Settled')).toBeInTheDocument()
+    expect(hintOf(table, 'Customer One')).toMatch(/^Payment Overdue: /)
+    expect(hintOf(table, 'Customer Two')).toMatch(/^Fully Settled: /)
   })
 
   it('classifies customer balances by normalized direction and requires bill details for overdue', async () => {
@@ -918,12 +945,11 @@ describe('the Sales dashboard', () => {
     renderApp('#/sales/dashboard')
 
     const table = await screen.findByRole('table', { name: 'Top customers' })
-    expect(within(table).getByText('Customer Advance')).toBeInTheDocument()
-    expect(within(table).getByText('Customer has paid extra. This amount is available as credit.')).toBeInTheDocument()
-    expect(within(table).getByText('Fully Settled')).toBeInTheDocument()
-    expect(within(table).getByText('Multiple bill statuses')).toBeInTheDocument()
-    expect(within(table).getByText('No bill details')).toBeInTheDocument()
-    expect(within(table).queryByText('Payment Overdue')).toBeNull()
+    expect(hintOf(table, 'Customer One')).toBe('Customer Advance: Customer has paid extra. This amount is available as credit.')
+    expect(hintOf(table, 'Customer Two')).toMatch(/^Fully Settled: /)
+    expect(hintOf(table, 'Customer Three')).toMatch(/^Multiple bill statuses: /)
+    expect(hintOf(table, 'Customer Four')).toMatch(/^No bill details: /)
+    expect(table.querySelectorAll('[data-hint^="Payment Overdue"]')).toHaveLength(0)
   })
 
   it('shows direction-aware supplier statuses and meanings in Purchases', async () => {
@@ -940,12 +966,12 @@ describe('the Sales dashboard', () => {
     renderApp('#/purchases/dashboard')
 
     const table = await screen.findByRole('table', { name: 'Top vendors' })
-    expect(within(table).getByText('Supplier Advance')).toHaveClass('status-good')
-    expect(within(table).getByText('Your company has paid the supplier extra. This amount is available as credit.')).toBeInTheDocument()
-    expect(within(table).getByText('Payment to Supplier Overdue')).toHaveClass('status-bad')
-    expect(within(table).getByText('Your company has not paid the supplier by the due date.')).toBeInTheDocument()
-    expect(within(table).getByText('Payment to Supplier Pending')).toBeInTheDocument()
-    expect(within(table).getByText('Your company needs to pay the supplier, but the due date has not passed.')).toBeInTheDocument()
+    expect(hintOf(table, 'Customer One')).toBe('Supplier Advance: Your company has paid the supplier extra. This amount is available as credit.')
+    expect(hintOf(table, 'Supplier Two')).toBe('Payment to Supplier Overdue: Your company has not paid the supplier by the due date.')
+    expect(hintOf(table, 'Supplier Three')).toBe(
+      'Payment to Supplier Pending: Your company needs to pay the supplier, but the due date has not passed.',
+    )
+    expectNoStatusColumns(table)
   })
 
   it('uses configured company labels in selectors, tables and the branch chart', async () => {
@@ -1006,11 +1032,11 @@ describe('the Sales dashboard', () => {
     expect(await screen.findByText(/Sales of the companies, period, customers and channels you chose/)).toBeInTheDocument()
   })
 
-  it('explains a status on hover', async () => {
+  it("explains a customer's status on hover over the name", async () => {
     renderApp('#/sales/dashboard')
     const top = await screen.findByRole('table', { name: 'Top customers' })
-    fireEvent.mouseEnter(within(top).getByText('Payment Overdue'))
-    expect(await screen.findByText('Customer has not paid by the due date.')).toBeInTheDocument()
+    fireEvent.mouseEnter(within(top).getByText('Customer One').closest('.row-hint') as HTMLElement)
+    expect(await screen.findByText(OVERDUE_HINT)).toBeInTheDocument()
   })
 
 })
@@ -1274,8 +1300,10 @@ describe('the customers and their pages', () => {
     expect(screen.getByText(/Main channel: Online Sales · Companies: Alpha · Credit period 30 days/)).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Overdue' })).toHaveTextContent('₹3.13 L')
     expect(screen.getByRole('region', { name: 'Average days to pay' })).toHaveTextContent('38 days')
-    expect(screen.getByText('Payment Overdue (64 days)')).toBeInTheDocument()
-    expect(screen.getByText('Fully Settled')).toBeInTheDocument()
+    const invoices = screen.getByRole('table', { name: 'Invoices' })
+    expect(hintOf(invoices, 'V-1')).toBe('Payment Overdue (64 days): Customer has not paid by the due date.')
+    expect(hintOf(invoices, 'V-3')).toMatch(/^Fully Settled: /)
+    expectNoStatusColumns(invoices)
     const crumbs = document.querySelector('.header-crumbs') as HTMLElement
     expect(crumbs).toHaveTextContent('Sales/Customers/Customer One')
     expect(within(crumbs).getByRole('link', { name: 'Customers' }).getAttribute('href')).toMatch(/^#\/sales\/customers(\?|$)/)
@@ -1296,11 +1324,11 @@ describe('the customers and their pages', () => {
     })
     renderApp('#/sales/customers/11')
     const invoices = await screen.findByRole('table', { name: 'Invoices' })
-    expect(within(invoices).getByText('Payment Overdue (64 days)')).toBeInTheDocument()
+    expect(hintOf(invoices, 'V-1')).toMatch(/^Payment Overdue \(64 days\): /)
     fireEvent.click(screen.getByRole('tab', { name: 'Outstanding bills' }))
     const bills = await screen.findByRole('table', { name: 'Outstanding bills' })
-    expect(within(bills).getByText('Payment Overdue')).toBeInTheDocument()
-    expect(within(bills).getByText('Customer has not paid by the due date.')).toBeInTheDocument()
+    expect(hintOf(bills, 'V-1')).toBe(OVERDUE_HINT)
+    expectNoStatusColumns(bills)
   })
 
   it('opens the ledger statement with the running balance, and says when bills cover less', async () => {
@@ -1911,6 +1939,19 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     renderApp('#/books/vouchers')
     expect(await screen.findByText('Open a voucher from a register, a table or a bill.')).toBeInTheDocument()
     expect(document.querySelector('[data-note]')).toBeNull()
+  })
+
+  // No table has a Status or Meaning column, except Data health, where the status is the page's
+  // purpose (docs/design/dashboard.md 0.4). A row's status is on hover over its label.
+  it.each(notePages)('#/%s has no Status or Meaning column (except Data health)', async (page) => {
+    stubApi(noteAnswers)
+    renderApp(`#/${page}`)
+    await waitFor(() => expect(document.querySelectorAll('[data-note]').length).toBe(1))
+    await waitFor(() => expect(screen.queryByTestId('loading')).toBeNull())
+    const headers = [...document.querySelectorAll('thead th')].map((th) => th.textContent?.trim() ?? '')
+    expect(headers.filter((h) => h.startsWith('Meaning'))).toEqual([])
+    const status = headers.filter((h) => /^(Source )?[Ss]tatus\b/.test(h))
+    expect(status).toEqual(page === 'data/health' ? expect.arrayContaining([expect.stringMatching(/^Status/)]) : [])
   })
 
   it('reads the sheet', () => {
