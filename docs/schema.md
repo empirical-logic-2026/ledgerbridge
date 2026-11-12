@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.54 (Draft) |
+| Version | 0.55 (Draft) |
 | Date | 2026-11-11 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -238,6 +238,7 @@ Source group hierarchy (Tally groups), kept as-is per entity.
 | predefined_role | VARCHAR(64) NULL | **Migration 0021 (RPT-013).** Which of the source's own predefined groups this is, renamed or not, in our vocabulary (Tally: RESERVEDNAME in lower case, words joined by `_`, e.g. `sales_accounts`); NULL for groups the user created. Filled by the transform: after migration 0021, `transform rebuild`. |
 | standard_account_id | BIGINT UNSIGNED NULL | Default mapping for ledgers under this group. |
 | sort_position | INT NULL | Where the source lists it among its siblings (Tally `SORTPOSITION`; its predefined primary groups 10 to 280, groups the user made 500). The statements order primary groups by it, then by nature, as the source's Trial Balance does; lines are compared by label, so the order never changes what matches. Migration `0035`. |
+| nets_for_reporting | BOOLEAN NULL | Whether the source's reports show the group's balances netted as one figure (Tally `ISADDABLE`, "Nett Debit/Credit Balances for Reporting"). Stored by the statements refresh, which reads it with the statements; the Trial Balance page splits debit and credit by it (ADR-055). NULL: not read yet. Migration `0038`. |
 
 #### `ledgerbridge_accounting.ledgers` [SRC]
 
@@ -263,6 +264,7 @@ Source group hierarchy (Tally groups), kept as-is per entity.
 | is_cost_centre_applicable | BOOLEAN | |
 | sort_position | INT NULL | Where the source lists it (Tally `SORTPOSITION`; 1000 for every ledger by default: the source lists them by name). Migration `0035`. |
 | affects_stock | BOOLEAN NULL | Tally `AFFECTSSTOCK` (a purchase or sales ledger used with inventory). NULL: not read. Migration `0035`. |
+| carries_profit | BOOLEAN NULL | Whether the ledger carries the profit of earlier years (directly under the source's Primary, e.g. Tally's Profit & Loss A/c). Stored by the statements refresh; the Trial Balance page adds earlier years' profit to it (ADR-055). NULL: not read yet. Migration `0038`. |
 | gstin | VARCHAR(32) NULL | |
 | tax_type | ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other') NULL | Set for tax ledgers. Voucher lines posted to them become `tax_lines` (migration `0004`, M3). |
 
@@ -904,6 +906,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
 | 2026-11-06 | 0.45 | `stock_values.scope` `item`: each stock item's own value at the statement dates (migration 0029; the Stock page). |
 | 2026-11-05 | 0.44 | RPT-017 / ADR-051: append-only observed voucher versions, posting snapshots, ambiguity-aware comparison rows and deletion detection timestamps (migration 0028); nullable `vouchers.source_altered_at` stores Tally `UPDATEDDATETIME` without timezone conversion (migration 0027). |
+| 2026-11-12 | 0.55 | `account_groups.nets_for_reporting`, `ledgers.carries_profit` (migration 0038): reporting settings stored with the statements, for the Trial Balance page (ADR-055). |
 | 2026-11-11 | 0.54 | `short_term_borrowings` (migration 0037, Section 4.10): loans marked as short-term for the ratios (ADR-052). |
 | 2026-11-09 | 0.53 | `voucher_lines.utr` and `utr_source` stored only: not shown in the dashboard (no `/api/v1` response or CSV export). No migration. |
 | 2026-11-09 | 0.52 | Other masters (migration 0036): `stock_categories`, `items.stock_category_id`, `reorder_level`, `min_order_quantity`, `item_prices`, `source_budgets`, `source_budget_lines`. |

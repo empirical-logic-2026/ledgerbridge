@@ -55,7 +55,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from connectors.base import SourceStatements, StatementLine
@@ -628,6 +628,7 @@ def refresh(
     now = utcnow()
     _store_stock(session, entity_id, connection_id, origin, source, now)
     _store_revaluations(session, entity_id, connection_id, origin, source, now)
+    store_reporting_settings(session, entity_id, source)
     ours = build(session, entity_id, source, tolerance)
     _store_lines(
         session, entity_id, source.as_of, "source", [(_section(x), x) for x in source.lines], now
@@ -693,6 +694,19 @@ def _store_stock(
                 read_at=now,
             )
         )
+
+
+def store_reporting_settings(session: Session, entity_id: int, source: SourceStatements) -> None:
+    """The settings the source's reports were laid out with (migration 0038): the groups it
+    nets for reporting and the ledgers that carry the profit of earlier years, so the Trial
+    Balance page can lay itself out the same way (core/trial_balance.py)."""
+    for model, column, keys in (
+        (A.AccountGroup, "nets_for_reporting", source.netted_groups),
+        (A.Ledger, "carries_profit", source.profit_carriers),
+    ):
+        base = update(model).where(model.entity_id == entity_id, model.is_deleted.is_(False))
+        flag = model.source_key.in_(sorted(keys)) if keys else False
+        session.execute(base.values({column: flag}))
 
 
 def _store_revaluations(

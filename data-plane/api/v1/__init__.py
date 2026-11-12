@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 
 from api.access import current_access
 from api.v1 import (
+    accounts,
     ageing,
     cash_flow,
     companies,
@@ -12,6 +13,7 @@ from api.v1 import (
     datasets,
     facets,
     home,
+    ledgers,
     monthly,
     parties,
     registers,
@@ -39,3 +41,5 @@ router.include_router(cost_centres.router)
 router.include_router(stock.router)
 router.include_router(transactions.router)
 router.include_router(vouchers.router)
+router.include_router(accounts.router)
+router.include_router(ledgers.router)

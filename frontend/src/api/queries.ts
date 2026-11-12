@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import { comparisonQuery, type CompareKind, type PeriodChoice } from '../selection.ts'
 import type { DatasetInfo, DatasetResult, Value as DatasetValue } from './types.ts'
-import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport, StockGodownsOut, StockItemPageOut, StockOut, TransactionsOut, VoucherOut } from './types.ts'
+import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, DrillOut, Home, LedgerOut, LedgerStatementOut, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport, StockGodownsOut, StockItemPageOut, StockOut, TransactionsOut, TrialBalanceOut, VoucherOut } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -245,6 +245,42 @@ export function useTransactions(companies: number[] | undefined, period: PeriodC
     queryKey: ['transactions', companies, period],
     queryFn: () => getJson<TransactionsOut>('/api/v1/transactions', { company: companies, ...periodQuery(period) }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+/** The Trial Balance at the period's statement date, every group and ledger (core/trial_balance.py). */
+export function useTrialBalance(companies: number[] | undefined, period: PeriodChoice | undefined) {
+  return useQuery({
+    queryKey: ['trial-balance', companies, period],
+    queryFn: () => getJson<TrialBalanceOut>('/api/v1/reports/trial-balance', { company: companies, ...periodQuery(period) }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+/** A Balance Sheet line's sub-groups and ledgers at the Balance Sheet's date (core/balance_sheet_drill.py). */
+export function useBalanceSheetDrill(companies: number[] | undefined, period: PeriodChoice | undefined, line: string | undefined) {
+  return useQuery({
+    queryKey: ['balance-sheet-drill', companies, period, line],
+    queryFn: () => getJson<DrillOut>('/api/v1/reports/balance-sheet/drill', { company: companies, ...periodQuery(period), line }),
+    enabled: line !== undefined && companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+/** Ledgers whose name contains the text, for the Ledger statement's picker. */
+export function useLedgers(companies: number[] | undefined, q: string) {
+  return useQuery({
+    queryKey: ['ledgers', companies, q],
+    queryFn: () => getJson<LedgerOut[]>('/api/v1/ledgers', { company: companies, q: q || undefined }),
+    enabled: companies !== undefined && companies.length > 0,
+  })
+}
+
+/** One ledger's statement for the period (core/ledger_statement.py). */
+export function useLedgerStatement(id: string | undefined, companies: number[] | undefined, period: PeriodChoice | undefined) {
+  return useQuery({
+    queryKey: ['ledger-statement', id, companies, period],
+    queryFn: () => getJson<LedgerStatementOut>(`/api/v1/ledgers/${id}/statement`, periodQuery(period)),
+    enabled: id !== undefined && companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }
 

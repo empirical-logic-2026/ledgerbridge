@@ -64,9 +64,17 @@ def test_pilot_sync_status_and_summary_print_no_names(db: Session, run_cli) -> N
     assert (connection.status, connection.config["origin"]) == ("paused", "backup")
 
 
-def test_pilot_refuses_trial_balance(db: Session, run_cli) -> None:  # noqa: ANN001
-    code, out = run_cli("trial-balance", "--entity-code", "ANY")
-    assert code == 2 and "test environment only" in out
+def test_trial_balance_needs_one_company_with_stored_data(db: Session, run_cli) -> None:  # noqa: ANN001
+    """On the pilot too (screen only, the developer's request of 2026-11-12); the layout is
+    proved in test_trial_balance.py."""
+    code, out = run_cli("trial-balance", "--connection", "tally-pilot")
+    assert code == 2
+    assert "needs one --entity" in out
+    code, out = run_cli(
+        "trial-balance", "--connection", "tally-pilot", "--entity", "Secret Client Pvt Ltd"
+    )
+    assert code == 2
+    assert "Secret Client" not in out
 
 
 def test_connect_reports_missing_entities_by_count_in_pilot(db: Session, run_cli) -> None:  # noqa: ANN001

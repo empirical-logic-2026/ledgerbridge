@@ -272,6 +272,19 @@ export function PartyPage(props: Props) {
                 children: (
                   <>
                     <p className="report-note">Opening balance on {formatDate(party.period.start)}: {drCr(party.statement_opening)}</p>
+                    {party.ledger_ids.length > 0 && (
+                      <p className="report-note">
+                        Ledger statement as in Tally:{' '}
+                        {party.ledger_ids.map((id, n) => (
+                          <span key={id}>
+                            {n > 0 && ' · '}
+                            <a href={builtHref(['books', 'ledger', String(id)], query)}>
+                              {party.ledger_ids.length > 1 ? `ledger ${n + 1}` : 'open the ledger statement'}
+                            </a>
+                          </span>
+                        ))}
+                      </p>
+                    )}
                     {party.statement_truncated && <Alert type="warning" showIcon message="Only the first 20,000 entries are shown: choose fewer months." />}
                     <ExplorerTable id={`${kind}-statement`} label="Ledger statement" columns={statementColumns(names, combined, query)} rows={party.statement}
                       rowKey={(e) => String(e.voucher_id)} pageSize={500} totalLabel="Total" />

@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-71 tables, 844 columns.
+71 tables, 846 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -325,6 +325,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `predefined_role` | VARCHAR(64) | yes |  | **Migration 0021 (RPT-013).** Which of the source's own predefined groups this is, renamed or not, in our vocabulary (Tally: RESERVEDNAME in lower case, words joined by `_`, e.g. `sales_accounts`); NULL for groups the user created. Filled by the transform: after migration 0021, `transform rebuild`. |
 | `standard_account_id` | BIGINT UNSIGNED | yes | FK | Default mapping for ledgers under this group. |
 | `sort_position` | INTEGER | yes |  | Where the source lists it among its siblings (Tally `SORTPOSITION`; its predefined primary groups 10 to 280, groups the user made 500). The statements order primary groups by it, then by nature, as the source's Trial Balance does; lines are compared by label, so the order never changes what matches. Migration `0035`. |
+| `nets_for_reporting` | BOOL | yes |  | Whether the source's reports show the group's balances netted as one figure (Tally `ISADDABLE`, "Nett Debit/Credit Balances for Reporting"). Stored by the statements refresh, which reads it with the statements; the Trial Balance page splits debit and credit by it (ADR-055). NULL: not read yet. Migration `0038`. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
 | `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |
 | `origin` | ENUM('live','backup','file','manual') | no |  | live or backup (IMP-004). |
@@ -370,6 +371,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `is_cost_centre_applicable` | BOOL | no |  | Whether cost centre applicable. |
 | `sort_position` | INTEGER | yes |  | Where the source lists it (Tally `SORTPOSITION`; 1000 for every ledger by default: the source lists them by name). Migration `0035`. |
 | `affects_stock` | BOOL | yes |  | Tally `AFFECTSSTOCK` (a purchase or sales ledger used with inventory). NULL: not read. Migration `0035`. |
+| `carries_profit` | BOOL | yes |  | Whether the ledger carries the profit of earlier years (directly under the source's Primary, e.g. Tally's Profit & Loss A/c). Stored by the statements refresh; the Trial Balance page adds earlier years' profit to it (ADR-055). NULL: not read yet. Migration `0038`. |
 | `gstin` | VARCHAR(32) | yes |  | GST registration number. |
 | `tax_type` | ENUM('cgst','sgst','igst','cess','tds','tcs','vat','other') | yes |  | cgst, sgst, igst, cess, tds, tcs, vat for tax ledgers. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |

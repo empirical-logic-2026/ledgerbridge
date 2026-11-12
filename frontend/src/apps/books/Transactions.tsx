@@ -34,7 +34,7 @@ function columns(page: TransactionsOut, companies: Company[], query: Query): Exp
     { key: 'number', label: 'Voucher Number', kind: 'text', value: (r) => r.voucher_number, link: (r) => builtHref(['books', 'vouchers', String(r.voucher_id)], query) },
     { key: 'reference', label: 'Reference Number', kind: 'text', value: (r) => r.reference ?? null },
     { key: 'party', label: 'Party Name', kind: 'text', value: (r) => r.party ?? null, groupable: true, wrap: true },
-    { key: 'ledger', label: 'Ledger Name', kind: 'text', value: (r) => r.ledger, groupable: true, wrap: true },
+    { key: 'ledger', label: 'Ledger Name', kind: 'text', value: (r) => r.ledger, groupable: true, wrap: true, link: (r) => builtHref(['books', 'ledger', String(r.ledger_id)], query) },
     {
       key: 'particulars',
       label: 'Particulars',

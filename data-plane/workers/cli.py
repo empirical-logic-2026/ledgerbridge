@@ -17,7 +17,8 @@ result. The worker's schedule (workers/celery_app.py) runs the same sync code wi
     python -m workers.cli status
     python -m workers.cli summary
     python -m workers.cli report [--entity NAME] [--details] [--format markdown]
-    python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
+    python -m workers.cli trial-balance --connection tally-test --entity "LedgerBridge Test Co"
+        [--date 2026-10-02] [--detailed]
     python -m workers.cli transform-retry --connection tally-pilot [--entity NAME]
     python -m workers.cli transform-rebuild --connection tally-pilot [--entity NAME]
     python -m workers.cli transform-explain --connection tally-pilot [--check-source]
@@ -44,16 +45,18 @@ its stable code in brackets, e.g. `Balances at year ends [year_end_mismatch, LB-
 (core/problems.py, docs/error-catalogue.md); validation counts are compared with the
 previous run (workers/report.py). Status words are coloured when LB_COLOR=1 (workers/style.py).
 
-Output shows names, keys, counts, check codes and pass/fail only, except `trial-balance`,
-which prints balances for the developer's own use. Validation results with amounts are in
-the database and the API, never in this output.
+Output shows names, keys, counts, check codes and pass/fail only, except `trial-balance` and
+`loans`, which print balances on the screen for the developer's own use (nothing stored or
+logged). Validation results with amounts are in the database and the API, never in this
+output.
 
 **Outside the test environment (APP_ENV=pilot) the output holds no names at all:** no
 company, ledger or party names and no error messages (only their type), so it can be
-shared as counts and pass/fail. Companies appear as "entity <id> (company <n>)", and
-`trial-balance`
-refuses to run (docs/pilot-runbook.md). Unexpected errors print their type and a short
-message only, never SQL statements or parameters.
+shared as counts and pass/fail. Companies appear as "entity <id> (company <n>)". The two
+exceptions above print names and amounts there too, on the developer's request (`loans`
+2026-11-11, `trial-balance` 2026-11-12: to hold the Trial Balance beside Tally's; screen
+only, docs/pilot-runbook.md). Unexpected errors print their type and a short message only,
+never SQL statements or parameters.
 
 `entities` only reads: it never creates or changes a connection. Connections created by
 any command start **paused**; only `connect --activate` makes the worker sync them on a
@@ -94,7 +97,6 @@ from core.models.system import (
 )
 from core.problems import BY_CODE, for_error, title
 from core.statement_differences import KINDS
-from core.transform import trial_balance
 from core.validation import ValidationReport
 from workers import currencies, fx_rules, loans, monthly_sales, on_hold, style
 from workers.analyse import analyse
@@ -154,6 +156,7 @@ from workers.sync import (
     run_transform,
     running_run,
 )
+from workers.trial_balance import print_trial_balance
 from workers.validate import (
     AfterRun,
     alert_for_run,
@@ -495,8 +498,18 @@ def _parser() -> argparse.ArgumentParser:
     report.add_argument("--details", action="store_true", help="expand every section")
     report.add_argument("--format", choices=("text", "markdown"), default="text")
 
-    tb = sub.add_parser("trial-balance", help="trial balance computed from voucher lines")
-    tb.add_argument("--entity-code", required=True)
+    tb = sub.add_parser(
+        "trial-balance",
+        help="one company's Trial Balance at a date in Tally's layout (screen only; ADR-055); "
+        "database only",
+    )
+    connection_args(tb)
+    tb.add_argument("--entity", action="append", help="the company's name (one)")
+    tb.add_argument(
+        "--date", dest="on", type=date.fromisoformat,
+        help="at the last stored statement date on or before it (default: today)",
+    )  # fmt: skip
+    tb.add_argument("--detailed", action="store_true", help="with the sub-groups and ledgers")
     return parser
 
 
@@ -631,10 +644,7 @@ def _run(session: Session, args: argparse.Namespace) -> int:
     if args.command == "report":
         return _report(session, args)
     if args.command == "trial-balance":
-        if not _show_names():
-            print("trial-balance prints amounts: test environment only.", file=sys.stderr)
-            return 2
-        return _trial_balance(session, args.entity_code)
+        return _trial_balance(session, args)
 
     if args.command == "entities":
         return _list_entities(session, args)
@@ -2021,24 +2031,22 @@ def _promote(session: Session, args: argparse.Namespace) -> int:
     return 0
 
 
-def _trial_balance(session: Session, entity_code: str) -> int:
-    entity = session.scalar(select(Entity).where(Entity.code == entity_code))
-    if entity is None:
-        print(f"No entity with code {entity_code}", file=sys.stderr)
+def _trial_balance(session: Session, args: argparse.Namespace) -> int:
+    """One company's Trial Balance in Tally's layout (workers/trial_balance.py), screen only.
+    The source isn't contacted."""
+    if not args.entity or len(args.entity) != 1:
+        print("trial-balance needs one --entity (the company's name).", file=sys.stderr)
         return 2
-    rows = trial_balance(session, entity.id)
-    total_dr = total_cr = 0
-    print(f"Trial balance of {entity.name} (from voucher lines; debit positive)")
-    print(f"  {'Ledger':<32}{'Debit':>14}{'Credit':>14}")
-    for name, balance in rows:
-        if balance == 0:
-            continue
-        dr, cr = (balance, 0) if balance > 0 else (0, -balance)
-        total_dr += dr
-        total_cr += cr
-        print(f"  {name:<32}{dr:>14,.2f}{cr:>14,.2f}")
-    print(f"  {'Total':<32}{total_dr:>14,.2f}{total_cr:>14,.2f}")
-    return 0 if total_dr == total_cr else 1
+    chosen = _stored_entities(session, args)
+    if chosen is None:
+        return 2
+    if not chosen:
+        print("That company has no stored data yet.", file=sys.stderr)
+        return 2
+    entity_id, _ = chosen[0]
+    entity = session.get(Entity, entity_id)
+    name = entity.name if entity is not None else args.entity[0]
+    return print_trial_balance(session, entity_id, name, args.on or date.today(), args.detailed)
 
 
 if __name__ == "__main__":

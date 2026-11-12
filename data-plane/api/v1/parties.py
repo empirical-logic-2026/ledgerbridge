@@ -122,6 +122,7 @@ class PartyOut(BaseModel):
     party_id: int
     name: str
     companies: list[int]  # of the selected companies, where the party exists
+    ledger_ids: list[int]  # its ledgers there: each opens its Ledger statement (ADR-055)
     group_path: list[str]
     credit_days: int | None
     main_channel: str | None
@@ -212,6 +213,7 @@ def _party_out(
         party_id=page.party.id,
         name=page.party.name,
         companies=page.party.companies,
+        ledger_ids=page.party.ledger_ids,
         group_path=page.party.group_path,
         credit_days=page.party.credit_days,
         main_channel=page.main_channel,

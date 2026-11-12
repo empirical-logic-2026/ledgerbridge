@@ -4,7 +4,7 @@ This document tells you what each page of the dashboard shows and how to check i
 
 | Field | Value |
 | --- | --- |
-| Version | 1.5 |
+| Version | 1.6 |
 | Date | 2026-11-12 |
 | Requirements | RPT-014 (layout and modules), RPT-015 (formulas), RPT-016 (periods and comparison) |
 | Language | ASD-STE100 Simplified Technical English |
@@ -306,7 +306,7 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 | Average days to pay (key card) | The days from bill to payment. | F-PTY-007 |
 | Invoices (tab) | Each invoice. Hover its number to see its payment status and its days. | F-SAL-014, F-PTY-011 |
 | Settlements (tab) | Each receipt. | F-PTY-006 |
-| Statement (tab) | The ledger with a running balance. | F-PTY-008 to F-PTY-010 |
+| Statement (tab) | The ledger with a running balance. A link opens the Ledger statement page of each ledger of the party (section 10.3). | F-PTY-008 to F-PTY-010 |
 | Bills (tab) | Each outstanding bill with its due date. Hover a bill to see its payment status. | F-PTY-003 to F-PTY-005, F-PTY-013 |
 | Monthly (tab) | Net sales and receipts for each month. | F-SAL-012, F-PTY-006 |
 
@@ -350,7 +350,7 @@ The Purchases module has four pages: Purchases dashboard, Purchase register, Mon
 
 ## 5. P&L & KPIs
 
-The module has two pages: Profit & Loss and Cost centres.
+The module has three pages: Profit & Loss, Trial Balance and Cost centres.
 
 **Filters:** None. A statement covers each customer, channel and voucher type.
 
@@ -418,6 +418,56 @@ The module has two pages: Profit & Loss and Cost centres.
 2. Set the same period.
 3. Compare each cost centre. Tally includes the centres below it.
 
+### 5.3 Trial Balance
+
+**Purpose:** The page shows each group with its debit or credit at the date, and the totals, as the Trial Balance of Tally.
+
+**Note at the top of the page.** The box says:
+
+- The page shows each group with its debit or credit at the statement date of the period, and the totals (F-TB-001, F-TB-002).
+- The page is for the financial year of the date, as Tally opens its Trial Balance.
+- Income and expenses count only this financial year (F-TB-003). The stock is the stock at the start of the year (F-TB-004).
+- Profit & Loss A/c adds the profit of earlier years (F-TB-005).
+- Thus after a year end, the page is different from our stored statements. These statements start at the books' beginning.
+- A group that Tally nets for reporting is one value. Other groups show their ledgers in two columns, as in Tally.
+- The page adds the companies without inter-company eliminations.
+- To compare, use the Trial Balance of Tally for the same financial year and the same date.
+
+**Contents:**
+
+| Item | What it shows | Formula IDs |
+| --- | --- | --- |
+| Trial Balance (table) | Particulars, Debit and Credit for each group, and the lines of Tally (Profit & Loss A/c, Unadjusted Forex Gain/Loss). | F-TB-001, F-TB-003 to F-TB-005 |
+| Total | The total of the debit column and the total of the credit column. | F-TB-002 |
+| Difference in opening balances | Shows only when the two totals are not equal. Then the Grand Total follows. | F-TB-002 |
+
+**Controls:** Condensed shows the groups. Detailed opens each group to its sub-groups and ledgers, as Alt+F1 in Tally. The address keeps your choice.
+
+**Drill-downs:** Click a group to open it or to close it. Click a ledger to open its statement (section 10.3). Click the opening stock to open the Stock summary.
+
+**Why the page can be different from the stored Trial Balance.** Our stored statements start at the books' beginning. Tally opens its Trial Balance for the current financial year. After a year end, three lines are different:
+
+- Income and expenses: only the entries of this year.
+- The stock: the stock at the start of this year.
+- Profit & Loss A/c: its own balance plus the profit of all earlier years.
+
+The tests prove the page against the Trial Balance of Tally at each recorded date, line by line and in total. The detailed rows are equal to the group and ledger balances of Tally for the year.
+
+**Difference in opening balances.** The exported Trial Balance of Tally has no such line. Thus we did not prove this row against Tally.
+
+**Before the first use.** The page needs two settings that `./dev.ps1 statements` reads from Tally. Run the command once after the update. Until then, the page shows a warning.
+
+**Loading and errors:** As section 1.5, with table rows.
+
+**Check against Tally:**
+
+1. Open Display More Reports › Trial Balance.
+2. Set the same financial year and the end date on the page.
+3. Compare each group and the two totals.
+4. Press Alt+F1. Compare the ledgers with the Detailed view.
+
+To print the same Trial Balance on your screen, run `./dev.ps1 trial-balance -Company "<name>" -Date <yyyy-mm-dd>`. Add `-Detailed` for the ledgers. The command does not keep the output.
+
 ## 6. Balance Sheet
 
 **Purpose:** The page shows the Balance Sheet at the period end, against the end of the comparison period, with the ratios.
@@ -431,12 +481,14 @@ The module has two pages: Profit & Loss and Cost centres.
 - The ratios follow Schedule III (F-RAT-008 to F-RAT-010). Hover a ratio to see its parts.
 - Thus the ratios can be different from the Ratio Analysis of Tally.
 - The page adds the companies without inter-company eliminations.
+- Click a line to see its groups and ledgers at the date (F-BS-012).
 - To compare, use the Balance Sheet of Tally at the same date.
 
 **Contents:**
 
 | Item | What it shows | Formula IDs |
 | --- | --- | --- |
+| Drill-down of a line (table) | The groups, sub-groups and ledgers of the line at the date. Each level adds up to the level above it. | F-BS-012 |
 | Balance Sheet (statement table) | Each line at the two dates, with the change and the totals of the two sides. | F-BS-005, F-BS-006, F-CMP-001 |
 | Liquidity and leverage (ratio tiles) | Current ratio, quick ratio, debt to equity and working-capital days. | F-RAT-008, F-RAT-009, F-RAT-010, F-RAT-007 |
 | Working capital (ratio tiles) | Receivable days, payable days and inventory days. | F-RAT-004, F-RAT-005, F-RAT-006 |
@@ -453,7 +505,9 @@ The module has two pages: Profit & Loss and Cost centres.
 
 To remove the mark, run `./dev.ps1 loans clear -Ledger <id>`. The audit log keeps each change. The list is on your screen only. The command does not keep it.
 
-**Drill-downs:** Hover or focus a ratio to see its parts. Click "What is this?" to read how the page works.
+**Drill-downs:** Click a line to see its groups and ledgers at the date. Open a group to go down. Click a ledger to open its statement (section 10.3). Click Close to go back. Hover or focus a ratio to see its parts. Click "What is this?" to read how the page works.
+
+**The rows of a drill-down.** The rows use the same figures as the stored line. Thus each level adds up to the line. The closing stock goes where the stock ledgers are. Profit & Loss A/c shows its opening balance and the current period. A line that the stored Balance Sheet takes from Tally (ADR-043) has the row "Forex revaluation difference (per Tally, under review)".
 
 **Loading and errors:** As section 1.5, with a statement table beside ratio tiles.
 
@@ -679,7 +733,7 @@ The module has two pages: Receivables and Payables.
 
 ## 10. Books
 
-The module has the page Transactions. Each voucher also has its own page.
+The module has two pages: Transactions and Ledger statement. Each voucher also has its own page.
 
 **Filters for the Books module:** None. Use the filter of the table, or group it.
 
@@ -700,7 +754,7 @@ The module has the page Transactions. Each voucher also has its own page.
 | --- | --- | --- |
 | Transactions (table) | Date, voucher type, voucher number, ledger, debit, credit, party, narration, cheque number, order number and more columns that you can show. | F-TRN-001, F-TBL-001 |
 
-**Drill-downs:** Click a voucher number to open the page of the voucher (section 10.2).
+**Drill-downs:** Click a voucher number to open the page of the voucher (section 10.2). Click a ledger to open its statement (section 10.3).
 
 **Loading and errors:** As section 1.5, with table rows.
 
@@ -742,6 +796,39 @@ A cancelled voucher has no lines. An optional voucher does not change the books.
 
 1. Open Display More Reports › Day Book at the date of the voucher.
 2. Open the voucher. Compare the lines, the bills and the stock.
+
+### 10.3 Ledger statement
+
+**Purpose:** The page shows one ledger for the period, as the ledger report of Tally.
+
+**How to open it:** Click a ledger on the Trial Balance, in the drill-down of the Balance Sheet, in Transactions or in Explore. On the page of a party, open the Ledger statement tab and click the link. Without a ledger, the page lets you find one by its name.
+
+**Note at the top of the page.** The box says:
+
+- The page shows the opening balance, each voucher of the period and the closing balance (F-LED-001 to F-LED-004).
+- Each row shows the other ledger, the debit or the credit, and the running balance.
+- An income or expense ledger starts each financial year at zero, as in Tally.
+- A foreign-currency ledger gets the calculated row of Tally, "Unadjusted Forex Gain/Loss", at the end of the period.
+- The page does not show cancelled and optional vouchers.
+- To compare, use the ledger report of Tally for the same dates.
+
+**Contents:**
+
+| Item | What it shows | Formula IDs |
+| --- | --- | --- |
+| Opening balance | The balance before the period, with Dr or Cr. | F-LED-001 |
+| Ledger statement (table) | Date, Particulars, voucher type, voucher number, narration, debit, credit and the running balance. | F-LED-002, F-LED-003 |
+| Closing balance | The balance at the end of the period, with Dr or Cr. | F-LED-004 |
+
+**Drill-downs:** Click a voucher number to open the page of the voucher. The calculated row has no voucher.
+
+**Loading and errors:** As section 1.5, with table rows. A ledger that is not in your companies shows an error.
+
+**Check against Tally:**
+
+1. Open Display More Reports › Account Books › Ledger.
+2. Select the same ledger and the same dates.
+3. Compare the opening balance, each row and the closing balance.
 
 ## 11. Data
 
@@ -807,7 +894,7 @@ The module has three pages: Data health, Explore and Companies.
 | --- | --- | --- |
 | Result (table) | The rows, the subtotals and the total. Each measure shows its formula ID in its column header. | F-TBL-001, F-TBL-002, F-TBL-003, F-TRN-001, F-CC-002, F-CC-003, F-STK-008, F-STK-014, F-STK-015 |
 
-**Drill-downs:** None.
+**Drill-downs:** Click a ledger in the result to open its statement (section 10.3).
 
 **Loading and errors:** As section 1.5, with table rows.
 
@@ -821,6 +908,7 @@ The module has three pages: Data health, Explore and Companies.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 1.6 | 2026-11-12 | The Trial Balance (section 5.3), the drill-down of a Balance Sheet line (section 6) and the Ledger statement (section 10.3). |
 | 1.5 | 2026-11-12 | No Status column and no Meaning column in the tables (section 1.4). The status is on hover. Data health keeps its status columns. |
 | 1.4 | 2026-11-12 | A note at the top of each page (section 1.6), and the text of each note in its page section. |
 | 1.3 | 2026-11-12 | Parties: six groups of age, the age by bill date, the parts not in bills, the bills and the note. The page of a voucher. Data › Explore. |

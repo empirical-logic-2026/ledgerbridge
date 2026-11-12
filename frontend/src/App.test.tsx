@@ -1246,6 +1246,7 @@ const partyFound: PartyOut = {
   party_id: 11,
   name: 'Customer One',
   companies: [3],
+  ledger_ids: [41],
   group_path: ['Sundry Debtors', 'Online customers'],
   credit_days: 30,
   main_channel: 'Online Sales',
@@ -1822,6 +1823,178 @@ describe('the voucher page and Explore', () => {
   })
 })
 
+// The Trial Balance (core/trial_balance.py): groups, a sub-group, ledgers, the opening stock
+// and Profit & Loss A/c, for the financial year from 01-Apr-2026.
+const tbRow = (key: string, label: string, kind: string, depth: number, parent: string | null, debit: string, credit: string, ledger_id: number | null = null) => ({
+  key, label, kind, depth, parent, debit, credit, ledger_id, company: ledger_id ? 3 : null,
+})
+const trialFound = {
+  companies: [3], combined: false, period_start: '2026-04-01', period_end: '2026-10-30', as_of: '2026-10-02', year_start: '2026-04-01',
+  rows: [
+    tbRow('g:/capital account', 'Capital Account', 'group', 0, null, '0', '132010'),
+    tbRow('l:3:30', 'Capital', 'ledger', 1, 'g:/capital account', '0', '132010', 30),
+    tbRow('g:/current assets', 'Current Assets', 'group', 0, null, '159988', '210'),
+    tbRow('g:/current assets/sundry debtors', 'Sundry Debtors', 'group', 1, 'g:/current assets', '156658', '210'),
+    tbRow('l:3:41', 'Customer One', 'ledger', 2, 'g:/current assets/sundry debtors', '156658', '0', 41),
+    tbRow('l:3:42', 'Customer Two', 'ledger', 2, 'g:/current assets/sundry debtors', '0', '210', 42),
+    tbRow('x:stock:3', 'Opening stock', 'stock', 1, 'g:/current assets', '3330', '0'),
+    tbRow('g:/sales accounts', 'Sales Accounts', 'group', 0, null, '0', '33100'),
+    tbRow('l:3:50', 'Sales', 'ledger', 1, 'g:/sales accounts', '0', '33100', 50),
+    tbRow('x:carrier:profit & loss a/c', 'Profit & Loss A/c', 'line', 0, null, '9542', '4220', 60),
+  ],
+  total_debit: '169530', total_credit: '169540', reason: null, settings_missing: false, unproved: ['Difference in opening balances'],
+}
+const trialWithDifference = {
+  ...trialFound,
+  rows: [...trialFound.rows, tbRow('x:difference', 'Difference in opening balances', 'difference', 0, null, '10', '0')],
+}
+
+// A Balance Sheet line's drill-down (core/balance_sheet_drill.py).
+const drillFound = {
+  companies: [3], as_of: '2026-10-02', line: 'Current Assets', section: 'assets', reason: null,
+  rows: [
+    { key: 'g:/current assets', label: 'Current Assets', kind: 'group', depth: 0, parent: null, amount: '413000000', ledger_id: null, company: null },
+    { key: 'g:/current assets/sundry debtors', label: 'Sundry Debtors', kind: 'group', depth: 1, parent: 'g:/current assets', amount: '400000000', ledger_id: null, company: null },
+    { key: 'l:3:41', label: 'Customer One', kind: 'ledger', depth: 2, parent: 'g:/current assets/sundry debtors', amount: '400000000', ledger_id: 41, company: 3 },
+    { key: 'x:stock:3', label: 'Closing stock', kind: 'stock', depth: 1, parent: 'g:/current assets', amount: '13000000', ledger_id: null, company: 3 },
+  ],
+}
+
+// One ledger's statement (core/ledger_statement.py): a sale, a receipt, and Tally's calculated
+// revaluation row at the end (no voucher).
+const ledgerFound = {
+  ledger_id: 41, name: 'Customer One', company: 3, groups: ['Current Assets', 'Sundry Debtors'],
+  period_start: '2026-04-01', period_end: '2026-10-02', opening: '200000',
+  entries: [
+    { voucher_id: 7, date: '2026-08-01', voucher_type: 'Sales', number: 'S-1', particulars: 'Sales', narration: 'First sale', debit: '118000', credit: null, balance: '318000' },
+    { voucher_id: 8, date: '2026-09-01', voucher_type: 'Receipt', number: 'R-1', particulars: 'HDFC Bank', narration: null, debit: null, credit: '18000', balance: '300000' },
+    { voucher_id: null, date: '2026-10-02', voucher_type: '', number: null, particulars: 'Unadjusted Forex Gain/Loss', narration: null, debit: null, credit: '500', balance: '299500' },
+  ],
+  total_debit: '118000', total_credit: '18500', closing: '299500', truncated: false,
+}
+const ledgersFound = [
+  { ledger_id: 41, name: 'Customer One', group: 'Sundry Debtors', company: 3 },
+  { ledger_id: 42, name: 'Customer Two', group: 'Sundry Debtors', company: 3 },
+]
+
+describe('the Trial Balance, the Balance Sheet drill-down and the Ledger statement (ADR-055)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  const base = { '/api/v1/companies': companies, '/api/v1/periods': periods }
+
+  it('shows the groups condensed with Debit and Credit and the totals, as Tally, for the financial year', async () => {
+    fullAmounts()
+    stubApi({ ...base, '/api/v1/reports/trial-balance': trialFound })
+    renderApp('#/pnl/trial-balance')
+    const table = await screen.findByRole('table', { name: 'Trial Balance' })
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent?.trim())).toEqual(['Particulars', 'Debit', 'Credit'])
+    expect(screen.getByText('At 02-Oct-2026 · for the financial year from 01-Apr-2026')).toBeInTheDocument()
+    // Condensed: the groups and the lines of their own, no ledgers.
+    expect(within(table).getByRole('button', { name: 'Open Current Assets' })).toHaveAttribute('aria-expanded', 'false')
+    expect(within(table).queryByText('Customer One')).toBeNull()
+    const total = within(table).getByText('Total').closest('tr') as HTMLElement
+    expect(total).toHaveTextContent('₹1,69,530.00')
+    expect(total).toHaveTextContent('₹1,69,540.00')
+    expect(total).toHaveAttribute('data-formula', 'F-TB-002')
+    // A group opens on its own, then its sub-group; a ledger opens its statement.
+    fireEvent.click(within(table).getByRole('button', { name: 'Open Current Assets' }))
+    fireEvent.click(within(table).getByRole('button', { name: 'Open Sundry Debtors' }))
+    expect(within(table).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toMatch(/^#\/books\/ledger\/41(\?|$)/)
+    expect(within(table).getByRole('link', { name: 'Opening stock' }).getAttribute('href')).toMatch(/^#\/stock\/summary/)
+    expect(within(table).getByText('Customer One').closest('tr')).toHaveAttribute('data-depth', '2')
+  })
+
+  it('opens every group in the detailed view (as Alt+F1), kept in the address', async () => {
+    stubApi({ ...base, '/api/v1/reports/trial-balance': trialFound })
+    renderApp('#/pnl/trial-balance')
+    await screen.findByRole('table', { name: 'Trial Balance' })
+    fireEvent.click(screen.getByText('Detailed'))
+    await waitFor(() => expect(window.location.hash).toContain('view=detailed'))
+    const table = await screen.findByRole('table', { name: 'Trial Balance' })
+    expect(within(table).getByRole('link', { name: 'Customer Two' })).toBeInTheDocument()
+    expect(within(table).getByRole('link', { name: 'Capital' })).toBeInTheDocument()
+    expect(within(table).getByRole('button', { name: 'Close Current Assets' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('shows a difference in opening balances on its own row, with a grand total and why', async () => {
+    fullAmounts()
+    stubApi({ ...base, '/api/v1/reports/trial-balance': trialWithDifference })
+    renderApp('#/pnl/trial-balance')
+    const table = await screen.findByRole('table', { name: 'Trial Balance' })
+    expect(within(table).getByText('Difference in opening balances').closest('tr')).toHaveTextContent('₹10.00')
+    const grand = within(table).getByText('Grand Total').closest('tr') as HTMLElement
+    expect(grand.textContent?.match(/₹1,69,540\.00/g)).toHaveLength(2)
+    expect(screen.getByText(/not yet proved against Tally/)).toBeInTheDocument()
+  })
+
+  it('asks for the statements to run again when the reporting settings are not read yet', async () => {
+    stubApi({ ...base, '/api/v1/reports/trial-balance': { ...trialFound, settings_missing: true } })
+    renderApp('#/pnl/trial-balance')
+    expect(await screen.findByText(/Run the statements once more/)).toBeInTheDocument()
+  })
+
+  it("drills a Balance Sheet line down to its groups and ledgers at the date, and closes", async () => {
+    stubApi({ ...base, '/api/v1/reports/balance-sheet': sheetFound, '/api/v1/reports/balance-sheet/drill': drillFound })
+    renderApp('#/balance-sheet/statement')
+    const sheet = await screen.findByRole('table', { name: 'Balance Sheet' })
+    const link = within(sheet).getByRole('link', { name: 'Current Assets' })
+    expect(link.getAttribute('href')).toMatch(/line=assets%3Acurrent\+assets/)
+    window.location.hash = link.getAttribute('href') as string
+    const tree = await screen.findByRole('table', { name: 'Current Assets by group and ledger' })
+    expect(screen.getByRole('heading', { name: 'Current Assets at 02-Oct-2026' })).toBeInTheDocument()
+    expect(requests.some((r) => r.includes('/balance-sheet/drill') && r.includes('line=assets%3Acurrent+assets'))).toBe(true)
+    fireEvent.click(within(tree).getByRole('button', { name: 'Open Sundry Debtors' }))
+    expect(within(tree).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toMatch(/^#\/books\/ledger\/41/)
+    expect(within(tree).getByText('Customer One').closest('tr')).toHaveAttribute('data-formula', 'F-BS-012')
+    expect(screen.getByRole('link', { name: 'Close' }).getAttribute('href')).not.toContain('line=')
+  })
+
+  it("shows a ledger's opening, entries with the running balance and closing, as Tally's ledger report", async () => {
+    fullAmounts()
+    stubApi({ ...base, '/api/v1/ledgers/41/statement': ledgerFound })
+    renderApp('#/books/ledger/41')
+    const table = await screen.findByRole('table', { name: 'Ledger statement' })
+    expect(screen.getByText(/on 01-Apr-2026: ₹2,00,000\.00 Dr/)).toBeInTheDocument()
+    expect(screen.getByText(/on 02-Oct-2026: ₹2,99,500\.00 Dr/)).toBeInTheDocument()
+    expect(within(table).getByRole('link', { name: 'S-1' }).getAttribute('href')).toMatch(/^#\/books\/vouchers\/7/)
+    expect(within(table).getByText('₹3,18,000.00 Dr')).toBeInTheDocument() // the running balance
+    const calculated = within(table).getByText('Unadjusted Forex Gain/Loss').closest('tr') as HTMLElement
+    expect(within(calculated).queryByRole('link')).toBeNull() // no voucher
+    expect(document.querySelector('.header-crumbs')).toHaveTextContent('Books/Ledger statement/Customer One')
+  })
+
+  it('finds a ledger by its name when none is chosen', async () => {
+    stubApi({ ...base, '/api/v1/ledgers': ledgersFound })
+    renderApp('#/books/ledger')
+    const list = await screen.findByRole('list', { name: 'Ledgers' })
+    expect(within(list).getByRole('link', { name: 'Customer Two' }).getAttribute('href')).toMatch(/^#\/books\/ledger\/42/)
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find a ledger' }), { target: { value: 'Two' } })
+    await waitFor(() => expect(requests.some((r) => r.includes('/api/v1/ledgers?') && r.includes('q=Two'))).toBe(true))
+  })
+
+  it('opens the ledger statement from a party, the Transactions page and Explore', async () => {
+    stubApi({
+      ...base,
+      '/api/v1/parties/customers': partiesFound,
+      '/api/v1/parties/customers/11': partyFound,
+      '/api/v1/parties/vendors': { ...partiesFound, kind: 'vendors', parties: [] },
+    })
+    renderApp('#/sales/customers/11?tab=statement')
+    const open = await screen.findByRole('link', { name: 'open the ledger statement' })
+    expect(open.getAttribute('href')).toMatch(/^#\/books\/ledger\/41/)
+    cleanup()
+    stubApi({ ...base, '/api/v1/transactions': transactionsFound })
+    renderApp('#/books/transactions')
+    const lines = await screen.findByRole('table', { name: 'Transactions' })
+    const ledgerLink = within(lines).getAllByRole('link').find((a) => a.getAttribute('href')?.startsWith('#/books/ledger/'))
+    expect(ledgerLink).toBeDefined()
+    cleanup()
+    stubApi({ ...base, '/api/v1/datasets': datasetsFound, '/api/v1/datasets/voucher_lines': datasetResult })
+    renderApp('#/data/explore?e_dataset=voucher_lines')
+    const result = await screen.findByRole('table', { name: /result/ })
+    expect(within(result).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toMatch(/^#\/books\/ledger\/5/)
+  })
+})
+
 describe('every figure on every page names its formula (docs/formula-sheet.md)', () => {
   afterEach(() => vi.unstubAllGlobals())
 
@@ -1853,6 +2026,9 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     '/api/v1/stock/godowns': godownsFound,
     '/api/v1/transactions': transactionsFound,
     '/api/v1/vouchers/7': voucherFound,
+    '/api/v1/reports/trial-balance': trialFound,
+    '/api/v1/ledgers': ledgersFound,
+    '/api/v1/ledgers/41/statement': ledgerFound,
     '/api/v1/datasets': datasetsFound,
     '/api/v1/datasets/voucher_lines': datasetResult,
     '/api/v1/cash-flow': {
@@ -1865,13 +2041,13 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     'overview/dashboard', 'sales/dashboard', 'sales/register', 'sales/monthly', 'sales/channels', 'sales/customers',
     'sales/customers/11', 'purchases/dashboard', 'purchases/register', 'purchases/monthly', 'purchases/vendors',
     'pnl/profit-loss', 'pnl/cost-centres', 'pnl/cost-centres/21', 'balance-sheet/statement', 'stock/summary',
-    'stock/summary/41', 'stock/godowns', 'books/vouchers/7', 'data/explore', 'cash-flow/movement', 'parties/receivables', 'parties/payables', 'books/transactions',
+    'stock/summary/41', 'stock/godowns', 'books/vouchers/7', 'data/explore', 'pnl/trial-balance', 'books/ledger/41', 'cash-flow/movement', 'parties/receivables', 'parties/payables', 'books/transactions',
     'data/health',
   ]
 
   // Every page has its note at the top (shell/pageNotes.ts): the pages above, plus a vendor's
   // page and Data › Companies (no figures).
-  const notePages = [...pages, 'purchases/vendors/11', 'data/companies']
+  const notePages = [...pages, 'purchases/vendors/11', 'data/companies', 'books/ledger']
   const noteAnswers = { ...answers, '/api/v1/parties/vendors/11': { ...partyFound, kind: 'vendors' } }
 
   it('has a note for every built page of the navigation and every detail page', () => {
@@ -1879,7 +2055,7 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     const built = NAV.flatMap((g) => g.pages.filter((pg) => pg.built).map((pg) => `${g.key}/${pg.key}`))
     expect(built.filter((at) => !covered.has(at))).toEqual([])
     // The pages that open one row have a note of their own.
-    for (const detail of ['sales/customers/:id', 'purchases/vendors/:id', 'pnl/cost-centres/:id', 'stock/summary/:id']) {
+    for (const detail of ['sales/customers/:id', 'purchases/vendors/:id', 'pnl/cost-centres/:id', 'stock/summary/:id', 'books/ledger/:id']) {
       expect(covered.has(detail), detail).toBe(true)
     }
     // And the page test below visits every one of them.

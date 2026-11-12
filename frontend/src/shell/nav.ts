@@ -48,6 +48,8 @@ const detailPage = (key: string, label: string, whyNoFacets: string): NavPage =>
 
 const VOUCHER = 'One voucher is shown whole.'
 
+const LEDGER = "One ledger is shown whole: filter its entries with the table's own filter."
+
 const EXPLORE = 'Each dataset has its own filters: choose them on the page.'
 
 export const NAV: NavGroup[] = [
@@ -76,13 +78,21 @@ export const NAV: NavGroup[] = [
   {
     key: 'pnl',
     label: 'P&L & KPIs',
-    pages: [page('profit-loss', 'Profit & Loss', true, [], STATEMENT), page('cost-centres', 'Cost centres', true, [], COST_CENTRES)],
+    pages: [
+      page('profit-loss', 'Profit & Loss', true, [], STATEMENT),
+      page('trial-balance', 'Trial Balance', true, [], STATEMENT),
+      page('cost-centres', 'Cost centres', true, [], COST_CENTRES),
+    ],
   },
   { key: 'balance-sheet', label: 'Balance Sheet', pages: [page('statement', 'Balance Sheet', true, [], STATEMENT)] },
   { key: 'stock', label: 'Stock', pages: [page('summary', 'Stock summary', true, [], STOCK), page('godowns', 'By godown', true, [], STOCK)] },
   { key: 'cash-flow', label: 'Cash Flow', pages: [page('movement', 'Cash movement', true, [], STATEMENT)] },
   { key: 'parties', label: 'Parties', pages: [page('receivables', 'Receivables', true, [], PARTIES), page('payables', 'Payables', true, [], PARTIES)] },
-  { key: 'books', label: 'Books', pages: [page('transactions', 'Transactions', true, [], BOOKS), detailPage('vouchers', 'Voucher', VOUCHER)] },
+  {
+    key: 'books',
+    label: 'Books',
+    pages: [page('transactions', 'Transactions', true, [], BOOKS), page('ledger', 'Ledger statement', true, [], LEDGER), detailPage('vouchers', 'Voucher', VOUCHER)],
+  },
   {
     key: 'data',
     label: 'Data',
@@ -121,4 +131,9 @@ export function findPage(path: string[]): { group: NavGroup; page: NavPage } | u
  *  undefined while that page isn't built: nothing links to a page that isn't there. */
 export function builtHref(path: string[], query: Query): string | undefined {
   return findPage(path) ? href(currentPath(path), query) : undefined
+}
+
+/** A ledger's Ledger statement for the same selection (ADR-055); undefined without a ledger. */
+export function ledgerHref(ledgerId: number | null | undefined, query: Query): string | undefined {
+  return ledgerId ? builtHref(['books', 'ledger', String(ledgerId)], query) : undefined
 }
