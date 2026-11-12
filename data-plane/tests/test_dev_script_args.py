@@ -42,7 +42,7 @@ GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 CLI = ["python", "-m", "workers.cli"]
 SERVICES = ["ps", "--status", "running", "--services"]
 # Commands that first check the stack runs the checked-out code (ADR-045).
-CHECKS_CODE = {"validate", "report", "statements", "sync", "on-hold", "loans"}
+CHECKS_CODE = {"validate", "report", "statements", "sync", "on-hold", "loans", "trial-balance"}
 COMMIT = ["exec", "-T", "api", "printenv", "LEDGERBRIDGE_COMMIT"]
 
 
@@ -237,6 +237,22 @@ CASES = {
                 "Sim Co",
                 "--date",
                 "2026-03-31",
+            ),
+        ],
+    ),  # fmt: skip
+    "trial-balance": (
+        ["trial-balance", "-Company", "Sim Co", "-Date", "2026-10-02", "-Detailed"],
+        [
+            SERVICES,
+            _exec(
+                "trial-balance",
+                "--connection",
+                "tally-test",
+                "--entity",
+                "Sim Co",
+                "--date",
+                "2026-10-02",
+                "--detailed",
             ),
         ],
     ),  # fmt: skip

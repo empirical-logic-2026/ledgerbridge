@@ -28,6 +28,7 @@ ID = re.compile(r"F-[A-Z]{2,3}-\d{3}")
 NOT_FIGURES = {
     "id", "company", "companies", "fy_start_month", "start_year", "credit_days",
     "page", "page_size", "total_rows", "level", "line_no",
+    "depth", "ledger_ids",  # a row's place in a tree; a party's ledgers (ADR-055)
 }  # fmt: skip
 
 

@@ -6,7 +6,7 @@
 import { AmountFormatProvider } from './components/Money.tsx'
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockGodowns, useStockItem, useTransactions, useVoucher, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useAgeing, useBalanceSheet, useBalanceSheetDrill, useCashFlow, useLedgerStatement, useTrialBalance, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockGodowns, useStockItem, useTransactions, useVoucher, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { ErrorState } from './components/loading/ErrorState.tsx'
 import { Loading } from './components/loading/Loading.tsx'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
@@ -17,6 +17,8 @@ import { StockItemPage, StockSummary } from './apps/stock/Stock.tsx'
 import { StockGodowns } from './apps/stock/StockGodowns.tsx'
 import { Transactions } from './apps/books/Transactions.tsx'
 import { VoucherPage } from './apps/books/VoucherPage.tsx'
+import { LedgerPicker, LedgerStatement } from './apps/books/LedgerStatement.tsx'
+import { TrialBalance } from './apps/statements/TrialBalance.tsx'
 import { Explore } from './apps/data/Explore.tsx'
 import { Ageing } from './apps/parties/Ageing.tsx'
 import { BalanceSheet } from './apps/statements/BalanceSheet.tsx'
@@ -82,6 +84,9 @@ export default function App({ mode, onMode, today }: Props) {
   const ageingBasis = route.query.get('basis') === 'bill_date' ? 'bill_date' : 'due_date'
   const ageing = useAgeing(ageingKind ?? 'customers', ageingKind ? ids : undefined, period, ageingBasis)
   const sheet = useBalanceSheet(at === 'balance-sheet/statement' ? ids : undefined, period, selection.compare)
+  const sheetLine = at === 'balance-sheet/statement' ? (route.query.get('line') ?? undefined) : undefined
+  const drill = useBalanceSheetDrill(sheetLine ? ids : undefined, period, sheetLine)
+  const trial = useTrialBalance(at === 'pnl/trial-balance' ? ids : undefined, period)
   const flow = useCashFlow(at === 'cash-flow/movement' ? ids : undefined, period)
   const salesRegister = useRegister('sales', at === 'sales/register' ? ids : undefined, period, {
     party: selection.facets.customer,
@@ -118,6 +123,8 @@ export default function App({ mode, onMode, today }: Props) {
   const transactions = useTransactions(at === 'books/transactions' ? ids : undefined, period)
   const voucherId = at === 'books/vouchers' && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
   const voucher = useVoucher(voucherId, at === 'books/vouchers' ? ids : undefined)
+  const ledgerId = at === 'books/ledger' && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
+  const ledger = useLedgerStatement(ledgerId, at === 'books/ledger' ? ids : undefined, period)
   const query = selectionQuery(selection)
   const all = companies.data ?? []
   const selected = all.filter((c) => ids?.includes(c.id))
@@ -152,6 +159,39 @@ export default function App({ mode, onMode, today }: Props) {
         />
       </>
     )
+  } else if (at === 'pnl/trial-balance') {
+    crumbs = [{ label: 'P&L & KPIs', path: ['pnl', 'profit-loss'] }, { label: 'Trial Balance' }]
+    const detailed = route.query.get('view') === 'detailed'
+    content = (
+      <TrialBalance
+        companies={selected}
+        report={trial.data}
+        loading={companies.isPending || periods.isPending || trial.isPending}
+        error={periods.error ?? trial.error}
+        onRetry={retry(periods, trial)}
+        detailed={detailed}
+        onDetailed={(next) => updateQuery(route, { view: next ? 'detailed' : undefined })}
+        query={query}
+      />
+    )
+  } else if (at === 'books/ledger' && route.path.length > 2 && !ledgerId) {
+    content = <Result status="404" title="There is no such page" subTitle="Find a ledger on Books › Ledger statement." />
+  } else if (at === 'books/ledger' && ledgerId) {
+    crumbs = [{ label: 'Books', path: ['books', 'transactions'] }, { label: 'Ledger statement', path: ['books', 'ledger'] }, { label: ledger.data?.name ?? 'Ledger' }]
+    content = (
+      <LedgerStatement
+        key={ledgerId}
+        companies={selected}
+        statement={ledger.data}
+        loading={companies.isPending || periods.isPending || ledger.isPending}
+        error={periods.error ?? ledger.error}
+        onRetry={retry(periods, ledger)}
+        query={query}
+      />
+    )
+  } else if (at === 'books/ledger') {
+    crumbs = [{ label: 'Books', path: ['books', 'transactions'] }, { label: 'Ledger statement' }]
+    content = companies.isPending ? <Loading shape="report" /> : <LedgerPicker companies={selected} companyIds={ids ?? []} query={query} />
   } else if (at === 'pnl/cost-centres' && route.path.length > 2 && !centreId) {
     content = <Result status="404" title="There is no such page" subTitle="Choose a module in the top bar." />
   } else if (at === 'pnl/cost-centres' && centreId) {
@@ -294,6 +334,8 @@ export default function App({ mode, onMode, today }: Props) {
         loading={companies.isPending || periods.isPending || sheet.isPending}
         error={periods.error ?? sheet.error}
         onRetry={retry(periods, sheet)}
+        line={sheetLine}
+        drill={{ found: drill.data, loading: drill.isPending, error: drill.error, onRetry: retry(drill) }}
         query={query}
       />
     )

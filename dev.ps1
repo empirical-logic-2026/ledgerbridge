@@ -33,6 +33,7 @@
     ./dev.ps1 on-hold [set|clear -EntityId <id>]  (entities on hold: skipped unless named; listed without a step)
     ./dev.ps1 loans -Company "<name>" [-Date 2026-03-31]  (Loans (Liability) ledgers, group, closing balance; screen only)
     ./dev.ps1 loans mark|clear -Ledger <id>     (count a loan ledger as a short-term borrowing in the ratios; audited)
+    ./dev.ps1 trial-balance -Company "<name>" [-Date 2026-10-02] [-Detailed]  (Trial Balance in Tally's layout; screen only)
     ./dev.ps1 load-test-fixtures [-Recording main]  (LedgerBridge Test Co from its recordings, no Tally; test only)
     ./dev.ps1 dashboard                         (the dashboard on this computer only: http://127.0.0.1:<port>)
     ./dev.ps1 validate compare-ledger -Ledger 88 [-From 2020-04-01] [-To 2021-04-01]
@@ -72,7 +73,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'audit', 'promote-field', 'find-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'loans', 'load-test-fixtures', 'dashboard', 'help')]
+    [ValidateSet('init-env', 'up', 'backup', 'down', 'reset', 'entity-check', 'status', 'summary', 'report', 'test', 'logs', 'tally-companies', 'connect', 'extract', 'sync', 'validate', 'transform', 'statements', 'fields', 'audit', 'promote-field', 'find-field', 'seed-test-data', 'diagrams', 'docs-export', 'on-hold', 'loans', 'trial-balance', 'load-test-fixtures', 'dashboard', 'help')]
     [string]$Command = 'help',
 
     # Service name for `logs` (mysql, redis, qdrant, api, worker). Empty = all services.
@@ -128,6 +129,7 @@ param(
 
     # For `find-field`: the voucher's date (dd-mm-yyyy), its number, and the text to look for.
     # For `loans`: the date of the closing balances (yyyy-mm-dd; default today).
+    # For `trial-balance`: the date (yyyy-mm-dd; the last stored statement date on or before it).
     [string]$Date = '',
     [string]$VoucherNumber = '',
     [string]$Text = '',
@@ -150,6 +152,9 @@ param(
 
     # For `report`: expand every section (failure breakdowns, notes, fixed checks).
     [switch]$Details,
+
+    # For `trial-balance`: each group's sub-groups and ledgers too (as Tally's Alt+F1).
+    [switch]$Detailed,
 
     # Plain output without colours (also when NO_COLOR is set or the output is redirected).
     [switch]$NoColor,
@@ -741,6 +746,20 @@ switch ($Command) {
         $listArgs = @('python', '-m', 'workers.cli', 'loans', 'list', '--connection', $connection, '--entity', $Company[0])
         if ($Date) { $listArgs += @('--date', $Date) }
         Invoke-Checked exec -T api @listArgs
+    }
+    'trial-balance' {
+        # One company's Trial Balance at a date in Tally's layout (Particulars, Debit, Credit,
+        # totals), for the financial year the date falls in, as Tally opens it (ADR-055). On
+        # the screen only (names and amounts, nothing stored or logged), to hold beside
+        # Tally's own. Database only, the source isn't contacted.
+        Assert-EnvFile
+        Assert-ApiRunning
+        Assert-CodeCurrent  # the stack runs the checked-out code (ADR-045)
+        if ($Company.Count -ne 1) { throw 'Usage: ./dev.ps1 trial-balance -Company "<name>" [-Date yyyy-mm-dd] [-Detailed]' }
+        $tbArgs = @('python', '-m', 'workers.cli', 'trial-balance', '--connection', $connection, '--entity', $Company[0])
+        if ($Date) { $tbArgs += @('--date', $Date) }
+        if ($Detailed) { $tbArgs += '--detailed' }
+        Invoke-Checked exec -T api @tbArgs
     }
     'logs' {
         Assert-EnvFile

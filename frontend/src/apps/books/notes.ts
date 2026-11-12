@@ -25,3 +25,35 @@ export const voucherNote: NoteContent = {
   ],
   footer: "To compare: open the same voucher from Tally's Day Book at its date.",
 }
+
+export const ledgerPickNote: NoteContent = {
+  title: 'About this page',
+  points: [
+    { text: "One ledger's statement for the period: find a ledger by its name, or open one from the Trial Balance, the Balance Sheet, a party's page, the Transactions page or Explore." },
+    { text: 'It shows the opening balance, every entry with the other ledger, debit, credit and the running balance, and the closing balance (F-LED-001 to F-LED-004).' },
+    { text: 'The figures come from the vouchers in Tally; cancelled and optional vouchers are left out.' },
+  ],
+  footer: "To compare: Tally's ledger report (Display More Reports → Account Books → Ledger) for the same dates.",
+}
+
+export const ledgerNote: NoteContent = {
+  title: 'About this page',
+  points: [
+    { text: "The ledger's opening balance, each voucher of the period with the other ledger, debit, credit and the running balance, and the closing balance (F-LED-001 to F-LED-004)." },
+    { text: "The opening is the ledger's balance before the period. An income or expense ledger starts each financial year at nil, as in Tally: earlier years went into Profit & Loss A/c." },
+    { text: "A foreign-currency ledger gets Tally's own calculated row \"Unadjusted Forex Gain/Loss\" at the period's end, so the closing is its revalued balance." },
+    { text: 'Click a voucher number to open the voucher. Cancelled and optional vouchers are left out.' },
+  ],
+  footer: "To compare: Tally's ledger report (Display More Reports → Account Books → Ledger) for the same dates.",
+}
+
+// The Ledger statement page's labels (ADR-055).
+export const LEDGER_WORDS = {
+  pick: 'Find a ledger',
+  pickHelp: "Type part of the ledger's name.",
+  none: 'No ledger has that name.',
+  opening: 'Opening balance',
+  closing: 'Closing balance',
+  revaluation: 'Calculated by Tally at the end of the period (no voucher).',
+  truncated: 'Only the first 5,000 entries are shown; the totals and the closing balance cover them all.',
+}

@@ -30,6 +30,7 @@ from typing import Literal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from core.ledger_statement import other_sides
 from core.models import accounting as A  # noqa: N812
 from core.registers import Register, register
 from core.report_periods import Period
@@ -389,19 +390,9 @@ def _statement(
 
 
 def _other_sides(session: Session, voucher_ids: list[int], ledger_ids: list[int]) -> dict[int, str]:
-    """Each voucher's first ledger not of the party: the statement's Particulars."""
-    found: dict[int, str] = {}
-    for start in range(0, len(voucher_ids), 1000):
-        chunk = voucher_ids[start : start + 1000]
-        rows = session.execute(
-            select(A.VoucherLine.voucher_id, A.Ledger.name)
-            .join(A.Ledger, A.Ledger.id == A.VoucherLine.ledger_id)
-            .where(A.VoucherLine.voucher_id.in_(chunk), A.VoucherLine.ledger_id.not_in(ledger_ids))
-            .order_by(A.VoucherLine.voucher_id, A.VoucherLine.line_no)
-        )
-        for vid, name in rows:
-            found.setdefault(vid, name)
-    return found
+    """Each voucher's first ledger not of the party: the statement's Particulars (the same
+    rule as the Ledger statement page, core/ledger_statement.py)."""
+    return other_sides(session, voucher_ids, ledger_ids)
 
 
 def _settlements(

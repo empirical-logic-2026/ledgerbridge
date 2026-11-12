@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.21 |
+| Version | 0.22 |
 | Date | 2026-11-11 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1); the client's reference screenshots of 2026-11-02 (Section 0.4: layout and information design only; kept on the developer's computer in `docs/design/client-reference/`, not in git, as they show other products and a desktop) |
@@ -148,6 +148,10 @@ Every table: a filter (any part of a text or date cell), **Columns**, **Group by
 - **Parties › Receivables and Payables:** key cards (total outstanding = Sundry Debtors / Creditors on the Balance Sheet, overdue, over 90 days, average days to pay); the bills in six buckets, by due date or (as an option) by bill date; *Not in bills* in four parts with what each means; every party, each opening its page; every open bill, each opening its voucher; the note *How ageing is worked out*.
 - **Books › Voucher:** one voucher's header, ledger lines with equal totals, bills and stock; opened from every voucher link; no tab.
 - **Data › Explore:** the table explorer's datasets on a screen: columns or group-bys with subtotals, measures with their formula IDs, filters (the dates follow the top bar), sort, pages, saved views and CSV.
+
+### The Trial Balance, drill-downs and the Ledger statement (built 2026-11-12, ADR-055)
+
+The **Trial Balance** is its own page under P&L & KPIs: Particulars, Debit and Credit, the totals at the bottom, as Tally's. Condensed shows the groups; Detailed (kept in the address, `view=detailed`) opens every group to its sub-groups and ledgers, as Tally's Alt+F1; a group also opens and closes on its own (a button with `aria-expanded`). It is for the financial year the statement date falls in, as Tally opens it. A difference in opening balances is a row below the total, with a Grand Total. The **Balance Sheet's lines** open their drill-down above the statement (`line=<key>` in the address): the line's groups and ledgers at the date, a Close link. Both use one tree table (`components/AccountTree.tsx`). A ledger anywhere (the trees, Transactions, Explore, a party's Statement tab) opens the **Ledger statement** (Books): opening, the table explorer with the running balance, closing; without a ledger, a search by name.
 
 ## 0.3 Everything clickable, and one detail page per entity
 
@@ -480,6 +484,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-12 | 0.22 | The Trial Balance page (P&L & KPIs), the Balance Sheet's drill-down and the Ledger statement (Books), ADR-055. |
 | 2026-11-12 | 0.21 | Section 0.4: no Status or Meaning columns; a row's status on hover over its label; Data health keeps its status columns. |
 | 2026-11-12 | 0.20 | Section 0.5: a note on every page (one component, its text next to each page's labels, the same text in dashboard-pages.md). |
 | 2026-11-12 | 0.19 | Receivables and Payables in six buckets with the parts not in bills; the voucher page; Data › Explore (ADR-054). |

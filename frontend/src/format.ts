@@ -102,3 +102,10 @@ export function formatChange(pct: string): string {
   const text = pct.replace(/^-/, '').replace(/\.0+$/, '')
   return `${arrow} ${text}%`
 }
+
+/** "₹1,20,000.00 Dr" / "Cr": a balance as the source's ledger report shows it (debit positive). */
+export function formatDrCr(value: string): string {
+  const scaled = toScaled(value)
+  if (scaled === 0n) return formatExact('0')
+  return `${formatExact(value.replace(/^-/, ''))} ${scaled > 0n ? 'Dr' : 'Cr'}`
+}

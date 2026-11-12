@@ -16,7 +16,8 @@ import { Loading } from '../../components/loading/Loading.tsx'
 import { Money } from '../../components/Money.tsx'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import { deleteView, loadViews, saveView, type SavedView } from '../../reporting/savedViews.ts'
-import { updateQuery, useRoute } from '../../router.ts'
+import { updateQuery, useRoute, type Query } from '../../router.ts'
+import { builtHref } from '../../shell/nav.ts'
 
 interface Props extends PanelProps {
   companies: Company[]
@@ -97,12 +98,19 @@ function cell(row: Row, key: string): string {
   return found?.label ?? (found?.id !== undefined ? String(found.id) : '')
 }
 
+/** A ledger opens its Ledger statement (ADR-055); other cells are text. */
+function linkedCell(row: Row, key: string, query: Query): React.ReactNode {
+  const id = row.keys[key]?.id
+  const to = key === 'ledger' && id !== undefined && id !== null ? builtHref(['books', 'ledger', String(id)], query) : undefined
+  return to ? <a href={to}>{cell(row, key)}</a> : cell(row, key)
+}
+
 function measureCell(value: string | number | undefined, isCount: boolean) {
   if (value === undefined || value === null) return '—'
   return isCount ? Number(value).toLocaleString('en-IN') : <Money value={String(value)} />
 }
 
-function ResultTable({ info, result }: { info: DatasetInfo; result: DatasetResult }) {
+function ResultTable({ info, result, query }: { info: DatasetInfo; result: DatasetResult; query: Query }) {
   const keys = result.group_by.length ? result.group_by : result.columns
   const label = (key: string) => info.dimensions.find((d) => d.key === key)?.label ?? key
   const measures = result.measures.map((m) => info.measures.find((x) => x.key === m)!).filter(Boolean)
@@ -135,7 +143,7 @@ function ResultTable({ info, result }: { info: DatasetInfo; result: DatasetResul
           {result.rows.map((row, i) => (
             <Fragment key={i}>
               <tr>
-                {keys.map((k) => <td key={k}>{cell(row, k)}</td>)}
+                {keys.map((k) => <td key={k}>{linkedCell(row, k, query)}</td>)}
                 {measures.map((m) => <td key={m.key} className="num">{measureCell(row.values[m.key], isCount(m.key))}</td>)}
               </tr>
               {subtotalsAfter(i).map((s, j) => (
@@ -262,7 +270,7 @@ export function Explore(props: Props) {
             <Loading shape="report" />
           ) : (
             <>
-              <ResultTable info={info} result={result.data} />
+              <ResultTable info={info} result={result.data} query={props.query} />
               <Space className="explore-pages">
                 <Button disabled={chosen.page <= 1} onClick={() => change({ page: chosen.page - 1 })}>Previous</Button>
                 <Typography.Text>Page {chosen.page} of {pages} · {result.data.total_rows.toLocaleString('en-IN')} rows</Typography.Text>

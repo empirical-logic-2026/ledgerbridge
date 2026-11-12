@@ -247,6 +247,10 @@ class AccountGroup(SourceTrackingMixin, TimestampMixin, Base):
     # Where the source lists it among its siblings (Tally SORTPOSITION; migration 0035):
     # the statements order primary groups by it, as the source does.
     sort_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Whether the source's reports show the group's balances netted as one figure (Tally:
+    # "Nett Debit/Credit Balances for Reporting", ISADDABLE). Stored by the statements refresh,
+    # which reads it with the statements (migration 0038); NULL: not read yet.
+    nets_for_reporting: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class Ledger(SourceTrackingMixin, TimestampMixin, Base):
@@ -300,6 +304,10 @@ class Ledger(SourceTrackingMixin, TimestampMixin, Base):
     # AFFECTSSTOCK); migration 0035, NULL: not read.
     sort_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
     affects_stock: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Whether the ledger carries the profit of earlier years (directly under the source's
+    # Primary, e.g. Tally's Profit & Loss A/c). Stored by the statements refresh (migration
+    # 0038); NULL: not read yet.
+    carries_profit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     gstin: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Set for tax ledgers (e.g. CGST payable); lines posted to them become tax_lines (M3).
     tax_type: Mapped[str | None] = mapped_column(

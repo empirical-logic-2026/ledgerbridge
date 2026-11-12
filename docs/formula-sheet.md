@@ -4,7 +4,7 @@ This sheet gives the formula of each figure that the dashboard shows. Use it to 
 
 | Field | Value |
 | --- | --- |
-| Version | 2.2 |
+| Version | 2.3 |
 | Date | 2026-11-12 |
 | Requirement | RPT-015 |
 | Language | ASD-STE100 Simplified Technical English |
@@ -57,6 +57,8 @@ Each entry has these items:
 | `F-DAT` | Data health |
 | `F-TBL` | Tables |
 | `F-FMT` | How the dashboard shows amounts |
+| `F-TB` | Trial Balance |
+| `F-LED` | Ledger statement |
 
 ## 2. Terms
 
@@ -94,6 +96,8 @@ Each term has one meaning in this sheet and in [dashboard-pages.md](dashboard-pa
 | Due date | The date when a bill must be paid. |
 | Outstanding bill | The part of a bill that is not paid at a date. |
 | Lakh | One hundred thousand rupees (₹1,00,000). |
+| Financial year of a date | The financial year that contains the date. It starts on the day after the last year end before the date. In the first year of the books, it starts at the books' beginning. |
+| Income or expense ledger | A ledger under a primary group with the nature income or expense. |
 | Figure | A number that the dashboard shows. |
 
 ## 3. Common rules
@@ -639,6 +643,20 @@ Schedule III of the Companies Act 2013 shows each balance on its own side. The s
 | Dates | Not applicable. A mark applies to all dates. |
 | Companies | C1. |
 | Check in Tally | Tally has no such mark. 1. Run `./dev.ps1 loans -Company "<name>"`. 2. Count the rows with "yes (marked)". |
+
+#### F-BS-012 A row of the drill-down of a Balance Sheet line
+
+| Item | Value |
+| --- | --- |
+| Expression | Ledger: its balance at the date. Group: `Σ` of the rows below it. Line: `Σ` of its groups and ledgers. |
+| In words | Click a main line of the Balance Sheet. The page shows its groups, sub-groups and ledgers at the date of the Balance Sheet. Each level adds up to the level above it. The line is equal to the stored line (F-BS-005). |
+| Data | The balance of each ledger at the date (`ledgers.opening_balance` plus the effective `voucher_lines` up to the date). A foreign-currency ledger uses `fx_revaluation_snapshots.revalued_value`. The closing stock is `stock_values.closing_value`. The stock goes where the stock ledgers are. |
+| Signs | Debit for assets and credit for liabilities, both shown positive. |
+| Dates | D4, D5, D6. |
+| Companies | C1. Groups with the same names are one row. A ledger has one row for each company. |
+| Check in Tally | 1. Open the Balance Sheet at the same date. 2. Select the line and press Enter. 3. Compare each group and ledger. |
+
+A line that the stored Balance Sheet takes from the source (ADR-043) has one more row: "Forex revaluation difference (per Tally, under review)". This row makes the rows add up to the line. Profit & Loss A/c shows its two parts: the opening balance and the current period.
 
 ## 7. Ratios (`F-RAT`)
 
@@ -1641,10 +1659,129 @@ Retired on 2026-11-12. Replaced by F-PTY-014. The old formula had five buckets: 
 | Companies | Not applicable. |
 | Check in Tally | Read the figure in the table below the chart. |
 
+## 21. Trial Balance (`F-TB`)
+
+The Trial Balance page shows the Trial Balance for the financial year of the date, as Tally shows it. The code is in `data-plane/core/trial_balance.py`. The stored statements start at the books' beginning. Thus after a year end, the page and the stored Trial Balance are different.
+
+#### F-TB-001 Debit or credit of a row
+
+| Item | Value |
+| --- | --- |
+| Expression | Ledger: debit = its value when positive, credit = `−value` when negative. Group: debit = `Σ` positive values below it, credit = `−Σ` negative values below it. |
+| In words | Each ledger goes in one column: the debit column for a debit balance, the credit column for a credit balance. A group shows the debits and the credits of its ledgers in two columns. A group that the source nets for reporting is one value. |
+| Data | The value of each ledger at the date (F-TB-003 to F-TB-005). `account_groups.nets_for_reporting` (the source's "Nett Debit/Credit Balances for Reporting"). |
+| Signs | S1. Each column shows positive. |
+| Dates | D4, D5, D6. |
+| Companies | C1. Groups with the same names are one row. A ledger has one row for each company. |
+| Check in Tally | 1. Open Display More Reports › Trial Balance. 2. Set the same financial year and the same end date. 3. Press Alt+F1 for the ledgers. |
+
+#### F-TB-002 Totals of the Trial Balance
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ` debits and `Σ` credits of the rows at the top level |
+| In words | The total of the debit column and the total of the credit column. When the two totals are not equal, the page shows "Difference in opening balances" in the column that balances them. Then it shows the Grand Total. |
+| Data | The rows of F-TB-001. |
+| Signs | S1. Each total shows positive. |
+| Dates | D4, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Trial Balance. 2. Read the totals at the bottom. |
+
+The exported Trial Balance of Tally has no "Difference in opening balances" line. Thus we did not prove this row against Tally.
+
+#### F-TB-003 Income and expenses for the financial year
+
+| Item | Value |
+| --- | --- |
+| Expression | Balance at the date − balance at the last year end |
+| In words | An income or expense ledger shows only the entries of the financial year of the date. The entries of earlier years go into Profit & Loss A/c (F-TB-005). In the first year of the books, the value is the balance at the date. |
+| Data | `ledgers.opening_balance` and the effective `voucher_lines`. The nature of the primary group of the ledger. |
+| Signs | S1. |
+| Dates | The financial year of the date. D5. |
+| Companies | C1, C3. |
+| Check in Tally | 1. Open the Trial Balance for the same financial year. 2. Read the Sales Accounts line. |
+
+#### F-TB-004 Stock in the Trial Balance
+
+| Item | Value |
+| --- | --- |
+| Expression | The closing stock at the last year end. In the first year of the books: the opening stock of the books. |
+| In words | The Trial Balance shows the stock at the start of the financial year, not the closing stock. The stock goes where the stock ledgers are. |
+| Data | `stock_values.closing_value` (`scope = 'total'`) at the last year end, or up to 2 days later (rule D6). |
+| Signs | Debit, shown positive. |
+| Dates | The last year end before the date. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Trial Balance for the same financial year. 2. Open the Current Assets line (Alt+F1). 3. Read Stock-in-Hand. |
+
+#### F-TB-005 Profit & Loss A/c in the Trial Balance
+
+| Item | Value |
+| --- | --- |
+| Expression | Balance of the ledger + `Σ` income and expense balances at the last year end + opening stock of the books − stock at the last year end |
+| In words | Profit & Loss A/c shows its own balance and the profit of all earlier financial years. A profit is a credit. A loss is a debit. |
+| Data | The ledgers directly under Primary (`ledgers.carries_profit`). The income and expense ledgers at the last year end. `stock_values` at the books' beginning and at the last year end. |
+| Signs | S1. |
+| Dates | The last year end before the date. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Trial Balance for the same financial year. 2. Read the Profit & Loss A/c line. |
+
+## 22. Ledger statement (`F-LED`)
+
+The Ledger statement page shows one ledger as the ledger report of Tally shows it. The code is in `data-plane/core/ledger_statement.py`.
+
+#### F-LED-001 Opening balance
+
+| Item | Value |
+| --- | --- |
+| Expression | `opening_balance + Σ amount` of the effective entries before the period start |
+| In words | The balance of the ledger before the period. An income or expense ledger starts each financial year at zero. Its opening is then only its entries from the start of the financial year. |
+| Data | `ledgers.opening_balance`, `voucher_lines.amount` (`is_effective`). |
+| Signs | S1. The page shows "Dr" or "Cr". |
+| Dates | The day before the period start. |
+| Companies | The company of the ledger. |
+| Check in Tally | 1. Open Display More Reports › Account Books › Ledger. 2. Select the ledger and the same dates. 3. Read the opening balance. |
+
+#### F-LED-002 Debit or credit of an entry
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ amount` of the lines of the ledger in one voucher. Debit when positive. Credit when negative. |
+| In words | One row for each voucher in the period. Particulars is the first other ledger of the voucher. A foreign-currency ledger also has one calculated row at the period end, "Unadjusted Forex Gain/Loss", as in Tally. This row has no voucher. |
+| Data | `voucher_lines` (`amount`, `is_effective`) of the ledger. `fx_revaluation_snapshots` at the period end. |
+| Signs | S1. Each column shows positive. |
+| Dates | D1. |
+| Companies | The company of the ledger. |
+| Check in Tally | 1. Open the ledger report for the same dates. 2. Compare each row. |
+
+#### F-LED-003 Running balance
+
+| Item | Value |
+| --- | --- |
+| Expression | Opening + `Σ` entries up to and including the row |
+| In words | The balance after each entry, in date order. |
+| Data | F-LED-001 and F-LED-002. |
+| Signs | S1. The page shows "Dr" or "Cr". |
+| Dates | D1. |
+| Companies | The company of the ledger. |
+| Check in Tally | 1. Open the ledger report. 2. Show the running balance (F12). |
+
+#### F-LED-004 Closing balance
+
+| Item | Value |
+| --- | --- |
+| Expression | Opening + `Σ` debits − `Σ` credits of the period |
+| In words | The balance of the ledger at the period end. For a foreign-currency ledger, the calculated row makes it the revalued balance. |
+| Data | F-LED-001 and F-LED-002. |
+| Signs | S1. The page shows "Dr" or "Cr". |
+| Dates | The period end. |
+| Companies | The company of the ledger. |
+| Check in Tally | 1. Open the ledger report. 2. Read the closing balance. |
+
 ## Change log
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 2.3 | 2026-11-12 | The drill-down of a Balance Sheet line (F-BS-012). The Trial Balance for the financial year (F-TB-001 to F-TB-005). The Ledger statement (F-LED-001 to F-LED-004). Terms: financial year of a date, income or expense ledger. |
 | 2.2 | 2026-11-12 | Ageing in six buckets, by due date or bill date (F-PTY-014; F-PTY-012 retired). The parts not in bills (F-PTY-015 to F-PTY-017, F-PTY-020). Over 90 days (F-PTY-018). Average days to pay (F-PTY-019). Count of rows (F-TBL-003). Voucher total (F-VCH-001). |
 | 2.1 | 2026-11-11 | Stock by godown and batch (F-STK-010 to F-STK-013), the inventory lines dataset (F-STK-014, F-STK-015), and the three sections proved against Tally. |
 | 2.0 | 2026-11-11 | Moved from `formulas.md` to `formula-sheet.md`. Written again in ASD-STE100, with a Terms section, common rules and one table for each figure. Current ratio, quick ratio and debt to equity in the form of Schedule III (F-BS-007 to F-BS-011, F-RAT-008 to F-RAT-010). F-RAT-001 to F-RAT-003 retired. Stock items (F-STK-009). Data health (F-DAT-001 to F-DAT-004). A test fails when a figure on a page has no ID. |

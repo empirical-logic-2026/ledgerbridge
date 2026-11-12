@@ -271,6 +271,26 @@ export interface DimensionOption {
   groupable: boolean
 }
 
+export interface DrillOut {
+  companies: number[]
+  as_of: string | null
+  line: string
+  section: "assets" | "liabilities"
+  rows: DrillRowOut[]
+  reason: string | null
+}
+
+export interface DrillRowOut {
+  key: string
+  label: string
+  kind: "group" | "ledger" | "stock" | "line"
+  depth: number
+  parent: string | null
+  amount: string
+  ledger_id: number | null
+  company: number | null
+}
+
 export interface EntityValidationStatus {
   entity_id: number
   entity_code: string
@@ -392,6 +412,40 @@ export interface KeyFigures {
   invoices: KeyFigure
   average_invoice: KeyFigure
   sales_returns: KeyFigure
+}
+
+export interface LedgerEntryOut {
+  voucher_id: number | null
+  date: string
+  voucher_type: string
+  number: string | null
+  particulars: string
+  narration: string | null
+  debit: string | null
+  credit: string | null
+  balance: string
+}
+
+export interface LedgerOut {
+  ledger_id: number
+  name: string
+  group: string
+  company: number
+}
+
+export interface LedgerStatementOut {
+  ledger_id: number
+  name: string
+  company: number
+  groups: string[]
+  period_start: string
+  period_end: string
+  opening: string
+  entries: LedgerEntryOut[]
+  total_debit: string
+  total_credit: string
+  closing: string
+  truncated: boolean
 }
 
 export interface LineOut {
@@ -531,6 +585,7 @@ export interface PartyOut {
   party_id: number
   name: string
   companies: number[]
+  ledger_ids: number[]
   group_path: string[]
   credit_days: number | null
   main_channel: string | null
@@ -890,6 +945,33 @@ export interface TrendOut {
   net_profit: string | null
   cash_and_bank: string
   customers: number
+}
+
+export interface TrialBalanceOut {
+  companies: number[]
+  combined: boolean
+  period_start: string
+  period_end: string
+  as_of: string | null
+  year_start: string | null
+  rows: TrialBalanceRowOut[]
+  total_debit: string
+  total_credit: string
+  reason: string | null
+  settings_missing: boolean
+  unproved: string[]
+}
+
+export interface TrialBalanceRowOut {
+  key: string
+  label: string
+  kind: "group" | "ledger" | "stock" | "line" | "difference"
+  depth: number
+  parent: string | null
+  debit: string
+  credit: string
+  ledger_id: number | null
+  company: number | null
 }
 
 export interface ValidationError {

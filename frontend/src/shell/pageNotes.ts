@@ -10,10 +10,10 @@ import { monthlyNote, registerNote } from '../apps/registers/notes.ts'
 import { partiesNote, partyNote } from '../apps/parties/notes.ts'
 import { ageingNote } from '../apps/parties/ageingWords.ts'
 import { centreNote, centresNote } from '../apps/costcentres/notes.ts'
-import { balanceSheetNote } from '../apps/statements/notes.ts'
+import { balanceSheetNote, trialBalanceNote } from '../apps/statements/notes.ts'
 import { cashFlowNote } from '../apps/cash/notes.ts'
 import { godownsNote, itemNote, stockNote } from '../apps/stock/notes.ts'
-import { transactionsNote, voucherNote } from '../apps/books/notes.ts'
+import { ledgerNote, ledgerPickNote, transactionsNote, voucherNote } from '../apps/books/notes.ts'
 import { companiesNote, healthNote } from '../apps/data/notes.ts'
 import { exploreNote } from '../apps/data/exploreWords.ts'
 
@@ -30,6 +30,7 @@ const NOTES: Record<string, { list: NoteContent; detail?: NoteContent }> = {
   'purchases/monthly': { list: monthlyNote('purchases') },
   'purchases/vendors': { list: partiesNote('vendors'), detail: partyNote('vendors') },
   'pnl/profit-loss': { list: profitLossNote },
+  'pnl/trial-balance': { list: trialBalanceNote },
   'pnl/cost-centres': { list: centresNote, detail: centreNote },
   'balance-sheet/statement': { list: balanceSheetNote },
   'stock/summary': { list: stockNote, detail: itemNote },
@@ -38,6 +39,7 @@ const NOTES: Record<string, { list: NoteContent; detail?: NoteContent }> = {
   'parties/receivables': { list: ageingNote('customers') },
   'parties/payables': { list: ageingNote('vendors') },
   'books/transactions': { list: transactionsNote },
+  'books/ledger': { list: ledgerPickNote, detail: ledgerNote },
   'books/vouchers': { list: voucherNote }, // a detail page: always opened with an id
   'data/health': { list: healthNote },
   'data/explore': { list: exploreNote },

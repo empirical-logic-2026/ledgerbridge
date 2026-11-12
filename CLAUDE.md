@@ -103,7 +103,7 @@ npm run build
 ./dev.ps1 load-test-fixtures [-Recording main]       # LedgerBridge Test Co into the test database from its recordings (no Tally; test only)
 ./dev.ps1 seed-test-data create-only                 # create missing seed items, skip alterations and deletions
 ./dev.ps1 seed-test-data integrated-off              # (or integrated-on) switch the test company's inventory integration
-./deploy/stack.ps1 -Env test exec -T api python -m workers.cli trial-balance --entity-code LEDGERBRIDGE_TEST_CO
+./dev.ps1 trial-balance -Company "LedgerBridge Test Co" [-Date 2026-10-02] [-Detailed]   # Trial Balance in Tally's layout (screen only)
 
 # Lower level: any docker compose command for one environment
 ./deploy/stack.ps1 -Env test up -d --build

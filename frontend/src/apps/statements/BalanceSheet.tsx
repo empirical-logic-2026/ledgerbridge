@@ -4,10 +4,16 @@
 // ratio, debt to equity; working capital: receivable, payable and inventory days and the
 // working-capital days). Figures: core/balance_sheet.py (GET /api/v1/reports/balance-sheet);
 // formulas F-BS-005, F-BS-006, F-RAT-004 to F-RAT-010 (hover: their parts, F-BS-007 to F-BS-011).
+// A line's label opens its drill-down (ADR-055): its groups and ledgers at the date, each level
+// adding up to the line (F-BS-012; GET /api/v1/reports/balance-sheet/drill), a ledger opening
+// its Ledger statement.
 
 import { Money } from '../../components/Money.tsx'
 import { Alert, Typography } from 'antd'
-import type { BalanceSheetReport, Company, RatioOut, SheetLineOut } from '../../api/types.ts'
+import { useState } from 'react'
+import type { BalanceSheetReport, Company, DrillOut, RatioOut, SheetLineOut } from '../../api/types.ts'
+import { AccountTree } from '../../components/AccountTree.tsx'
+import { openable, type TreeRow } from '../../components/accountTree.ts'
 import { Explained } from '../../components/Explained.tsx'
 import { ErrorState } from '../../components/loading/ErrorState.tsx'
 import { Loading } from '../../components/loading/Loading.tsx'
@@ -16,7 +22,10 @@ import { RatioTiles, type Tile } from '../../components/RatioTiles.tsx'
 import { StatementChange, StatementTable, type StatementRow } from '../../components/StatementTable.tsx'
 import { formatDate } from '../../format.ts'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
+import { href, type Query } from '../../router.ts'
 import { againstOf } from '../../selection.ts'
+import { builtHref, ledgerHref } from '../../shell/nav.ts'
+import { DRILL_WORDS } from './notes.ts'
 
 interface Props extends PanelProps {
   companies: Company[]
@@ -24,6 +33,8 @@ interface Props extends PanelProps {
   loading: boolean
   error: Error | null
   onRetry?: () => void // ask again after an error
+  line?: string // the line drilled into ("assets:current assets")
+  drill?: { found: DrillOut | undefined; loading: boolean; error: Error | null; onRetry?: () => void }
 }
 
 const SECTIONS: [SheetLineOut['section'], string][] = [
@@ -61,7 +72,12 @@ function tile(r: RatioOut, asOf: string | null): Tile {
   }
 }
 
-function Statement({ sheet }: { sheet: BalanceSheetReport }) {
+/** The page with a line drilled into (or none: `line` undefined). */
+function drillHref(query: Query, line?: string): string {
+  return href(['balance-sheet', 'statement'], { ...query, line })
+}
+
+function Statement({ sheet, query }: { sheet: BalanceSheetReport; query: Query }) {
   const compared = sheet.compared_with !== null && sheet.compared_with !== undefined
   return (
     <StatementTable
@@ -85,6 +101,7 @@ function Statement({ sheet }: { sheet: BalanceSheetReport }) {
             current: <Amount value={line.value} />,
             previous: <Amount value={line.before} />,
             change: <StatementChange change={line.change_pct} />,
+            to: line.level === 'main' && line.value && Number(line.value) !== 0 && !/forex/i.test(line.label) ? drillHref(query, line.key) : undefined,
           }))
         const totalRow: StatementRow = {
           key: `${section}-total`,
@@ -98,6 +115,52 @@ function Statement({ sheet }: { sheet: BalanceSheetReport }) {
         return { key: section, title, rows: [...lines, totalRow] }
       })}
     />
+  )
+}
+
+function Drill({ line, drill, query }: { line: string; drill: NonNullable<Props['drill']>; query: Query }) {
+  const found = drill.found
+  const [open, setOpen] = useState<Set<string> | undefined>(undefined)
+  let body: React.ReactNode
+  if (drill.error) {
+    body = <ErrorState message="The line's groups and ledgers couldn't be loaded." error={drill.error} onRetry={drill.onRetry} />
+  } else if (drill.loading || !found) {
+    body = <Loading shape="report" />
+  } else if (found.reason) {
+    body = <Alert type="info" showIcon message={`${found.reason}.`} />
+  } else {
+    const rows: TreeRow[] = found.rows.map((r) => ({
+      key: r.key, label: r.label, kind: r.kind, depth: r.depth, parent: r.parent ?? null, formula: 'F-BS-012',
+      cells: [<Amount key="a" value={r.amount} />],
+      to: r.kind === 'stock' ? builtHref(['stock', 'summary'], query) : ledgerHref(r.ledger_id, query),
+    }))  // prettier-ignore
+    const shown = open ?? new Set(rows.filter((r) => r.depth === 0).map((r) => r.key))
+    const toggle = (key: string) => {
+      const next = new Set(shown)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      setOpen(next)
+    }
+    body = (
+      <>
+        <AccountTree label={`${found.line} by group and ledger`} columns={[{ label: 'Particulars' }, { label: <Explained label="Amount" help={DRILL_WORDS.help} /> }]}
+          rows={rows} open={shown} onToggle={toggle} />
+        <p className="card-note">
+          <a href="#" onClick={(e) => { e.preventDefault(); setOpen(openable(rows)) }}>Open every group</a>
+          {found.rows.some((r) => r.label.startsWith('Forex revaluation difference')) ? ` · ${DRILL_WORDS.revaluation}` : ''}
+        </p>
+      </>
+    )
+  }
+  const title = found?.as_of ? DRILL_WORDS.title(found.line, formatDate(found.as_of)) : line
+  return (
+    <section className="card" aria-label="Drill-down">
+      <div className="card-head">
+        <h2 className="card-title">{title}</h2>
+        <a href={drillHref(query)}>{DRILL_WORDS.close}</a>
+      </div>
+      {body}
+    </section>
   )
 }
 
@@ -137,9 +200,11 @@ export function BalanceSheet(props: Props) {
     const pick = (keys: string[]) => keys.map((k) => ratios.get(k)).filter((r): r is RatioOut => r !== undefined).map((r) => tile(r, sheet.as_of ?? null))
     const against = againstOf(sheet.compared_with)
     content = (
+      <>
+      {props.line && props.drill && <Drill key={props.line} line={props.line} drill={props.drill} query={props.query} />}
       <div className="sheet-layout">
         <section className="card" aria-label="The Balance Sheet">
-          <Statement sheet={sheet} />
+          <Statement sheet={sheet} query={props.query} />
           {sheet.before_reason && <p className="card-note">No comparison: {sheet.before_reason}.</p>}
           {sheet.combined && <Typography.Text type="secondary">Several companies combined, without inter-company eliminations.</Typography.Text>}
         </section>
@@ -154,6 +219,7 @@ export function BalanceSheet(props: Props) {
           </section>
         </div>
       </div>
+      </>
     )
   }
   return (
