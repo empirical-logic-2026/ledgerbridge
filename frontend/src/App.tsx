@@ -34,6 +34,8 @@ import { updateQuery, useRoute } from './router.ts'
 import { chosenPeriod, chosenYear, periodDates, selectedIds, selectionQuery, useSelection } from './selection.ts'
 import { AppShell } from './shell/AppShell.tsx'
 import { findPage } from './shell/nav.ts'
+import { pageNoteFor } from './shell/pageNotes.ts'
+import { PageNote } from './components/PageNote.tsx'
 import { PageHeader, type Crumb } from './shell/PageHeader.tsx'
 import { TopBar } from './shell/TopBar.tsx'
 import type { Mode } from './theme.ts'
@@ -434,6 +436,13 @@ export default function App({ mode, onMode, today }: Props) {
     content = <Result status="404" title="There is no such page" subTitle="Choose a module in the top bar." />
   }
 
+  // The page's note at its top (shell/pageNotes.ts): not for an address with a bad id, nor when
+  // there is nothing to show (no companies, or the data plane unreachable).
+  const rowId = route.path[2]
+  const pageIsThere = found !== undefined && (rowId === undefined || /^\d+$/.test(rowId)) && route.path.length <= 3
+  const hasData = !companies.error && !(companies.data && companies.data.length === 0)
+  const note = pageIsThere && hasData && at ? pageNoteFor(at, rowId !== undefined) : undefined
+
   return (
     <AmountFormatProvider>
       <AppShell
@@ -446,6 +455,7 @@ export default function App({ mode, onMode, today }: Props) {
             selection={selection} selectedIds={ids ?? []} period={period} onChange={select} query={query} />
         }
       >
+        {note && <PageNote key={note.page} page={note.page} note={note.note} pageTitle={crumbs[crumbs.length - 1].label} />}
         {content}
       </AppShell>
     </AmountFormatProvider>

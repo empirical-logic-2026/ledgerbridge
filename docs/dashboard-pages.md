@@ -4,7 +4,7 @@ This document tells you what each page of the dashboard shows and how to check i
 
 | Field | Value |
 | --- | --- |
-| Version | 1.3 |
+| Version | 1.4 |
 | Date | 2026-11-12 |
 | Requirements | RPT-014 (layout and modules), RPT-015 (formulas), RPT-016 (periods and comparison) |
 | Language | ASD-STE100 Simplified Technical English |
@@ -79,7 +79,13 @@ All pages load and show errors in the same way:
 - The loading area has `aria-busy`. A screen reader says "Loading…".
 - When a request fails, the page shows what failed and why. Click **Retry** to send the request again.
 
-### 1.6 How to check a page against Tally
+### 1.6 The note at the top of each page
+
+Each page has a small box at the top with the title "About this page" (or a title that tells what it explains). The box tells you what the page shows, where the figures come from and how the page works them out. It also tells you what can surprise you and which report of Tally to compare with.
+
+The box is open the first time. Click its title, or press Enter or Space on it, to close it or to open it again. The browser keeps your choice for each page. A test fails if a page has no box.
+
+### 1.7 How to check a page against Tally
 
 Use these steps for each page:
 
@@ -96,6 +102,15 @@ For a statement, use the statement date on the page. In Educational mode, the mo
 **Purpose:** The Overview shows the whole business on one page.
 
 **Filters and controls:** The period, the comparison, the companies and Amounts. The page takes no filters.
+
+**Note at the top of the page.** The box says:
+
+- The page shows the business at a glance: sales, profit, cash and bank, and customers. It also shows the months, the channels, the Profit & Loss against last year and the top customers.
+- Sales, purchases and customers come from the vouchers of the period (F-SAL-004, F-PUR-001, F-SAL-011). Cash and bank is the balance at the end of the period (F-BAL-002).
+- Profit comes from our stored Profit & Loss statements (F-PL-003, F-PL-004). It goes to the last statement date in the period.
+- In Educational mode, a month that ends on the 30th goes to the 2nd of the next month.
+- The page adds the companies without inter-company eliminations.
+- To compare, use the Profit & Loss A/c, the Sales Register and the Balance Sheet of Tally.
 
 **Contents:**
 
@@ -141,6 +156,14 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 
 **Purpose:** The page shows the sales of the period, by month, by branch, by channel and by customer.
 
+**Note at the top of the page.** The box says:
+
+- The page shows the sales of the period: net sales, invoices, average invoice and returns, by month and by company. It also shows the channels, the top customers and the largest invoices.
+- The figures come from the vouchers on the ledgers under Sales Accounts. They do not need stored statements.
+- Net sales are gross sales plus returns plus other adjustments (F-SAL-001 to F-SAL-004). The average invoice is gross sales divided by the invoices (F-SAL-006).
+- The filters for customer and channel change each figure. The page adds the companies without inter-company eliminations.
+- To compare, use the Sales Register of Tally and the Sales Accounts line of the Profit & Loss A/c.
+
 **Contents:**
 
 | Item | What it shows | Formula IDs |
@@ -176,6 +199,14 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 
 **Purpose:** The page lists each sales invoice and credit note, as the Day Book of Tally shows them.
 
+**Note at the top of the page.** The box says:
+
+- The page shows each sales invoice and credit note of the period, as the Day Book shows them, by month.
+- Debit and credit are the first line of the voucher, usually the party (F-REG-001).
+- Value is only the lines on the ledgers under Sales Accounts (F-REG-002). It does not include taxes and freight.
+- The page does not show cancelled and optional vouchers.
+- To compare, use the Sales Register of Tally.
+
 **Contents:**
 
 | Item | What it shows | Formula IDs |
@@ -194,6 +225,13 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 ### 3.3 Monthly sales
 
 **Purpose:** The page shows the sales of each month and the closing balance from the start of the financial year.
+
+**Note at the top of the page.** The box says:
+
+- The page shows the gross sales, returns, other adjustments, net sales and invoices of each month.
+- The figures come from the vouchers on the ledgers under Sales Accounts (F-SAL-001 to F-SAL-005).
+- The closing balance adds the net sales from the start of the financial year of each company (F-SAL-008).
+- To compare, use the monthly Group Summary of Sales Accounts in Tally.
 
 **Contents:**
 
@@ -215,6 +253,13 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 ### 3.4 Channels
 
 **Purpose:** The page shows the sales of each channel (voucher type), with a column for each month.
+
+**Note at the top of the page.** The box says:
+
+- The page shows the net sales of each channel, with a column for each month. A channel is a voucher type.
+- The figures come from the vouchers on the ledgers under Sales Accounts (F-SAL-009, F-SAL-010).
+- Voucher types with the same name in two companies are one channel.
+- To compare, use the Sales Register of Tally for the same voucher type.
 
 **Contents:**
 
@@ -238,6 +283,15 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 **Purpose:** The list shows each customer with sales in the period. The page of a customer shows its figures, invoices, payments, ledger, bills and months.
 
 **Filters and controls:** No filters. The page has its own tabs: Invoices, Settlements, Statement, Bills and Monthly.
+
+**Note at the top of the page.** The box says:
+
+- The list shows each customer with sales in the period: net sales, invoices, the last invoice and the balance due (F-SAL-012, F-PTY-001).
+- The page of a customer shows the balance, the overdue bills, the net sales, the days to pay and five tabs.
+- The bills come from the opening bills and the bills of the vouchers, with their due dates (F-PTY-004).
+- Amounts on account are not bills. Thus the bills can be less than the balance (F-PTY-013).
+- A customer is identified by name in all the companies of the selection.
+- To compare, use the ledger of the customer and Outstandings in Tally.
 
 **Contents:**
 
@@ -269,6 +323,12 @@ The Purchases module has four pages: Purchases dashboard, Purchase register, Mon
 
 **Filters for the Purchases module:** Voucher type, except on the Vendors list.
 
+**Note at the top of the page.** The box says:
+
+- Each Purchases page has the note of the Sales page of the same name, for purchases.
+- The figures come from the vouchers on the ledgers under Purchase Accounts.
+- To compare, use the Purchase Register of Tally and the Purchase Accounts line of the Profit & Loss A/c.
+
 | Page | Same as | Formula IDs |
 | --- | --- | --- |
 | Purchases dashboard | Sales dashboard (3.1) | F-SAL-001 to F-SAL-007 for purchases, F-PUR-001 |
@@ -295,6 +355,15 @@ The module has two pages: Profit & Loss and Cost centres.
 ### 5.1 Profit & Loss
 
 **Purpose:** The page shows the margins, the cost structure, the monthly trend and the full Profit & Loss.
+
+**Note at the top of the page.** The box says:
+
+- The page shows the margins, the cost structure, the months and the full Profit & Loss with the comparison period.
+- Each line comes from our stored statements: the statement at the end of the period minus the statement before its start (F-PL-007).
+- The margins and the cost structure are shares of net sales (F-PL-005, F-PL-006, F-PL-008, F-PL-010).
+- "Matches Tally" shows only when each compared line is equal (F-CHK-001 to F-CHK-003).
+- Profit needs the statements for those dates. In Educational mode, a month that ends on the 30th goes to the 2nd of the next month.
+- To compare, use the Profit & Loss A/c of Tally.
 
 **Contents:**
 
@@ -323,6 +392,13 @@ The module has two pages: Profit & Loss and Cost centres.
 
 **Purpose:** The page shows the allocations to each cost centre, for each month.
 
+**Note at the top of the page.** The box says:
+
+- The list shows each cost centre with its allocations in the period, in total and month by month (F-CC-001, F-CC-003).
+- The page of a cost centre shows each allocation (F-CC-002).
+- A row shows only the allocations of that cost centre. Tally adds the cost centres below it.
+- To compare, use the Category Summary of the cost centres in Tally.
+
 **Contents:**
 
 | Item | What it shows | Formula IDs |
@@ -345,6 +421,15 @@ The module has two pages: Profit & Loss and Cost centres.
 **Purpose:** The page shows the Balance Sheet at the period end, against the end of the comparison period, with the ratios.
 
 **Filters:** None. A statement covers each customer, channel and voucher type.
+
+**Note at the top of the page.** The box says:
+
+- The page shows the Balance Sheet at the end of the period and at the end of the comparison period, with the ratios.
+- The lines come from our stored Balance Sheet at the last statement date in the period (F-BS-005).
+- The ratios follow Schedule III (F-RAT-008 to F-RAT-010). Hover a ratio to see its parts.
+- Thus the ratios can be different from the Ratio Analysis of Tally.
+- The page adds the companies without inter-company eliminations.
+- To compare, use the Balance Sheet of Tally at the same date.
 
 **Contents:**
 
@@ -386,6 +471,14 @@ The module has two pages: Stock summary and By godown. Each item has its own pag
 ### 7.1 Stock summary
 
 **Purpose:** The page shows the stock value, the stock by group and godown, and each item.
+
+**Note at the top of the page.** The box says:
+
+- The page shows each stock item with its quantities, value and rate, and the stock value by date, group and godown.
+- The quantities come from the vouchers. The tests check them against Tally item by item (F-STK-001 to F-STK-004).
+- The values are the values of Tally at the last statement date in the period (F-STK-005 to F-STK-007).
+- Stock at the godown of a job worker is not counted, as in Tally.
+- To compare, use the Stock Summary of Tally at the same date.
 
 **Contents:**
 
@@ -458,6 +551,14 @@ A row value is the quantity multiplied by the rate of the item. Tally does not k
 
 **Purpose:** The page shows one item: its figures, each movement, each month, and where it is.
 
+**Note at the top of the page.** The box says:
+
+- The page shows one item: its figures, each movement, each month and the item at each godown and batch.
+- The quantities come from the vouchers (F-STK-001 to F-STK-004). The values are the values of Tally (F-STK-005).
+- The other godown of a movement is where the stock went, or where it came from.
+- At one godown, a month has no value, because Tally keeps no value for each item at each godown.
+- To compare, use the Stock Item Monthly Summary of Tally.
+
 **Contents:**
 
 | Item | What it shows | Formula IDs |
@@ -497,6 +598,14 @@ You can group the rows by item, godown, holding, batch, other godown, order numb
 **Purpose:** The page shows the cash and bank at the start and the end of the period, and the money in and out by category.
 
 **Filters:** None.
+
+**Note at the top of the page.** The box says:
+
+- The page shows the cash and bank at the start and at the end, and the money in and out by category and by month.
+- The start plus the money in minus the money out is the end (F-CF-001, F-BAL-002).
+- Each amount goes to the category of the other ledgers of its voucher.
+- A move between cash and bank adds nothing. Bank OD accounts are loans, not cash.
+- To compare, use the Cash/Bank Book(s) of Tally.
 
 **Contents:**
 
@@ -576,6 +685,13 @@ The module has the page Transactions. Each voucher also has its own page.
 
 **Purpose:** The page lists each ledger line of the period.
 
+**Note at the top of the page.** The box says:
+
+- The page shows each ledger line of the period, with its voucher, ledger, debit or credit and party.
+- A positive amount is a debit. A negative amount is a credit (F-TRN-001).
+- The page does not show cancelled and optional vouchers. It does not show the UTR.
+- To compare, use the Day Book of Tally with details (Alt+F1).
+
 **Contents:**
 
 | Item | What it shows | Formula IDs |
@@ -597,6 +713,13 @@ The module has the page Transactions. Each voucher also has its own page.
 **Purpose:** The page shows one voucher as Tally keeps it.
 
 **How to open it:** Click a voucher number in a register or in Transactions. The pages of a stock item, a cost centre and a party also link to vouchers. You can also click a bill on Receivables or Payables. The page has no tab of its own.
+
+**Note at the top of the page.** The box says:
+
+- The page shows one voucher as Tally keeps it: its header, ledger lines, bills and stock lines.
+- The debits and the credits of the lines are equal (F-VCH-001).
+- A cancelled voucher has no lines. An optional voucher does not change the books.
+- To compare, open the same voucher in the Day Book of Tally.
 
 **Contents:**
 
@@ -627,6 +750,14 @@ The module has three pages: Data health, Explore and Companies.
 ### 11.1 Data health and Companies
 
 **Purpose:** The pages show if the data is complete and correct, and which companies the dashboard shows.
+
+**Note at the top of the page.** The box says:
+
+- Data health shows the last sync, the checks and the status in Tally for each company (F-DAT-001 to F-DAT-004).
+- The checks compare our figures with the figures of Tally, at the date that the page shows.
+- Companies shows each company with the start of its books and its financial year. The name can be a display name, not the name in Tally.
+- The pages do not show companies on hold.
+- To compare, run ./dev.ps1 report, and press F3 in Tally.
 
 **Contents:**
 
@@ -688,6 +819,7 @@ The module has three pages: Data health, Explore and Companies.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 1.4 | 2026-11-12 | A note at the top of each page (section 1.6), and the text of each note in its page section. |
 | 1.3 | 2026-11-12 | Parties: six groups of age, the age by bill date, the parts not in bills, the bills and the note. The page of a voucher. Data › Explore. |
 | 1.2 | 2026-11-11 | Stock › By godown: the note "How this page divides stock". |
 | 1.1 | 2026-11-11 | Stock: the By godown page and the page of an item at one godown. The inventory lines dataset. |

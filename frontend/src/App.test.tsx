@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp } from 'antd'
 import App from './App.tsx'
+import { NAV } from './shell/nav.ts'
+import { pagesWithNotes } from './shell/pageNotes.ts'
 import type {
   CentrePageOut,
   CentresOut,
@@ -272,7 +274,8 @@ describe('the dashboard', () => {
     expect(within(top).getByText('Payment Overdue')).toHaveClass('status-bad')
     expect(within(top).getByText('Fully Settled')).toHaveClass('status-good')
     expect(within(top).getByText('Customer has not paid by the due date.')).toBeInTheDocument()
-    expect(screen.getByText(/without inter-company eliminations/)).toBeInTheDocument()
+    // On the page itself (the note at the top says it too).
+    expect(screen.getAllByText(/without inter-company eliminations/).some((el) => !el.closest('[data-note]'))).toBe(true)
     expect(screen.getAllByTestId('chart').length).toBeGreaterThan(1) // the charts and the sparklines
   })
 
@@ -1718,7 +1721,7 @@ describe('the stock by godown', () => {
     // Closed by the reader: remembered in this browser, so it starts closed next time.
     fireEvent.click(title)
     await waitFor(() => expect(note.open).toBe(false))
-    await waitFor(() => expect(window.localStorage.getItem('ledgerbridge.godownNote')).toBe('closed'))
+    await waitFor(() => expect(window.localStorage.getItem('ledgerbridge.note.stock-godowns')).toBe('closed'))
     cleanup()
     renderApp('#/stock/godowns')
     const again = (await screen.findByText('How this page divides stock')).closest('details') as HTMLDetailsElement
@@ -1837,6 +1840,78 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     'stock/summary/41', 'stock/godowns', 'books/vouchers/7', 'data/explore', 'cash-flow/movement', 'parties/receivables', 'parties/payables', 'books/transactions',
     'data/health',
   ]
+
+  // Every page has its note at the top (shell/pageNotes.ts): the pages above, plus a vendor's
+  // page and Data › Companies (no figures).
+  const notePages = [...pages, 'purchases/vendors/11', 'data/companies']
+  const noteAnswers = { ...answers, '/api/v1/parties/vendors/11': { ...partyFound, kind: 'vendors' } }
+
+  it('has a note for every built page of the navigation and every detail page', () => {
+    const covered = new Set(pagesWithNotes())
+    const built = NAV.flatMap((g) => g.pages.filter((pg) => pg.built).map((pg) => `${g.key}/${pg.key}`))
+    expect(built.filter((at) => !covered.has(at))).toEqual([])
+    // The pages that open one row have a note of their own.
+    for (const detail of ['sales/customers/:id', 'purchases/vendors/:id', 'pnl/cost-centres/:id', 'stock/summary/:id']) {
+      expect(covered.has(detail), detail).toBe(true)
+    }
+    // And the page test below visits every one of them.
+    const visited = new Set(notePages.map((page) => page.replace(/\/\d+$/, '/:id')))
+    for (const at of covered) if (at !== 'books/vouchers') expect(visited.has(at), at).toBe(true)
+    expect(visited.has('books/vouchers/:id')).toBe(true)
+  })
+
+  it.each(notePages)('#/%s shows one note: a title, 3 to 6 points and the Tally report to compare with', async (page) => {
+    window.localStorage.clear()
+    stubApi(noteAnswers)
+    renderApp(`#/${page}`)
+    await waitFor(() => expect(document.querySelectorAll('[data-note]').length).toBe(1))
+    const note = document.querySelector('[data-note]') as HTMLDetailsElement
+    expect(note.open).toBe(true) // open the first time
+    expect(note.getAttribute('aria-label')).toMatch(/^About this page: /)
+    expect(note.querySelector('summary')?.textContent?.trim()).toBeTruthy()
+    const points = note.querySelectorAll('li').length
+    expect(points).toBeGreaterThanOrEqual(3)
+    expect(points).toBeLessThanOrEqual(6)
+    expect(note.querySelector('.page-note-footer')?.textContent).toMatch(/compare|Tally|dev\.ps1/)
+  })
+
+  it('a note closes, stays closed on that page only, and opens again', async () => {
+    window.localStorage.clear()
+    stubApi(noteAnswers)
+    renderApp('#/sales/dashboard')
+    const title = await screen.findByText('About this page')
+    const note = title.closest('details') as HTMLDetailsElement
+    expect(note.getAttribute('data-note')).toBe('sales-dashboard')
+    fireEvent.click(title) // the title is the note's button (Enter or Space with the keyboard)
+    await waitFor(() => expect(note.open).toBe(false))
+    expect(window.localStorage.getItem('ledgerbridge.note.sales-dashboard')).toBe('closed')
+    cleanup()
+    renderApp('#/sales/dashboard')
+    const again = (await screen.findByText('About this page')).closest('details') as HTMLDetailsElement
+    expect(again.open).toBe(false) // remembered
+    cleanup()
+    renderApp('#/sales/register') // another page keeps its own state
+    const other = (await screen.findByText('About this page')).closest('details') as HTMLDetailsElement
+    expect(other.open).toBe(true)
+    cleanup()
+    renderApp('#/sales/dashboard')
+    const reopened = (await screen.findByText('About this page')).closest('details') as HTMLDetailsElement
+    fireEvent.click(reopened.querySelector('summary') as HTMLElement)
+    await waitFor(() => expect(reopened.open).toBe(true))
+    expect(window.localStorage.getItem('ledgerbridge.note.sales-dashboard')).toBeNull()
+  })
+
+  it('shows no note where there is nothing to show', async () => {
+    stubApi({ '/api/v1/companies': [] })
+    renderApp('#/sales/dashboard')
+    expect(await screen.findByText('No companies to show yet.')).toBeInTheDocument()
+    expect(document.querySelector('[data-note]')).toBeNull()
+    cleanup()
+    stubApi(noteAnswers)
+    renderApp('#/books/vouchers')
+    expect(await screen.findByText('Open a voucher from a register, a table or a bill.')).toBeInTheDocument()
+    expect(document.querySelector('[data-note]')).toBeNull()
+  })
 
   it('reads the sheet', () => {
     expect(known.size).toBeGreaterThan(80)
