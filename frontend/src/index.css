@@ -1221,27 +1221,42 @@ body,
   margin: 0 0 12px;
 }
 
-/* "How this page divides stock" on the By godown page: a small info box the reader can close */
-.godown-note {
+/* a page's note (components/PageNote.tsx): a small info box the reader can close */
+.page-note {
   margin-bottom: 18px;
   border-left: 4px solid var(--lb-primary);
   background: var(--lb-primary-soft);
 }
 
-.godown-note-title {
+.page-note-title {
   font-weight: 600;
   cursor: pointer;
 }
 
-.godown-note-points {
+.page-note-points {
   margin: 8px 0 0;
   padding-left: 20px;
 }
 
-.godown-note-points li + li {
+.page-note-points li + li {
   margin-top: 4px;
 }
 
-.godown-note-footer {
+.page-note-footer {
   margin: 8px 0 0;
+}
+
+/* Receivables and Payables: what to age bills by; what each part of "not in bills" means */
+.ageing-basis {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.not-in-bills-meaning {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--lb-muted);
 }

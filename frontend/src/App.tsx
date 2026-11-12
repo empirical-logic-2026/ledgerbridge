@@ -6,7 +6,7 @@
 import { AmountFormatProvider } from './components/Money.tsx'
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockGodowns, useStockItem, useTransactions, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useAgeing, useBalanceSheet, useCashFlow, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockGodowns, useStockItem, useTransactions, useVoucher, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { ErrorState } from './components/loading/ErrorState.tsx'
 import { Loading } from './components/loading/Loading.tsx'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
@@ -16,6 +16,8 @@ import { CostCentrePage, CostCentres } from './apps/costcentres/CostCentres.tsx'
 import { StockItemPage, StockSummary } from './apps/stock/Stock.tsx'
 import { StockGodowns } from './apps/stock/StockGodowns.tsx'
 import { Transactions } from './apps/books/Transactions.tsx'
+import { VoucherPage } from './apps/books/VoucherPage.tsx'
+import { Explore } from './apps/data/Explore.tsx'
 import { Ageing } from './apps/parties/Ageing.tsx'
 import { BalanceSheet } from './apps/statements/BalanceSheet.tsx'
 import { CashFlow } from './apps/cash/CashFlow.tsx'
@@ -29,7 +31,7 @@ import { Channels } from './apps/sales/Channels.tsx'
 import { SalesDashboard } from './apps/sales/SalesDashboard.tsx'
 import { readOptions } from './reporting/reportTable.ts'
 import { updateQuery, useRoute } from './router.ts'
-import { chosenPeriod, chosenYear, selectedIds, selectionQuery, useSelection } from './selection.ts'
+import { chosenPeriod, chosenYear, periodDates, selectedIds, selectionQuery, useSelection } from './selection.ts'
 import { AppShell } from './shell/AppShell.tsx'
 import { findPage } from './shell/nav.ts'
 import { PageHeader, type Crumb } from './shell/PageHeader.tsx'
@@ -75,7 +77,8 @@ export default function App({ mode, onMode, today }: Props) {
   })
   const purchases = usePurchasesDashboard(at === 'purchases/dashboard' ? ids : undefined, period, selection.compare, selection.facets.voucher_type)
   const ageingKind = at === 'parties/receivables' ? 'customers' : at === 'parties/payables' ? 'vendors' : undefined
-  const ageing = useAgeing(ageingKind ?? 'customers', ageingKind ? ids : undefined, period)
+  const ageingBasis = route.query.get('basis') === 'bill_date' ? 'bill_date' : 'due_date'
+  const ageing = useAgeing(ageingKind ?? 'customers', ageingKind ? ids : undefined, period, ageingBasis)
   const sheet = useBalanceSheet(at === 'balance-sheet/statement' ? ids : undefined, period, selection.compare)
   const flow = useCashFlow(at === 'cash-flow/movement' ? ids : undefined, period)
   const salesRegister = useRegister('sales', at === 'sales/register' ? ids : undefined, period, {
@@ -111,6 +114,8 @@ export default function App({ mode, onMode, today }: Props) {
   const stockItem = useStockItem(stockItemId, at === 'stock/summary' ? ids : undefined, period, stockGodown)
   const stockGodowns = useStockGodowns(at === 'stock/godowns' ? ids : undefined, period)
   const transactions = useTransactions(at === 'books/transactions' ? ids : undefined, period)
+  const voucherId = at === 'books/vouchers' && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
+  const voucher = useVoucher(voucherId, at === 'books/vouchers' ? ids : undefined)
   const query = selectionQuery(selection)
   const all = companies.data ?? []
   const selected = all.filter((c) => ids?.includes(c.id))
@@ -171,6 +176,29 @@ export default function App({ mode, onMode, today }: Props) {
         onRetry={retry(periods, centreList)}
         query={query}
       />
+    )
+  } else if (at === 'books/vouchers' && !voucherId) {
+    content = <Result status="404" title="There is no such page" subTitle="Open a voucher from a register, a table or a bill." />
+  } else if (at === 'books/vouchers') {
+    crumbs = [{ label: 'Books', path: ['books', 'transactions'] }, { label: voucher.data ? `${voucher.data.voucher_type} ${voucher.data.number}` : 'Voucher' }]
+    content = (
+      <VoucherPage
+        key={voucherId}
+        companies={selected}
+        voucher={voucher.data}
+        loading={companies.isPending || voucher.isPending}
+        error={voucher.error}
+        onRetry={retry(voucher)}
+        query={query}
+      />
+    )
+  } else if (at === 'data/explore') {
+    crumbs = [{ label: 'Data', path: ['data', 'health'] }, { label: 'Explore' }]
+    const [from, to] = period ? periodDates(period) : [undefined, undefined]
+    content = companies.isPending ? (
+      <Loading shape="report" />
+    ) : (
+      <Explore companies={selected} companyIds={ids ?? []} period={from && to ? { from, to } : undefined} query={query} />
     )
   } else if (at === 'books/transactions') {
     crumbs = [{ label: 'Books', path: ['books', 'transactions'] }, { label: 'Transactions' }]
@@ -300,6 +328,8 @@ export default function App({ mode, onMode, today }: Props) {
         onRetry={retry(periods, ageing)}
         dark={mode === 'dark'}
         query={query}
+        basis={ageingBasis}
+        onBasis={(basis) => updateQuery(route, { basis: basis === 'due_date' ? undefined : basis })}
       />
     )
   } else if (at === 'sales/register' || at === 'purchases/register') {

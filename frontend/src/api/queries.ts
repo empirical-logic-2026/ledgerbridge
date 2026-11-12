@@ -3,7 +3,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import { comparisonQuery, type CompareKind, type PeriodChoice } from '../selection.ts'
-import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport, StockGodownsOut, StockItemPageOut, StockOut, TransactionsOut } from './types.ts'
+import type { DatasetInfo, DatasetResult, Value as DatasetValue } from './types.ts'
+import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, Home, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport, StockGodownsOut, StockItemPageOut, StockOut, TransactionsOut, VoucherOut } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -70,10 +71,10 @@ export function useBalanceSheet(companies: number[] | undefined, period: PeriodC
 }
 
 /** Receivables (customers) or payables (vendors) with ageing, as at the period's end. */
-export function useAgeing(kind: 'customers' | 'vendors', companies: number[] | undefined, period: PeriodChoice | undefined) {
+export function useAgeing(kind: 'customers' | 'vendors', companies: number[] | undefined, period: PeriodChoice | undefined, basis: 'due_date' | 'bill_date' = 'due_date') {
   return useQuery({
-    queryKey: ['ageing', kind, companies, period],
-    queryFn: () => getJson<AgeingOut>(`/api/v1/ageing/${kind}`, { company: companies, ...periodQuery(period) }),
+    queryKey: ['ageing', kind, companies, period, basis],
+    queryFn: () => getJson<AgeingOut>(`/api/v1/ageing/${kind}`, { company: companies, ...periodQuery(period), basis: basis === 'due_date' ? undefined : basis }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }
@@ -244,5 +245,41 @@ export function useTransactions(companies: number[] | undefined, period: PeriodC
     queryKey: ['transactions', companies, period],
     queryFn: () => getJson<TransactionsOut>('/api/v1/transactions', { company: companies, ...periodQuery(period) }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+/** One voucher for the voucher page (core/vouchers.py). */
+export function useVoucher(id: string | undefined, companies: number[] | undefined) {
+  return useQuery({
+    queryKey: ['voucher', id, companies],
+    queryFn: () => getJson<VoucherOut>(`/api/v1/vouchers/${id}`),
+    enabled: id !== undefined && companies !== undefined && companies.length > 0,
+  })
+}
+
+/** The table explorer's datasets and what each offers (the Explore page). */
+export function useDatasets() {
+  return useQuery({
+    queryKey: ['datasets'],
+    queryFn: () => getJson<DatasetInfo[]>('/api/v1/datasets'),
+    staleTime: Infinity, // fixed by the code
+  })
+}
+
+/** One page of a dataset's result for the Explore page's choices (api/v1/dataset_query.py). */
+export function useDatasetResult(name: string | undefined, params: Record<string, unknown> | undefined) {
+  return useQuery({
+    queryKey: ['dataset', name, params],
+    queryFn: () => getJson<DatasetResult>(`/api/v1/datasets/${name}`, params),
+    enabled: name !== undefined && params !== undefined,
+  })
+}
+
+/** The choices of a filter of ids (a ledger, an item, ...), searched by `q`. */
+export function useDatasetValues(name: string, key: string, q: string, companies: number[] | undefined) {
+  return useQuery({
+    queryKey: ['dataset-values', name, key, q, companies],
+    queryFn: () => getJson<DatasetValue[]>(`/api/v1/datasets/${name}/values/${key}`, { q: q || undefined, company: companies }),
+    enabled: companies !== undefined && companies.length > 0,
   })
 }

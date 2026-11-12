@@ -14,6 +14,7 @@ export interface NavPage {
   built: boolean
   facets: Facet[] // the facets this page applies; the others aren't offered
   whyNoFacets?: string // why a page takes no facets
+  detail?: boolean // opened from a link with an id (a voucher), not listed as a tab
 }
 
 export interface NavGroup {
@@ -41,6 +42,13 @@ const page = (key: string, label: string, built = false, facets: Facet[] = [], w
   facets,
   whyNoFacets,
 })
+
+/** A page opened from a link with an id ("#/books/vouchers/12"), not listed as a tab. */
+const detailPage = (key: string, label: string, whyNoFacets: string): NavPage => ({ ...page(key, label, true, [], whyNoFacets), detail: true })
+
+const VOUCHER = 'One voucher is shown whole.'
+
+const EXPLORE = 'Each dataset has its own filters: choose them on the page.'
 
 export const NAV: NavGroup[] = [
   { key: 'overview', label: 'Overview', pages: [page('dashboard', 'Overview', true, [], 'The Overview shows the whole business; the Sales pages take filters.')] },
@@ -74,8 +82,12 @@ export const NAV: NavGroup[] = [
   { key: 'stock', label: 'Stock', pages: [page('summary', 'Stock summary', true, [], STOCK), page('godowns', 'By godown', true, [], STOCK)] },
   { key: 'cash-flow', label: 'Cash Flow', pages: [page('movement', 'Cash movement', true, [], STATEMENT)] },
   { key: 'parties', label: 'Parties', pages: [page('receivables', 'Receivables', true, [], PARTIES), page('payables', 'Payables', true, [], PARTIES)] },
-  { key: 'books', label: 'Books', pages: [page('transactions', 'Transactions', true, [], BOOKS)] },
-  { key: 'data', label: 'Data', pages: [page('health', 'Data health', true, [], DATA), page('companies', 'Companies', true, [], DATA)] },
+  { key: 'books', label: 'Books', pages: [page('transactions', 'Transactions', true, [], BOOKS), detailPage('vouchers', 'Voucher', VOUCHER)] },
+  {
+    key: 'data',
+    label: 'Data',
+    pages: [page('health', 'Data health', true, [], DATA), page('explore', 'Explore', true, [], EXPLORE), page('companies', 'Companies', true, [], DATA)],
+  },
 ]
 
 export const HOME: [string, string] = ['overview', 'dashboard']

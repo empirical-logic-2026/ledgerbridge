@@ -17,6 +17,9 @@ import type {
   RegisterOut,
   SalesDashboard,
   StockGodownsOut,
+  VoucherOut,
+  DatasetInfo,
+  DatasetResult,
   StockItemPageOut,
   StockOut,
   TransactionsOut,
@@ -546,9 +549,11 @@ const ageingRow = (id: number, name: string, balance: string, notDue: string, ov
   party_id: id,
   name,
   balance,
-  buckets: { not_due: notDue, days_1_30: '0', days_31_60: '0', days_61_90: '0', over_90: over90 },
+  buckets: { not_due: notDue, days_1_30: '0', days_31_60: '0', days_61_90: '0', days_91_180: over90, over_180: '0' },
   overdue: over90,
+  over_90: over90,
   uncovered,
+  not_in_bills: { total: uncovered, on_account: uncovered, opening_difference: '0', revaluation: '0', other: '0' },
   status: over90 === '0' ? ('current' as const) : ('overdue' as const),
   payment_status: balance.startsWith('-') ? 'advance' : balance === '0' ? 'settled' : over90 === '0' ? 'pending' : 'overdue',
 })
@@ -557,8 +562,14 @@ const ageingFound = {
   companies: [3, 4],
   combined: true,
   as_of: '2026-09-30',
+  basis: 'due_date',
   rows: [ageingRow(11, 'Customer One', '1161000', '600000', '400000', '161000'), ageingRow(12, 'Customer Two', '200000', '200000', '0', '0')],
   total: { ...ageingRow(0, 'Total', '1361000', '800000', '400000', '161000') },
+  bills: [
+    { party_id: 11, party: 'Customer One', bill: 'S-1', bill_date: '2026-04-01', due_date: '2026-05-01', days: 152, overdue_days: 152, bucket: 'days_91_180', amount: '400000', voucher_id: 7 },
+    { party_id: 11, party: 'Customer One', bill: 'OB-1', bill_date: '2026-03-01', due_date: '2026-10-15', days: -15, overdue_days: 0, bucket: 'not_due', amount: '600000', voucher_id: null },
+  ],
+  days_to_pay: '45',
 }
 
 const sheetLine = (key: string, label: string, section: 'assets' | 'liabilities', value: string, before: string) => ({
@@ -718,23 +729,77 @@ describe('the ratio tiles show what they are worked out from', () => {
   })
 })
 
+const voucherFound: VoucherOut = {
+  voucher_id: 7, company: 3, date: '2026-04-01', voucher_type: 'Sales', number: 'S-1', party_id: 11, party: 'Customer One',
+  reference: 'PO-9', narration: 'Two widgets', cancelled: false, optional: false, total_debit: '118000', total_credit: '118000',
+  lines: [
+    { line_no: 1, ledger_id: 5, ledger: 'Customer One', debit: '118000', credit: null, effective: true, instrument_number: null },
+    { line_no: 2, ledger_id: 6, ledger: 'Sales - Goods', debit: null, credit: '100000', effective: true, instrument_number: null },
+    { line_no: 3, ledger_id: 7, ledger: 'Output IGST', debit: null, credit: '18000', effective: true, instrument_number: null },
+  ],
+  bills: [{ ledger: 'Customer One', bill_type: 'new_ref', bill_name: 'S-1', bill_date: '2026-04-01', due_date: '2026-05-01', debit: '118000', credit: null }],
+  stock: [{ line_no: 1, item_id: 41, item: 'Widget', godown: 'Main Location', other_godown: null, batch: null, quantity: '-2', rate: '50000', amount: '-100000' }],
+}
+const datasetsFound: DatasetInfo[] = [
+  {
+    key: 'voucher_lines', label: 'Voucher lines',
+    dimensions: [{ key: 'date', label: 'Date', groupable: false }, { key: 'month', label: 'Month', groupable: true }, { key: 'ledger', label: 'Ledger', groupable: true }],
+    measures: [{ key: 'debit', label: 'Debit', formula: 'F-TRN-001' }, { key: 'credit', label: 'Credit', formula: 'F-TRN-001' }, { key: 'voucher_count', label: 'Vouchers', formula: 'F-TBL-003' }],
+    filters: [{ key: 'date_from', label: 'From', kind: 'date_from' }, { key: 'date_to', label: 'To', kind: 'date_to' }, { key: 'ledger', label: 'Ledger', kind: 'ids' }],
+    default_columns: ['date', 'ledger'], default_measures: ['debit', 'credit'],
+  },
+  {
+    key: 'inventory_lines', label: 'Inventory lines',
+    dimensions: [{ key: 'item', label: 'Item', groupable: true }],
+    measures: [{ key: 'quantity', label: 'Quantity', formula: 'F-STK-014' }],
+    filters: [], default_columns: ['item'], default_measures: ['quantity'],
+  },
+]
+const datasetResult: DatasetResult = {
+  dataset: 'voucher_lines', group_by: [], columns: ['date', 'ledger'], measures: ['debit', 'credit'],
+  rows: [{ keys: { date: { id: '2026-04-01', label: '01-Apr-2026' }, ledger: { id: 5, label: 'Customer One' } }, values: { debit: '118000', credit: '0' } }],
+  subtotals: [], total: { debit: '118000', credit: '0' }, page: 1, page_size: 100, total_rows: 1,
+}
+
 describe('Receivables with ageing', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('shows the buckets as bars and every customer with their status, as at the period end', async () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/ageing/customers': ageingFound })
     renderApp('#/parties/receivables')
-    const due = await screen.findByRole('region', { name: 'Balance due' })
+    const due = await screen.findByRole('region', { name: 'Total outstanding' })
     expect(due).toHaveTextContent('₹13.61 L')
+    expect(due).toHaveTextContent('= Sundry Debtors on the Balance Sheet')
     expect(screen.getByRole('region', { name: 'Over 90 days' })).toHaveTextContent('₹4.00 L')
     const bars = screen.getByRole('list', { name: 'Outstanding bills by bucket' })
     expect(within(bars).getByText('Not due').closest('.hbar')).toHaveTextContent('66.7%')
-    expect(within(bars).getByText('Over 90 days').closest('.hbar')).toHaveTextContent('33.3%')
+    expect(within(bars).getByText('91–180 days').closest('.hbar')).toHaveTextContent('33.3%')
+    expect(within(bars).getByText('Over 180 days')).toBeInTheDocument()
     const table = screen.getByRole('table', { name: 'Customers by ageing' })
     expect(within(table).getByRole('link', { name: 'Customer One' })).toHaveAttribute('href', expect.stringMatching(/^#\/sales\/customers\/11/))
     expect(within(table).getByText('Payment Overdue')).toHaveClass('status-bad')
     expect(within(table).getByText('Customer has not paid by the due date.')).toBeInTheDocument()
     expect(within(screen.getByRole('navigation', { name: 'Parties pages' })).getByRole('link', { name: 'Payables' })).toHaveAttribute('href', expect.stringMatching(/^#\/parties\/payables/))
+  })
+
+  it('explains ageing, splits what is not in bills, opens the voucher of each bill and ages by bill date on request', async () => {
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/ageing/customers': ageingFound })
+    renderApp('#/parties/receivables')
+    const note = (await screen.findByText('How ageing is worked out')).closest('details') as HTMLDetailsElement
+    expect(note.open).toBe(true)
+    expect(note).toHaveTextContent('six groups: not due, 1–30, 31–60, 61–90, 91–180 and over 180 days')
+    expect(note).toHaveTextContent("The total equals the Sundry Debtors balance on Tally's Balance Sheet")
+    expect(await screen.findByRole('region', { name: 'Average days to pay' })).toHaveTextContent('45 days')
+    const parts = screen.getByRole('table', { name: 'Not in bills' })
+    expect(within(parts).getByText('On account').closest('tr')).toHaveTextContent('₹1.61 L')
+    expect(within(parts).getByText('Exchange-rate revaluation')).toBeInTheDocument()
+    expect(within(parts).getByText('Total not in bills').closest('tr')).toHaveTextContent('₹1.61 L')
+    const bills = screen.getByRole('table', { name: 'Outstanding bills' })
+    expect(within(bills).getByRole('link', { name: 'S-1' }).getAttribute('href')).toMatch(/^#\/books\/vouchers\/7/)
+    expect(within(bills).queryByRole('link', { name: 'OB-1' })).toBeNull() // an opening bill has no voucher
+    fireEvent.click(screen.getByRole('button', { name: 'Days since the bill date' }))
+    await waitFor(() => expect(requests.some((r) => r.includes('/api/v1/ageing/customers') && r.includes('basis=bill_date'))).toBe(true))
+    expect(window.location.hash).toContain('basis=bill_date')
   })
 
   it('uses the legacy aggregate status field when payment_status is absent', async () => {
@@ -915,7 +980,7 @@ describe('the Sales dashboard', () => {
     expect(within(customers).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toMatch(/^#\/sales\/customers\/11\?/)
     expect(within(customers).getByText('Beta')).toBeInTheDocument() // combined: the company shown
     const invoices = screen.getByRole('table', { name: 'Largest invoices' })
-    expect(within(invoices).queryByRole('link', { name: 'S-17' })).toBeNull() // no voucher page yet
+    expect(within(invoices).getByRole('link', { name: 'S-17' }).getAttribute('href')).toMatch(/^#\/books\/vouchers\/\d+/) // opens the voucher
     expect(within(invoices).getByText('04-May-2026')).toBeInTheDocument()
   })
 
@@ -1018,7 +1083,7 @@ describe('the Sales and Purchase registers', () => {
     const table = await screen.findByRole('table', { name: 'Sales register' })
     const link = within(table).getAllByRole('link', { name: 'Customer One' })[0]
     expect(link.getAttribute('href')).toMatch(/^#\/sales\/customers\/11/)
-    expect(within(table).queryByRole('link', { name: 'V-1' })).toBeNull() // no voucher page yet
+    expect(within(table).getByRole('link', { name: 'V-1' }).getAttribute('href')).toMatch(/^#\/books\/vouchers\/1/) // opens the voucher
   })
 
   it('offers the reference and the cheque or transfer number as columns, never a UTR', async () => {
@@ -1669,6 +1734,63 @@ describe('the stock by godown', () => {
   })
 })
 
+describe('the voucher page and Explore', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows a voucher: its header, lines with equal totals, bills and stock', async () => {
+    fullAmounts()
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/vouchers/7': voucherFound })
+    renderApp('#/books/vouchers/7')
+    const lines = await screen.findByRole('table', { name: 'Ledger lines' })
+    expect(screen.getAllByRole('heading', { name: /Sales S-1/ }).length).toBeGreaterThan(0) // header and report title
+    expect(within(lines).getByText('Sales - Goods').closest('tr')).toHaveTextContent('₹1,00,000.00')
+    expect(screen.getByText(/Total debit/)).toHaveTextContent('Total debit ₹1,18,000.00 · total credit ₹1,18,000.00')
+    expect(within(screen.getByRole('table', { name: 'Bills' })).getByText('New Ref')).toBeInTheDocument()
+    expect(within(screen.getByRole('table', { name: 'Stock' })).getByRole('link', { name: 'Widget' }).getAttribute('href')).toMatch(/^#\/stock\/summary\/41/)
+    // A detail page: no tab of its own in Books.
+    expect(screen.queryByRole('link', { name: 'Voucher' })).toBeNull()
+  })
+
+  it('says plainly when a voucher is not there', async () => {
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods })
+    renderApp('#/books/vouchers/99')
+    expect(await screen.findByText("The voucher couldn't be loaded.")).toBeInTheDocument()
+  })
+
+  it('explores a dataset: columns, the period as the dates, CSV and saved views', async () => {
+    window.localStorage.clear()
+    stubApi({
+      '/api/v1/companies': companies, '/api/v1/periods': periods,
+      '/api/v1/datasets': datasetsFound, '/api/v1/datasets/voucher_lines': datasetResult,
+      '/api/v1/datasets/voucher_lines/values/ledger': [{ id: 5, label: 'Customer One' }],
+    })
+    renderApp('#/data/explore?from=2026-04-01&to=2026-04-30')
+    const note = (await screen.findByText('How this page works')).closest('details') as HTMLDetailsElement
+    expect(note.open).toBe(true)
+    const table = await screen.findByRole('table', { name: 'Voucher lines result' })
+    expect(within(screen.getByRole('navigation', { name: 'Data pages' })).getByRole('link', { name: 'Explore' })).toHaveAttribute('aria-current', 'page')
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Date', 'Ledger', 'Debit', 'Credit'])
+    expect(within(table).getByText('Debit')).toHaveAttribute('data-formula', 'F-TRN-001')
+    expect(within(table).getByText('Total').closest('tr')).toHaveTextContent('₹1.18 L')
+    const asked = requests.filter((r) => r.includes('/api/v1/datasets/voucher_lines?')).pop() ?? ''
+    expect(asked).toContain('date_from=2026-04-01') // the dates follow the top bar's period
+    expect(asked).toContain('column=date&column=ledger')
+    expect(screen.getByRole('link', { name: 'Export CSV' }).getAttribute('href')).toMatch(/\/api\/v1\/datasets\/voucher_lines\/csv\?.*column=ledger/)
+    // A saved view keeps the choices in this browser.
+    fireEvent.change(screen.getByRole('textbox', { name: 'View name' }), { target: { value: 'April lines' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save view' }))
+    expect(window.localStorage.getItem('ledgerbridge.views.explore')).toContain('April lines')
+  })
+
+  it('shows a plain error with Retry when a dataset fails', async () => {
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/datasets': datasetsFound })
+    renderApp('#/data/explore')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent("The result couldn't be loaded.")
+    expect(within(alert).getByRole('button', { name: /Retry/ })).toBeInTheDocument()
+  })
+})
+
 describe('every figure on every page names its formula (docs/formula-sheet.md)', () => {
   afterEach(() => vi.unstubAllGlobals())
 
@@ -1699,6 +1821,9 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     '/api/v1/stock/41': stockPage,
     '/api/v1/stock/godowns': godownsFound,
     '/api/v1/transactions': transactionsFound,
+    '/api/v1/vouchers/7': voucherFound,
+    '/api/v1/datasets': datasetsFound,
+    '/api/v1/datasets/voucher_lines': datasetResult,
     '/api/v1/cash-flow': {
       companies: [3, 4], combined: true, start: '2026-04-01', end: '2026-10-30', opening: '1000000', closing: '1200000',
       movements: [{ key: 'customers', label: 'Customers', inflow: '900000', outflow: '0', net: '900000' }],
@@ -1709,7 +1834,7 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     'overview/dashboard', 'sales/dashboard', 'sales/register', 'sales/monthly', 'sales/channels', 'sales/customers',
     'sales/customers/11', 'purchases/dashboard', 'purchases/register', 'purchases/monthly', 'purchases/vendors',
     'pnl/profit-loss', 'pnl/cost-centres', 'pnl/cost-centres/21', 'balance-sheet/statement', 'stock/summary',
-    'stock/summary/41', 'stock/godowns', 'cash-flow/movement', 'parties/receivables', 'parties/payables', 'books/transactions',
+    'stock/summary/41', 'stock/godowns', 'books/vouchers/7', 'data/explore', 'cash-flow/movement', 'parties/receivables', 'parties/payables', 'books/transactions',
     'data/health',
   ]
 

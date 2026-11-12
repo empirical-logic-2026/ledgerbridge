@@ -6,8 +6,11 @@ export interface AgeingOut {
   companies: number[]
   combined: boolean
   as_of: string
+  basis: "due_date" | "bill_date"
   rows: AgeingRowOut[]
   total: AgeingRowOut
+  bills: OpenBillOut[]
+  days_to_pay: string | null
 }
 
 export interface AgeingRowOut {
@@ -16,7 +19,9 @@ export interface AgeingRowOut {
   balance: string
   buckets: Buckets
   overdue: string
+  over_90: string
   uncovered: string
+  not_in_bills: NotInBills
   status: "overdue" | "current"
   payment_status: "overdue" | "pending" | "advance" | "settled" | "no_bill" | "mixed"
 }
@@ -96,7 +101,8 @@ export interface Buckets {
   days_1_30: string
   days_31_60: string
   days_61_90: string
-  over_90: string
+  days_91_180: string
+  over_180: string
 }
 
 export interface CashFlowOut {
@@ -240,7 +246,7 @@ export interface DatasetInfo {
   key: string
   label: string
   dimensions: DimensionOption[]
-  measures: Option[]
+  measures: MeasureOption[]
   filters: FilterOption[]
   default_columns: string[]
   default_measures: string[]
@@ -407,6 +413,12 @@ export interface MatchingOut {
   unchecked: number
 }
 
+export interface MeasureOption {
+  key: string
+  label: string
+  formula: string
+}
+
 export interface MonthFigures {
   month: string
   sales: string
@@ -450,9 +462,25 @@ export interface MovementOut {
   net: string
 }
 
-export interface Option {
-  key: string
-  label: string
+export interface NotInBills {
+  total: string
+  on_account: string
+  opening_difference: string
+  revaluation: string
+  other: string
+}
+
+export interface OpenBillOut {
+  party_id: number
+  party: string
+  bill: string
+  bill_date: string
+  due_date: string
+  days: number
+  overdue_days: number
+  bucket: string
+  amount: string
+  voucher_id: number | null
 }
 
 export interface PartiesOut {
@@ -905,4 +933,60 @@ export interface ValidationRunOut {
   status: string
   checks_passed: number
   checks_failed: number
+}
+
+export interface Value {
+  id: number | string
+  label: string
+}
+
+export interface VoucherBillOut {
+  ledger: string
+  bill_type: string
+  bill_name: string | null
+  bill_date: string | null
+  due_date: string | null
+  debit: string | null
+  credit: string | null
+}
+
+export interface VoucherLineOut {
+  line_no: number
+  ledger_id: number
+  ledger: string
+  debit: string | null
+  credit: string | null
+  effective: boolean
+  instrument_number: string | null
+}
+
+export interface VoucherOut {
+  voucher_id: number
+  company: number
+  date: string
+  voucher_type: string
+  number: string
+  party_id: number | null
+  party: string | null
+  reference: string | null
+  narration: string | null
+  cancelled: boolean
+  optional: boolean
+  total_debit: string
+  total_credit: string
+  lines: VoucherLineOut[]
+  bills: VoucherBillOut[]
+  stock: VoucherStockOut[]
+}
+
+export interface VoucherStockOut {
+  line_no: number
+  item_id: number
+  item: string
+  godown: string | null
+  other_godown: string | null
+  batch: string | null
+  quantity: string
+  rate: string | null
+  amount: string
 }

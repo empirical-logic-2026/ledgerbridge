@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.18 |
+| Version | 0.19 |
 | Date | 2026-11-11 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1); the client's reference screenshots of 2026-11-02 (Section 0.4: layout and information design only; kept on the developer's computer in `docs/design/client-reference/`, not in git, as they show other products and a desktop) |
@@ -142,6 +142,12 @@ Every table: a filter (any part of a text or date cell), **Columns**, **Group by
 - **The note "How this page divides stock"** at the top of By godown: a small info box (open the first time, then as the reader left it, in this browser) explaining the three sections under their own titles, the total and the values.
 - **The item page:** a *By godown and batch* tab; each movement's *Other godown*; with `?godown=` the movements and months at that godown only (a chip says so, *Show every godown* clears it).
 - **Table explorer, the inventory dataset** (`/api/v1/datasets/inventory_lines`): one row per stock-moving inventory line (date, voucher type and number, item, godown, holding, batch, other godown, order number and due date, quantity, rate, amount), grouped and filtered like the voucher-line dataset. No page for the datasets yet.
+
+### Receivables and Payables, the voucher page and Explore (built 2026-11-12, ADR-054)
+
+- **Parties › Receivables and Payables:** key cards (total outstanding = Sundry Debtors / Creditors on the Balance Sheet, overdue, over 90 days, average days to pay); the bills in six buckets, by due date or (as an option) by bill date; *Not in bills* in four parts with what each means; every party, each opening its page; every open bill, each opening its voucher; the note *How ageing is worked out*.
+- **Books › Voucher:** one voucher's header, ledger lines with equal totals, bills and stock; opened from every voucher link; no tab.
+- **Data › Explore:** the table explorer's datasets on a screen: columns or group-bys with subtotals, measures with their formula IDs, filters (the dates follow the top bar), sort, pages, saved views and CSV.
 
 ## 0.3 Everything clickable, and one detail page per entity
 
@@ -472,6 +478,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-12 | 0.19 | Receivables and Payables in six buckets with the parts not in bills; the voucher page; Data › Explore (ADR-054). |
 | 2026-11-11 | 0.18 | Stock by godown and the inventory dataset built (ADR-053): the three sections, the total as Tally counts it, the item page at one godown. |
 | 2026-11-11 | 0.17 | Section 0.5: loading and errors on every page (pulse loading in each component's shape, 150 ms delay, reduced motion, aria-busy, Retry; the logo pulsing on the first load); the statement table as one component; screenshots of the reference layout. |
 | 2026-11-09 | 0.16 | Planned after the data-completion re-fetch: the Stock page's "by godown" view (job workers' stock apart) and an inventory dataset in the table explorer. Opening bills are now stored and counted in ageing (data completion part 2). |

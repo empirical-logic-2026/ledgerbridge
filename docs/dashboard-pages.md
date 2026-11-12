@@ -4,8 +4,8 @@ This document tells you what each page of the dashboard shows and how to check i
 
 | Field | Value |
 | --- | --- |
-| Version | 1.2 |
-| Date | 2026-11-11 |
+| Version | 1.3 |
+| Date | 2026-11-12 |
 | Requirements | RPT-014 (layout and modules), RPT-015 (formulas), RPT-016 (periods and comparison) |
 | Language | ASD-STE100 Simplified Technical English |
 | Word and PDF | `docs/export/dashboard-pages.docx`, `docs/export/dashboard-pages.pdf` (`./dev.ps1 docs-export`) |
@@ -162,7 +162,7 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 | A month in the chart or in the table | The Sales register for that month. |
 | A channel in the donut | The Sales register for that channel. |
 | A customer | The page of that customer. |
-| An invoice number | No link yet. The voucher page is planned. |
+| An invoice number | The page of the voucher (section 10.2). |
 
 **Loading and errors:** As section 1.5, with four key cards, a chart and a table.
 
@@ -182,7 +182,7 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 | --- | --- | --- |
 | Register (table) | Date, particulars, voucher type, voucher number, debit, credit, value and narration. Grouped by month, with subtotals. | F-REG-001, F-REG-002, F-TBL-001, F-TBL-002 |
 
-**Drill-downs:** A voucher number has no link yet. The voucher page is planned.
+**Drill-downs:** Click a voucher number to open the page of the voucher (section 10.2).
 
 **Loading and errors:** As section 1.5, with table rows.
 
@@ -254,7 +254,7 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 | Bills (tab) | Each outstanding bill with its due date. | F-PTY-003 to F-PTY-005, F-PTY-013 |
 | Monthly (tab) | Net sales and receipts for each month. | F-SAL-012, F-PTY-006 |
 
-**Drill-downs:** Click a customer in the list to open its page. A voucher number has no link yet.
+**Drill-downs:** Click a customer in the list to open its page. Click a voucher number to open the page of the voucher.
 
 **Loading and errors:** As section 1.5, with table rows (the list) or key cards, a chart and a table (the page).
 
@@ -330,7 +330,7 @@ The module has two pages: Profit & Loss and Cost centres.
 | Cost centres (table) | Each cost centre with its category, the centre above it, the total, the count and one column for each month. | F-CC-001, F-CC-003 |
 | Page of a cost centre (table) | Each allocation with its date, voucher, ledger and amount. | F-CC-002 |
 
-**Drill-downs:** Click a cost centre to open its page. A voucher number has no link yet.
+**Drill-downs:** Click a cost centre to open its page. Click a voucher number to open the page of the voucher.
 
 **Loading and errors:** As section 1.5, with table rows.
 
@@ -469,7 +469,7 @@ A row value is the quantity multiplied by the rate of the item. Tally does not k
 
 **One godown.** A link from section 7.2 opens the item at one godown. The page then shows "At" and the godown. The movements and the months are only at that godown. A month then has no value, because Tally keeps no value for each item at each godown. The key cards show the whole item. Click "Show every godown" to see all godowns again.
 
-**Drill-downs:** A voucher number has no link yet. The voucher page is planned.
+**Drill-downs:** Click a voucher number to open the page of the voucher (section 10.2).
 
 **Loading and errors:** As section 1.5, with key cards and table rows.
 
@@ -523,38 +523,58 @@ You can group the rows by item, godown, holding, batch, other godown, order numb
 
 The module has two pages: Receivables and Payables.
 
-**Purpose:** The pages show the amounts that customers must pay us and that we must pay vendors, by days past the due date.
+**Purpose:** The pages show the amounts that customers must pay us, or that we must pay vendors, at the end of the period. The pages show the amounts party by party and bill by bill.
 
-**Filters:** None. Use the filter of the table, or open a party.
+**Filters and controls:** No filters. Use the filter of a table, or open a party. The control "Age by" selects the age of a bill: the days past its due date, or the days since its bill date.
+
+**Note at the top of the page.** A small box with the title "How ageing is worked out" explains the page. The box is open the first time. Click its title to close it or to open it again. The browser keeps your choice. The box says:
+
+- The page shows what the customers owe us (or what we owe the vendors) at the end of the period. The amounts come from the bills in Tally.
+- The age of a bill is the number of days after its due date. A bill with no due date is due on its bill date plus the credit days of the party.
+- The bills go into six groups: not due, 1–30, 31–60, 61–90, 91–180 and more than 180 days. A bill is overdue only after its due date.
+- "Not in bills" is the part of the balance that no bill explains.
+- The total is equal to the Sundry Debtors (or Sundry Creditors) balance on the Balance Sheet of Tally at the same date. The page adds the companies without inter-company eliminations.
 
 **Contents:**
 
 | Item | What it shows | Formula IDs |
 | --- | --- | --- |
-| Balance due (key card) | The total at the period end. | F-PTY-001 |
-| Overdue (key card) | The bills past their due date. | F-PTY-002 |
-| Over 90 days (key card) | The bills more than 90 days past their due date. | F-PTY-012 |
-| Not in bills (key card) | The balance that is not in bills. | F-PTY-013 |
-| Outstanding bills by days past due (horizontal bars) | Not due, 1–30, 31–60, 61–90 and more than 90 days. | F-PTY-012 |
-| Parties (table) | Each party with its balance, buckets, status and meaning. | F-PTY-001, F-PTY-012, F-PTY-013 |
+| Total outstanding (key card) | The total at the end of the period. It is equal to the Sundry Debtors (or Sundry Creditors) line of the Balance Sheet. | F-PTY-001 |
+| Overdue (key card) | The bills after their due date. | F-PTY-002 |
+| Over 90 days (key card) | The bills that are more than 90 days old. | F-PTY-018 |
+| Average days to pay (key card) | The days from the bill date to the payment, for the bills paid in the period. | F-PTY-019 |
+| Outstanding bills by age (horizontal bars) | The six groups of age, with the control "Age by". | F-PTY-014 |
+| Not in bills (table) | Four parts, each with its meaning: on account, opening-bill difference, exchange-rate revaluation and other. Then the total. | F-PTY-013, F-PTY-015, F-PTY-016, F-PTY-017, F-PTY-020 |
+| Parties (table) | Each party with its balance, its six groups, the part not in bills, its status and the meaning of the status. | F-PTY-001, F-PTY-013, F-PTY-014 |
+| Outstanding bills (table) | Each open bill with its party, name, bill date, due date, age, days and amount. | F-PTY-004, F-PTY-005, F-PTY-014 |
 
-**Drill-downs:** Click a party to open its page (section 3.5).
+**Exchange-rate revaluation.** For a party in a foreign currency, Tally shows the balance at the current rate. The page uses the same balance. The bills stay at their amounts in the books. Thus the difference goes into "Not in bills".
 
-**Loading and errors:** As section 1.5, with four key cards, bars and a table.
+**Drill-downs:**
+
+| Click | Opens |
+| --- | --- |
+| A party | The page of the party (section 3.5). |
+| A bill | The page of the voucher that made the bill (section 10.2). An opening bill has no voucher. |
+
+**Loading and errors:** As section 1.5, with four key cards, bars and tables.
 
 **Check against Tally:**
 
-1. Open Statements of Accounts › Outstandings › Ageing Analysis.
-2. Set the same date and select ageing by due date.
-3. Compare each bucket and each party.
+1. Open Gateway of Tally › Balance Sheet at the same date. Compare the total with Sundry Debtors (or Sundry Creditors).
+2. Open Statements of Accounts › Outstandings › Ageing Analysis.
+3. Set the same date and select ageing by due date (or by bill date).
+4. Compare each group and each party.
 
 ## 10. Books
 
-The module has one page: Transactions.
+The module has the page Transactions. Each voucher also has its own page.
+
+**Filters for the Books module:** None. Use the filter of the table, or group it.
+
+### 10.1 Transactions
 
 **Purpose:** The page lists each ledger line of the period.
-
-**Filters:** None. Use the filter of the table, or group it.
 
 **Contents:**
 
@@ -562,7 +582,7 @@ The module has one page: Transactions.
 | --- | --- | --- |
 | Transactions (table) | Date, voucher type, voucher number, ledger, debit, credit, party, narration, cheque number, order number and more columns that you can show. | F-TRN-001, F-TBL-001 |
 
-**Drill-downs:** A voucher number has no link yet. The voucher page is planned.
+**Drill-downs:** Click a voucher number to open the page of the voucher (section 10.2).
 
 **Loading and errors:** As section 1.5, with table rows.
 
@@ -572,13 +592,41 @@ The module has one page: Transactions.
 2. Set the same dates.
 3. Show the details (Alt+F1). Compare the lines.
 
+### 10.2 Page of a voucher
+
+**Purpose:** The page shows one voucher as Tally keeps it.
+
+**How to open it:** Click a voucher number in a register or in Transactions. The pages of a stock item, a cost centre and a party also link to vouchers. You can also click a bill on Receivables or Payables. The page has no tab of its own.
+
+**Contents:**
+
+| Item | What it shows | Formula IDs |
+| --- | --- | --- |
+| Voucher | Date, voucher type, voucher number, party, reference, company and narration. Then the total of the debits and the total of the credits. The two totals are equal. | F-VCH-001 |
+| Ledger lines (table) | Each ledger with its debit or credit, and the cheque number. | F-TRN-001 |
+| Bills (table) | The bills that the voucher makes or settles: the type, the bill, its dates and its amount. | F-TRN-001 |
+| Stock (table) | Each stock line with its godown, other godown, batch, quantity, rate and amount. | F-STK-008, F-STK-014, F-STK-015 |
+
+A cancelled voucher has no lines. An optional voucher does not change the books. The page tells you when this is so.
+
+**Drill-downs:** Click a stock item to open its page.
+
+**Loading and errors:** As section 1.5, with table rows. A voucher that is not in your companies shows an error.
+
+**Check against Tally:**
+
+1. Open Display More Reports › Day Book at the date of the voucher.
+2. Open the voucher. Compare the lines, the bills and the stock.
+
 ## 11. Data
 
-The module has two pages: Data health and Companies.
+The module has three pages: Data health, Explore and Companies.
+
+**Filters for the Data module:** None. Data health covers each company. Explore has its own filters.
+
+### 11.1 Data health and Companies
 
 **Purpose:** The pages show if the data is complete and correct, and which companies the dashboard shows.
-
-**Filters:** None. Data health covers each company.
 
 **Contents:**
 
@@ -600,10 +648,47 @@ The module has two pages: Data health and Companies.
 1. Open TallyPrime and press F3. Compare the loaded companies.
 2. Run `./dev.ps1 report`. Compare the validation of each company.
 
+### 11.2 Explore
+
+**Purpose:** The page shows the datasets of the table explorer: voucher lines, vouchers, cost allocations, GST lines and inventory lines.
+
+**Note at the top of the page.** A small box with the title "How this page works" explains the page. It is open the first time. The browser keeps your choice to close it.
+
+**Controls:**
+
+| Control | What it does |
+| --- | --- |
+| Dataset | Selects the dataset. |
+| Group by | Groups the rows by up to four columns. The page then shows a subtotal for each group and a total. |
+| Columns | Selects the columns when the rows are not grouped. |
+| Measures | Selects the figures to show, for example debit and credit. |
+| Sort by | Sorts the rows by a column or a measure. |
+| Filters | Limit the rows: dates, amounts, and lists such as ledgers, parties, items or godowns. The dates follow the period in the top bar, unless you set them on the page. |
+| Export CSV | Gives the same result as a file, with the subtotals and the total. |
+| Save view | Keeps the choices with a name in this browser. Select a saved view to open the same choices again. |
+| Previous, Next | Show the next page of 100 rows. |
+
+**Contents:**
+
+| Item | What it shows | Formula IDs |
+| --- | --- | --- |
+| Result (table) | The rows, the subtotals and the total. Each measure shows its formula ID in its column header. | F-TBL-001, F-TBL-002, F-TBL-003, F-TRN-001, F-CC-002, F-CC-003, F-STK-008, F-STK-014, F-STK-015 |
+
+**Drill-downs:** None.
+
+**Loading and errors:** As section 1.5, with table rows.
+
+**Check against Tally:**
+
+1. Open the Day Book or the register of the same vouchers.
+2. Set the same dates.
+3. Compare the totals.
+
 ## Change log
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 1.3 | 2026-11-12 | Parties: six groups of age, the age by bill date, the parts not in bills, the bills and the note. The page of a voucher. Data › Explore. |
 | 1.2 | 2026-11-11 | Stock › By godown: the note "How this page divides stock". |
 | 1.1 | 2026-11-11 | Stock: the By godown page and the page of an item at one godown. The inventory lines dataset. |
 | 1.0 | 2026-11-11 | First version: each page in the order of the top tabs, with its contents, formula IDs, drill-downs, loading and errors, and the check against Tally. |
