@@ -16,7 +16,6 @@ import type { Company, InvoiceOut, MonthSales, PartySales, SalesDashboard as Das
 import { branchSalesChart } from './branchSalesChart.ts'
 import { Donut } from '../../components/Donut.tsx'
 import { EChart } from '../../components/EChart.tsx'
-import { StatusPill } from '../../components/StatusPill.tsx'
 import { KeyCard } from '../../components/KeyCard.tsx'
 import { againstOf } from '../../selection.ts'
 import { formatExact, formatMonth, toLakhs, toScaled } from '../../format.ts'
@@ -29,7 +28,7 @@ import { tokens, type Tokens } from '../../theme.ts'
 import { COMBINED_NOTE } from '../dashboard/words.ts'
 import { SIDE_WORDS, type Side, type SideWords } from './words.ts'
 import { companyDisplayName } from '../../companyDisplayName.ts'
-import { partyPaymentStatusInfo } from '../../statuses.ts'
+import { partyPaymentStatusInfo, statusHint } from '../../statuses.ts'
 
 interface Props {
   side: Side
@@ -102,24 +101,13 @@ function customerColumns(names: Map<number, string>, combined: boolean, query: Q
   }
   const kind = w.module === 'sales' ? 'customers' : 'vendors'
   return [
-    { key: 'name', label: w.party, kind: 'text', value: (p) => p.name, link: (p) => partyHref({ party_id: p.party_id, name: p.name }, query, w) },
+    { key: 'name', label: w.party, kind: 'text', value: (p) => p.name, link: (p) => partyHref({ party_id: p.party_id, name: p.name }, query, w),
+      help: "Hover a row's name to see its payment status and what it means.", hint: (p) => statusHint(partyPaymentStatusInfo(p.payment_status ?? p.status, p.balance, kind)) },
     { key: 'company', label: 'Company', kind: 'text', value: (p) => names.get(p.company) ?? `Company ${p.company}`, groupable: true, hidden: !combined },
     { key: 'net', label: w.net, kind: 'amount', value: (p) => p.net_sales },
     { key: 'share', label: 'Share', kind: 'text', value: (p) => share(p.net_sales) },
     { key: 'invoices', label: 'Invoices', kind: 'count', value: (p) => p.invoices },
     { key: 'balance', label: 'Balance due', kind: 'amount', value: (p) => p.balance, summed: false },
-    {
-      key: 'status',
-      label: 'Status',
-      kind: 'text',
-      groupable: true,
-      value: (p) => partyPaymentStatusInfo(p.payment_status ?? p.status, p.balance, kind).label,
-      render: (p) => {
-        const status = partyPaymentStatusInfo(p.payment_status ?? p.status, p.balance, kind)
-        return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
-      },
-    },
-    { key: 'meaning', label: 'Meaning', kind: 'text', value: (p) => partyPaymentStatusInfo(p.payment_status ?? p.status, p.balance, kind).meaning, wrap: true },
   ]
 }
 

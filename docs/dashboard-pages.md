@@ -4,7 +4,7 @@ This document tells you what each page of the dashboard shows and how to check i
 
 | Field | Value |
 | --- | --- |
-| Version | 1.4 |
+| Version | 1.5 |
 | Date | 2026-11-12 |
 | Requirements | RPT-014 (layout and modules), RPT-015 (formulas), RPT-016 (periods and comparison) |
 | Language | ASD-STE100 Simplified Technical English |
@@ -48,7 +48,7 @@ The top bar is dark on each page. It has these parts, from left to right:
 | Key card | A label, a figure, the change against the comparison period and a small line of twelve months (F-OVR-001). Green shows a change that is good for the business. Crimson shows a change that is bad. |
 | Statement table | Lines with this period, the comparison period and the change. |
 | Ratio tiles | Ratios in a grid of two by two. On the Balance Sheet, hover a ratio to see its parts. |
-| Status pill | A word for the state of a party or a bill, with its meaning. |
+| Status pill | A word for the state of a company on Data health. Hover it to see its meaning. |
 | Donut | The parts of a total as a ring. |
 | Horizontal bars | The parts of a total as bars with a percentage. |
 | Table explorer | A table. See section 1.4. |
@@ -68,6 +68,8 @@ Each table has these controls:
 | Export CSV | Gives a file with the rows, the subtotals and the total. The file has exact amounts (F-FMT-002). |
 | Column header | Sorts the rows. Click again to change the order. |
 | Total row | Shows the total of each amount and count column (F-TBL-001). |
+
+The tables do not have a Status column or a Meaning column. Hover the name of a party, the number of an invoice or the name of a bill to see its payment status and its meaning. A dotted line under the name shows that it has this text. The CSV file does not contain the status. Only Data health has status columns, because the status is the purpose of that page.
 
 ### 1.5 Loading and errors
 
@@ -124,7 +126,7 @@ For a statement, use the statement date on the page. In Educational mode, the mo
 | Sales and purchases by month (chart) | Bars for sales and purchases. Lines for gross profit and net profit. | F-SAL-004, F-PUR-001, F-PL-003, F-PL-004 |
 | Sales by channel (donut) | The four largest channels and "Others". | F-SAL-009, F-SAL-010 |
 | Profit & Loss summary (statement table) | Six lines against last year, with the change. | F-OVR-003, F-PL-001 to F-PL-006, F-CMP-001, F-CMP-003 |
-| Top customers (table) | The ten largest customers with their share, balance due and status. | F-OVR-002, F-OVR-004, F-PTY-001 |
+| Top customers (table) | The ten largest customers with their share and balance due. Hover a name to see the payment status. | F-OVR-002, F-OVR-004, F-PTY-001 |
 
 **Drill-downs:**
 
@@ -175,7 +177,7 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 | Net sales by month (chart and table) | Each month with gross, returns, other adjustments, net and invoices. | F-SAL-001 to F-SAL-005 |
 | Monthly net sales by branch (chart) | One line for each company. Shown for two or more companies. | F-SAL-004, F-SAL-015 |
 | Sales mix (donut) | Net sales by channel. | F-SAL-009, F-SAL-010 |
-| Top customers (table) | The customers with the largest net sales. | F-SAL-012, F-SAL-013, F-OVR-004 |
+| Top customers (table) | The customers with the largest net sales. Hover a name to see the payment status. | F-SAL-012, F-SAL-013, F-OVR-004 |
 | Largest invoices (table) | The invoices with the largest amounts. | F-SAL-014 |
 
 **Drill-downs:**
@@ -302,10 +304,10 @@ The Sales module has five pages: Sales dashboard, Sales register, Monthly sales,
 | Overdue (key card) | The bills past their due date. | F-PTY-002 |
 | Net sales (key card) | The net sales of the customer, with a line of the months. | F-SAL-012 |
 | Average days to pay (key card) | The days from bill to payment. | F-PTY-007 |
-| Invoices (tab) | Each invoice with its status and days. | F-SAL-014, F-PTY-011 |
+| Invoices (tab) | Each invoice. Hover its number to see its payment status and its days. | F-SAL-014, F-PTY-011 |
 | Settlements (tab) | Each receipt. | F-PTY-006 |
 | Statement (tab) | The ledger with a running balance. | F-PTY-008 to F-PTY-010 |
-| Bills (tab) | Each outstanding bill with its due date. | F-PTY-003 to F-PTY-005, F-PTY-013 |
+| Bills (tab) | Each outstanding bill with its due date. Hover a bill to see its payment status. | F-PTY-003 to F-PTY-005, F-PTY-013 |
 | Monthly (tab) | Net sales and receipts for each month. | F-SAL-012, F-PTY-006 |
 
 **Drill-downs:** Click a customer in the list to open its page. Click a voucher number to open the page of the voucher.
@@ -654,7 +656,7 @@ The module has two pages: Receivables and Payables.
 | Average days to pay (key card) | The days from the bill date to the payment, for the bills paid in the period. | F-PTY-019 |
 | Outstanding bills by age (horizontal bars) | The six groups of age, with the control "Age by". | F-PTY-014 |
 | Not in bills (table) | Four parts, each with its meaning: on account, opening-bill difference, exchange-rate revaluation and other. Then the total. | F-PTY-013, F-PTY-015, F-PTY-016, F-PTY-017, F-PTY-020 |
-| Parties (table) | Each party with its balance, its six groups, the part not in bills, its status and the meaning of the status. | F-PTY-001, F-PTY-013, F-PTY-014 |
+| Parties (table) | Each party with its balance, its six groups and the part not in bills. Hover a name to see the payment status and its meaning. | F-PTY-001, F-PTY-013, F-PTY-014 |
 | Outstanding bills (table) | Each open bill with its party, name, bill date, due date, age, days and amount. | F-PTY-004, F-PTY-005, F-PTY-014 |
 
 **Exchange-rate revaluation.** For a party in a foreign currency, Tally shows the balance at the current rate. The page uses the same balance. The bills stay at their amounts in the books. Thus the difference goes into "Not in bills".
@@ -767,7 +769,7 @@ The module has three pages: Data health, Explore and Companies.
 | Checks passed (key card) | The companies with a passed validation. | F-DAT-002 |
 | Loaded in the source (key card) | The companies that the source had loaded. | F-DAT-003 |
 | Last sync (key card) | The time of the last sync. | F-DAT-004 |
-| Data health by company (table) | Each company with its last sync and the status of its checks. It also shows the date that the checks cover and the status in the source. | F-DAT-002 to F-DAT-004 |
+| Data health by company (table) | Each company with its last sync and the status of its checks. It also shows the date that the checks cover and the status in the source. Hover a status to see its meaning. | F-DAT-002 to F-DAT-004 |
 | Companies (table) | Each company with its name, code, start of the books, first month of the financial year and source. | None (no figures) |
 
 **Drill-downs:** None.
@@ -819,6 +821,7 @@ The module has three pages: Data health, Explore and Companies.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 1.5 | 2026-11-12 | No Status column and no Meaning column in the tables (section 1.4). The status is on hover. Data health keeps its status columns. |
 | 1.4 | 2026-11-12 | A note at the top of each page (section 1.6), and the text of each note in its page section. |
 | 1.3 | 2026-11-12 | Parties: six groups of age, the age by bill date, the parts not in bills, the bills and the note. The page of a voucher. Data › Explore. |
 | 1.2 | 2026-11-11 | Stock › By godown: the note "How this page divides stock". |

@@ -52,7 +52,15 @@ function Value<R>({ column, value, row }: { column: ExplorerColumn<R>; value: Ce
   }
   if (row !== undefined && column.render) shown = column.render(row)
   const to = row !== undefined ? column.link?.(row) : undefined
-  return to ? <a href={to}>{shown}</a> : <>{shown}</>
+  const cell = to ? <a href={to}>{shown}</a> : <>{shown}</>
+  const hint = row !== undefined ? column.hint?.(row) : undefined
+  return hint ? (
+    <Tooltip title={hint}>
+      <span className="row-hint" data-hint={hint}>{cell}</span>
+    </Tooltip>
+  ) : (
+    cell
+  )
 }
 
 /** "num" for amounts and counts, "wrap" for long text. */

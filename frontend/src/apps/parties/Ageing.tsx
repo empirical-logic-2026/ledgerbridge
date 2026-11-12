@@ -15,13 +15,12 @@ import { ErrorState } from '../../components/loading/ErrorState.tsx'
 import { Loading } from '../../components/loading/Loading.tsx'
 import { Money } from '../../components/Money.tsx'
 import { StatementTable } from '../../components/StatementTable.tsx'
-import { StatusPill } from '../../components/StatusPill.tsx'
 import { formatDate, formatExact, toScaled } from '../../format.ts'
 import { fromScaled, type ExplorerColumn } from '../../reporting/explorer.ts'
 import { ExplorerTable } from '../../reporting/ExplorerTable.tsx'
 import { ReportFrame, type PanelProps } from '../../reporting/ReportFrame.tsx'
 import { builtHref } from '../../shell/nav.ts'
-import { partyPaymentStatusInfo } from '../../statuses.ts'
+import { partyPaymentStatusInfo, statusHint } from '../../statuses.ts'
 import { tokens } from '../../theme.ts'
 import { BASIS_LABELS, BUCKET_LABELS, NOT_IN_BILLS, type Basis } from './ageingWords.ts'
 import { PARTY_WORDS, type PartyKind } from './words.ts'
@@ -46,23 +45,12 @@ function percentOf(part: string, whole: string): number | null {
 function columns(kind: PartyKind, query: PanelProps['query']): ExplorerColumn<AgeingRowOut>[] {
   const w = PARTY_WORDS[kind]
   return [
-    { key: 'name', label: w.one, kind: 'text', value: (r) => r.name, link: (r) => builtHref([...w.group, String(r.party_id)], query) },
+    { key: 'name', label: w.one, kind: 'text', value: (r) => r.name, link: (r) => builtHref([...w.group, String(r.party_id)], query),
+      help: "Hover a row's name to see its payment status and what it means.", hint: (r) => statusHint(partyPaymentStatusInfo(r.payment_status ?? r.status, r.balance, kind)) },
     { key: 'balance', label: w.balance, kind: 'amount', value: (r) => r.balance, formula: 'F-PTY-001' },
     ...BUCKET_LABELS.map(([key, label]): ExplorerColumn<AgeingRowOut> => ({ key, label, kind: 'amount', value: (r) => r.buckets[key], formula: 'F-PTY-014' })),
     { key: 'over_90', label: 'Over 90 days', kind: 'amount', value: (r) => r.over_90, formula: 'F-PTY-018', hidden: true },
     { key: 'uncovered', label: 'Not in bills', kind: 'amount', value: (r) => r.uncovered, formula: 'F-PTY-013' },
-    {
-      key: 'status',
-      label: 'Status',
-      kind: 'text',
-      groupable: true,
-      value: (r) => partyPaymentStatusInfo(r.payment_status ?? r.status, r.balance, kind).label,
-      render: (r) => {
-        const status = partyPaymentStatusInfo(r.payment_status ?? r.status, r.balance, kind)
-        return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
-      },
-    },
-    { key: 'meaning', label: 'Meaning', kind: 'text', value: (r) => partyPaymentStatusInfo(r.payment_status ?? r.status, r.balance, kind).meaning, wrap: true },
   ]
 }
 

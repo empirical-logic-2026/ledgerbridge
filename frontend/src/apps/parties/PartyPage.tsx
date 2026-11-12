@@ -22,8 +22,7 @@ import { builtHref } from '../../shell/nav.ts'
 import { tokens, type Tokens } from '../../theme.ts'
 import { PARTY_WORDS, type PartyKind } from './words.ts'
 import { companyDisplayName } from '../../companyDisplayName.ts'
-import { paymentStatusInfo } from '../../statuses.ts'
-import { StatusPill } from '../../components/StatusPill.tsx'
+import { paymentStatusInfo, statusHint } from '../../statuses.ts'
 
 export type PartyTab = 'invoices' | 'settlements' | 'statement' | 'bills' | 'monthly'
 
@@ -51,7 +50,9 @@ function voucherLink(id: number, query: Query) {
   return builtHref(['books', 'vouchers', String(id)], query)
 }
 
-function InvoiceStatus({ invoice, kind }: { invoice: PartyInvoiceOut; kind: PartyKind }) {
+/** An invoice's payment status with its timing, for the hover on its number ("Payment Overdue
+ *  (12 days): Customer has not paid by the due date."). */
+function invoiceHint(invoice: PartyInvoiceOut, kind: PartyKind): string {
   const status = paymentStatusInfo(invoice.payment_status ?? invoice.status, kind)
   const timing =
     invoice.status === 'overdue'
@@ -59,14 +60,17 @@ function InvoiceStatus({ invoice, kind }: { invoice: PartyInvoiceOut; kind: Part
       : invoice.status === 'due'
         ? ` (${invoice.days === 0 ? 'due today' : `due in ${invoice.days} days`})`
         : ''
-  return <StatusPill text={`${status.label}${timing}`} tone={status.tone} help={status.meaning} />
+  return statusHint(status, timing)
 }
+
+const HOVER_HELP = 'Hover to see its payment status and what it means.'
 
 function invoiceColumns(kind: PartyKind, names: Map<number, string>, combined: boolean, query: Query): ExplorerColumn<PartyInvoiceOut>[] {
   return [
     { key: 'date', label: 'Date', kind: 'date', value: (i) => i.date },
     { key: 'type', label: 'Vch Type', kind: 'text', value: (i) => i.voucher_type, groupable: true },
-    { key: 'number', label: 'Vch No.', kind: 'text', value: (i) => i.number, link: (i) => voucherLink(i.voucher_id, query) },
+    { key: 'number', label: 'Vch No.', kind: 'text', value: (i) => i.number, link: (i) => voucherLink(i.voucher_id, query), help: HOVER_HELP,
+      hint: (i) => invoiceHint(i, kind) },
     { key: 'company', label: 'Company', kind: 'text', value: (i) => names.get(i.company) ?? `Company ${i.company}`, groupable: true, hidden: !combined },
     {
       key: 'amount',
@@ -75,15 +79,6 @@ function invoiceColumns(kind: PartyKind, names: Map<number, string>, combined: b
       value: (i) => (i.debit !== null ? i.debit : i.credit !== null ? `-${i.credit}` : null),
     },
     { key: 'value', label: 'Before taxes', kind: 'amount', value: (i) => i.side_value, hidden: true },
-    {
-      key: 'status',
-      label: 'Status',
-      kind: 'text',
-      value: (i) => paymentStatusInfo(i.payment_status ?? i.status, kind).label,
-      render: (i) => <InvoiceStatus invoice={i} kind={kind} />,
-      groupable: true,
-    },
-    { key: 'meaning', label: 'Meaning', kind: 'text', value: (i) => paymentStatusInfo(i.payment_status ?? i.status, kind).meaning, wrap: true },
     { key: 'narration', label: 'Narration', kind: 'text', value: (i) => i.narration, hidden: true },
   ]
 }
@@ -126,22 +121,10 @@ function billStatusInfo(bill: BillOut, kind: PartyKind) {
 
 function billColumns(kind: PartyKind, names: Map<number, string>, combined: boolean): ExplorerColumn<BillOut>[] {
   return [
-    { key: 'name', label: 'Bill', kind: 'text', value: (b) => b.name },
+    { key: 'name', label: 'Bill', kind: 'text', value: (b) => b.name, help: HOVER_HELP, hint: (b) => statusHint(billStatusInfo(b, kind)) },
     { key: 'date', label: 'Bill date', kind: 'date', value: (b) => b.date },
     { key: 'due', label: 'Due', kind: 'date', value: (b) => b.due },
     { key: 'amount', label: 'Pending', kind: 'amount', value: (b) => b.amount },
-    {
-      key: 'status',
-      label: 'Status',
-      kind: 'text',
-      value: (b) => billStatusInfo(b, kind).label,
-      render: (b) => {
-        const status = billStatusInfo(b, kind)
-        return <StatusPill text={status.label} tone={status.tone} help={status.meaning} />
-      },
-      groupable: true,
-    },
-    { key: 'meaning', label: 'Meaning', kind: 'text', value: (b) => billStatusInfo(b, kind).meaning, wrap: true },
     {
       key: 'overdue',
       label: 'Overdue by',
