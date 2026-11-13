@@ -434,17 +434,29 @@ BALANCE_SHEET = "Balance Sheet"
 PROFIT_AND_LOSS = "Profit and Loss"
 
 
+# Tally's own export formats (its SysName values). XML is the one the connector reads; HTML
+# and ASCII keep a report's printed layout (the Profit & Loss's two sides), for the developer
+# tools' recordings only (ADR-056).
+EXPORT_FORMATS = ("XML", "HTML", "ASCII")
+
+
 def report_request(
-    report: str, company: str, period: tuple[date, date], ledger: str | None = None
+    report: str,
+    company: str,
+    period: tuple[date, date],
+    ledger: str | None = None,
+    export_format: str = "XML",
 ) -> str:
     """An export of one of Tally's own reports for a period (e.g. its Trial Balance), as
     Tally shows it: lines of DSPACCNAME / DSPACCINFO. `ledger` selects the ledger of a
     ledger report. Read-only."""
+    if export_format not in EXPORT_FORMATS:
+        raise ValueError(f"unknown export format: {export_format}")
     ledger_name = f"<LEDGERNAME>{escape(ledger)}</LEDGERNAME>" if ledger is not None else ""
     return (
         "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>"
         f"<TYPE>Data</TYPE><ID>{escape(report)}</ID></HEADER><BODY><DESC><STATICVARIABLES>"
-        "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
+        f"<SVEXPORTFORMAT>$$SysName:{export_format}</SVEXPORTFORMAT>"
         f"<SVCURRENTCOMPANY>{escape(company)}</SVCURRENTCOMPANY>"
         f"{_dates(*period)}{ledger_name}"
         "</STATICVARIABLES></DESC></BODY></ENVELOPE>"
