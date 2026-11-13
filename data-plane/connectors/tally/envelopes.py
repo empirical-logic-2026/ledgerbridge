@@ -432,6 +432,7 @@ LEDGER_VOUCHERS_REPORT = "Ledger Vouchers"  # one ledger's vouchers, as Tally sh
 TRIAL_BALANCE = "Trial Balance"  # Tally's own reports (an Export of data, read-only)
 BALANCE_SHEET = "Balance Sheet"
 PROFIT_AND_LOSS = "Profit and Loss"
+DAY_BOOK = "Day Book"  # every voucher of a period, as Tally lists them (developer tools only)
 
 
 # Tally's own export formats (its SysName values). XML is the one the connector reads; HTML
@@ -446,6 +447,7 @@ def report_request(
     period: tuple[date, date],
     ledger: str | None = None,
     export_format: str = "XML",
+    current_date: date | None = None,
 ) -> str:
     """An export of one of Tally's own reports for a period (e.g. its Trial Balance), as
     Tally shows it: lines of DSPACCNAME / DSPACCINFO. `ledger` selects the ledger of a
@@ -453,6 +455,10 @@ def report_request(
     if export_format not in EXPORT_FORMATS:
         raise ValueError(f"unknown export format: {export_format}")
     ledger_name = f"<LEDGERNAME>{escape(ledger)}</LEDGERNAME>" if ledger is not None else ""
+    # Tally's Day Book lists one day, its "current date", whatever the From and To dates
+    # (checked on the test company, 2026-11-13).
+    if current_date is not None:
+        ledger_name += f'<SVCURRENTDATE TYPE="Date">{tally_date(current_date)}</SVCURRENTDATE>'
     return (
         "<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>"
         f"<TYPE>Data</TYPE><ID>{escape(report)}</ID></HEADER><BODY><DESC><STATICVARIABLES>"
