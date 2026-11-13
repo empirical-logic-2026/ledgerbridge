@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.55 (Draft) |
+| Version | 0.56 (Draft) |
 | Date | 2026-11-11 |
 | Related | `docs/requirements.md` (DAT-*, IMP-*, VAL-*, ACC-*, AUD-*), `docs/architecture.md` Section 4 |
 
@@ -293,7 +293,7 @@ Indexes: `(entity_id, group_id)`, `(entity_id, name)`.
 
 | Table | Key columns |
 | --- | --- |
-| `ledgerbridge_accounting.voucher_types` | `entity_id, name, moves_stock BOOLEAN (false for orders and memorandum: their inventory lines don't move stock; migration 0012), standard_type VARCHAR(64) NULL (the source's predefined type it derives from, e.g. Tally's "Sales Order"; from a fixed list of the source's names only), base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory` |
+| `ledgerbridge_accounting.voucher_types` | `entity_id, name, moves_stock BOOLEAN (false for orders and memorandum: their inventory lines don't move stock; migration 0012), standard_type VARCHAR(64) NULL (the source's predefined type it derives from, e.g. Tally's "Sales Order"; from a fixed list of the source's names only), base_type ENUM('sales','purchase','payment','receipt','journal','contra','debit_note','credit_note','stock_journal','delivery_note','receipt_note','other'), is_accounting, is_inventory, sort_position INT NULL (where the source lists it, Tally: its master id; the Day Book lists a day's vouchers type by type in this order; migration 0039)` |
 | `ledgerbridge_accounting.voucher_number_series` | `entity_id, voucher_type_id FK (ON DELETE CASCADE, indexed), name, numbering_method NULL, numbering_sub_method NULL, beginning_number NULL, width NULL, prefill_zero, prevent_duplicates` (a voucher type's numbering series, Tally `VOUCHERNUMBERSERIES.LIST`; replaced as a whole with each read of the type; migration 0035) |
 | `ledgerbridge_accounting.stock_categories` | `entity_id, parent_id NULL, name` (Tally: Stock Category; migration 0036) |
 | `ledgerbridge_accounting.item_prices` | `entity_id, item_id FK (ON DELETE CASCADE, indexed), price_level, applicable_from NULL, rate NULL, from_quantity NULL, to_quantity NULL, discount_pct NULL` (a stock item's price list, Tally `FULLPRICELIST.LIST`; replaced as a whole per item. Price levels are the names the items use: the company's own price level list exported empty on the test company. Migration 0036) |
@@ -906,6 +906,7 @@ Where Sections 4 and 5 give only column lists, migration `0002` applies these ru
 | 2026-10-09 | 0.6 | Default standard chart of accounts (75 accounts) with notes for suspense (3290), inter-company and branch accounts (1275/3275, eliminated on consolidation) and changes in inventories (5120, derived in M6); Tally group mappings for *Suspense A/c* and *Branch / Divisions* (Section 7). |
 | 2026-11-06 | 0.45 | `stock_values.scope` `item`: each stock item's own value at the statement dates (migration 0029; the Stock page). |
 | 2026-11-05 | 0.44 | RPT-017 / ADR-051: append-only observed voucher versions, posting snapshots, ambiguity-aware comparison rows and deletion detection timestamps (migration 0028); nullable `vouchers.source_altered_at` stores Tally `UPDATEDDATETIME` without timezone conversion (migration 0027). |
+| 2026-11-13 | 0.56 | `voucher_types.sort_position` (migration 0039): the source's order of voucher types, for the Day Book (ADR-057). |
 | 2026-11-12 | 0.55 | `account_groups.nets_for_reporting`, `ledgers.carries_profit` (migration 0038): reporting settings stored with the statements, for the Trial Balance page (ADR-055). |
 | 2026-11-11 | 0.54 | `short_term_borrowings` (migration 0037, Section 4.10): loans marked as short-term for the ratios (ADR-052). |
 | 2026-11-09 | 0.53 | `voucher_lines.utr` and `utr_source` stored only: not shown in the dashboard (no `/api/v1` response or CSV export). No migration. |

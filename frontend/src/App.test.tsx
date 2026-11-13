@@ -67,6 +67,7 @@ const home: Home = {
   combined: true,
   period: { start: '2026-04-01', end: '2026-09-30', months: [] },
   compared_with: LAST_YEAR,
+  summary_compared_with: LAST_YEAR,
   profit_loss: {
     cut: false,
     available: true,
@@ -442,7 +443,7 @@ describe('the Profit & Loss page', () => {
     expect(await screen.findByText(/without inter-company eliminations/)).toBeInTheDocument()
     const table = await screen.findByRole('table')
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
-      'Particulars', 'Alpha', 'Beta', 'Total', 'Last year', 'Change',
+      'Particulars', 'Alpha', 'Beta', 'Total', 'Last year01-Apr-2025 to 30-Sep-2025', 'Change', // the comparison with its dates
     ])
     expect(within(table).getByText('3,822.90')).toBeInTheDocument() // ₹ lakh
     expect(within(table).getByText('-40.90').closest('td')).toHaveClass('negative') // a loss in crimson
@@ -672,7 +673,7 @@ describe('the Balance Sheet', () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/reports/balance-sheet': sheetFound })
     renderApp('#/balance-sheet/statement?from=2026-04-01&to=2026-09-30')
     const table = await screen.findByRole('table', { name: 'Balance Sheet' })
-    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Particulars', '30-Sep-2026', '31-Aug-2026', 'Change'])
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Particulars', '30-Sep-2026', 'Previous periodat 31-Aug-2026', 'Change'])
     expect(within(table).getByText('Total assets').closest('tr')).toHaveTextContent('₹6,280.00 L')
     expect(within(table).getByText('Total liabilities and capital').closest('tr')).toHaveTextContent('▲ 4.7%')
     const reportPeriod = screen.getByRole('group', { name: 'Reporting period' })
@@ -2103,6 +2104,82 @@ describe("the Profit & Loss in Tally's layout (ADR-056)", () => {
   })
 })
 
+// The Day Book (core/day_book.py): 2 October 2026 as Tally lists it, with a cancelled voucher,
+// an order, a stock voucher and an optional one.
+const dbRow = (id: number, particulars: string, type: string, extra: object = {}) => ({
+  voucher_id: id, company: 3, date: '2026-10-02', particulars, voucher_type: type, number: String(id),
+  debit: null, credit: null, inward: null, outward: null, unit: null, narration: null, party: null, tags: [], ...extra,
+})
+const dayBookFound = {
+  companies: [3], period_start: '2026-10-02', period_end: '2026-10-02', truncated: false,
+  rows: [
+    dbRow(79, 'Vendor Iota GST', 'Payment', { debit: '2000', party: 'Vendor Iota GST' }),
+    dbRow(74, 'Customer Alpha Traders', 'Credit Note', { credit: '400', party: 'Customer Alpha Traders' }),
+    dbRow(80, '(cancelled)', 'Payment'),
+    dbRow(72, 'Customer Theta GST', 'Sales Order', { debit: '160', tags: ['order'], party: 'Customer Theta GST' }),
+    dbRow(81, 'Rent', 'Journal', { debit: '17', tags: ['optional'] }),
+    dbRow(85, 'Widget', 'Rejections In', { outward: '-2', unit: 'Nos' }),
+  ],
+  counts: [{ voucher_type: 'Credit Note', vouchers: 1 }, { voucher_type: 'Journal', vouchers: 1 }, { voucher_type: 'Payment', vouchers: 2 },
+    { voucher_type: 'Rejections In', vouchers: 1 }, { voucher_type: 'Sales Order', vouchers: 1 }],
+  voucher_types: ['Credit Note', 'Journal', 'Payment', 'Rejections In', 'Sales Order'],
+  parties: ['Customer Alpha Traders', 'Customer Theta GST', 'Vendor Iota GST'],
+}
+
+describe('the Day Book (ADR-057)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  const base = { '/api/v1/companies': companies, '/api/v1/periods': periods }
+
+  it("lists every voucher as Tally's Day Book: Particulars, type, number, debit or credit, quantities", async () => {
+    fullAmounts()
+    stubApi({ ...base, '/api/v1/day-book': dayBookFound })
+    renderApp('#/books/day-book')
+    const table = await screen.findByRole('table', { name: 'Day Book' })
+    expect(within(table).getByText('Vendor Iota GST').closest('tr')).toHaveTextContent('₹2,000.00')
+    expect(within(table).getByRole('link', { name: '79' }).getAttribute('href')).toMatch(/^#\/books\/vouchers\/79/)
+    expect(within(table).getByText('(cancelled)').closest('tr')).not.toHaveTextContent('₹')
+    expect(within(table).getByText('(-)2 Nos')).toBeInTheDocument()
+    expect(document.querySelector('.header-crumbs')).toHaveTextContent('Books/Day Book')
+    const counts = screen.getByRole('table', { name: 'Vouchers of each type' })
+    expect(within(counts).getByText('Payment').closest('tr')).toHaveAttribute('data-formula', 'F-DAY-002')
+  })
+
+  it("tags vouchers that don't change the books, and explains the tags", async () => {
+    stubApi({ ...base, '/api/v1/day-book': dayBookFound })
+    renderApp('#/books/day-book')
+    const table = await screen.findByRole('table', { name: 'Day Book' })
+    expect(within(table).getByText('Sales Order').closest('td')).toHaveTextContent('order')
+    expect(within(table).getByText('optional').closest('tr')).toHaveTextContent('Rent')
+    expect(within(table).getByText('Customer Theta GST').closest('tr')?.querySelector('th, td')).toBeTruthy()
+    expect(screen.getAllByText(/mark vouchers that don't change the books/).length).toBeGreaterThan(0)
+  })
+
+  it('filters by voucher type and party, through the address', async () => {
+    stubApi({ ...base, '/api/v1/day-book': dayBookFound })
+    renderApp('#/books/day-book?db_type=Payment&db_party=Vendor+Iota+GST')
+    await screen.findByRole('table', { name: 'Day Book' })
+    expect(requests.some((r) => r.includes('/api/v1/day-book') && r.includes('voucher_type=Payment') && r.includes('party=Vendor+Iota+GST'))).toBe(true)
+    expect(screen.getByRole('combobox', { name: 'Voucher types' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Parties' })).toBeInTheDocument()
+  })
+})
+
+describe('the comparison is named and dated on every card and header (F-CMP-002)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows the compared dates under a card, and "same dates last year" for a year to date', async () => {
+    const ytd = { kind: 'previous' as const, label: 'Previous period (same dates last year)', start: '2025-04-01', end: '2025-09-30', months: [] }
+    stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/home': { ...home, compared_with: ytd } })
+    renderApp('#/overview/dashboard?toggle=ytd&compare=previous')
+    const net = await screen.findByRole('region', { name: 'Net sales' })
+    expect(net).toHaveTextContent('vs previous period (same dates last year)')
+    expect(net).toHaveTextContent('01-Apr-2025 to 30-Sep-2025')
+    // The Overview's summary is always against last year, with its dates.
+    const summary = screen.getByRole('table', { name: 'Profit & Loss against last year' })
+    expect(within(summary).getAllByRole('columnheader')[2]).toHaveTextContent('01-Apr-2025 to 30-Sep-2025 · always last year')
+  })
+})
+
 describe('every figure on every page names its formula (docs/formula-sheet.md)', () => {
   afterEach(() => vi.unstubAllGlobals())
 
@@ -2136,6 +2213,7 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     '/api/v1/vouchers/7': voucherFound,
     '/api/v1/reports/trial-balance': trialFound,
     '/api/v1/reports/profit-loss/tally': tallyFound,
+    '/api/v1/day-book': dayBookFound,
     '/api/v1/ledgers': ledgersFound,
     '/api/v1/ledgers/41/statement': ledgerFound,
     '/api/v1/datasets': datasetsFound,
@@ -2150,7 +2228,7 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     'overview/dashboard', 'sales/dashboard', 'sales/register', 'sales/monthly', 'sales/channels', 'sales/customers',
     'sales/customers/11', 'purchases/dashboard', 'purchases/register', 'purchases/monthly', 'purchases/vendors',
     'pnl/profit-loss', 'pnl/cost-centres', 'pnl/cost-centres/21', 'balance-sheet/statement', 'stock/summary',
-    'stock/summary/41', 'stock/godowns', 'books/vouchers/7', 'data/explore', 'pnl/trial-balance', 'books/ledger/41', 'cash-flow/movement', 'parties/receivables', 'parties/payables', 'books/transactions',
+    'stock/summary/41', 'stock/godowns', 'books/vouchers/7', 'data/explore', 'pnl/trial-balance', 'books/ledger/41', 'books/day-book', 'cash-flow/movement', 'parties/receivables', 'parties/payables', 'books/transactions',
     'data/health',
   ]
 

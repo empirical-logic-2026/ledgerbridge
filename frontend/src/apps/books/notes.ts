@@ -57,3 +57,30 @@ export const LEDGER_WORDS = {
   revaluation: 'Calculated by Tally at the end of the period (no voucher).',
   truncated: 'Only the first 5,000 entries are shown; the totals and the closing balance cover them all.',
 }
+
+export const dayBookNote: NoteContent = {
+  title: 'About this page',
+  points: [
+    { text: "Every voucher of the period, as Tally's Day Book lists it: date, Particulars, voucher type and number, the amount in the Debit or Credit column (F-DAY-001)." },
+    { text: "Particulars is the voucher's first ledger entry, as in Tally. A stock voucher (a delivery or receipt note, a stock journal, a rejection) shows its first item and quantity instead; a cancelled voucher shows \"(cancelled)\" and no amount." },
+    { text: 'Tags mark vouchers that don\'t change the books: "optional", "memorandum" and "order". Tally lists them without a mark.' },
+    { text: 'Filter by voucher type or party; click a voucher number to open the voucher. Below, the vouchers of each type in the period (F-DAY-002).' },
+  ],
+  footer: "To compare: Tally's Day Book (Display More Reports) for the same date; F2 changes the date.",
+}
+
+// The Day Book page's labels (ADR-057).
+export const DAY_BOOK_WORDS = {
+  typeFilter: 'Voucher types',
+  partyFilter: 'Parties',
+  countsTitle: 'Vouchers of each type',
+  truncated: 'Only the first 20,000 vouchers are shown: choose a shorter period. The counts cover them all.',
+  tagNote: 'Tags: "optional", "memorandum" and "order" mark vouchers that don\'t change the books. Tally lists them without a mark.',
+  tags: {
+    optional: "An optional voucher: it doesn't change the books until it is made regular.",
+    memorandum: "A memorandum voucher: it doesn't change the books.",
+    order: "An order: it records what was ordered and doesn't change the books.",
+  },
+  help: "Every voucher of the period as Tally's Day Book lists it: the voucher's first ledger entry as Particulars, its amount in the Debit or Credit column (F-DAY-001); a stock voucher's first item and quantity; a cancelled voucher as \"(cancelled)\". Below the table, the vouchers of each type (F-DAY-002).",
+  compare: "Display More Reports → Day Book, the same date (F2). Tally's Day Book shows one day at a time.",
+}

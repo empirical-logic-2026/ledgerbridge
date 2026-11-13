@@ -10,7 +10,7 @@ current liability in the current and quick ratios. Marks are stored by ledger id
 The list prints each ledger's id, name, group and closing balance at a date, so the
 developer can decide which to mark. It is printed on the screen only: nothing is stored or
 logged, and the source isn't contacted. It prints names and amounts in every environment
-on purpose (the developer's request, 2026-11-11); Claude Code runs it on the test
+on purpose (the developer's request, 2026-11-11); automated runs use the test
 environment only.
 """
 

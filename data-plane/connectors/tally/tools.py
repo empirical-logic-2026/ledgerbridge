@@ -30,7 +30,7 @@ from pathlib import Path
 import httpx
 
 from connectors.tally import envelopes, parser
-from connectors.tally.connector import TallyConnector, _period_for, month_periods
+from connectors.tally.connector import TallyConnector, _period_for, month_end, month_periods
 from connectors.tally.fixtures import DEFAULT_DIR, FixtureTransport, load_manifest
 from connectors.tally.signs import check_balance_sides, check_opening_balances, check_vouchers
 from core.config import get_settings
@@ -246,6 +246,59 @@ def capture_pl_layout(
     return 0
 
 
+DAY_BOOKS = DEFAULT_DIR / "rules" / "day_book"
+
+
+def capture_day_book(
+    company: str, start: date, end: date, directory: Path, guid_prefix: str = ""
+) -> int:
+    """Records, for the Day Book page (ADR-057): the test company's books (as capture-fixtures,
+    into books/), Tally's voucher list (date and type of each voucher) month by month, and
+    Tally's own Day Book in XML and HTML for every day of the period with a voucher. Tally's
+    Day Book lists one day, its current date, whatever the From and To dates (checked on the
+    test company, 2026-11-13). Read-only; test company only (the guards of capture-fixtures)."""
+    code = capture_fixtures(company, directory / "books", guid_prefix)
+    if code:
+        return code
+    connector = _connector()
+    sizes: dict[str, int] = {}
+
+    def save(name: str, body: bytes) -> bytes:
+        (directory / name).write_bytes(body)
+        sizes[name] = len(body)
+        return body
+
+    days: set[date] = set()
+    # Whole months, so Educational mode answers (as connector.voucher_counts asks).
+    for month in month_periods(start.replace(day=1), month_end(end)):
+        request = envelopes.collection_request(
+            envelopes.VOUCHER_COUNTS, company=company, period=(month.start, month.end)
+        )
+        body = save(f"voucher_counts_{month.start:%Y-%m}.xml", connector.client.post(request))
+        for element in parser.objects(
+            parser.parse_response(body), envelopes.VOUCHER_COUNTS.object_tag
+        ):
+            on = parser.tally_date(parser.text_of(element, "DATE"))
+            if on is not None and start <= on <= end:
+                days.add(on)
+    for on in sorted(days):
+        for export_format in ("XML", "HTML"):
+            request = envelopes.report_request(
+                envelopes.DAY_BOOK, company, (on, on), export_format=export_format,
+                current_date=on,
+            )  # fmt: skip
+            save(f"day_book_{on}.{EXTENSIONS[export_format]}", connector.client.post(request))
+    manifest = {
+        "company": company, "start": start.isoformat(), "end": end.isoformat(),
+        "days": [d.isoformat() for d in sorted(days)],
+    }  # fmt: skip
+    (directory / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", "utf-8")
+    print(f"Saved {len(sizes)} responses to {directory} (and the books to books/):")
+    for name, size in sizes.items():
+        print(f"  {name}: {size:,} bytes")
+    return 0
+
+
 def sign_check(
     company: str | None,
     fixtures: Path | None,
@@ -316,6 +369,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--guid-prefix", default="", help="refuse unless the company's GUID starts with this"
     )
 
+    day_book = sub.add_parser(
+        "capture-day-book", help="record Tally's Day Book and voucher counts (test company)"
+    )
+    day_book.add_argument("--company", required=True)
+    day_book.add_argument("--from", dest="start", type=date.fromisoformat, required=True)
+    day_book.add_argument("--to", dest="end", type=date.fromisoformat, required=True)
+    day_book.add_argument("--dir", type=Path, default=DAY_BOOKS)
+    day_book.add_argument(
+        "--guid-prefix", default="", help="refuse unless the company's GUID starts with this"
+    )
+
     signs = sub.add_parser("sign-check", help="confirm how Tally signs debits and credits")
     source = signs.add_mutually_exclusive_group(required=True)
     source.add_argument("--company")
@@ -337,6 +401,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = root.parse_args(argv)
     if args.command == "capture-fixtures":
         return capture_fixtures(args.company, args.dir, args.guid_prefix)
+    if args.command == "capture-day-book":
+        return capture_day_book(args.company, args.start, args.end, args.dir, args.guid_prefix)
     if args.command == "capture-pl-layout":
         return capture_pl_layout(
             args.company, args.dates, args.year_start, args.dir, args.guid_prefix

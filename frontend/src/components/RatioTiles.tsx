@@ -9,6 +9,7 @@ import type { ReactNode } from 'react'
 import { formatChange, toScaled } from '../format.ts'
 import { Explained } from './Explained.tsx'
 import { formulaOf } from '../help/glossary.ts'
+import type { Against } from '../selection.ts'
 
 export interface Tile {
   label: string
@@ -34,8 +35,9 @@ function changeText(tile: Tile, change: string): string {
   return tile.unit === 'percent' ? `${text} pts` : tile.unit === 'days' ? `${text} days` : `${text}×`
 }
 
-export function RatioTiles({ label, tiles, against }: { label: string; tiles: Tile[]; against?: string }) {
+export function RatioTiles({ label, tiles, against }: { label: string; tiles: Tile[]; against?: Against }) {
   return (
+    <>
     <div className="ratio-tiles" role="list" aria-label={label}>
       {tiles.map((t) => {
         const up = t.change ? toScaled(t.change) >= 0n : false
@@ -50,11 +52,17 @@ export function RatioTiles({ label, tiles, against }: { label: string; tiles: Ti
                 {shown(t)}
               </span>
             </Tooltip>
-            {t.change && against && <span className={`change ${tone}`}>{changeText(t, t.change)} vs {against}</span>}
+            {t.change && against && (
+              <Tooltip title={against.dates}>
+                <span className={`change ${tone}`}>{changeText(t, t.change)} vs {against.label}</span>
+              </Tooltip>
+            )}
             {t.note && <span className="card-small-note">{t.note}</span>}
           </div>
         )
       })}
     </div>
+    {against && tiles.some((t) => t.change) && <p className="card-compare-dates">Compared with the {against.label}: {against.dates}</p>}
+    </>
   )
 }

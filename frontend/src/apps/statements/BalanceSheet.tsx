@@ -87,7 +87,12 @@ function Statement({ sheet, query }: { sheet: BalanceSheetReport; query: Query }
       columns={{
         label: 'Particulars',
         current: sheet.as_of ? formatDate(sheet.as_of) : 'Now',
-        previous: sheet.before_as_of ? formatDate(sheet.before_as_of) : sheet.compared_with?.label,
+        previous: (
+          <>
+            {sheet.compared_with?.label ?? 'Compared'}
+            {sheet.before_as_of && <span className="compare-dates">at {formatDate(sheet.before_as_of)}</span>}
+          </>
+        ),
         change: <Explained label="Change %">Change</Explained>,
       }}
       sections={SECTIONS.map(([section, title]) => {

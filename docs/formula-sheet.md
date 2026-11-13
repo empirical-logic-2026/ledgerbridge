@@ -4,7 +4,7 @@ This sheet gives the formula of each figure that the dashboard shows. Use it to 
 
 | Field | Value |
 | --- | --- |
-| Version | 2.4 |
+| Version | 2.5 |
 | Date | 2026-11-12 |
 | Requirement | RPT-015 |
 | Language | ASD-STE100 Simplified Technical English |
@@ -59,6 +59,7 @@ Each entry has these items:
 | `F-FMT` | How the dashboard shows amounts |
 | `F-TB` | Trial Balance |
 | `F-LED` | Ledger statement |
+| `F-DAY` | Day Book |
 
 ## 2. Terms
 
@@ -1551,7 +1552,7 @@ Retired on 2026-11-12. Replaced by F-PTY-014. The old formula had five buckets: 
 | Item | Value |
 | --- | --- |
 | Expression | The table below |
-| In words | The period that the dashboard compares with. A month end stays a month end (31 May to 30 April). 29 February becomes 28 February. |
+| In words | The period that the dashboard compares with. A month end stays a month end (31 May to 30 April). 29 February becomes 28 February. Each card and each table header shows the name of the comparison and its dates. For YTD and FY, the previous period has the name "Previous period (same dates last year)". The summary on the Overview always compares with last year. |
 | Data | `core/report_periods.py` (`Period.previous`, `Period.last_year`). |
 | Signs | Not applicable. |
 | Dates | The table below. |
@@ -1865,10 +1866,41 @@ The Ledger statement page shows one ledger as the ledger report of Tally shows i
 | Companies | The company of the ledger. |
 | Check in Tally | 1. Open the ledger report. 2. Read the closing balance. |
 
+## 23. Day Book (`F-DAY`)
+
+The Day Book page shows each voucher of the period, as the Day Book of Tally shows it. The code is in `data-plane/core/day_book.py`. The tests compare each row with the Day Book of Tally, recorded for each day with vouchers.
+
+#### F-DAY-001 A row of the Day Book
+
+| Item | Value |
+| --- | --- |
+| Expression | Particulars = the first ledger entry of the voucher. Debit = its amount when positive. Credit = `−amount` when negative. |
+| In words | Each voucher of the period has one row, in the order of Tally: by date, then by voucher type, then by number. A custom voucher type follows the type that it comes from. A stock voucher shows its first item and the quantity in the Inwards or Outwards column. A rejection shows a negative quantity in the column of the note that it reverses. A cancelled voucher shows "(cancelled)" and no amount. |
+| Data | `vouchers`, `voucher_types` (`sort_position`), the first `voucher_lines` row of each voucher, the first `inventory_lines` row of a stock voucher. |
+| Signs | S1. Each column shows positive. |
+| Dates | D1. |
+| Companies | The company of the voucher. |
+| Check in Tally | 1. Open Display More Reports › Day Book. 2. Set the same date (F2). 3. Compare each row. |
+
+The page adds a tag to some vouchers: "optional", "memorandum" or "order". These vouchers do not change the books. Tally shows them without a tag.
+
+#### F-DAY-002 Vouchers of each type
+
+| Item | Value |
+| --- | --- |
+| Expression | `count` of the vouchers of each voucher type in the period |
+| In words | The number of vouchers of each type, with cancelled, optional, memorandum and order vouchers. The filters do not change it. |
+| Data | `vouchers` (not deleted), `voucher_types.name`. |
+| Signs | S5. |
+| Dates | D1. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Day Book for each day. 2. Count the vouchers of each type. |
+
 ## Change log
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 2.5 | 2026-11-13 | The Day Book (F-DAY-001, F-DAY-002). The name and the dates of each comparison (F-CMP-002). |
 | 2.4 | 2026-11-13 | The Profit & Loss in the layout of Tally (section 5.1, F-PL-011 to F-PL-017), proved against the HTML export of Tally. |
 | 2.3 | 2026-11-12 | The drill-down of a Balance Sheet line (F-BS-012). The Trial Balance for the financial year (F-TB-001 to F-TB-005). The Ledger statement (F-LED-001 to F-LED-004). Terms: financial year of a date, income or expense ledger. |
 | 2.2 | 2026-11-12 | Ageing in six buckets, by due date or bill date (F-PTY-014; F-PTY-012 retired). The parts not in bills (F-PTY-015 to F-PTY-017, F-PTY-020). Over 90 days (F-PTY-018). Average days to pay (F-PTY-019). Count of rows (F-TBL-003). Voucher total (F-VCH-001). |

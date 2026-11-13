@@ -362,6 +362,9 @@ class VoucherType(SourceTrackingMixin, TimestampMixin, Base):
     # The source's own standard type it derives from (e.g. Tally's "Sales Order"), from the
     # source's fixed list of standard names only; NULL when it can't be told (ADR-027).
     standard_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Where the source lists it among the voucher types (Tally: its master id; migration
+    # 0039, NULL: not read). The Day Book lists a day's vouchers type by type in this order.
+    sort_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Whether its vouchers' inventory lines move stock (orders and memorandum don't).
     moves_stock: Mapped[bool] = flag(True)
 

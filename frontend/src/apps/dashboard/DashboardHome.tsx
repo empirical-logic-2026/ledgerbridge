@@ -19,7 +19,7 @@ import { Loading } from '../../components/loading/Loading.tsx'
 import { StatementChange, StatementTable } from '../../components/StatementTable.tsx'
 import { formatDate, toLakhs } from '../../format.ts'
 import { type Query } from '../../router.ts'
-import { againstOf } from '../../selection.ts'
+import { againstOf, comparedDates } from '../../selection.ts'
 import { builtHref } from '../../shell/nav.ts'
 import { tokens, type Tokens } from '../../theme.ts'
 import { salesAndPurchases } from './homeChart.ts'
@@ -134,7 +134,17 @@ function Summary({ home, query }: { home: Home; query: Query }) {
         compact
         compared
         formula="F-OVR-003"
-        columns={{ label: 'Line', current: <Explained label="This period" />, previous: <Explained label="Last year" />, change: <Explained label="Change" /> }}
+        columns={{
+          label: 'Line',
+          current: <Explained label="This period" />,
+          previous: (
+            <>
+              <Explained label="Last year" />
+              <span className="compare-dates">{comparedDates(home.summary_compared_with)} · always last year</span>
+            </>
+          ),
+          change: <Explained label="Change" />,
+        }}
         sections={[
           {
             key: 'summary',

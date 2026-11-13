@@ -8,7 +8,7 @@ Tally opens it. `--detailed` adds each group's sub-groups and ledgers, as Tally'
 
 Printed on the screen only: nothing is stored or logged, and the source isn't contacted. It
 prints names and amounts in every environment on purpose (the developer's request,
-2026-11-12, for the pilot comparison; like `loans`); Claude Code runs it on the test
+2026-11-12, for the pilot comparison; like `loans`); automated runs use the test
 environment only.
 """
 

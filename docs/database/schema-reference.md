@@ -4,7 +4,7 @@
 
 Every database, table and column of the client-hosted data plane (MySQL 8), generated from the code. For the design and its reasons see [schema.md](../schema.md) and the decision log in [architecture.md](../architecture.md); for the conversion and validation rules see [the rulebook](../rules/validation-and-conversion-rules.md).
 
-71 tables, 846 columns.
+71 tables, 847 columns.
 
 **Conventions.** Amounts are `DECIMAL(20,4)` in the base currency with the **canonical sign**: debit positive, credit negative (schema.md 1, 7.1). Every accounting table carries its source tracking columns (`connection_id`, `source_key`, `source_alter_id`, `origin`, `import_batch_id`, `raw_record_id`). Rows deleted in the source are kept with `is_deleted` (soft delete). `PK` primary key, `FK` foreign key, `UK` part of a unique key.
 
@@ -796,6 +796,7 @@ How to read them: [docs/diagrams/README.md](../diagrams/README.md).
 | `is_accounting` | BOOL | no |  | Whether accounting. |
 | `is_inventory` | BOOL | no |  | Whether inventory. |
 | `standard_type` | VARCHAR(64) | yes |  | Standard type. |
+| `sort_position` | INTEGER | yes |  | Sort position. |
 | `moves_stock` | BOOL | no |  | Moves stock. |
 | `source_key` | VARCHAR(191) | no | UK | The source's own key (Tally: GUID); unique per connection. |
 | `source_alter_id` | BIGINT | yes |  | The source's change counter (Tally: AlterID) when last stored. |

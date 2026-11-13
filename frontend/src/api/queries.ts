@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import { comparisonQuery, type CompareKind, type PeriodChoice } from '../selection.ts'
 import type { DatasetInfo, DatasetResult, Value as DatasetValue } from './types.ts'
-import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, DrillOut, Home, LedgerOut, LedgerStatementOut, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport, TallyDrillOut, TallyProfitLossOut, StockGodownsOut, StockItemPageOut, StockOut, TransactionsOut, TrialBalanceOut, VoucherOut } from './types.ts'
+import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, DayBookOut, DrillOut, Home, LedgerOut, LedgerStatementOut, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport, TallyDrillOut, TallyProfitLossOut, StockGodownsOut, StockItemPageOut, StockOut, TransactionsOut, TrialBalanceOut, VoucherOut } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -244,6 +244,21 @@ export function useTransactions(companies: number[] | undefined, period: PeriodC
   return useQuery({
     queryKey: ['transactions', companies, period],
     queryFn: () => getJson<TransactionsOut>('/api/v1/transactions', { company: companies, ...periodQuery(period) }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+/** The Day Book: every voucher of the period, as the source lists them (core/day_book.py). */
+export function useDayBook(companies: number[] | undefined, period: PeriodChoice | undefined, filters: { voucherType: string[]; party: string[] }) {
+  return useQuery({
+    queryKey: ['day-book', companies, period, filters],
+    queryFn: () =>
+      getJson<DayBookOut>('/api/v1/day-book', {
+        company: companies,
+        ...periodQuery(period),
+        voucher_type: filters.voucherType.length ? filters.voucherType : undefined,
+        party: filters.party.length ? filters.party : undefined,
+      }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }

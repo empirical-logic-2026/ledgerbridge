@@ -11,6 +11,7 @@ from api.v1 import (
     companies,
     cost_centres,
     datasets,
+    day_book,
     facets,
     home,
     ledgers,
@@ -43,3 +44,4 @@ router.include_router(transactions.router)
 router.include_router(vouchers.router)
 router.include_router(accounts.router)
 router.include_router(ledgers.router)
+router.include_router(day_book.router)

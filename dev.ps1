@@ -3,7 +3,7 @@
     Day-to-day developer commands for LedgerBridge, built on deploy/stack.ps1.
 
 .DESCRIPTION
-    Defaults to the test environment. -Env pilot is for the developer only (never Claude Code).
+    Defaults to the test environment. -Env pilot is for the developer only (never automated runs).
     Commands that need project settings run inside the api container, so they always use the
     selected environment's env file (.env.test or .env.pilot) via deploy/stack.ps1.
 

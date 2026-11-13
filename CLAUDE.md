@@ -123,6 +123,7 @@ uv run python -m connectors.tally.tools capture-fixtures --company "LedgerBridge
 uv run python -m connectors.tally.tools sign-check --company "LedgerBridge Test Co"
 uv run python -m connectors.tally.tools sign-check --fixtures
 uv run python -m connectors.tally.tools capture-ledger-report --company "LedgerBridge Test Co" --ledger "<name>" --from 2026-04-01 --to 2026-10-02
+uv run python -m connectors.tally.tools capture-day-book --company "LedgerBridge Test Co" --from 2025-04-01 --to 2026-11-02
 uv run python -m connectors.tally.tools capture-pl-layout --company "LedgerBridge Test Co" --date 2026-11-02 --year-start 2026-04-01 --dir <folder>
 ```
 
@@ -217,3 +218,8 @@ Ask rather than guess, especially about accounting rules, data ownership, or any
 - Commit in small logical steps with messages starting with the milestone or requirement ID, e.g. `M1: add Tally company list request`.
 - Never commit secrets, `.env` files, client data or generated folders.
 - Don't merge, rebase shared branches or force push; the developer handles pull requests and merges.
+
+## Commits, branches and pull requests
+- Never add "Co-authored-by" trailers, "Generated with" lines, or any AI tool or assistant name (Claude, Copilot, or others) to commit messages, branch names, pull request titles or descriptions, review comments, or code comments.
+- Write commit messages and pull requests in plain, professional wording, as a developer would: a short summary line (for example "Add Tally-format Profit & Loss page"), then what changed and why.
+- Documentation files that already describe the development tools may keep doing so.

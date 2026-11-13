@@ -18,7 +18,7 @@ from pydantic_core import PydanticUndefined
 from sqlalchemy.orm import Session
 
 from api.deps import get_report_session
-from core.report_periods import Period
+from core.report_periods import YEAR, Period
 
 ReportSession = Annotated[Session, Depends(get_report_session)]
 
@@ -27,6 +27,9 @@ MAX_DAYS = 3 * 366
 CompareParam = Literal["previous", "last_year", "none", "true", "false"]
 SpanParam = Literal["month", "quarter", "year"]
 LABELS = {"previous": "Previous period", "last_year": "Last year"}
+# A year to date or a financial year: its previous period is the same dates a year earlier
+# (core/report_periods.py, option (a) of 2026-11-12): the label says so (F-CMP-002).
+PREVIOUS_YEAR = "Previous period (same dates last year)"
 
 
 def formula(formula_id: str, default: Any = PydanticUndefined) -> Any:  # noqa: ANN401
@@ -61,10 +64,22 @@ def compared_with(
     if kind is None:
         return None, None
     before = period.compared(kind, span)
+    label = PREVIOUS_YEAR if kind == "previous" and span == YEAR else LABELS[kind]
     return before, ComparedWith(
-        kind=kind, label=LABELS[kind], start=before.start, end=before.end,
-        months=list(before.months),
+        kind=kind, label=label, start=before.start, end=before.end, months=list(before.months),
     )  # fmt: skip
+
+
+def last_year_of(period: Period) -> ComparedWith:
+    """Last year described, for a figure always compared with it (the Overview's summary)."""
+    before = period.last_year()
+    return ComparedWith(
+        kind="last_year",
+        label=LABELS["last_year"],
+        start=before.start,
+        end=before.end,
+        months=list(before.months),
+    )
 
 
 def parse_period(months: list[str] | None, start: date | None, end: date | None) -> Period:
