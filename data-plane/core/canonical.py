@@ -156,6 +156,9 @@ class CanonicalVoucherType:
     moves_stock: bool | None = True
     # Its voucher numbering series, all of them (replacing the ones stored).
     number_series: tuple["CanonicalNumberSeries", ...] = ()
+    # Where the source lists it among the voucher types (its own order; None: not known).
+    # The Day Book lists a day's vouchers type by type in this order (ADR-057).
+    sort_position: int | None = None
     extra: Mapping[str, Any] | None = _extra()
 
 

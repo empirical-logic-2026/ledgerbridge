@@ -30,6 +30,7 @@ import {
   type View,
 } from '../../reporting/reportTable.ts'
 import type { Query } from '../../router.ts'
+import { comparedDates } from '../../selection.ts'
 import { COMBINED_NOTE } from './words.ts'
 
 const VIEWS: { key: View; label: string }[] = [
@@ -85,6 +86,9 @@ function Table({ report, options }: { report: StatementReport; options: ReportOp
                 <Explained label={c.kind === 'change' ? 'Change' : c.kind === 'pct' ? '% of sales' : c.key === 'total' ? 'This period' : c.key === 'before' ? 'Compared period' : c.label}>
                   {c.label}
                 </Explained>
+                {c.key === 'before' && c.kind === 'amount' && report.compared_with && (
+                  <span className="compare-dates">{comparedDates(report.compared_with)}</span>
+                )}
               </th>
             ))}
           </tr>

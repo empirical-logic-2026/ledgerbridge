@@ -1299,6 +1299,7 @@ class Transformer:
             "standard_type": info.standard_type,
             "moves_stock": info.moves_stock,
             "is_inventory": r.is_inventory,
+            "sort_position": r.sort_position,
         }
 
     def _voucher_types(self, items: list[_Raw], result: TransformResult) -> list[_Raw]:

@@ -48,6 +48,8 @@ const detailPage = (key: string, label: string, whyNoFacets: string): NavPage =>
 
 const VOUCHER = 'One voucher is shown whole.'
 
+const DAY_BOOK = 'Filter by voucher type and party on the page.'
+
 const LEDGER = "One ledger is shown whole: filter its entries with the table's own filter."
 
 const EXPLORE = 'Each dataset has its own filters: choose them on the page.'
@@ -91,7 +93,12 @@ export const NAV: NavGroup[] = [
   {
     key: 'books',
     label: 'Books',
-    pages: [page('transactions', 'Transactions', true, [], BOOKS), page('ledger', 'Ledger statement', true, [], LEDGER), detailPage('vouchers', 'Voucher', VOUCHER)],
+    pages: [
+      page('transactions', 'Transactions', true, [], BOOKS),
+      page('day-book', 'Day Book', true, [], DAY_BOOK),
+      page('ledger', 'Ledger statement', true, [], LEDGER),
+      detailPage('vouchers', 'Voucher', VOUCHER),
+    ],
   },
   {
     key: 'data',

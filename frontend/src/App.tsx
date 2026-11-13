@@ -6,7 +6,7 @@
 import { AmountFormatProvider } from './components/Money.tsx'
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useProfitLossDrill, useProfitLossTally, useAgeing, useBalanceSheet, useBalanceSheetDrill, useCashFlow, useLedgerStatement, useTrialBalance, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockGodowns, useStockItem, useTransactions, useVoucher, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useDayBook, useProfitLossDrill, useProfitLossTally, useAgeing, useBalanceSheet, useBalanceSheetDrill, useCashFlow, useLedgerStatement, useTrialBalance, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockGodowns, useStockItem, useTransactions, useVoucher, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { ErrorState } from './components/loading/ErrorState.tsx'
 import { Loading } from './components/loading/Loading.tsx'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
@@ -19,6 +19,7 @@ import { StockGodowns } from './apps/stock/StockGodowns.tsx'
 import { Transactions } from './apps/books/Transactions.tsx'
 import { VoucherPage } from './apps/books/VoucherPage.tsx'
 import { LedgerPicker, LedgerStatement } from './apps/books/LedgerStatement.tsx'
+import { DayBook } from './apps/books/DayBook.tsx'
 import { TrialBalance } from './apps/statements/TrialBalance.tsx'
 import { Explore } from './apps/data/Explore.tsx'
 import { Ageing } from './apps/parties/Ageing.tsx'
@@ -127,6 +128,8 @@ export default function App({ mode, onMode, today }: Props) {
   const stockItem = useStockItem(stockItemId, at === 'stock/summary' ? ids : undefined, period, stockGodown)
   const stockGodowns = useStockGodowns(at === 'stock/godowns' ? ids : undefined, period)
   const transactions = useTransactions(at === 'books/transactions' ? ids : undefined, period)
+  const dayBookFilters = { voucherType: route.query.getAll('db_type'), party: route.query.getAll('db_party') }
+  const dayBook = useDayBook(at === 'books/day-book' ? ids : undefined, period, dayBookFilters)
   const voucherId = at === 'books/vouchers' && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
   const voucher = useVoucher(voucherId, at === 'books/vouchers' ? ids : undefined)
   const ledgerId = at === 'books/ledger' && /^\d+$/.test(route.path[2] ?? '') ? route.path[2] : undefined
@@ -263,6 +266,26 @@ export default function App({ mode, onMode, today }: Props) {
       <Loading shape="report" />
     ) : (
       <Explore companies={selected} companyIds={ids ?? []} period={from && to ? { from, to } : undefined} query={query} />
+    )
+  } else if (at === 'books/day-book') {
+    crumbs = [{ label: 'Books', path: ['books', 'transactions'] }, { label: 'Day Book' }]
+    content = (
+      <DayBook
+        companies={selected}
+        found={dayBook.data}
+        loading={companies.isPending || periods.isPending || dayBook.isPending}
+        error={periods.error ?? dayBook.error}
+        onRetry={retry(periods, dayBook)}
+        voucherTypes={dayBookFilters.voucherType}
+        parties={dayBookFilters.party}
+        onFilters={(change) =>
+          updateQuery(route, {
+            ...(change.voucherTypes ? { db_type: change.voucherTypes } : {}),
+            ...(change.parties ? { db_party: change.parties } : {}),
+          })
+        }
+        query={query}
+      />
     )
   } else if (at === 'books/transactions') {
     crumbs = [{ label: 'Books', path: ['books', 'transactions'] }, { label: 'Transactions' }]

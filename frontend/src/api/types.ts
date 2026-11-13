@@ -265,6 +265,39 @@ export interface DatasetResult {
   total_rows: number
 }
 
+export interface DayBookCountOut {
+  voucher_type: string
+  vouchers: number
+}
+
+export interface DayBookOut {
+  companies: number[]
+  period_start: string
+  period_end: string
+  rows: DayBookRowOut[]
+  counts: DayBookCountOut[]
+  voucher_types: string[]
+  parties: string[]
+  truncated: boolean
+}
+
+export interface DayBookRowOut {
+  voucher_id: number
+  company: number
+  date: string
+  particulars: string
+  voucher_type: string
+  number: string | null
+  debit: string | null
+  credit: string | null
+  inward: string | null
+  outward: string | null
+  unit: string | null
+  narration: string | null
+  party: string | null
+  tags: string[]
+}
+
 export interface DimensionOption {
   key: string
   label: string
@@ -382,6 +415,7 @@ export interface Home {
   trend: TrendOut[]
   summary: SummaryLine[]
   summary_reason: string | null
+  summary_compared_with: ComparedWith
   top_customers: TopCustomerOut[]
 }
 

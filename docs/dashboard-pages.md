@@ -4,7 +4,7 @@ This document tells you what each page of the dashboard shows and how to check i
 
 | Field | Value |
 | --- | --- |
-| Version | 1.7 |
+| Version | 1.8 |
 | Date | 2026-11-12 |
 | Requirements | RPT-014 (layout and modules), RPT-015 (formulas), RPT-016 (periods and comparison) |
 | Language | ASD-STE100 Simplified Technical English |
@@ -24,7 +24,7 @@ The top bar is dark on each page. It has these parts, from left to right:
 | Logo and "LedgerBridge" | Opens the Overview. The logo pulses while the first data loads. |
 | Period toggles | Select the period: MTD (month to date), QTD (quarter to date), YTD (year to date), FY (financial year) or Custom. Custom lets you select months or two dates. |
 | Financial year | Selects the financial year for FY and for Custom months. |
-| Comparison | Selects the comparison period: previous period, last year or no comparison (F-CMP-002). |
+| Comparison | Selects the comparison period: previous period, last year or no comparison (F-CMP-002). Each card and each table header shows the name of the comparison and its dates. For YTD and FY, the previous period is the same dates last year. |
 | Amounts | Shows amounts in lakhs or in full (F-FMT-001, F-FMT-002). The browser keeps the setting. |
 | Light or dark | Changes the colours of the dashboard. |
 | Module tabs | Open a module: Overview, Sales, Purchases, P&L & KPIs, Balance Sheet, Stock, Cash Flow, Parties, Books and Data. The tabs are on a row below the logo. |
@@ -751,7 +751,7 @@ The module has two pages: Receivables and Payables.
 
 ## 10. Books
 
-The module has two pages: Transactions and Ledger statement. Each voucher also has its own page.
+The module has three pages: Transactions, Day Book and Ledger statement. Each voucher also has its own page.
 
 **Filters for the Books module:** None. Use the filter of the table, or group it.
 
@@ -848,6 +848,48 @@ A cancelled voucher has no lines. An optional voucher does not change the books.
 2. Select the same ledger and the same dates.
 3. Compare the opening balance, each row and the closing balance.
 
+### 10.4 Day Book
+
+**Purpose:** The page shows each voucher of the period, as the Day Book of Tally shows it.
+
+**Note at the top of the page.** The box says:
+
+- The page shows each voucher of the period: date, Particulars, voucher type and number, and the amount (F-DAY-001).
+- Particulars is the first ledger entry of the voucher, as in Tally.
+- A stock voucher shows its first item and the quantity. A cancelled voucher shows "(cancelled)" and no amount.
+- Tags show the vouchers that do not change the books: "optional", "memorandum" and "order". Tally shows them without a tag.
+- Below the table, the page shows the vouchers of each type (F-DAY-002).
+- To compare, use the Day Book of Tally for the same date.
+
+**Contents:**
+
+| Item | What it shows | Formula IDs |
+| --- | --- | --- |
+| Day Book (table) | Date, Particulars, voucher type with its tags, voucher number, debit, credit, inward and outward quantity, and narration. | F-DAY-001, F-TBL-001 |
+| Vouchers of each type (table) | The number of vouchers of each type in the period. The filters do not change it. | F-DAY-002 |
+
+**The rows.** We took these rules from the Day Book of Tally, recorded for each day with vouchers on the test company.
+
+- The page shows each voucher, with cancelled, optional, memorandum and order vouchers.
+- The rows go by date, then by voucher type in the order of Tally, then by number. A custom voucher type follows the type that it comes from.
+- Particulars is the first ledger entry. Its amount is in the Debit column or in the Credit column.
+- A stock voucher, for example a delivery note, shows its first item and the quantity in the Inwards or Outwards column.
+- A rejection shows a negative quantity in the column of the note that it reverses.
+
+**Filters:** Select one or more voucher types and one or more parties. The address keeps your choice.
+
+**Drill-downs:** Click a voucher number to open the page of the voucher (section 10.2).
+
+**Loading and errors:** As section 1.5, with table rows.
+
+**Check against Tally:**
+
+1. Open Display More Reports › Day Book.
+2. Set the same date (F2). The Day Book of Tally shows one day.
+3. Compare each row and its column.
+
+The tests compare each row with the Day Book of Tally on 24 days of the test company.
+
 ## 11. Data
 
 The module has three pages: Data health, Explore and Companies.
@@ -926,6 +968,7 @@ The module has three pages: Data health, Explore and Companies.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 1.8 | 2026-11-13 | The Day Book (section 10.4). The name and the dates of each comparison (section 1.1). |
 | 1.7 | 2026-11-13 | The Profit & Loss in the layout of Tally (section 5.1): the two sides, the period end, the drill-down, several companies and the Analysis view. |
 | 1.6 | 2026-11-12 | The Trial Balance (section 5.3), the drill-down of a Balance Sheet line (section 6) and the Ledger statement (section 10.3). |
 | 1.5 | 2026-11-12 | No Status column and no Meaning column in the tables (section 1.4). The status is on hover. Data health keeps its status columns. |

@@ -13,7 +13,7 @@ import { centreNote, centresNote } from '../apps/costcentres/notes.ts'
 import { balanceSheetNote, trialBalanceNote } from '../apps/statements/notes.ts'
 import { cashFlowNote } from '../apps/cash/notes.ts'
 import { godownsNote, itemNote, stockNote } from '../apps/stock/notes.ts'
-import { ledgerNote, ledgerPickNote, transactionsNote, voucherNote } from '../apps/books/notes.ts'
+import { dayBookNote, ledgerNote, ledgerPickNote, transactionsNote, voucherNote } from '../apps/books/notes.ts'
 import { companiesNote, healthNote } from '../apps/data/notes.ts'
 import { exploreNote } from '../apps/data/exploreWords.ts'
 
@@ -40,6 +40,7 @@ const NOTES: Record<string, { list: NoteContent; detail?: NoteContent }> = {
   'parties/payables': { list: ageingNote('vendors') },
   'books/transactions': { list: transactionsNote },
   'books/ledger': { list: ledgerPickNote, detail: ledgerNote },
+  'books/day-book': { list: dayBookNote },
   'books/vouchers': { list: voucherNote }, // a detail page: always opened with an id
   'data/health': { list: healthNote },
   'data/explore': { list: exploreNote },

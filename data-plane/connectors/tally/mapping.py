@@ -505,6 +505,7 @@ def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
             parent_name=parent,
             moves_stock=None,
             number_series=series,
+            sort_position=master_order(key),
         )
     return CanonicalVoucherType(
         source_key=key,
@@ -516,7 +517,19 @@ def voucher_type(element: ET.Element, key: str) -> CanonicalVoucherType:
         standard_type=standard,
         moves_stock=standard not in NON_STOCK_VOUCHER_TYPES,
         number_series=series,
+        sort_position=master_order(key),
     )
+
+
+def master_order(key: str) -> int | None:
+    """Where Tally lists a master: its master id, the last part of its GUID in hex
+    ("...-00000020"). Tally's Day Book lists a day's vouchers type by type in this order
+    (recorded on the test company, 2026-11-13)."""
+    last = key.rsplit("-", 1)[-1]
+    try:
+        return int(last, 16) if len(last) == 8 else None
+    except ValueError:
+        return None
 
 
 def number_series(element: ET.Element) -> tuple[CanonicalNumberSeries, ...]:

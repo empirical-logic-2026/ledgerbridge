@@ -16,3 +16,8 @@ LedgerBridge copies accounting data from TallyPrime (read-only, XML over HTTP on
 - MySQL schema changes require a new Alembic migration and matching `docs/schema.md` updates; never edit an applied migration.
 - Preserve canonical debit-positive accounting signs, exact Decimal money, source read-only behavior, and validation against Tally.
 - Follow `CLAUDE.md` for repository conventions and end change reports with What changed, Why, Security impact, and Code walkthrough.
+
+## Commits, branches and pull requests
+- Never add "Co-authored-by" trailers, "Generated with" lines, or any AI tool or assistant name (Claude, Copilot, or others) to commit messages, branch names, pull request titles or descriptions, review comments, or code comments.
+- Write commit messages and pull requests in plain, professional wording, as a developer would: a short summary line (for example "Add Tally-format Profit & Loss page"), then what changed and why.
+- Documentation files that already describe the development tools may keep doing so.

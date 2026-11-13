@@ -206,8 +206,19 @@ export function periodText(period: PeriodChoice | undefined, selection: Selectio
   return `${formatDate(from)} to ${formatDate(to)}${months}${selection.compare === 'none' ? '' : ` · ${compare?.label}`}`
 }
 
-/** "previous period", "last year": what a response's figures are compared with; none when
- *  nothing was compared. */
-export function againstOf(compared: ComparedWith | null | undefined): string | undefined {
-  return compared ? compared.label.toLowerCase() : undefined
+/** What a response's figures are compared with: its name ("previous period", "last year",
+ *  "previous period (same dates last year)" for YTD and FY) and its dates ("01-Sep-2026 to
+ *  30-Sep-2026"); none when nothing was compared (F-CMP-002, ADR-057). */
+export interface Against {
+  label: string
+  dates: string
+}
+
+export function againstOf(compared: ComparedWith | null | undefined): Against | undefined {
+  return compared ? { label: compared.label.toLowerCase(), dates: comparedDates(compared) } : undefined
+}
+
+/** "01-Sep-2026 to 30-Sep-2026": the dates a comparison covers. */
+export function comparedDates(compared: ComparedWith): string {
+  return `${formatDate(compared.start)} to ${formatDate(compared.end)}`
 }

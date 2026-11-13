@@ -1310,3 +1310,31 @@ body,
 .nearest-date {
   margin-right: 8px;
 }
+
+/* The dates a comparison covers, under a card's change (F-CMP-002, ADR-057). */
+.card-compare-dates {
+  display: block;
+  font-size: 11px;
+  color: var(--lb-muted);
+}
+.compare-dates {
+  display: block;
+  font-weight: normal;
+  font-size: 11px;
+  color: var(--lb-muted);
+}
+
+/* The Day Book (ADR-057): the two filters side by side; the tags beside a voucher type. */
+.day-book-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.day-book-filters .ant-select {
+  min-width: 220px;
+}
+.day-book-tag {
+  margin-left: 6px;
+  font-size: 11px;
+}

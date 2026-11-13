@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Version | 0.23 |
+| Version | 0.24 |
 | Date | 2026-11-11 |
 | Status | Home page: approved design for M7. Budget page (Section 7): proposed design for M7b, no mockup yet |
 | Mockup | [dashboard-mockup.png](dashboard-mockup.png) (2026-10-12); the six approved screens of 2026-10-31 (Section 0.1); the client's reference screenshots of 2026-11-02 (Section 0.4: layout and information design only; kept on the developer's computer in `docs/design/client-reference/`, not in git, as they show other products and a desktop) |
@@ -156,6 +156,10 @@ The **Trial Balance** is its own page under P&L & KPIs: Particulars, Debit and C
 ### The Profit & Loss in Tally's layout (built 2026-11-13, ADR-056)
 
 The P&L page opens on TallyPrime's horizontal Profit & Loss A/c: a header with the companies, "Profit & Loss A/c" and the period; two tables side by side (one below the other on a narrow screen), the gross block, its subtotal, the net block and the Totals, with empty rows so the subtotals and Totals line up. With one company one amount column, as Tally; with several, one per company and the total. A group links to its drill-down card above the statement (`line=`, `side=` in the address), the stock lines to the Stock summary. A period ending between stored statement dates shows why and buttons for the nearest dates. A switch above the statement chooses "Tally's layout" or "Analysis view" (`layout=analysis`): the earlier table, unchanged; the KPI cards stay above both.
+
+### The Day Book and the comparison labels (built 2026-11-13, ADR-057)
+
+**Books › Day Book** lists every voucher of the period as Tally's Day Book does, in the table explorer: date, Particulars, voucher type (with an "optional", "memorandum" or "order" tag), number (opening the voucher), Debit and Credit, Inwards and Outwards quantities for stock vouchers, narration. Two multiple-choice filters above it (voucher types, parties; `db_type`, `db_party` in the address) and, below, the vouchers of each type. **The comparison** is named and dated everywhere: a card's change says "vs previous period" (or "vs last year", or "vs previous period (same dates last year)" for YTD and FY) with the compared dates in small text under it; the ratio tiles show them under the tiles; a statement table's comparison column has the dates under its name; the Overview's summary says "always last year".
 
 ## 0.3 Everything clickable, and one detail page per entity
 
@@ -488,6 +492,7 @@ The "Ask a question" panel offers currency chips, e.g. "What is our net USD expo
 
 | Date | Version | Change |
 | --- | --- | --- |
+| 2026-11-13 | 0.24 | The Day Book page and the comparison named and dated on every card and header (ADR-057). |
 | 2026-11-13 | 0.23 | The Profit & Loss in Tally's layout as the P&L page's default view, the Analysis view kept (ADR-056). |
 | 2026-11-12 | 0.22 | The Trial Balance page (P&L & KPIs), the Balance Sheet's drill-down and the Ledger statement (Books), ADR-055. |
 | 2026-11-12 | 0.21 | Section 0.4: no Status or Meaning columns; a row's status on hover over its label; Data health keeps its status columns. |

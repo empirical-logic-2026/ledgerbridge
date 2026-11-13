@@ -14,6 +14,7 @@ import { Explained } from './Explained.tsx'
 import { formulaOf } from '../help/glossary.ts'
 import { formatAmount, useAmountFormat, type AmountFormat } from '../amountFormat.ts'
 import { formatChange, formatExact, toScaled } from '../format.ts'
+import type { Against } from '../selection.ts'
 
 export type Tone = 'up-good' | 'up-neutral'
 
@@ -28,7 +29,7 @@ interface Props {
   figure: CardFigure
   unit?: 'amount' | 'count' | 'days' | 'percent'
   tone?: Tone
-  against?: string // what it is compared with ("previous period"); none: not compared
+  against?: Against // what it is compared with, and its dates; none: not compared
   note?: string
   alert?: boolean // crimson figure (e.g. overdue)
   missing?: string // why there is no figure
@@ -74,14 +75,18 @@ export function KeyCard({ label, figure, unit = 'amount', tone = 'up-good', agai
   if (change) {
     const up = toScaled(change) >= 0n
     const css = tone === 'up-good' ? (up ? 'change good' : 'change bad') : up ? 'change neutral' : 'change good'
-    const last = figure.before ? `${capitalised(against ?? 'before')}: ${unit === 'amount' ? formatExact(figure.before) : shown(figure.before, unit, format)}` : undefined
+    const name = against ? `${capitalised(against.label)}, ${against.dates}` : 'Before'
+    const last = figure.before ? `${name}: ${unit === 'amount' ? formatExact(figure.before) : shown(figure.before, unit, format)}` : undefined
     changeNode = (
-      <Tooltip title={last}>
-        <span className={css}>{changeText(change, unit)} vs {against ?? 'before'}</span>
-      </Tooltip>
+      <>
+        <Tooltip title={last}>
+          <span className={css}>{changeText(change, unit)} vs {against?.label ?? 'before'}</span>
+        </Tooltip>
+        {against && <span className="card-compare-dates">{against.dates}</span>}
+      </>
     )
   } else if (against) {
-    changeNode = <span className="card-small-note">Nothing to compare with in the {against}</span>
+    changeNode = <span className="card-small-note">Nothing to compare with in the {against.label} ({against.dates})</span>
   }
   const text = value === null ? '—' : shown(value, unit, format)
   return (

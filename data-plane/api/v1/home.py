@@ -26,6 +26,7 @@ from api.v1.common import (
     SpanParam,
     compared_with,
     formula,
+    last_year_of,
     parse_period,
 )
 from core.home import BS_FIGURES, PL_FIGURES, StatementFigures, home
@@ -175,6 +176,7 @@ class Home(BaseModel):
     trend: list[TrendOut]  # the twelve months up to the period's end (F-OVR-001)
     summary: list[SummaryLine]  # the Profit & Loss against last year
     summary_reason: str | None  # why last year has no figures
+    summary_compared_with: ComparedWith  # always last year, whatever the comparison chosen
     top_customers: list[TopCustomerOut]  # F-OVR-002
 
 
@@ -221,6 +223,7 @@ def dashboard_home(
         trend=[_trend(t) for t in trend(session, companies, period.end)],
         summary=_summary(found.profit_loss, found.profit_loss_last_year),
         summary_reason=found.profit_loss_last_year.reason,
+        summary_compared_with=last_year_of(period),
         top_customers=_top(top_customers(session, companies, period), found.monthly),
     )
 
