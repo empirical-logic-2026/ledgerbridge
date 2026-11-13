@@ -915,6 +915,40 @@ def _against(number: str) -> str:
     )
 
 
+# --- Profit & Loss sides (2026-11-13, ADR-056): where Tally's horizontal Profit & Loss A/c
+# places a group whose balance is on the other side than its nature, a gross loss and a
+# nett loss. Dated after every earlier case, so the earlier recordings stay as they were:
+# 31 Oct 2026 a direct expense in credit, a direct income in debit and an indirect income
+# in credit; 1 Nov 2026 the indirect incomes in debit, the sales accounts in debit and the
+# purchase accounts in credit (so a gross loss and a nett loss).
+PL_SIDES_CAPITAL = "Capital - P&L Sides"  # the other side of every case: no anchor moves
+PL_SIDES_LEDGERS = (
+    Ledger(PL_SIDES_CAPITAL, "Capital Account"),
+    Ledger("Freight Recovered", "Direct Expenses"),
+    Ledger("Job Work Refund", "Direct Incomes"),
+    Ledger("Interest Received", "Indirect Incomes"),
+    Ledger("Interest Reversed", "Indirect Incomes"),
+    Ledger("Sales - Reversed", "Sales Accounts"),
+    Ledger("Purchases - Reversed", "Purchase Accounts"),
+)
+
+
+def _side_case(marker: str, on: date, ledger: str, side: Side, amount: str) -> Voucher:
+    """One journal putting `amount` on `ledger` (debit or credit), the capital ledger opposite."""
+    entries = (Entry(ledger, side, _d(amount)),
+               Entry(PL_SIDES_CAPITAL, "Cr" if side == "Dr" else "Dr", _d(amount)))  # fmt: skip
+    return Voucher(marker, "Journal", on, f"Profit & Loss sides {marker}", entries)
+
+
+PL_SIDES_VOUCHERS = (
+    _side_case("PLS-DEXP-CR", date(2026, 10, 31), "Freight Recovered", "Cr", "5000"),
+    _side_case("PLS-DINC-DR", date(2026, 10, 31), "Job Work Refund", "Dr", "900"),
+    _side_case("PLS-IINC-CR", date(2026, 10, 31), "Interest Received", "Cr", "2000"),
+    _side_case("PLS-IINC-DR", date(2026, 11, 1), "Interest Reversed", "Dr", "3000"),
+    _side_case("PLS-SAL-DR", date(2026, 11, 1), "Sales - Reversed", "Dr", "200000"),
+    _side_case("PLS-PUR-CR", date(2026, 11, 1), "Purchases - Reversed", "Cr", "150000"),
+)
+
 ORDER_VOUCHERS = (
     Voucher("ORD-1", "Sales Order", OCT_1, "Seed sales order",
             (Entry(THETA, "Dr", _d("160"), (Bill("", "On Account", _d("160")),)),),
@@ -947,6 +981,7 @@ SEED = SeedData(
         *NETTING_LEDGERS,
         *YEAR_END_LEDGERS,
         *DATA_LEDGERS,
+        *PL_SIDES_LEDGERS,
     ),
     groups=NETTING_GROUPS,
     currencies=(USD,),
@@ -980,6 +1015,7 @@ SEED = SeedData(
         *YEAR_END_VOUCHERS,
         *DATA_VOUCHERS,
         *ORDER_VOUCHERS,
+        *PL_SIDES_VOUCHERS,
     ),
     voucher_types=(("Adjustment Journal", "Journal"),),  # a custom type under Journal
     godowns=(

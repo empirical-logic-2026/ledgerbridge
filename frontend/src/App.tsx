@@ -6,12 +6,13 @@
 import { AmountFormatProvider } from './components/Money.tsx'
 import { Alert, Result } from 'antd'
 import type { ReactNode } from 'react'
-import { useAgeing, useBalanceSheet, useBalanceSheetDrill, useCashFlow, useLedgerStatement, useTrialBalance, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockGodowns, useStockItem, useTransactions, useVoucher, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
+import { useProfitLossDrill, useProfitLossTally, useAgeing, useBalanceSheet, useBalanceSheetDrill, useCashFlow, useLedgerStatement, useTrialBalance, useChannels, useCompanies, useCostCentre, useCostCentres, useHome, useStock, useStockGodowns, useStockItem, useTransactions, useVoucher, useMonthly, useParties, useParty, usePeriods, useProfitLoss, usePurchasesDashboard, useRegister, useSalesDashboard } from './api/queries.ts'
 import { ErrorState } from './components/loading/ErrorState.tsx'
 import { Loading } from './components/loading/Loading.tsx'
 import { DashboardHome } from './apps/dashboard/DashboardHome.tsx'
 import { PnlKpis } from './apps/dashboard/PnlKpis.tsx'
 import { ProfitLoss } from './apps/dashboard/ProfitLoss.tsx'
+import { PlViewSwitch, ProfitLossTally } from './apps/dashboard/ProfitLossTally.tsx'
 import { CostCentrePage, CostCentres } from './apps/costcentres/CostCentres.tsx'
 import { StockItemPage, StockSummary } from './apps/stock/Stock.tsx'
 import { StockGodowns } from './apps/stock/StockGodowns.tsx'
@@ -75,6 +76,11 @@ export default function App({ mode, onMode, today }: Props) {
   const home = useHome(at === 'overview/dashboard' || at === 'pnl/profit-loss' ? ids : undefined, period, selection.compare)
   const options = readOptions(route.query)
   const profitLoss = useProfitLoss(at === 'pnl/profit-loss' ? ids : undefined, period, options.view, selection.compare)
+  const plAnalysis = route.query.get('layout') === 'analysis'
+  const plTally = useProfitLossTally(at === 'pnl/profit-loss' && !plAnalysis ? ids : undefined, period)
+  const plLine = at === 'pnl/profit-loss' && !plAnalysis ? (route.query.get('line') ?? undefined) : undefined
+  const plSide = route.query.get('side') === 'right' ? 'right' : 'left'
+  const plDrill = useProfitLossDrill(plLine ? ids : undefined, period, plLine, plSide)
   const sales = useSalesDashboard(at === 'sales/dashboard' ? ids : undefined, period, selection.compare, {
     customer: selection.facets.customer,
     channel: selection.facets.channel,
@@ -147,16 +153,32 @@ export default function App({ mode, onMode, today }: Props) {
     content = (
       <>
         <PnlKpis home={home.data} report={profitLoss.data} dark={mode === 'dark'} />
-        <ProfitLoss
-          companies={selected}
-          report={profitLoss.data}
-          loading={companies.isPending || periods.isPending || profitLoss.isPending}
-          error={periods.error ?? profitLoss.error}
-        onRetry={retry(periods, profitLoss)}
-          options={options}
-          onOptions={(change) => updateQuery(route, change)}
-              query={query}
-        />
+        <PlViewSwitch analysis={plAnalysis} onAnalysis={(next) => updateQuery(route, { layout: next ? 'analysis' : undefined, line: undefined, side: undefined })} />
+        {plAnalysis ? (
+          <ProfitLoss
+            companies={selected}
+            report={profitLoss.data}
+            loading={companies.isPending || periods.isPending || profitLoss.isPending}
+            error={periods.error ?? profitLoss.error}
+            onRetry={retry(periods, profitLoss)}
+            options={options}
+            onOptions={(change) => updateQuery(route, change)}
+            query={query}
+          />
+        ) : (
+          <ProfitLossTally
+            companies={selected}
+            report={plTally.data}
+            loading={companies.isPending || periods.isPending || plTally.isPending}
+            error={periods.error ?? plTally.error}
+            onRetry={retry(periods, plTally)}
+            query={query}
+            onEnd={(day) => select({ toggle: 'custom', from: plTally.data?.period_start, to: day, months: [] })}
+            line={plLine}
+            side={plSide}
+            drill={{ found: plDrill.data, loading: plDrill.isPending, error: plDrill.error, onRetry: retry(plDrill) }}
+          />
+        )}
       </>
     )
   } else if (at === 'pnl/trial-balance') {

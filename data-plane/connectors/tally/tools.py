@@ -7,6 +7,8 @@ test company into tests/fixtures/tally (replayed by fixtures.FixtureTransport);
     python -m connectors.tally.tools capture-fixtures --company "LedgerBridge Test Co"
     python -m connectors.tally.tools capture-ledger-report --company "LedgerBridge Test Co" \
         --ledger "Test Bank Current A/c" --ledger "Sales - Goods" --from 2026-04-01 --to 2026-10-02
+    python -m connectors.tally.tools capture-pl-layout --company "LedgerBridge Test Co" \
+        --date 2026-10-02 --date 2026-11-02 --year-start 2026-04-01 --dir <folder>
     python -m connectors.tally.tools sign-check --company "LedgerBridge Test Co"
     python -m connectors.tally.tools sign-check --fixtures
     python -m connectors.tally.tools sign-check --company "LedgerBridge Test Co" \
@@ -189,6 +191,61 @@ def capture_ledger_report(
     return 0
 
 
+PL_LAYOUT = DEFAULT_DIR / "rules" / "pl_sides"
+EXTENSIONS = {"XML": "xml", "HTML": "html", "ASCII": "txt"}
+
+
+def capture_pl_layout(
+    company: str, dates: Sequence[date], year_start: date | None, directory: Path,
+    guid_prefix: str = "",
+) -> int:  # fmt: skip
+    """Records, for the Profit & Loss in Tally's layout (ADR-056): the test company's books
+    (as capture-fixtures, into books/), and at each date Tally's Profit and Loss in each
+    export format (XML, which the connector reads; HTML and ASCII, which may keep its two
+    sides), its Balance Sheet and its group balances, for the period from the books'
+    beginning and, after `year_start`, for the financial year (prefixed fy_). Read-only;
+    test company only (the same guards as capture-fixtures)."""
+    code = capture_fixtures(company, directory / "books", guid_prefix)
+    if code:
+        return code
+    connector = _connector()
+    entity = connector.list_entities()[0]
+    if entity.books_from is None:
+        print("Refusing: the company has no books-from date", file=sys.stderr)
+        return 2
+    sizes: dict[str, int] = {}
+
+    def save(name: str, body: bytes) -> None:
+        (directory / name).write_bytes(body)
+        sizes[name] = len(body)
+
+    for on in dates:
+        periods = [("", (entity.books_from, on))]
+        if year_start is not None and entity.books_from < year_start <= on:
+            periods.append(("fy_", (year_start, on)))
+        for prefix, period in periods:
+            for export_format, extension in EXTENSIONS.items():
+                request = envelopes.report_request(
+                    envelopes.PROFIT_AND_LOSS, company, period, export_format=export_format
+                )
+                save(f"{prefix}profit_and_loss_{on}.{extension}", connector.client.post(request))
+            sheet = envelopes.report_request(envelopes.BALANCE_SHEET, company, period)
+            save(f"{prefix}balance_sheet_{on}.xml", connector.client.post(sheet))
+            groups = envelopes.collection_request(
+                envelopes.GROUP_BALANCES, company=company, balances_period=period
+            )
+            save(f"{prefix}group_balance_{on}.xml", connector.client.post(groups))
+    manifest = {
+        "company": company, "dates": [d.isoformat() for d in dates],
+        "year_start": year_start.isoformat() if year_start else None,
+    }  # fmt: skip
+    (directory / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", "utf-8")
+    print(f"Saved {len(sizes)} responses to {directory} (and the books to books/):")
+    for name, size in sizes.items():
+        print(f"  {name}: {size:,} bytes")
+    return 0
+
+
 def sign_check(
     company: str | None,
     fixtures: Path | None,
@@ -246,6 +303,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--guid-prefix", default="", help="refuse unless the company's GUID starts with this"
     )
 
+    layout = sub.add_parser(
+        "capture-pl-layout", help="record Tally's Profit & Loss in each format (test company)"
+    )
+    layout.add_argument("--company", required=True)
+    layout.add_argument(
+        "--date", dest="dates", action="append", type=date.fromisoformat, required=True
+    )
+    layout.add_argument("--year-start", type=date.fromisoformat, help="the financial year's start")
+    layout.add_argument("--dir", type=Path, default=PL_LAYOUT)
+    layout.add_argument(
+        "--guid-prefix", default="", help="refuse unless the company's GUID starts with this"
+    )
+
     signs = sub.add_parser("sign-check", help="confirm how Tally signs debits and credits")
     source = signs.add_mutually_exclusive_group(required=True)
     source.add_argument("--company")
@@ -267,6 +337,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = root.parse_args(argv)
     if args.command == "capture-fixtures":
         return capture_fixtures(args.company, args.dir, args.guid_prefix)
+    if args.command == "capture-pl-layout":
+        return capture_pl_layout(
+            args.company, args.dates, args.year_start, args.dir, args.guid_prefix
+        )
     if args.command == "capture-ledger-report":
         return capture_ledger_report(
             args.company, args.ledger, args.start, args.end, args.dir, args.guid_prefix

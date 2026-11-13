@@ -437,7 +437,7 @@ describe('the Profit & Loss page', () => {
   const lastRequest = () => requests.filter((r) => r.includes('/reports/profit-loss')).pop() ?? ''
 
   it('shows the statement company by company with the total, last year and change', async () => {
-    renderApp('#/statements/profit-loss?from=2026-04-01&to=2026-09-30')
+    renderApp('#/statements/profit-loss?layout=analysis&from=2026-04-01&to=2026-09-30')
     expect(await screen.findByRole('heading', { name: 'Profit & Loss · Alpha + Beta' })).toBeInTheDocument()
     expect(await screen.findByText(/without inter-company eliminations/)).toBeInTheDocument()
     const table = await screen.findByRole('table')
@@ -457,7 +457,7 @@ describe('the Profit & Loss page', () => {
 
   it('shows the margins, the expense structure and the goal placeholder above the statement', async () => {
     stubApi({ '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/reports/profit-loss': statement, '/api/v1/home': home })
-    renderApp('#/pnl/profit-loss?compare=1')
+    renderApp('#/pnl/profit-loss?layout=analysis&compare=1')
     const tiles = await screen.findByRole('list', { name: 'Margins as % of net sales' })
     expect(within(tiles).getByRole('listitem', { name: 'Gross margin' })).toHaveTextContent('31.3%')
     expect(within(tiles).getByRole('listitem', { name: 'Net margin' })).toHaveTextContent('▼ 1.1 pts vs last year')
@@ -467,14 +467,14 @@ describe('the Profit & Loss page', () => {
   })
 
   it('says it matches Tally under the title, and explains itself on request', async () => {
-    renderApp('#/pnl/profit-loss')
+    renderApp('#/pnl/profit-loss?layout=analysis')
     expect(await screen.findByRole('status')).toHaveTextContent(/✓ Matches Tally for both companies \(checked at 2 statement dates up to 02-Oct-2026\)/)
     fireEvent.click(screen.getByRole('button', { name: 'What is this?' }))
     expect(await screen.findByText(/To compare with Tally/)).toBeInTheDocument()
   })
 
   it('changes the view and columns from the toolbar, through the URL, keeping the selection', async () => {
-    renderApp('#/pnl/profit-loss?company=3&company=4')
+    renderApp('#/pnl/profit-loss?layout=analysis&company=3&company=4')
     await screen.findByRole('table')
     fireEvent.click(screen.getByRole('button', { name: /Group by/ }))
     fireEvent.click(await screen.findByText('Month by month'))
@@ -489,7 +489,7 @@ describe('the Profit & Loss page', () => {
   it('exports exactly the table as CSV', async () => {
     const created: Blob[] = []
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: (b: Blob) => (created.push(b), 'blob:x'), revokeObjectURL: () => {} }))
-    renderApp('#/pnl/profit-loss')
+    renderApp('#/pnl/profit-loss?layout=analysis')
     await screen.findByRole('table')
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }))
     const text = await created[0].text()
@@ -498,14 +498,14 @@ describe('the Profit & Loss page', () => {
   })
 
   it('has no floating options panel', async () => {
-    renderApp('#/pnl/profit-loss')
+    renderApp('#/pnl/profit-loss?layout=analysis')
     await screen.findByRole('table')
     expect(screen.queryByRole('complementary')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Options' })).toBeNull()
   })
 
   it('explains each column header on hover: what it means and its formula', async () => {
-    renderApp('#/pnl/profit-loss')
+    renderApp('#/pnl/profit-loss?layout=analysis')
     const table = await screen.findByRole('table')
     fireEvent.mouseEnter(within(table).getByText('Change'))
     expect(await screen.findByText(/How much the figure moved .*\(F-CMP-001\)/)).toBeInTheDocument()
@@ -1979,7 +1979,7 @@ describe('the Trial Balance, the Balance Sheet drill-down and the Ledger stateme
       '/api/v1/parties/vendors': { ...partiesFound, kind: 'vendors', parties: [] },
     })
     renderApp('#/sales/customers/11?tab=statement')
-    const open = await screen.findByRole('link', { name: 'open the ledger statement' })
+    const open = await screen.findByRole('link', { name: 'open the ledger statement' }, { timeout: 5000 })
     expect(open.getAttribute('href')).toMatch(/^#\/books\/ledger\/41/)
     cleanup()
     stubApi({ ...base, '/api/v1/transactions': transactionsFound })
@@ -1992,6 +1992,114 @@ describe('the Trial Balance, the Balance Sheet drill-down and the Ledger stateme
     renderApp('#/data/explore?e_dataset=voucher_lines')
     const result = await screen.findByRole('table', { name: /result/ })
     expect(within(result).getByRole('link', { name: 'Customer One' }).getAttribute('href')).toMatch(/^#\/books\/ledger\/5/)
+  })
+})
+
+// The Profit & Loss in Tally's layout (core/profit_loss_tally.py): the recorded 2 November 2026
+// case, with sales in debit on the left, purchases and direct expenses in credit on the right,
+// a gross loss and a nett loss.
+const pl = (key: string, label: string, kind: string, amount: string | null, group: string | null = null) => ({
+  key, label, kind, group, values: { 'company:3': amount, total: amount },
+})
+const both = (amount: string) => ({ 'company:3': amount, total: amount })
+const tallyFound = {
+  companies: [3], combined: false, period_start: '2026-04-01', period_end: '2026-11-02', start: '2026-04-01', end: '2026-11-02',
+  columns: [{ key: 'company:3', label: 'Alpha' }, { key: 'total', label: 'Total' }],
+  gross: {
+    left: { rows: [pl('x:opening_stock', 'Opening Stock', 'stock', '2970'), pl('g:/sales accounts', 'Sales Accounts', 'group', '162830', 'sales accounts'),
+      pl('g:/direct incomes', 'Direct Incomes', 'group', '780', 'direct incomes')], total: both('166580') },
+    right: { rows: [pl('g:/purchase accounts', 'Purchase Accounts', 'group', '128410', 'purchase accounts'), pl('g:/direct expenses', 'Direct Expenses', 'group', '4700', 'direct expenses'),
+      pl('x:closing_stock', 'Closing Stock', 'stock', '7380'), pl('x:gross_co', 'Gross Loss c/o', 'gross_carried', '26090')], total: both('166580') },
+  },
+  net: {
+    left: { rows: [pl('x:gross_bf', 'Gross Loss b/f', 'gross_brought', '26090'), pl('g:/indirect incomes', 'Indirect Incomes', 'group', '1000', 'indirect incomes'),
+      pl('g:/indirect expenses', 'Indirect Expenses', 'group', '32661', 'indirect expenses')], total: both('59751') },
+    right: { rows: [pl('x:net', 'Nett Loss', 'net_result', '59751')], total: both('59751') },
+  },
+  gross_profit: both('-26090'), net_profit: both('-59751'), reason: null, nearest: [],
+}
+const tallyBetween = {
+  ...tallyFound, start: null, end: null, gross: null, net: null, gross_profit: {}, net_profit: {}, period_end: '2026-10-20',
+  reason: "no statement is stored for 20-Oct-2026: Tally's closing stock, and so the profit, is known only at a stored statement date",
+  nearest: ['2026-10-02', '2026-10-31'],
+}
+const tallyTwo = {
+  ...tallyFound, companies: [3, 4], combined: true,
+  columns: [{ key: 'company:3', label: 'Alpha' }, { key: 'company:4', label: 'Beta' }, { key: 'total', label: 'Total' }],
+}
+const tallyDrill = {
+  reason: null,
+  rows: [
+    { key: 'g:/sales accounts', label: 'Sales Accounts', kind: 'group', depth: 0, parent: null, amount: '162830', ledger_id: null, company: null },
+    { key: 'l:3:50', label: 'Sales - Reversed', kind: 'ledger', depth: 1, parent: 'g:/sales accounts', amount: '200000', ledger_id: 50, company: 3 },
+    { key: 'l:3:51', label: 'Sales - Goods', kind: 'ledger', depth: 1, parent: 'g:/sales accounts', amount: '-37170', ledger_id: 51, company: 3 },
+  ],
+}
+
+describe("the Profit & Loss in Tally's layout (ADR-056)", () => {
+  afterEach(() => vi.unstubAllGlobals())
+  const base = { '/api/v1/companies': companies, '/api/v1/periods': periods, '/api/v1/home': home, '/api/v1/reports/profit-loss': statement }
+  const lines = (table: HTMLElement) =>
+    within(table).getAllByRole('row').slice(1).map((r) => r.querySelector('th')?.textContent ?? '').filter((t) => t !== '')
+
+  it('opens in Tally\'s layout: both sides, the gross block, the subtotals and the Totals, equal', async () => {
+    fullAmounts()
+    stubApi({ ...base, '/api/v1/reports/profit-loss/tally': tallyFound })
+    renderApp('#/pnl/profit-loss')
+    const left = await screen.findByRole('table', { name: 'Profit & Loss A/c, left side (debit)' })
+    const right = screen.getByRole('table', { name: 'Profit & Loss A/c, right side (credit)' })
+    expect(lines(left)).toEqual(['Opening Stock', 'Sales Accounts', 'Direct Incomes', 'Gross Loss b/f', 'Indirect Incomes', 'Indirect Expenses', 'Total'])
+    expect(lines(right)).toEqual(['Purchase Accounts', 'Direct Expenses', 'Closing Stock', 'Gross Loss c/o', 'Nett Loss', 'Total'])
+    // The subtotals and the Totals line up, row for row, and are equal.
+    expect(left.querySelectorAll('tbody tr')).toHaveLength(right.querySelectorAll('tbody tr').length) // padded
+    for (const table of [left, right]) {
+      expect(within(table).getAllByText('₹1,66,580.00')).toHaveLength(1)
+      expect(within(table).getByText('Total').closest('tr')).toHaveTextContent('₹59,751.00')
+    }
+    expect(within(right).getByText('Nett Loss').closest('tr')).toHaveAttribute('data-formula', 'F-PL-014')
+    expect(within(left).getByRole('link', { name: 'Sales Accounts' }).getAttribute('href')).toMatch(/line=sales\+accounts&side=left/)
+    expect(within(right).getByRole('link', { name: 'Closing Stock' }).getAttribute('href')).toMatch(/^#\/stock\/summary/)
+    expect(screen.getByText('Profit & Loss A/c').closest('.tally-head')).toHaveTextContent('01-Apr-2026 to 02-Nov-2026')
+    expect(screen.getByRole('radio', { name: "Tally's layout" })).toBeChecked()
+  })
+
+  it('opens a line to its ledgers on its side, each opening its Ledger statement, and closes', async () => {
+    stubApi({ ...base, '/api/v1/reports/profit-loss/tally': tallyFound, '/api/v1/reports/profit-loss/drill': tallyDrill })
+    renderApp('#/pnl/profit-loss?line=sales+accounts&side=left')
+    const tree = await screen.findByRole('table', { name: 'Sales Accounts by group and ledger' })
+    expect(requests.some((r) => r.includes('/profit-loss/drill') && r.includes('group=sales+accounts') && r.includes('side=left'))).toBe(true)
+    expect(within(tree).getByRole('link', { name: 'Sales - Reversed' }).getAttribute('href')).toMatch(/^#\/books\/ledger\/50/)
+    expect(within(tree).getByText('Sales - Goods').closest('tr')).toHaveAttribute('data-formula', 'F-PL-016')
+    expect(screen.getByRole('link', { name: 'Close' }).getAttribute('href')).not.toContain('line=')
+  })
+
+  it('says why there is no profit for an end between stored dates and offers the nearest ones', async () => {
+    stubApi({ ...base, '/api/v1/reports/profit-loss/tally': tallyBetween })
+    renderApp('#/pnl/profit-loss?toggle=custom&from=2026-04-01&to=2026-10-20')
+    expect(await screen.findByText(/Tally's closing stock, and so the profit, is known only at a stored statement date/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'End on 31-Oct-2026' }))
+    await waitFor(() => expect(window.location.hash).toMatch(/to=2026-10-31/))
+    expect(window.location.hash).toMatch(/from=2026-04-01/)
+    expect(await screen.findByRole('button', { name: 'End on 02-Oct-2026' })).toBeInTheDocument()
+  })
+
+  it('shows one column per company and the total, combined without inter-company eliminations', async () => {
+    stubApi({ ...base, '/api/v1/reports/profit-loss/tally': tallyTwo })
+    renderApp('#/pnl/profit-loss?company=3&company=4')
+    const left = await screen.findByRole('table', { name: 'Profit & Loss A/c, left side (debit)' })
+    expect(within(left).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Particulars', 'Alpha', 'Beta', 'Total'])
+    expect(screen.getByText('Profit & Loss A/c').closest('.tally-head')).toHaveTextContent(/without inter-company eliminations/)
+  })
+
+  it('keeps the Analysis view a click away, in the address', async () => {
+    stubApi({ ...base, '/api/v1/reports/profit-loss/tally': tallyFound })
+    renderApp('#/pnl/profit-loss')
+    await screen.findByRole('table', { name: 'Profit & Loss A/c, left side (debit)' })
+    fireEvent.click(screen.getByText('Analysis view'))
+    await waitFor(() => expect(window.location.hash).toContain('layout=analysis'))
+    const table = await screen.findByRole('table')
+    expect(within(table).getAllByRole('columnheader')[0]).toHaveTextContent('Particulars')
+    expect(screen.queryByRole('table', { name: 'Profit & Loss A/c, left side (debit)' })).toBeNull()
   })
 })
 
@@ -2027,6 +2135,7 @@ describe('every figure on every page names its formula (docs/formula-sheet.md)',
     '/api/v1/transactions': transactionsFound,
     '/api/v1/vouchers/7': voucherFound,
     '/api/v1/reports/trial-balance': trialFound,
+    '/api/v1/reports/profit-loss/tally': tallyFound,
     '/api/v1/ledgers': ledgersFound,
     '/api/v1/ledgers/41/statement': ledgerFound,
     '/api/v1/datasets': datasetsFound,

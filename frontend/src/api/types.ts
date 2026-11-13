@@ -884,6 +884,61 @@ export interface SummaryLine {
   change_pts: string | null
 }
 
+export interface TallyBlockOut {
+  left: TallySideOut
+  right: TallySideOut
+}
+
+export interface TallyColumnOut {
+  key: string
+  label: string
+}
+
+export interface TallyDrillOut {
+  rows: TallyDrillRowOut[]
+  reason: string | null
+}
+
+export interface TallyDrillRowOut {
+  key: string
+  label: string
+  kind: "group" | "ledger"
+  depth: number
+  parent: string | null
+  amount: string
+  ledger_id: number | null
+  company: number | null
+}
+
+export interface TallyProfitLossOut {
+  companies: number[]
+  combined: boolean
+  period_start: string
+  period_end: string
+  start: string | null
+  end: string | null
+  columns: TallyColumnOut[]
+  gross: TallyBlockOut | null
+  net: TallyBlockOut | null
+  gross_profit: Record<string, string>
+  net_profit: Record<string, string>
+  reason: string | null
+  nearest: string[]
+}
+
+export interface TallyRowOut {
+  key: string
+  label: string
+  kind: "group" | "stock" | "gross_carried" | "gross_brought" | "net_result"
+  values: Record<string, string | null>
+  group: string | null
+}
+
+export interface TallySideOut {
+  rows: TallyRowOut[]
+  total: Record<string, string>
+}
+
 export interface TopCustomerOut {
   party_id: number
   name: string

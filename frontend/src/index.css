@@ -1275,3 +1275,38 @@ body,
   text-decoration-color: var(--lb-muted);
   text-underline-offset: 3px;
 }
+
+/* The Profit & Loss in Tally's layout (ADR-056): the two sides next to each other, one below
+   the other on a narrow screen; empty rows keep the subtotals in line. */
+.tally-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+.tally-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+}
+@media (max-width: 900px) {
+  .tally-sides {
+    grid-template-columns: 1fr;
+  }
+}
+.tally-side .tally-pad th,
+.tally-side .tally-pad td {
+  height: 2.2em;
+}
+.tally-side .tally-gross_carried th,
+.tally-side .tally-gross_brought th,
+.tally-side .tally-net_result th {
+  font-style: italic;
+}
+.pl-view-switch {
+  margin: 12px 0;
+}
+.nearest-date {
+  margin-right: 8px;
+}

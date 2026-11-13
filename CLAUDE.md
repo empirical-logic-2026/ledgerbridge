@@ -122,6 +122,8 @@ uv run python -m workers.cli extract --connection tally-test --entity "LedgerBri
 uv run python -m connectors.tally.tools capture-fixtures --company "LedgerBridge Test Co"
 uv run python -m connectors.tally.tools sign-check --company "LedgerBridge Test Co"
 uv run python -m connectors.tally.tools sign-check --fixtures
+uv run python -m connectors.tally.tools capture-ledger-report --company "LedgerBridge Test Co" --ledger "<name>" --from 2026-04-01 --to 2026-10-02
+uv run python -m connectors.tally.tools capture-pl-layout --company "LedgerBridge Test Co" --date 2026-11-02 --year-start 2026-04-01 --dir <folder>
 ```
 
 Claude Code only ever uses `-Env test` (with both `dev.ps1` and `deploy/stack.ps1`). Never create `.env.pilot` or run `-Env pilot`.
