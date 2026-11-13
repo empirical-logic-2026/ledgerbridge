@@ -20,11 +20,25 @@ export const overviewNote: NoteContent = {
 export const profitLossNote: NoteContent = {
   title: 'About this page',
   points: [
-    { text: 'The margins, the cost structure, net sales and profit by month, and the full Profit & Loss with the comparison period and the change.' },
-    { text: "Every line comes from our Profit & Loss statements, built from the books and checked line by line against Tally's own: the statement at the end of the period less the one before its start (F-PL-007)." },
-    { text: 'Gross margin and net profit % are profit as a share of net sales (F-PL-005, F-PL-006); the cost structure shows each cost as a share of net sales (F-PL-008, F-PL-010).' },
-    { text: '"Matches Tally" shows only when every compared line is equal to Tally\'s at the dates used (F-CHK-001 to F-CHK-003).' },
-    { text: 'Profit needs the statements stored for those dates (./dev.ps1 statements). In Educational mode, a month ending on the 30th runs to the 2nd of the next month.' },
+    { text: "The Profit & Loss A/c as Tally shows it: two sides, the gross block with Gross Profit (or Loss) c/o and b/f, then the net block with Nett Profit (or Loss) and the Totals, equal on both sides (F-PL-011 to F-PL-014, F-PL-017)." },
+    { text: 'Each group sits on the side of its balance for the period: a debit on the left, a credit on the right, as Tally places it (so a direct expense in credit is on the right). Click a group to see its ledgers.' },
+    { text: "Every amount comes from our statements, checked against Tally's own: the statement at the end of the period less the one before its start (F-PL-007). The end must be a stored statement date: Tally's closing stock exists only there." },
+    { text: 'Above it: the margins, the cost structure and the months (F-PL-005, F-PL-006, F-PL-008, F-PL-010). The Analysis view shows companies, months or quarters as columns with % of sales.' },
+    { text: 'Several companies: one column each and a total, added without inter-company eliminations. In Educational mode, a month ending on the 30th runs to the 2nd of the next month.' },
   ],
-  footer: "To compare: Tally's Profit & Loss A/c (Gateway of Tally) for the same company and period.",
+  footer: "To compare: Tally's Profit & Loss A/c (Gateway of Tally) for the same company and period (F2).",
+}
+
+// The Profit & Loss in Tally's layout (ADR-056): its labels.
+export const PL_TALLY_WORDS = {
+  left: 'Profit & Loss A/c, left side (debit)',
+  right: 'Profit & Loss A/c, right side (credit)',
+  noEnd: "No Profit & Loss in Tally's layout for this period",
+  nearest: 'Choose a stored statement date as the end:',
+  endOn: (day: string) => `End on ${day}`,
+  openAll: 'Open every group',
+  drillNote: "Each level adds up to the line; a ledger on the other side shows a negative amount. Click a ledger to see its statement.",
+  how: "As Tally places them: a group on the side of its balance, a group with nothing in the period on its usual side, without an amount. Click a group to see its ledgers, or a stock line to see the stock.",
+  tally: "Tally's layout",
+  analysis: 'Analysis view',
 }

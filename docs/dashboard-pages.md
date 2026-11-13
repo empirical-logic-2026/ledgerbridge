@@ -4,7 +4,7 @@ This document tells you what each page of the dashboard shows and how to check i
 
 | Field | Value |
 | --- | --- |
-| Version | 1.6 |
+| Version | 1.7 |
 | Date | 2026-11-12 |
 | Requirements | RPT-014 (layout and modules), RPT-015 (formulas), RPT-016 (periods and comparison) |
 | Language | ASD-STE100 Simplified Technical English |
@@ -356,39 +356,57 @@ The module has three pages: Profit & Loss, Trial Balance and Cost centres.
 
 ### 5.1 Profit & Loss
 
-**Purpose:** The page shows the margins, the cost structure, the monthly trend and the full Profit & Loss.
+**Purpose:** The page shows the Profit & Loss A/c as Tally shows it, with two sides. Above it are the margins, the cost structure and the months.
 
 **Note at the top of the page.** The box says:
 
-- The page shows the margins, the cost structure, the months and the full Profit & Loss with the comparison period.
-- Each line comes from our stored statements: the statement at the end of the period minus the statement before its start (F-PL-007).
-- The margins and the cost structure are shares of net sales (F-PL-005, F-PL-006, F-PL-008, F-PL-010).
-- "Matches Tally" shows only when each compared line is equal (F-CHK-001 to F-CHK-003).
-- Profit needs the statements for those dates. In Educational mode, a month that ends on the 30th goes to the 2nd of the next month.
-- To compare, use the Profit & Loss A/c of Tally.
+- The page shows the Profit & Loss A/c of Tally: two sides, the gross block, the net block and the Totals (F-PL-011 to F-PL-014).
+- Each group is on the side of its balance for the period. A debit is on the left. A credit is on the right.
+- Each amount comes from our stored statements: the statement at the end of the period minus the statement before its start (F-PL-007).
+- The end of the period must be a statement date. Tally keeps its closing stock only on those dates.
+- Above it, the page shows the margins, the cost structure and the months (F-PL-005, F-PL-006, F-PL-008, F-PL-010).
+- To compare, use the Profit & Loss A/c of Tally for the same company and period.
 
-**Contents:**
+**Contents (layout of Tally):**
 
 | Item | What it shows | Formula IDs |
 | --- | --- | --- |
 | Margins (ratio tiles) | Gross margin, net margin, cost of sales and other costs as percentages of net sales. | F-PL-005, F-PL-006, F-PL-010 |
 | Expense structure (horizontal bars) | Each cost as a percentage of net sales. | F-PL-010, F-PL-008 |
 | Net sales and profit by month (chart) | Net sales, gross profit and net profit for each month. | F-PL-001, F-PL-003, F-PL-004 |
-| Goal tracker | A note. Goals need budgets (milestone M7b). | None |
-| Profit & Loss (table) | Each line of the stored Profit & Loss, with the comparison and the change. | F-PL-001 to F-PL-004, F-PL-007, F-PL-008, F-CMP-001 |
-| "Matches Tally" | Shows if our lines are equal to the lines of Tally at the dates used. | F-CHK-001 to F-CHK-003 |
+| Header | The company name, "Profit & Loss A/c" and the period. | None |
+| Left side | Opening Stock, the groups with a debit balance, Gross Profit c/o, then Gross Loss b/f, the other groups with a debit balance and Nett Profit. | F-PL-011, F-PL-012, F-PL-014, F-PL-017 |
+| Right side | The groups with a credit balance, Closing Stock, Gross Loss c/o, then Gross Profit b/f, the other groups with a credit balance and Nett Loss. | F-PL-011, F-PL-012, F-PL-014, F-PL-017 |
+| Subtotal and Totals | One subtotal after the gross block and one Total at the bottom, on each side. The two sides are equal. | F-PL-013 |
+| Several companies | One amount column for each company, and the total. | F-PL-015 |
 
-**Controls:** The table can show company by company, month by month or quarter by quarter. It can show the percentage of net sales. Export CSV gives the table.
+**Where each line goes.** We took these rules from the Profit & Loss of Tally. The test company has a case for each rule.
 
-**Drill-downs:** Click "What is this?" to read how the page works.
+- A group goes on the side of its balance. For example, a direct expense with a credit balance is on the right. Sales with a debit balance are on the left.
+- A group with no balance in the period is on its usual side, with no amount. Expenses go on the left. Incomes go on the right.
+- Opening Stock is the first line on the left. Closing Stock is the last group line on the right of the gross block.
+- In each side, the groups follow the order of Tally.
+- A gross profit is "Gross Profit c/o" on the left and "Gross Profit b/f" on the right. A gross loss is "Gross Loss c/o" on the right and "Gross Loss b/f" on the left.
+- A nett profit is the last line on the left. A nett loss is the last line on the right.
+
+**Several companies.** The side of a line follows the total. If a company has its balance on the other side, its amount is negative. The page adds the companies without inter-company eliminations.
+
+**Controls:** Use "Tally's layout" or "Analysis view" above the statement. The address keeps your choice. The Analysis view shows company by company, month by month or quarter by quarter, with the comparison, the change and the percentage of net sales. Export CSV gives the Analysis view.
+
+**When the end of the period is not a statement date.** Tally keeps its closing stock only on statement dates. Thus the page cannot show the profit and the closing stock for another end date. The page tells you why. It shows the nearest statement dates before and after. Click one to use it as the end of the period.
+
+**Drill-downs:** Click a group to see its sub-groups and ledgers with their movement in the period (F-PL-016). Each level adds up to the line. A ledger on the other side shows a negative amount. Click a ledger to open its statement (section 10.3). Click Opening Stock or Closing Stock to open the Stock summary. Click Close to go back.
 
 **Loading and errors:** As section 1.5, with table rows.
 
 **Check against Tally:**
 
 1. Open Gateway of Tally › Profit & Loss A/c.
-2. Set the same period and the same company.
-3. Compare each line. In Educational mode, use the dates on the page.
+2. Set the same period (F2) and the same company.
+3. Compare each line on each side, the subtotals and the Totals.
+4. In Educational mode, use the dates on the page.
+
+The tests compare each line, its side, its place and its amount with the HTML export of Tally. The test company was recorded at five dates, with inventory integration on and off.
 
 ### 5.2 Cost centres
 
@@ -908,6 +926,7 @@ The module has three pages: Data health, Explore and Companies.
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 1.7 | 2026-11-13 | The Profit & Loss in the layout of Tally (section 5.1): the two sides, the period end, the drill-down, several companies and the Analysis view. |
 | 1.6 | 2026-11-12 | The Trial Balance (section 5.3), the drill-down of a Balance Sheet line (section 6) and the Ledger statement (section 10.3). |
 | 1.5 | 2026-11-12 | No Status column and no Meaning column in the tables (section 1.4). The status is on hover. Data health keeps its status columns. |
 | 1.4 | 2026-11-12 | A note at the top of each page (section 1.6), and the text of each note in its page section. |

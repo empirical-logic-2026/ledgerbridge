@@ -4,7 +4,7 @@ This sheet gives the formula of each figure that the dashboard shows. Use it to 
 
 | Field | Value |
 | --- | --- |
-| Version | 2.3 |
+| Version | 2.4 |
 | Date | 2026-11-12 |
 | Requirement | RPT-015 |
 | Language | ASD-STE100 Simplified Technical English |
@@ -475,6 +475,94 @@ On the Overview, the dashboard shows the four largest channels. It adds the othe
 | Dates | D3, D5, D6. |
 | Companies | C1, C4. |
 | Check in Tally | 1. Read the cost lines and the Sales Accounts line. 2. Divide each cost by sales. |
+
+### 5.1 The Profit & Loss in the layout of Tally
+
+The P&L page shows the Profit & Loss A/c of Tally with two sides (ADR-056). The code is in `data-plane/core/profit_loss_tally.py`. The rules come from the HTML export of Tally, recorded on the test company. The tests compare each line, its side and its place with that export.
+
+#### F-PL-011 Side and amount of a group
+
+| Item | Value |
+| --- | --- |
+| Expression | Movement = total of the group at the period end − total on the day before the period start. Left side: `movement` when positive. Right side: `−movement` when negative. |
+| In words | Each income and expense group goes on the side of its balance for the period. A debit goes on the left. A credit goes on the right. The amount is positive. A group with no balance goes on its usual side with no amount: expenses on the left, incomes on the right. Groups follow the order of the source (`account_groups.sort_position`). |
+| Data | The ledgers of the group at the two dates, as the stored statements count them. |
+| Signs | S1. Each side shows positive. |
+| Dates | D3, D5, D6. |
+| Companies | C1. The side follows the total. A company with a balance on the other side shows a negative amount. |
+| Check in Tally | 1. Open Gateway of Tally › Profit & Loss A/c. 2. Set the same period (F2). 3. Find the group on the same side. |
+
+#### F-PL-012 Gross Profit or Gross Loss, c/o and b/f
+
+| Item | Value |
+| --- | --- |
+| Expression | Gross result = right side of the gross block − left side of the gross block |
+| In words | The groups that affect gross profit, with the stock, make the gross block. A gross profit is "Gross Profit c/o" at the end of the left side. It is "Gross Profit b/f" at the start of the right side of the next block. A gross loss is "Gross Loss c/o" at the end of the right side. It is "Gross Loss b/f" at the start of the left side of the next block. |
+| Data | F-PL-011 and F-PL-017. |
+| Signs | Shown positive. |
+| Dates | D3, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Profit & Loss A/c. 2. Read Gross Profit c/o and b/f, or Gross Loss c/o and b/f. |
+
+#### F-PL-013 Subtotal of the gross block, and the Totals
+
+| Item | Value |
+| --- | --- |
+| Expression | `Σ` of the lines of one side of a block |
+| In words | The gross block ends with one subtotal on each side. The two subtotals are equal. The page ends with one Total on each side. The two Totals are equal. |
+| Data | The lines of the side. |
+| Signs | Shown positive. |
+| Dates | D3, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Profit & Loss A/c. 2. Read the subtotal and the two Totals. |
+
+#### F-PL-014 Nett Profit or Nett Loss
+
+| Item | Value |
+| --- | --- |
+| Expression | Net result = right side of the net block − left side of the net block |
+| In words | A nett profit is "Nett Profit", the last line of the left side. A nett loss is "Nett Loss", the last line of the right side. It is equal to F-PL-004 for the same period. |
+| Data | F-PL-011 and F-PL-012. |
+| Signs | Shown positive. |
+| Dates | D3, D5, D6. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Profit & Loss A/c. 2. Read Nett Profit or Nett Loss. |
+
+#### F-PL-015 Several companies in the layout of Tally
+
+| Item | Value |
+| --- | --- |
+| Expression | One amount column for each company, and the total |
+| In words | Each line shows the amount of each company and the total. The side of a line follows the total. The page adds the companies without inter-company eliminations. |
+| Data | F-PL-011 to F-PL-014 for each company. |
+| Signs | As F-PL-011. |
+| Dates | D3, D5, D6. |
+| Companies | C1. |
+| Check in Tally | Open the Profit & Loss A/c of each company. Add the figures. |
+
+#### F-PL-016 A row of the drill-down of a group
+
+| Item | Value |
+| --- | --- |
+| Expression | Ledger: its movement in the period. Group: `Σ` of the rows below it. |
+| In words | Click a group line. The page shows its sub-groups and ledgers with their movement in the period. Each level adds up to the level above it. The amounts follow the side of the line. A ledger on the other side shows a negative amount. Click a ledger to open its statement. |
+| Data | As F-PL-011, ledger by ledger. |
+| Signs | As F-PL-011. |
+| Dates | D3, D5, D6. |
+| Companies | C1. A ledger has one row for each company. |
+| Check in Tally | 1. Open the Profit & Loss A/c. 2. Select the group and press Enter. 3. Compare each ledger. |
+
+#### F-PL-017 Opening Stock and Closing Stock in the layout of Tally
+
+| Item | Value |
+| --- | --- |
+| Expression | Opening Stock = the closing stock on the day before the period start (the opening stock of the books at their start). Closing Stock = the closing stock at the period end. |
+| In words | Opening Stock is the first line of the left side. Closing Stock is the last group line of the right side of the gross block. The values are the values of Tally. |
+| Data | `stock_values.closing_value` and `opening_value` (`scope = 'total'`). |
+| Signs | Shown positive. |
+| Dates | D5, D6, D7. The period end must be a statement date. If not, the page tells you why and shows the nearest statement dates. |
+| Companies | C1. |
+| Check in Tally | 1. Open the Profit & Loss A/c. 2. Read Opening Stock and Closing Stock. |
 
 ## 6. Balance Sheet (`F-BS`)
 
@@ -1781,6 +1869,7 @@ The Ledger statement page shows one ledger as the ledger report of Tally shows i
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 2.4 | 2026-11-13 | The Profit & Loss in the layout of Tally (section 5.1, F-PL-011 to F-PL-017), proved against the HTML export of Tally. |
 | 2.3 | 2026-11-12 | The drill-down of a Balance Sheet line (F-BS-012). The Trial Balance for the financial year (F-TB-001 to F-TB-005). The Ledger statement (F-LED-001 to F-LED-004). Terms: financial year of a date, income or expense ledger. |
 | 2.2 | 2026-11-12 | Ageing in six buckets, by due date or bill date (F-PTY-014; F-PTY-012 retired). The parts not in bills (F-PTY-015 to F-PTY-017, F-PTY-020). Over 90 days (F-PTY-018). Average days to pay (F-PTY-019). Count of rows (F-TBL-003). Voucher total (F-VCH-001). |
 | 2.1 | 2026-11-11 | Stock by godown and batch (F-STK-010 to F-STK-013), the inventory lines dataset (F-STK-014, F-STK-015), and the three sections proved against Tally. |

@@ -8,7 +8,9 @@ zero-width space where the escape was meant (dev.ps1's 'deploy<newline>ew-env.ps
 Rules, for every tracked or new (not ignored) file that isn't binary:
 - valid UTF-8, without a byte-order mark;
 - no control characters except newline, and carriage return directly before a newline;
-  tabs only in shell scripts (a `<<-` heredoc strips leading tabs, so they're needed);
+  tabs only in shell scripts (a `<<-` heredoc strips leading tabs, so they're needed) and in
+  Tally's own HTML exports recorded under tests/fixtures/tally (Tally indents them with tabs;
+  a recording stays byte for byte as Tally answered, ADR-056);
 - no invisible or direction-changing Unicode characters (no-break space, soft hyphen,
   zero-width characters, byte-order mark, line/paragraph separators, bidirectional
   controls): write them as escapes, e.g. "\\u00a0".
@@ -28,6 +30,15 @@ REPO = Path(__file__).resolve().parents[2]
 GIT = shutil.which("git")
 BINARY_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".woff", ".woff2", ".pdf"}
 TABS_ALLOWED = {".sh"}
+TALLY_RECORDINGS = "tests/fixtures/tally/"  # Tally's HTML exports keep Tally's own tabs
+
+
+def _tabs_allowed(path: Path) -> bool:
+    if path.suffix in TABS_ALLOWED:
+        return True
+    return path.suffix.lower() == ".html" and TALLY_RECORDINGS in path.as_posix()
+
+
 INVISIBLE = {
     0x00A0: "NO-BREAK SPACE",
     0x00AD: "SOFT HYPHEN",
@@ -72,7 +83,7 @@ def problems(path: Path, data: bytes) -> list[str]:
             continue
         if char == "\r" and text[index + 1 : index + 2] == "\n":
             continue
-        if char == "\t" and path.suffix in TABS_ALLOWED:
+        if char == "\t" and _tabs_allowed(path):
             continue
         if code < 0x20 or 0x7F <= code <= 0x9F:
             found.append(f"line {line}, column {column}: control character U+{code:04X}")
@@ -115,6 +126,8 @@ def test_every_text_file_is_clean() -> None:
         ("bug.yaml", "path: deploy\tools\n", ["line 1, column 13: control character U+0009"]),
         ("tab.py", "x = 'a\tb'\n", ["control character U+0009"]),
         ("tab.sh", "cat <<-EOF\n\tindented\nEOF\n", []),
+        ("tests/fixtures/tally/r/pl.html", "<TD>\n\t\tx\n", []),  # Tally's own export
+        ("frontend/page.html", "<TD>\n\tx\n", ["control character U+0009"]),
         ("bell.md", "ring\a\n", ["control character U+0007"]),
         ("nbsp.py", "x = 'a\u00a0b'\n", ["U+00A0 NO-BREAK SPACE"]),
         ("zw.md", "a\u200bb\n", ["U+200B ZERO WIDTH SPACE"]),

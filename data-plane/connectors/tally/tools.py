@@ -7,6 +7,8 @@ test company into tests/fixtures/tally (replayed by fixtures.FixtureTransport);
     python -m connectors.tally.tools capture-fixtures --company "LedgerBridge Test Co"
     python -m connectors.tally.tools capture-ledger-report --company "LedgerBridge Test Co" \
         --ledger "Test Bank Current A/c" --ledger "Sales - Goods" --from 2026-04-01 --to 2026-10-02
+    python -m connectors.tally.tools capture-pl-layout --company "LedgerBridge Test Co" \
+        --date 2026-10-02 --date 2026-11-02 --year-start 2026-04-01 --dir <folder>
     python -m connectors.tally.tools sign-check --company "LedgerBridge Test Co"
     python -m connectors.tally.tools sign-check --fixtures
     python -m connectors.tally.tools sign-check --company "LedgerBridge Test Co" \

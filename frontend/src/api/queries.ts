@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getJson } from './client.ts'
 import { comparisonQuery, type CompareKind, type PeriodChoice } from '../selection.ts'
 import type { DatasetInfo, DatasetResult, Value as DatasetValue } from './types.ts'
-import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, DrillOut, Home, LedgerOut, LedgerStatementOut, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport, StockGodownsOut, StockItemPageOut, StockOut, TransactionsOut, TrialBalanceOut, VoucherOut } from './types.ts'
+import type { AgeingOut, BalanceSheetReport, CashFlowOut, CentrePageOut, CentresOut, ChannelsOut, Company, DrillOut, Home, LedgerOut, LedgerStatementOut, MonthlyOut, PartiesOut, PartyOut, Periods, RegisterOut, SalesDashboard, StatementReport, TallyDrillOut, TallyProfitLossOut, StockGodownsOut, StockItemPageOut, StockOut, TransactionsOut, TrialBalanceOut, VoucherOut } from './types.ts'
 
 export function useCompanies() {
   return useQuery({
@@ -245,6 +245,24 @@ export function useTransactions(companies: number[] | undefined, period: PeriodC
     queryKey: ['transactions', companies, period],
     queryFn: () => getJson<TransactionsOut>('/api/v1/transactions', { company: companies, ...periodQuery(period) }),
     enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+/** The Profit & Loss in Tally's layout: its two sides (core/profit_loss_tally.py). */
+export function useProfitLossTally(companies: number[] | undefined, period: PeriodChoice | undefined) {
+  return useQuery({
+    queryKey: ['profit-loss-tally', companies, period],
+    queryFn: () => getJson<TallyProfitLossOut>('/api/v1/reports/profit-loss/tally', { company: companies, ...periodQuery(period) }),
+    enabled: companies !== undefined && companies.length > 0 && period !== undefined,
+  })
+}
+
+/** A Profit & Loss line's sub-groups and ledgers for the period, on its side. */
+export function useProfitLossDrill(companies: number[] | undefined, period: PeriodChoice | undefined, group: string | undefined, side: 'left' | 'right') {
+  return useQuery({
+    queryKey: ['profit-loss-drill', companies, period, group, side],
+    queryFn: () => getJson<TallyDrillOut>('/api/v1/reports/profit-loss/drill', { company: companies, ...periodQuery(period), group, side }),
+    enabled: group !== undefined && companies !== undefined && companies.length > 0 && period !== undefined,
   })
 }
 

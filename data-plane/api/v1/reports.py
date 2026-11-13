@@ -14,6 +14,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from api.access import CurrentAccess
 from api.v1.common import (
@@ -28,6 +29,9 @@ from api.v1.common import (
 from api.v1.company_display import display_company_name
 from api.v1.home import change_pct
 from core.balance_sheet import balance_sheet
+from core.models import accounting as A  # noqa: N812
+from core.profit_loss_tally import TOTAL, tally_profit_loss
+from core.profit_loss_tally import drill as pl_drill
 from core.ratios import ASSET_PARTS, BORROWING_PARTS, LIABILITY_PARTS, Position
 from core.statement_report import percent, profit_loss
 
@@ -298,4 +302,135 @@ def balance_sheet_report(
             )
             for r in found.ratios
         ],
+    )  # fmt: skip
+
+
+# --- the Profit & Loss in Tally's layout (ADR-056) ------------------------------------------
+
+
+class TallyRowOut(BaseModel):
+    key: str
+    label: str
+    kind: Literal["group", "stock", "gross_carried", "gross_brought", "net_result"]
+    values: dict[str, Decimal | None] = formula("F-PL-011")  # column -> amount; None: blank
+    group: str | None  # the group's key: opens its drill-down
+
+
+class TallySideOut(BaseModel):
+    rows: list[TallyRowOut]
+    total: dict[str, Decimal] = formula("F-PL-013")  # the gross subtotal, or the net Total
+
+
+class TallyBlockOut(BaseModel):
+    left: TallySideOut
+    right: TallySideOut
+
+
+class TallyColumnOut(BaseModel):
+    key: str  # "company:3", "total"
+    label: str
+
+
+class TallyProfitLossOut(BaseModel):
+    companies: list[int]
+    combined: bool
+    period_start: date  # as asked
+    period_end: date
+    start: date | None  # the period shown (statement dates)
+    end: date | None
+    columns: list[TallyColumnOut]
+    gross: TallyBlockOut | None
+    net: TallyBlockOut | None
+    gross_profit: dict[str, Decimal] = formula("F-PL-012")  # a loss negative
+    net_profit: dict[str, Decimal] = formula("F-PL-014")
+    reason: str | None  # why there are no figures
+    nearest: list[date]  # stored statement dates around the end asked for
+
+
+class TallyDrillRowOut(BaseModel):
+    key: str
+    label: str
+    kind: Literal["group", "ledger"]
+    depth: int
+    parent: str | None
+    amount: Decimal = formula("F-PL-016")
+    ledger_id: int | None
+    company: int | None
+
+
+class TallyDrillOut(BaseModel):
+    rows: list[TallyDrillRowOut]
+    reason: str | None
+
+
+def _side_out(side: object) -> TallySideOut:
+    return TallySideOut(
+        rows=[
+            TallyRowOut(key=r.key, label=r.label, kind=r.kind, values=r.values, group=r.group)
+            for r in side.rows  # type: ignore[attr-defined]
+        ],
+        total=side.total,  # type: ignore[attr-defined]
+    )
+
+
+@router.get("/profit-loss/tally")
+def profit_loss_tally(
+    session: ReportSession,
+    access: CurrentAccess,
+    company: list[int] | None = Query(default=None),  # noqa: B008
+    month: list[str] | None = Query(default=None),  # noqa: B008
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> TallyProfitLossOut:
+    companies = access.entities(company)
+    period = parse_period(month, date_from, date_to)
+    found = tally_profit_loss(session, companies, period)
+    rows = session.execute(select(A.Entity.id, A.Entity.name).where(A.Entity.id.in_(companies)))
+    names = {entity: name for entity, name in rows}
+    columns = [
+        TallyColumnOut(
+            key=c,
+            label="Total"
+            if c == TOTAL
+            else display_company_name(names.get(int(c.split(":")[1]), c)),
+        )
+        for c in found.columns
+    ]
+    shown = found.end is not None
+    return TallyProfitLossOut(
+        companies=companies, combined=len(companies) > 1, period_start=period.start,
+        period_end=period.end, start=found.start, end=found.end, columns=columns,
+        gross=TallyBlockOut(left=_side_out(found.gross.left), right=_side_out(found.gross.right))
+        if shown else None,
+        net=TallyBlockOut(left=_side_out(found.net.left), right=_side_out(found.net.right))
+        if shown else None,
+        gross_profit=found.gross_profit, net_profit=found.net_profit, reason=found.reason,
+        nearest=found.nearest,
+    )  # fmt: skip
+
+
+@router.get("/profit-loss/drill")
+def profit_loss_drill(
+    session: ReportSession,
+    access: CurrentAccess,
+    group: str = Query(max_length=255),
+    side: Literal["left", "right"] = "left",
+    company: list[int] | None = Query(default=None),  # noqa: B008
+    month: list[str] | None = Query(default=None),  # noqa: B008
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> TallyDrillOut:
+    companies = access.entities(company)
+    period = parse_period(month, date_from, date_to)
+    rows, reason = pl_drill(session, companies, period, group, side)
+    return TallyDrillOut(
+        rows=[
+            TallyDrillRowOut(
+                key=r.key, label=r.label, kind=r.kind, depth=r.depth, parent=r.parent,
+                amount=r.amount, ledger_id=r.ledger_id, company=r.company,
+            )
+            for r in rows
+            if r.amount or r.depth == 0
+        ],
+        reason=reason,
     )  # fmt: skip
